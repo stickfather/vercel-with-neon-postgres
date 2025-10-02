@@ -1,16 +1,45 @@
 import { neon } from "@neondatabase/serverless";
 
-export async function checkDbConnection() {
-  if (!process.env.DATABASE_URL) {
-    return "No DATABASE_URL environment variable";
+let sqlInstance: ReturnType<typeof neon> | null = null;
+
+function getSqlClient() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("No DATABASE_URL environment variable");
   }
-  try {
-    const sql = neon(process.env.DATABASE_URL);
-    const result = await sql`SELECT version()`;
-    console.log("Pg version:", result);
-    return "Database connected";
-  } catch (error) {
-    console.error("Error connecting to the database:", error);
-    return "Database not connected";
+  if (!sqlInstance) {
+    sqlInstance = neon(connectionString);
   }
+  return sqlInstance;
+}
+
+export type Student = {
+  id: number;
+  full_name: string;
+  representative_name: string | null;
+  representative_phone: string | null;
+  status_text: string | null;
+  special_needs: boolean | null;
+  planned_level_min_level_code: string | null;
+  planned_level_max_level_code: string | null;
+};
+
+export async function fetchStudents(): Promise<Student[]> {
+  const sql = getSqlClient();
+
+  const rows = await sql`
+    SELECT
+      id,
+      full_name,
+      representative_name,
+      representative_phone,
+      status_text,
+      special_needs,
+      planned_level_min_level_code,
+      planned_level_max_level_code
+    FROM students
+    ORDER BY full_name ASC
+  `;
+
+  return rows as Student[];
 }
