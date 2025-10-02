@@ -1,206 +1,166 @@
-import type { ReactNode } from "react";
 import Image from "next/image";
-import logo from "@/assets/logo.svg";
-import logoDark from "@/assets/logo-dark.svg";
 import Link from "next/link";
-import arrow from "@/assets/arrow.svg";
-import discord from "@/assets/discord.svg";
-import docs from "@/assets/docs.svg";
-import { fetchStudents, type Student } from "./db";
+import hero from "@/assets/home.png";
+import { AttendanceBoard } from "@/components/attendance-board";
+import {
+  getActiveAttendances,
+  type ActiveAttendance,
+} from "./db";
 
-export default async function Home() {
-  let students: Student[] = [];
-  let statusMessage = "Database connected";
+type SearchParams = {
+  saludo?: string;
+  despedida?: string;
+  nombre?: string;
+};
 
+type PageProps = {
+  searchParams?: SearchParams | Promise<SearchParams>;
+};
+
+function decodeName(nombre?: string) {
+  if (!nombre) return "";
   try {
-    students = await fetchStudents();
+    return decodeURIComponent(nombre);
   } catch (error) {
-    console.error("Error loading students:", error);
-    statusMessage =
-      error instanceof Error ? error.message : "Database not connected";
+    return nombre;
+  }
+}
+
+function buildMessage({ saludo, despedida, nombre }: SearchParams) {
+  const safeName = decodeName(nombre);
+
+  if (saludo) {
+    return {
+      tone: "positivo" as const,
+      text: `¡Bienvenido/a, ${safeName || "estudiante"}! Tu registro quedó confirmado.`,
+    };
   }
 
-  const isConnected = statusMessage === "Database connected";
-  const studentColumns: Array<{
-    label: string;
-    render: (student: Student) => ReactNode;
-  }> = [
-    {
-      label: "Full name",
-      render: (student) => student.full_name,
-    },
-    {
-      label: "Representative",
-      render: (student) => student.representative_name ?? "—",
-    },
-    {
-      label: "Phone",
-      render: (student) => student.representative_phone ?? "—",
-    },
-    {
-      label: "Status",
-      render: (student) => student.status_text ?? "—",
-    },
-    {
-      label: "Special needs",
-      render: (student) =>
-        student.special_needs === null
-          ? "—"
-          : student.special_needs
-            ? "Yes"
-            : "No",
-    },
-    {
-      label: "Planned level",
-      render: (student) => {
-        const { planned_level_min: min, planned_level_max: max } = student;
-        if (!min && !max) {
-          return "—";
-        }
-        if (min && max && min !== max) {
-          return `${min} – ${max}`;
-        }
-        return min ?? max ?? "—";
-      },
-    },
-  ];
+  if (despedida) {
+    return {
+      tone: "informativo" as const,
+      text: `¡Hasta pronto, ${safeName || "estudiante"}! Gracias por compartir esta sesión con nosotros.`,
+    };
+  }
+
+  return null;
+}
+
+function MessageBanner({
+  message,
+}: {
+  message: ReturnType<typeof buildMessage>;
+}) {
+  if (!message) return null;
+
+  const toneStyles =
+    message.tone === "positivo"
+      ? "border-brand-teal bg-white/80"
+      : "border-brand-orange bg-white/70";
+
+  return (
+    <div
+      className={`w-full max-w-3xl rounded-3xl border px-6 py-4 text-center text-lg font-semibold shadow-md ${toneStyles}`}
+    >
+      {message.text}
+    </div>
+  );
+}
+
+async function resolveSearchParams(
+  searchParams: PageProps["searchParams"],
+): Promise<SearchParams | undefined> {
+  if (!searchParams) {
+    return undefined;
+  }
+
+  if (typeof (searchParams as Promise<SearchParams>).then === "function") {
+    return (await searchParams) ?? undefined;
+  }
+
+  return searchParams as SearchParams;
+}
+
+export default async function Home({ searchParams }: PageProps) {
+  let attendances: ActiveAttendance[] = [];
+  let dataError: string | null = null;
+  const resolvedParams = await resolveSearchParams(searchParams);
+
+  try {
+    attendances = await getActiveAttendances();
+  } catch (error) {
+    console.error("No se pudieron cargar las asistencias", error);
+    dataError =
+      "No pudimos conectar con la base de datos. La lista puede estar incompleta por ahora.";
+  }
+
+  const message = resolvedParams ? buildMessage(resolvedParams) : null;
+
   return (
     <div className="flex min-h-screen flex-col">
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-5 md:max-w-lg md:px-0 lg:max-w-xl">
-        <main className="flex flex-1 flex-col justify-center">
-          <div className="mb-6 md:mb-7">
-            <Image
-              className="lg:h-7 lg:w-auto dark:hidden"
-              src={logo}
-              alt="Neon logo"
-              width={88}
-              height={24}
-              priority
-            />
-            <Image
-              className="hidden lg:h-7 lg:w-auto dark:block"
-              src={logoDark}
-              alt="Neon logo"
-              width={88}
-              height={24}
-              priority
-            />
-          </div>
-          <h1 className="text-3xl font-semibold leading-none tracking-tighter md:text-4xl md:leading-none lg:text-5xl lg:leading-none">
-            Vercel with Neon Postgres
-          </h1>
-          <p className="mt-3.5 max-w-lg text-base leading-snug tracking-tight text-[#61646B] md:text-lg md:leading-snug lg:text-xl lg:leading-snug dark:text-[#94979E]">
-            A minimal template for building full-stack React applications using
-            Next.js, Vercel, and Neon.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-5 md:mt-9 lg:mt-10">
-            <Link
-              className="rounded-full bg-[#00E599] px-5 py-2.5 font-semibold tracking-tight text-[#0C0D0D] transition-colors duration-200 hover:bg-[#00E5BF] lg:px-7 lg:py-3"
-              href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fneondatabase-labs%2Fvercel-marketplace-neon%2Ftree%2Fmain&project-name=my-vercel-neon-app&repository-name=my-vercel-neon-app&products=[{%22type%22:%22integration%22,%22integrationSlug%22:%22neon%22,%22productSlug%22:%22neon%22,%22protocol%22:%22storage%22}]"
-              target="_blank"
-            >
-              Deploy to Vercel
-            </Link>
-            <Link
-              className="group flex items-center gap-2 leading-none tracking-tight"
-              href="https://github.com/neondatabase-labs/vercel-marketplace-neon"
-              target="_blank"
-            >
-              View on GitHub
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col items-center px-6 py-12 md:px-10 lg:px-16">
+        <div className="flex w-full flex-col items-center gap-10 text-center md:gap-12">
+          <MessageBanner message={message} />
+          <section className="grid w-full gap-8 rounded-[40px] bg-white/85 p-8 shadow-2xl backdrop-blur lg:grid-cols-[1.2fr_1fr] lg:items-center lg:p-12">
+            <div className="flex flex-col gap-6 text-left">
+              <p className="inline-flex items-center justify-start gap-2 text-sm font-semibold uppercase tracking-[0.25em] text-brand-deep-soft">
+                Inglés Rápido · Manta
+              </p>
+              <h1 className="text-4xl font-black leading-tight text-brand-deep sm:text-5xl lg:text-6xl">
+                ¡Llegamos a Manta!
+              </h1>
+              <p className="max-w-xl text-lg leading-relaxed text-brand-ink-soft sm:text-xl">
+                Te damos la bienvenida a nuestro centro de aprendizaje. Regístrate para tu clase de hoy, revisa quién ya está en la sala y vive la experiencia <span className="font-semibold text-brand-teal">#YouCanDoIt</span> de Inglés Rápido.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-4">
+                <Link
+                  href="/registro"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-7 py-3 text-base font-semibold uppercase tracking-wide text-white shadow-lg transition hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                >
+                  Registrar asistencia
+                </Link>
+                <Link
+                  href="/registro"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-[rgba(30,27,50,0.25)] px-6 py-3 text-base font-semibold text-brand-deep transition hover:border-[rgba(30,27,50,0.55)]"
+                >
+                  Ir al kiosco
+                </Link>
+              </div>
+            </div>
+            <div className="relative mx-auto h-72 w-full max-w-sm overflow-hidden rounded-[32px] bg-gradient-to-br from-[#ff7a23e6] via-[#ffc23acc] to-[#00bfa6cc] p-4 shadow-2xl">
+              <div className="absolute inset-0 rounded-[28px] border border-white/40"></div>
               <Image
-                className="transition-transform duration-200 group-hover:translate-x-1 dark:invert"
-                src={arrow}
-                alt="arrow"
-                width={16}
-                height={10}
+                src={hero}
+                alt="Estudiante celebrando el inicio de clases"
+                className="h-full w-full rounded-[24px] object-cover"
                 priority
               />
-            </Link>
-          </div>
-          <section className="mt-12">
-            <h2 className="text-xl font-semibold tracking-tight md:text-2xl">Student roster</h2>
-            <p className="mt-2 text-sm text-[#61646B] dark:text-[#94979E]">
-              Data below is pulled live from the <code className="rounded bg-[#E4E5E7]/60 px-1.5 py-0.5 text-xs dark:bg-[#303236]">students</code> table in Neon.
-            </p>
-            <div className="mt-5 overflow-x-auto rounded-xl border border-[#E4E5E7] bg-white shadow-sm dark:border-[#303236] dark:bg-[#141517]">
-              <table className="min-w-full divide-y divide-[#E4E5E7] text-left text-sm dark:divide-[#303236]">
-                <thead className="bg-[#F7F8F9] text-xs font-semibold uppercase tracking-wide text-[#3B3E45] dark:bg-[#1B1C1F] dark:text-[#D4D6DB]">
-                  <tr>
-                    {studentColumns.map((column) => (
-                      <th key={column.label} className="px-4 py-3">
-                        {column.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E4E5E7] text-[#1F2124] dark:divide-[#303236] dark:text-[#E6E8EC]">
-                  {students.map((student) => (
-                    <tr key={student.id} className="even:bg-[#F7F8F9]/70 dark:even:bg-[#1B1C1F]">
-                      {studentColumns.map((column) => (
-                        <td key={column.label} className="px-4 py-3 align-top">
-                          {column.render(student)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!students.length && isConnected && (
-                <div className="px-4 py-6 text-sm text-[#3B3E45] dark:text-[#D4D6DB]">
-                  No students found in the database.
-                </div>
-              )}
             </div>
-            {!isConnected && (
-              <p className="mt-3 text-sm text-red-500 dark:text-red-400">
-                Unable to load students because: {statusMessage}
-              </p>
-            )}
           </section>
-        </main>
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E4E5E7] py-5 sm:gap-2 sm:gap-6 md:pb-12 md:pt-10 dark:border-[#303236]">
-          <ul className="flex items-center gap-4 sm:gap-6">
-            {[
-              {
-                text: "Docs",
-                href: "https://neon.tech/docs/",
-                icon: docs,
-              },
-              {
-                text: "Discord",
-                href: "https://discord.com/invite/92vNTzKDGp",
-                icon: discord,
-              },
-            ].map((link) => (
-              <Link
-                className="flex items-center gap-2 opacity-70 transition-opacity duration-200 hover:opacity-100"
-                key={link.text}
-                href={link.href}
-                target="_blank"
-              >
-                <Image
-                  className="dark:invert"
-                  src={link.icon}
-                  alt={link.text}
-                  width={16}
-                  height={16}
-                  priority
-                />
-                <span className="text-sm tracking-tight">{link.text}</span>
-              </Link>
-            ))}
-          </ul>
-          <span
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-              isConnected
-                ? "border-[#00E599]/20 bg-[#00E599]/10 text-[#1a8c66] dark:bg-[#00E599]/10 dark:text-[#00E599]"
-                : "border-red-500/20 bg-red-500/10 text-red-500 dark:text-red-500"
-            }`}
-          >
-            {statusMessage}
-          </span>
-        </footer>
-      </div>
+        </div>
+
+        <section className="mt-14 flex w-full flex-col gap-6 rounded-[36px] bg-white/85 p-8 shadow-2xl backdrop-blur md:p-12">
+          <header className="flex flex-col gap-2 text-left md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-brand-deep md:text-3xl">
+                Estudiantes actualmente en clase
+              </h2>
+              <p className="text-base text-brand-ink-muted md:text-lg">
+                Presiona tu nombre cuando quieras retirarte. Cerraremos sesiones automáticamente a las 20:30 si olvidas salir.
+              </p>
+            </div>
+            <span className="inline-flex items-center justify-center rounded-full bg-brand-teal-soft px-4 py-2 text-sm font-semibold uppercase tracking-wide text-brand-teal">
+              {attendances.length} {attendances.length === 1 ? "estudiante" : "estudiantes"}
+            </span>
+          </header>
+          {dataError && (
+            <p className="rounded-3xl border border-brand-orange bg-white/85 px-5 py-3 text-sm font-medium text-brand-ink">
+              {dataError}
+            </p>
+          )}
+          <AttendanceBoard attendances={attendances} />
+        </section>
+      </main>
     </div>
   );
 }

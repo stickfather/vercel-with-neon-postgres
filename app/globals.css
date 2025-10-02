@@ -1,26 +1,115 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --app-orange: #ff7a23;
+  --app-sun: #ffc23a;
+  --app-teal: #00bfa6;
+  --app-deep: #1e1b32;
+  --app-ink: #1f1b24;
+  --app-soft: #fff4ea;
+  --app-white: #ffffff;
+  color-scheme: only light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-inter, "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  background: transparent;
+  color: var(--app-ink);
+}
+
+.bg-app {
+  min-height: 100vh;
+  background-color: var(--app-soft);
+  background-image:
+    radial-gradient(circle at top left, rgba(255, 194, 58, 0.35), transparent 55%),
+    radial-gradient(circle at top right, rgba(0, 191, 166, 0.3), transparent 60%),
+    linear-gradient(115deg, rgba(30, 27, 50, 0.08) 0%, rgba(30, 27, 50, 0) 55%),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(30, 27, 50, 0.08) 0,
+      rgba(30, 27, 50, 0.08) 12px,
+      rgba(255, 122, 35, 0.05) 12px,
+      rgba(255, 122, 35, 0.05) 24px
+    );
+}
+
+.text-app-ink {
+  color: var(--app-ink);
+}
+
+.text-brand-ink {
+  color: var(--app-ink);
+}
+
+.text-brand-deep {
+  color: var(--app-deep);
+}
+
+.text-brand-deep-soft {
+  color: rgba(30, 27, 50, 0.7);
+}
+
+.text-brand-ink-soft {
+  color: rgba(31, 27, 36, 0.8);
+}
+
+.text-brand-ink-muted {
+  color: rgba(31, 27, 36, 0.65);
+}
+
+.text-brand-teal {
+  color: var(--app-teal);
+}
+
+.bg-brand-orange {
+  background-color: var(--app-orange);
+}
+
+.bg-brand-teal-soft {
+  background-color: rgba(0, 191, 166, 0.15);
+}
+
+.border-brand-teal {
+  border-color: var(--app-teal);
+}
+
+.border-brand-orange {
+  border-color: var(--app-orange);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+input,
+select,
+button,
+textarea {
+  border-radius: 999px;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(0, 191, 166, 0.4);
+  outline-offset: 2px;
 }
