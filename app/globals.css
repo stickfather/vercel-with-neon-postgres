@@ -62,45 +62,6 @@ body {
   z-index: -1;
 }
 
-.lesson-step {
-  position: relative;
-}
-
-.lesson-footprints {
-  position: absolute;
-  top: 50%;
-  right: -80px;
-  width: 140px;
-  height: 78px;
-  transform: translateY(-50%) rotate(16deg);
-  background-repeat: no-repeat;
-  background-size: 22px 17px, 20px 15px, 20px 16px, 18px 14px;
-  background-position: 6% 76%, 34% 24%, 58% 80%, 88% 26%;
-  opacity: 0.7;
-  filter: drop-shadow(0 5px 10px rgba(15, 23, 42, 0.16));
-}
-
-.lesson-footprints--even {
-  transform: translateY(-50%) rotate(-20deg) scaleX(-1);
-  background-position: 8% 26%, 32% 82%, 58% 30%, 90% 78%;
-}
-
-.lesson-footprints--odd {
-  transform: translateY(-50%) rotate(20deg);
-}
-
-@media (max-width: 1279px) {
-  .lesson-footprints {
-    display: none;
-  }
-}
-
-@media (min-width: 1280px) {
-  .lesson-grid .lesson-step:nth-child(6n) .lesson-footprints {
-    display: none;
-  }
-}
-
 .attendance-grid {
   position: relative;
 }

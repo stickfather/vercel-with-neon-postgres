@@ -5,30 +5,6 @@ import { useRouter } from "next/navigation";
 import type { LevelLessons, StudentDirectoryEntry } from "@/app/db";
 import { getLevelAccent } from "@/components/level-colors";
 
-function hexToRgba(hex: string, alpha: number) {
-  let normalized = hex.trim();
-  if (normalized.startsWith("#")) {
-    normalized = normalized.slice(1);
-  }
-
-  if (normalized.length === 3) {
-    normalized = normalized
-      .split("")
-      .map((char) => char + char)
-      .join("");
-  }
-
-  if (normalized.length !== 6) {
-    return hex;
-  }
-
-  const r = Number.parseInt(normalized.slice(0, 2), 16);
-  const g = Number.parseInt(normalized.slice(2, 4), 16);
-  const b = Number.parseInt(normalized.slice(4, 6), 16);
-
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 type Props = {
   students: StudentDirectoryEntry[];
   levels: LevelLessons[];
@@ -342,64 +318,46 @@ export function CheckInForm({
 
       <div className="flex flex-col gap-3">
         <span className="sr-only">Lección</span>
-        <div className="lesson-grid grid justify-items-center gap-x-12 gap-y-8 px-2 sm:grid-cols-2 sm:px-4 md:grid-cols-3 lg:grid-cols-4 lg:px-6 2xl:grid-cols-6">
-          {lessonsForLevel.map((lesson, index) => {
+        <p className="text-sm font-semibold uppercase tracking-wide text-brand-ink-muted">
+          Toca tu nivel y luego la lección exacta para registrar tu asistencia.
+        </p>
+        <div className="lesson-grid grid justify-items-center gap-x-10 gap-y-7 px-2 sm:grid-cols-2 sm:px-4 md:grid-cols-3 lg:grid-cols-4 xl:px-6 2xl:grid-cols-6">
+          {lessonsForLevel.map((lesson) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
-            const showTrail = index !== lessonsForLevel.length - 1;
             const isLongLabel = lesson.lesson.length > 18;
-            const pawStrong = hexToRgba(accent.primary, 0.5);
-            const pawSoft = hexToRgba(accent.primary, 0.32);
             const isExamPrep = lesson.lesson
               .toLowerCase()
               .includes("preparación")
               ? true
               : lesson.lesson.toLowerCase().includes("preparacion");
-            const footprintCurve = index % 2 === 0 ? "even" : "odd";
             return (
-              <div
+              <button
                 key={lesson.id}
-                className={`lesson-step relative flex flex-col items-center xl:px-10 2xl:px-12 ${
-                  footprintCurve === "even" ? "xl:pt-4 2xl:pt-6" : "xl:pb-4 2xl:pb-6"
+                type="button"
+                onClick={() => {
+                  setSelectedLesson(lesson.id.toString());
+                  setLessonLocked(true);
+                }}
+                disabled={isFormDisabled}
+                className={`lesson-stop flex h-full w-full ${
+                  isExamPrep ? "min-h-[110px] min-w-[168px]" : "min-h-[86px] min-w-[120px]"
+                } flex-col items-center justify-center gap-1.5 rounded-[26px] border-[3px] px-5 py-4 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                  isLongLabel ? "text-sm leading-snug" : "text-[15px]"
                 }`}
+                style={{
+                  borderColor: accent.primary,
+                  backgroundColor: isSelected ? accent.background : "#fffdf9",
+                  color: accent.primary,
+                  boxShadow: isSelected
+                    ? "0 22px 36px rgba(0,0,0,0.14)"
+                    : "0 8px 22px rgba(31,27,36,0.08)",
+                }}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedLesson(lesson.id.toString());
-                    setLessonLocked(true);
-                  }}
-                  disabled={isFormDisabled}
-                  className={`lesson-stop flex h-full w-full ${
-                    isExamPrep ? "min-h-[116px] min-w-[176px]" : "min-h-[88px] min-w-[124px]"
-                  } flex-col items-center justify-center gap-1.5 rounded-[26px] border-[3px] px-5 py-4 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                    isLongLabel ? "text-sm leading-snug" : "text-[15px]"
-                  }`}
-                  style={{
-                    borderColor: accent.primary,
-                    backgroundColor: isSelected ? accent.background : "#fffdf9",
-                    color: accent.primary,
-                    boxShadow: isSelected
-                      ? "0 22px 36px rgba(0,0,0,0.14)"
-                      : "0 8px 22px rgba(31,27,36,0.08)",
-                  }}
-                >
-                  <span className="font-black uppercase tracking-wide leading-tight">
-                    {lesson.lesson}
-                  </span>
-                </button>
-                {showTrail && (
-                  <span
-                    aria-hidden
-                    className={`lesson-footprints ${
-                      footprintCurve === "even" ? "lesson-footprints--even" : "lesson-footprints--odd"
-                    }`}
-                    style={{
-                      backgroundImage: `radial-gradient(circle at 18% 72%, ${pawStrong} 0, ${pawStrong} 42%, transparent 46%), radial-gradient(circle at 32% 28%, ${pawSoft} 0, ${pawSoft} 44%, transparent 48%), radial-gradient(circle at 58% 78%, ${pawStrong} 0, ${pawStrong} 44%, transparent 48%), radial-gradient(circle at 84% 32%, ${pawSoft} 0, ${pawSoft} 42%, transparent 48%)`,
-                    }}
-                  />
-                )}
-              </div>
+                <span className="font-black uppercase tracking-wide leading-tight">
+                  {lesson.lesson}
+                </span>
+              </button>
             );
           })}
         </div>

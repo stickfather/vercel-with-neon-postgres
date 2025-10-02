@@ -392,9 +392,16 @@ export async function registerStaffCheckIn({
     throw new Error("Esta persona ya tiene una asistencia abierta.");
   }
 
+  const nextIdRows = normalizeRows<SqlRow>(await sql`
+    SELECT COALESCE(MAX(id), 0) + 1 AS next_id
+    FROM staff_attendance
+  `);
+
+  const nextId = Number(nextIdRows[0]?.next_id ?? 1);
+
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_attendance (staff_id, checkin_time)
-    VALUES (${staffId}, now())
+    INSERT INTO staff_attendance (id, staff_id, checkin_time)
+    VALUES (${nextId}, ${staffId}, now())
     RETURNING id
   `);
 
