@@ -27,7 +27,7 @@ export type Student = {
 export async function fetchStudents(): Promise<Student[]> {
   const sql = getSqlClient();
 
-  const rows = await sql<Student[]>`
+  const rows = await sql`
     SELECT
       id,
       full_name,
@@ -41,5 +41,5 @@ export async function fetchStudents(): Promise<Student[]> {
     ORDER BY full_name ASC
   `;
 
-  return rows;
+  return rows as Student[];
 }

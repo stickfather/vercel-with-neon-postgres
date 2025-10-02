@@ -43,7 +43,12 @@ export default async function Home() {
     },
     {
       label: "Special needs",
-      render: (student) => (student.special_needs ? "Yes" : "No"),
+      render: (student) =>
+        student.special_needs === null
+          ? "—"
+          : student.special_needs
+            ? "Yes"
+            : "No",
     },
     {
       label: "Planned level",
