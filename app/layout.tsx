@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { inter } from "./fonts";
 
 export const metadata: Metadata = {
-  title: "Vercel + Neon",
-  description: "Use Neon with Vercel",
+  title: "Inglés Rápido · Manta",
+  description:
+    "Bienvenida y registro de estudiantes para las clases de Inglés Rápido en Manta.",
 };
 
 export default function RootLayout({
@@ -13,8 +13,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} dark`}>
-      <body>{children}</body>
+    <html lang="es">
+      <body className="bg-app text-app-ink antialiased">{children}</body>
     </html>
   );
 }
