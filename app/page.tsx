@@ -1,11 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import hero from "@/assets/home.png";
-import { AttendanceBoard } from "@/components/attendance-board";
-import {
-  getActiveAttendances,
-  type ActiveAttendance,
-} from "./db";
+import symbol from "@/assets/manta-symbol.svg";
 
 type SearchParams = {
   saludo?: string;
@@ -55,8 +50,8 @@ function MessageBanner({
 
   const toneStyles =
     message.tone === "positivo"
-      ? "border-brand-teal bg-white/80"
-      : "border-brand-orange bg-white/70";
+      ? "border-brand-teal bg-[#e6fbf7] text-brand-deep"
+      : "border-brand-orange bg-[#fff4ec] text-brand-deep";
 
   return (
     <div
@@ -91,84 +86,43 @@ async function resolveSearchParams(
 }
 
 export default async function Home({ searchParams }: PageProps) {
-  let attendances: ActiveAttendance[] = [];
-  let dataError: string | null = null;
   const resolvedParams = await resolveSearchParams(searchParams);
-
-  try {
-    attendances = await getActiveAttendances();
-  } catch (error) {
-    console.error("No se pudieron cargar las asistencias", error);
-    dataError =
-      "No pudimos conectar con la base de datos. La lista puede estar incompleta por ahora.";
-  }
-
   const message = resolvedParams ? buildMessage(resolvedParams) : null;
 
   return (
     <div className="flex min-h-screen flex-col">
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col items-center px-6 py-12 md:px-10 lg:px-16">
-        <div className="flex w-full flex-col items-center gap-10 text-center md:gap-12">
+      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 py-16 text-center md:px-10">
+        <div className="flex w-full flex-col items-center gap-8">
           <MessageBanner message={message} />
-          <section className="grid w-full gap-8 rounded-[40px] bg-white/85 p-8 shadow-2xl backdrop-blur lg:grid-cols-[1.2fr_1fr] lg:items-center lg:p-12">
-            <div className="flex flex-col gap-6 text-left">
-              <p className="inline-flex items-center justify-start gap-2 text-sm font-semibold uppercase tracking-[0.25em] text-brand-deep-soft">
-                Inglés Rápido · Manta
-              </p>
-              <h1 className="text-4xl font-black leading-tight text-brand-deep sm:text-5xl lg:text-6xl">
-                ¡Llegamos a Manta!
-              </h1>
-              <p className="max-w-xl text-lg leading-relaxed text-brand-ink-soft sm:text-xl">
-                Te damos la bienvenida a nuestro centro de aprendizaje. Regístrate para tu clase de hoy, revisa quién ya está en la sala y vive la experiencia <span className="font-semibold text-brand-teal">#YouCanDoIt</span> de Inglés Rápido.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-4">
-                <Link
-                  href="/registro"
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-7 py-3 text-base font-semibold uppercase tracking-wide text-white shadow-lg transition hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  Registrar asistencia
-                </Link>
-                <Link
-                  href="/registro"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-[rgba(30,27,50,0.25)] px-6 py-3 text-base font-semibold text-brand-deep transition hover:border-[rgba(30,27,50,0.55)]"
-                >
-                  Ir al kiosco
-                </Link>
-              </div>
-            </div>
-            <div className="relative mx-auto h-72 w-full max-w-sm overflow-hidden rounded-[32px] bg-gradient-to-br from-[#ff7a23e6] via-[#ffc23acc] to-[#00bfa6cc] p-4 shadow-2xl">
-              <div className="absolute inset-0 rounded-[28px] border border-white/40"></div>
+          <section className="flex w-full flex-col items-center gap-8 rounded-[44px] bg-white/85 p-10 text-brand-deep shadow-2xl backdrop-blur md:p-14">
+            <div className="flex w-full justify-center">
               <Image
-                src={hero}
-                alt="Estudiante celebrando el inicio de clases"
-                className="h-full w-full rounded-[24px] object-cover"
+                src={symbol}
+                alt="Logotipo del South American Language Center Manta"
                 priority
+                className="w-full max-w-xs drop-shadow-lg sm:max-w-sm"
               />
             </div>
-          </section>
-        </div>
-
-        <section className="mt-14 flex w-full flex-col gap-6 rounded-[36px] bg-white/85 p-8 shadow-2xl backdrop-blur md:p-12">
-          <header className="flex flex-col gap-2 text-left md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-brand-deep md:text-3xl">
-                Estudiantes actualmente en clase
-              </h2>
-              <p className="text-base text-brand-ink-muted md:text-lg">
-                Presiona tu nombre cuando quieras retirarte. Cerraremos sesiones automáticamente a las 20:30 si olvidas salir.
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-sm font-semibold uppercase tracking-[0.35em] text-brand-deep-soft">
+                Inglés Rápido · Manta
+              </p>
+              <h1 className="text-4xl font-black leading-tight sm:text-5xl">
+                ¡Bienvenidos al kiosco de asistencia!
+              </h1>
+              <p className="max-w-2xl text-lg text-brand-ink-muted sm:text-xl">
+                Estamos listos para comenzar tu clase de hoy. Toca el botón para seguir al registro, confirma tus datos y prepárate
+                para vivir la experiencia <span className="font-semibold text-brand-teal">Inglés Rápido</span> en Manta.
               </p>
             </div>
-            <span className="inline-flex items-center justify-center rounded-full bg-brand-teal-soft px-4 py-2 text-sm font-semibold uppercase tracking-wide text-brand-teal">
-              {attendances.length} {attendances.length === 1 ? "estudiante" : "estudiantes"}
-            </span>
-          </header>
-          {dataError && (
-            <p className="rounded-3xl border border-brand-orange bg-white/85 px-5 py-3 text-sm font-medium text-brand-ink">
-              {dataError}
-            </p>
-          )}
-          <AttendanceBoard attendances={attendances} />
-        </section>
+            <Link
+              href="/registro"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-10 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-xl transition hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            >
+              Toca aquí para continuar
+            </Link>
+          </section>
+        </div>
       </main>
     </div>
   );

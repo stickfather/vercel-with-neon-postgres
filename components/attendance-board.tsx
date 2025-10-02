@@ -48,7 +48,7 @@ export function AttendanceBoard({ attendances }: Props) {
 
   if (!attendances.length) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-white/60 bg-white/60 px-8 py-14 text-center text-lg text-brand-ink-muted shadow-inner">
+      <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-[rgba(0,191,166,0.4)] bg-white/70 px-8 py-14 text-center text-lg text-brand-ink-muted shadow-inner">
         <span>Por ahora no hay estudiantes en clase.</span>
         <span className="text-sm">
           Cuando alguien se registre aparecerá aquí para poder retirarse con un toque.
@@ -60,7 +60,7 @@ export function AttendanceBoard({ attendances }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <div className="rounded-3xl border border-brand-orange bg-white/80 px-5 py-3 text-sm font-medium text-brand-ink">
+        <div className="rounded-3xl border border-brand-orange bg-[#fff4ec] px-5 py-3 text-sm font-medium text-brand-ink">
           {error}
         </div>
       )}
@@ -71,7 +71,7 @@ export function AttendanceBoard({ attendances }: Props) {
             type="button"
             onClick={() => handleCheckout(attendance)}
             disabled={loadingId === attendance.id}
-            className="group inline-flex min-w-[160px] items-center justify-between gap-3 rounded-full bg-gradient-to-r from-[#1e1b3220] via-[#00bfa620] to-[#ffc23a1a] px-6 py-3 text-left text-sm font-semibold text-brand-deep shadow hover:from-[#1e1b3233] hover:via-[#00bfa630] hover:to-[#ffc23a29] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+            className="group inline-flex min-w-[180px] items-center justify-between gap-3 rounded-full bg-gradient-to-r from-[#5cd6ca33] via-[#ffc23a33] to-[#ff7a2333] px-6 py-3 text-left text-sm font-semibold text-brand-deep shadow transition hover:from-[#5cd6ca4d] hover:via-[#ffc23a4d] hover:to-[#ff7a234d] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
           >
             <span>{attendance.fullName}</span>
             <span className="rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-teal">
