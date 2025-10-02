@@ -25,6 +25,101 @@ body {
   color: var(--app-ink);
 }
 
+.registro-card {
+  position: relative;
+}
+
+.registro-card::before,
+.registro-card::after {
+  content: "";
+  position: absolute;
+  inset: -24px;
+  border-radius: 60px;
+  background: linear-gradient(135deg, rgba(255, 205, 165, 0.35), rgba(255, 255, 255, 0) 70%);
+  z-index: -1;
+}
+
+.registro-card::after {
+  inset: -40px -36px -52px;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 183, 92, 0.25), transparent 55%),
+    radial-gradient(circle at 70% 80%, rgba(89, 212, 195, 0.3), transparent 60%);
+  filter: blur(0.5px);
+  z-index: -2;
+}
+
+.lesson-trail {
+  position: relative;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.lesson-trail::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3%;
+  right: 3%;
+  height: 6px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(31, 27, 36, 0.07) 0,
+    rgba(31, 27, 36, 0.07) 18px,
+    rgba(255, 255, 255, 0) 18px,
+    rgba(255, 255, 255, 0) 34px
+  );
+  border-radius: 999px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lesson-stop {
+  position: relative;
+  isolation: isolate;
+}
+
+.lesson-stop::after {
+  content: "";
+  position: absolute;
+  inset: 12px 16px;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.6);
+  mix-blend-mode: lighten;
+  z-index: -1;
+}
+
+.trail-sign {
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
+}
+
+.attendance-grid {
+  position: relative;
+}
+
+.attendance-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 30%, rgba(255, 183, 92, 0.18), transparent 55%),
+    radial-gradient(circle at 80% 60%, rgba(94, 214, 202, 0.16), transparent 65%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.attendance-bubble {
+  position: relative;
+  overflow: hidden;
+}
+
+.attendance-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 18px 20px;
+  border-radius: 28px;
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+
 .bg-app {
   min-height: 100vh;
   background: var(--app-white);

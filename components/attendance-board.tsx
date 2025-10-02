@@ -94,7 +94,7 @@ export function AttendanceBoard({ attendances }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {status && (
         <div
           className={`rounded-3xl border px-5 py-3 text-sm font-medium ${
@@ -113,52 +113,52 @@ export function AttendanceBoard({ attendances }: Props) {
           </span>
         </div>
       )}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {attendances.map((attendance) => {
+      <div className="attendance-grid grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        {attendances.map((attendance, index) => {
           const accent = getLevelAccent(attendance.level);
           const formattedTime = formatTime(attendance.checkInTime, formatter);
+          const variantClass = [
+            "rotate-[1.2deg]",
+            "-rotate-[1deg]",
+            "rotate-[0.6deg]",
+            "-rotate-[0.4deg]",
+          ][index % 4];
           return (
             <button
               key={attendance.id}
               type="button"
               onClick={() => handleCheckout(attendance)}
               disabled={loadingId === attendance.id}
-              className="group flex min-h-[126px] flex-col gap-3 rounded-3xl border-2 border-[#eef0ff] bg-gradient-to-br from-white via-[#fff5ec] to-[#e8fffa] px-5 py-5 text-left shadow-md transition hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+              className={`attendance-bubble ${variantClass} group flex min-h-[140px] flex-col gap-4 rounded-[34px] border-[3px] px-5 py-6 text-left shadow-[0_12px_28px_rgba(15,23,42,0.14)] transition hover:-translate-y-1 hover:shadow-[0_20px_36px_rgba(15,23,42,0.2)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70`}
+              style={{
+                borderColor: accent.primary,
+                background: `linear-gradient(135deg, ${accent.background} 0%, rgba(255,255,255,0.95) 55%, ${accent.background} 100%)`,
+              }}
             >
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-base font-semibold text-brand-deep">
-                  {attendance.fullName}
+              <span className="text-lg font-black text-brand-deep">
+                {attendance.fullName}
+              </span>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                <span
+                  className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-bold"
+                  style={{ border: `2px solid ${accent.primary}`, color: accent.primary }}
+                >
+                  {attendance.level ?? "Nivel"}
                 </span>
-                <div className="flex flex-col items-end gap-2 text-right">
-                  {formattedTime && (
-                    <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                      {formattedTime}
-                    </span>
-                  )}
-                  <span
-                    className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide"
-                    style={{
-                      backgroundColor: accent.chipBackground,
-                      color: accent.primary,
-                    }}
-                  >
-                    {attendance.level ?? "Nivel"}
+                {attendance.lesson && (
+                  <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] text-brand-deep">
+                    {attendance.lesson}
                   </span>
-                </div>
+                )}
+                {formattedTime && (
+                  <span className="rounded-full bg-white/70 px-3 py-1 text-[11px]">
+                    {formattedTime}
+                  </span>
+                )}
               </div>
-              <div
-                className="flex items-center justify-between gap-3 rounded-2xl bg-white/70 px-3 py-2 text-xs font-medium uppercase tracking-wide text-brand-ink-muted sm:text-sm"
-                style={{ border: `1px dashed ${accent.primary}` }}
-              >
-                <span className="flex items-center gap-2 text-brand-deep">
-                  <span aria-hidden className="flex items-center gap-1 text-base text-brand-orange">
-                    <span>⋯</span>
-                    <span>➜</span>
-                  </span>
-                  <span className="truncate">{attendance.lesson ?? "Lección por confirmar"}</span>
-                </span>
-                <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                  {loadingId === attendance.id ? "Registrando salida…" : "Finalizar"}
+              <div className="flex items-center justify-end">
+                <span className="rounded-full bg-white/80 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                  {loadingId === attendance.id ? "Registrando salida…" : "Listo para salir"}
                 </span>
               </div>
             </button>

@@ -48,12 +48,19 @@ export default async function RegistroPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-12 px-6 py-14 md:px-10 lg:px-12">
+    <div className="relative flex min-h-screen flex-col bg-white">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -left-16 top-24 h-56 w-56 -rotate-12 rounded-[38px] bg-[#ffe4d0] shadow-[0_22px_60px_rgba(0,0,0,0.08)]" />
+        <div className="absolute right-6 top-12 h-40 w-40 rotate-6 rounded-[30px] bg-[#f0f4ff] shadow-[0_16px_40px_rgba(0,0,0,0.08)]" />
+        <div className="absolute bottom-0 left-1/2 h-64 w-[130%] -translate-x-1/2 rounded-t-[120px] bg-gradient-to-r from-[#ffe8b5] via-white to-[#c9f8f2]" />
+        <div className="absolute bottom-32 left-10 h-24 w-24 rotate-12 rounded-full border-8 border-[#ff7a23]/25" />
+        <div className="absolute bottom-20 right-20 h-16 w-40 -rotate-6 rounded-[22px] bg-[#ffdde9]" />
+      </div>
+      <main className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col gap-12 px-6 py-14 md:px-10 lg:px-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             href="/"
-            className="inline-flex items-center justify-center rounded-full border border-transparent bg-white/80 px-4 py-2 text-sm font-semibold text-brand-deep shadow-sm backdrop-blur transition hover:border-brand-teal hover:text-brand-teal"
+            className="inline-flex items-center justify-center rounded-full border border-transparent bg-white/90 px-4 py-2 text-sm font-semibold text-brand-deep shadow-sm backdrop-blur transition hover:border-brand-teal hover:text-brand-teal"
           >
             ← Volver a bienvenida
           </Link>
@@ -65,25 +72,24 @@ export default async function RegistroPage() {
           </Link>
         </div>
 
-        <div className="grid gap-12 lg:grid-cols-[1.7fr_1.3fr] xl:grid-cols-[1.6fr_1.4fr]">
+        <div className="grid gap-12 xl:grid-cols-[1.55fr_1.45fr]">
           <CheckInForm
             students={students}
             levels={levels}
             disabled={!levels.length || !students.length}
             initialError={formError}
           />
-          <section className="relative flex min-h-[520px] flex-col gap-6 rounded-[40px] border-2 border-[#d6dcff] bg-gradient-to-br from-white via-[#f3f6ff] to-[#fff0e4] px-10 py-12 shadow-2xl">
-            <div className="pointer-events-none absolute -top-6 right-16 hidden h-20 w-20 rounded-full bg-[#ffb15c]/40 blur-2xl xl:block" />
+          <section className="relative flex min-h-[560px] flex-col gap-6 rounded-[48px] border-2 border-[#d6dcff] bg-gradient-to-br from-white via-[#f4f6ff] to-[#ffe9de] px-10 py-14 shadow-[0_28px_64px_rgba(15,23,42,0.16)]">
+            <div className="pointer-events-none absolute -top-6 left-10 hidden h-20 w-20 rotate-12 rounded-full bg-[#ffb15c]/35 blur-2xl xl:block" />
+            <div className="pointer-events-none absolute -bottom-8 right-16 hidden h-24 w-24 -rotate-6 rounded-full bg-[#59d4c3]/35 blur-2xl xl:block" />
             <header className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1 text-left">
-                <h2 className="text-2xl font-bold text-brand-deep">
-                  Estudiantes en clase
-                </h2>
+                <h2 className="text-3xl font-black text-brand-deep">Estudiantes en clase</h2>
                 <p className="text-sm text-brand-ink-muted">
-                  Toca tu nombre cuando termines para registrar tu salida.
+                  Celebra el progreso de tus compañeros.
                 </p>
               </div>
-              <span className="inline-flex items-center justify-center rounded-full bg-[#e6fbf7] px-4 py-1 text-sm font-semibold text-brand-teal">
+              <span className="inline-flex items-center justify-center rounded-full bg-[#e6fbf7] px-5 py-2 text-base font-semibold text-brand-teal">
                 {attendances.length}
               </span>
             </header>

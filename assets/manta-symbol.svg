@@ -1,8 +1,35 @@
-<svg width="260" height="260" viewBox="0 0 260 260" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="260" height="260" rx="44" fill="#ffffff"/>
-  <circle cx="130" cy="130" r="96" fill="#ff7a23"/>
-  <path d="M214 130c0 46.868-37.132 85-84 85s-84-38.132-84-85" fill="#00bfa6"/>
-  <path d="M130 58c42.66 0 78 35.34 78 78 0 8.389-1.314 16.46-3.766 24.015C188.877 135.51 161.095 118 130 118c-31.095 0-58.877 17.51-74.234 41.985C53.314 152.46 52 144.389 52 136c0-42.66 35.34-78 78-78Z" fill="#ffe6cf"/>
-  <path d="M130 118c17.12 0 31 13.879 31 31 0 17.121-13.88 31-31 31-17.121 0-31-13.879-31-31 0-17.121 13.879-31 31-31Z" fill="#1e1b32"/>
-  <path d="M130 132c9.941 0 18 8.059 18 18 0 9.941-8.059 18-18 18-9.941 0-18-8.059-18-18 0-9.941 8.059-18 18-18Z" fill="#ffffff"/>
+<svg width="600" height="600" viewBox="0 0 600 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="600" height="600" fill="#FFFFFF"/>
+  <g transform="translate(70 120)">
+    <g transform="translate(0 120)">
+      <path d="M0 54L64 -2H114L50 54L114 110H64L0 54Z" fill="#EF4923"/>
+      <path d="M60 54L124 -2H174L110 54L174 110H124L60 54Z" fill="#F9B21D"/>
+      <path d="M120 54L184 -2H234L170 54L234 110H184L120 54Z" fill="#06B2A2"/>
+    </g>
+    <g transform="translate(246 0)">
+      <text x="0" y="115" fill="#1F1B24" font-family="'Montserrat', 'Inter', sans-serif" font-weight="600" font-size="54" letter-spacing="0.02em">
+        South American
+      </text>
+      <text x="0" y="185" fill="#1F1B24" font-family="'Montserrat', 'Inter', sans-serif" font-weight="600" font-size="54" letter-spacing="0.02em">
+        Language Center
+      </text>
+      <rect y="230" width="320" height="72" rx="12" fill="#46C7C7"/>
+      <text x="68" y="283" fill="#FFFFFF" font-family="'Montserrat', 'Inter', sans-serif" font-weight="700" font-size="48" letter-spacing="0.15em">
+        MANTA
+      </text>
+    </g>
+  </g>
+  <g transform="translate(420 60)">
+    <circle cx="24" cy="24" r="16" fill="#EF4923"/>
+    <circle cx="84" cy="24" r="16" fill="#F9B21D"/>
+    <circle cx="144" cy="24" r="16" fill="#06B2A2"/>
+    <circle cx="24" cy="84" r="16" fill="#06B2A2"/>
+    <circle cx="84" cy="84" r="16" fill="#EF4923"/>
+    <circle cx="144" cy="84" r="16" fill="#F9B21D"/>
+  </g>
+  <g transform="translate(40 440)">
+    <path d="M0 40L60 0H112L52 40L112 80H60L0 40Z" fill="#EF4923"/>
+    <path d="M112 40L172 0H224L164 40L224 80H172L112 40Z" fill="#F9B21D"/>
+    <path d="M224 40L284 0H336L276 40L336 80H284L224 40Z" fill="#06B2A2"/>
+  </g>
 </svg>

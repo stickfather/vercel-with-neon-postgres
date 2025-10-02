@@ -17,7 +17,6 @@ type StatusState = {
   message: string;
 } | null;
 
-
 export function CheckInForm({
   students,
   levels,
@@ -205,15 +204,15 @@ export function CheckInForm({
 
   return (
     <form
-      className="relative flex flex-col gap-8 rounded-[40px] border-2 border-[#ffcaa1] bg-gradient-to-br from-white via-[#fff6ec] to-[#e9fffa] px-12 py-14 shadow-2xl"
+      className="registro-card relative flex flex-col gap-9 rounded-[48px] border-2 border-[#ffcaa1] bg-white px-12 py-14 shadow-[0_28px_64px_rgba(15,23,42,0.14)]"
       onSubmit={handleSubmit}
     >
-      <div className="pointer-events-none absolute -top-5 left-10 hidden h-16 w-16 rounded-3xl bg-[#ffd4b8]/60 blur-xl sm:block" />
-      <div className="pointer-events-none absolute -bottom-7 right-12 hidden h-20 w-20 rounded-full bg-[#5cd6ca]/40 blur-2xl lg:block" />
+      <div className="pointer-events-none absolute -top-6 left-12 hidden h-20 w-20 -rotate-3 rounded-[28px] bg-[#ffe1ec]/70 blur-2xl sm:block" />
+      <div className="pointer-events-none absolute -bottom-10 right-16 hidden h-24 w-24 rotate-6 rounded-[30px] bg-[#59d4c3]/45 blur-2xl lg:block" />
       <header className="flex flex-col gap-1 text-left">
         <h1 className="text-3xl font-black text-brand-deep">Registro de asistencia</h1>
-        <p className="text-xs text-brand-ink-muted md:text-sm">
-          Busca tu nombre, elige el nivel y confirma la lección para unirte a la clase.
+        <p className="max-w-lg text-xs text-brand-ink-muted md:text-sm">
+          Busca tu nombre, elige tu nivel y pisa fuerte en la ruta de lecciones.
         </p>
       </header>
 
@@ -246,11 +245,11 @@ export function CheckInForm({
             onBlur={() => {
               setTimeout(() => setShowSuggestions(false), 120);
             }}
-            className="w-full rounded-2xl border-2 border-transparent bg-white px-6 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-3xl border-2 border-[#ffe2c8] bg-[#fffaf5] px-6 py-4 text-base text-brand-ink shadow-inner focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isFormDisabled}
           />
           {showSuggestions && filteredStudents.length > 0 && (
-            <ul className="absolute z-10 mt-2 max-h-56 w-full overflow-y-auto rounded-2xl border border-white/60 bg-white/95 p-2 text-sm shadow-2xl">
+            <ul className="absolute z-10 mt-2 max-h-56 w-full overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-2 text-sm shadow-2xl">
               {filteredStudents.map((student) => (
                 <li key={student.id}>
                   <button
@@ -262,7 +261,7 @@ export function CheckInForm({
                       setLessonLocked(false);
                       setShowSuggestions(false);
                     }}
-                    className={`flex w-full items-center justify-between gap-4 rounded-xl px-3 py-2 text-left transition hover:bg-[#fff0e0] ${
+                    className={`flex w-full items-center justify-between gap-4 rounded-2xl px-3 py-2 text-left transition hover:bg-[#fff0e0] ${
                       student.id === selectedStudentId
                         ? "bg-[#ffe3c9] text-brand-deep"
                         : "text-brand-ink"
@@ -286,7 +285,7 @@ export function CheckInForm({
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Nivel
         </span>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
           {levels.map((level) => {
             const isSelected = selectedLevel === level.level;
             const accent = getLevelAccent(level.level);
@@ -294,43 +293,42 @@ export function CheckInForm({
               <button
                 key={level.level}
                 type="button"
-                className="group relative flex min-h-[70px] flex-col items-center justify-center gap-1 rounded-3xl border-2 px-4 text-sm font-bold uppercase tracking-wide transition"
-                style={
-                  isSelected
-                    ? {
-                        backgroundColor: accent.primary,
-                        borderColor: accent.primary,
-                        color: "#ffffff",
-                        boxShadow: "0 16px 32px rgba(0, 0, 0, 0.12)",
-                      }
-                    : {
-                        borderColor: accent.primary,
-                        backgroundColor: "rgba(255,255,255,0.96)",
-                        color: accent.primary,
-                      }
-                }
+                className="group relative flex min-h-[90px] flex-col items-center justify-center gap-1 rounded-[28px] border-[3px] px-4 text-sm font-bold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                style={{
+                  borderColor: accent.primary,
+                  backgroundColor: isSelected ? accent.background : "#ffffff",
+                  color: isSelected ? accent.primary : accent.primary,
+                  boxShadow: isSelected
+                    ? "0 18px 32px rgba(0,0,0,0.12)"
+                    : "0 4px 16px rgba(31,27,36,0.08)",
+                }}
                 onClick={() => {
                   setSelectedLevel(level.level);
                   setLessonLocked(false);
                 }}
                 disabled={isFormDisabled}
               >
-                <span aria-hidden className="flex items-center gap-1 text-lg font-black">
-                  <span>➜</span>
-                  <span>➜</span>
+                <span className="text-xs font-semibold tracking-[0.3em] text-brand-ink-muted">
+                  NIVEL
                 </span>
-                <span>{level.level}</span>
+                <span className="text-2xl font-black">{level.level}</span>
+                <span
+                  aria-hidden
+                  className="absolute -right-2 top-1/2 hidden h-8 w-8 -translate-y-1/2 rounded-full bg-white/90 text-lg text-brand-ink-muted shadow-md ring-2 ring-offset-2 ring-offset-white md:flex"
+                >
+                  ⭐
+                </span>
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Lección
         </span>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="lesson-trail grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {lessonsForLevel.map((lesson) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
@@ -343,27 +341,27 @@ export function CheckInForm({
                   setLessonLocked(true);
                 }}
                 disabled={isFormDisabled}
-                className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-3xl border-2 px-4 py-4 text-center transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                style={
-                  isSelected
-                    ? {
-                        borderColor: accent.primary,
-                        backgroundColor: accent.background,
-                        color: accent.primary,
-                        boxShadow: "0 14px 28px rgba(0, 0, 0, 0.1)",
-                      }
-                    : {
-                        borderColor: accent.primary,
-                        backgroundColor: "rgba(255,255,255,0.96)",
-                        color: accent.primary,
-                      }
-                }
+                className="lesson-stop relative flex min-h-[104px] flex-col items-center justify-center gap-3 rounded-[28px] border-[3px] px-5 py-5 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                style={{
+                  borderColor: accent.primary,
+                  backgroundColor: isSelected ? accent.background : "#fffdf9",
+                  color: accent.primary,
+                  boxShadow: isSelected
+                    ? "0 18px 32px rgba(0,0,0,0.14)"
+                    : "0 6px 20px rgba(31,27,36,0.08)",
+                }}
               >
-                <span aria-hidden className="flex items-center gap-1 text-base font-black">
-                  <span>⋯</span>
-                  <span>➜</span>
+                <span
+                  aria-hidden
+                  className="trail-sign absolute -top-4 flex h-8 w-16 items-center justify-center rounded-full bg-white text-xs font-semibold uppercase tracking-wide shadow-md"
+                  style={{ border: `2px solid ${accent.primary}`, color: accent.primary }}
+                >
+                  Ruta
                 </span>
-                <span className="text-sm font-semibold uppercase tracking-wide">
+                <span className="text-xs font-semibold uppercase tracking-[0.25em] text-brand-ink-muted">
+                  Lección
+                </span>
+                <span className="text-base font-black uppercase tracking-wide">
                   {lesson.lesson}
                 </span>
               </button>
@@ -371,8 +369,7 @@ export function CheckInForm({
           })}
           {!lessonsForLevel.length && (
             <p
-              className="rounded-2xl border border-dashed bg-white/80 px-4 py-4 text-sm text-brand-ink"
-              style={{ borderColor: "rgba(255, 122, 35, 0.45)" }}
+              className="rounded-[28px] border border-dashed border-brand-orange bg-white/80 px-4 py-4 text-sm text-brand-ink"
             >
               Selecciona un nivel para ver las lecciones disponibles.
             </p>
@@ -408,7 +405,7 @@ export function CheckInForm({
       <button
         type="submit"
         disabled={isSubmitting || isPending || isFormDisabled}
-        className="cta-ripple mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-8 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
+        className="cta-ripple mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-10 py-5 text-lg font-semibold uppercase tracking-wide text-white shadow-[0_22px_40px_rgba(255,122,35,0.32)] disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting || isPending ? "Registrando…" : "Confirmar asistencia"}
       </button>
@@ -422,14 +419,14 @@ export function CheckInForm({
       </button>
 
       {showHelp && (
-        <div className="rounded-[28px] bg-white/80 px-6 py-4 text-sm text-brand-ink-muted shadow-inner">
+        <div className="rounded-[32px] bg-white/80 px-6 py-4 text-sm text-brand-ink-muted shadow-inner">
           <h2 className="mb-2 text-base font-semibold uppercase tracking-wide text-brand-deep">
             Pasos rápidos
           </h2>
           <ol className="flex list-decimal flex-col gap-2 pl-5">
             <li>Busca tu nombre y selecciónalo de la lista.</li>
             <li>Elige tu nivel tocando una de las tarjetas disponibles.</li>
-            <li>Confirma la lección sugerida o selecciona otra.</li>
+            <li>Explora la ruta de lecciones y elige la tuya.</li>
             <li>Toca "Confirmar asistencia" y prepárate para tu clase.</li>
           </ol>
         </div>
