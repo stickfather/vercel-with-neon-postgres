@@ -50,8 +50,8 @@ function MessageBanner({
 
   const toneStyles =
     message.tone === "positivo"
-      ? "border-brand-teal bg-[#e6fbf7] text-brand-deep"
-      : "border-brand-orange bg-[#fff4ec] text-brand-deep";
+      ? "border-brand-teal bg-[#ddf4ef] text-brand-deep"
+      : "border-brand-orange bg-[#ffe8d7] text-brand-deep";
 
   return (
     <div
@@ -91,32 +91,34 @@ export default async function Home({ searchParams }: PageProps) {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 py-16 text-center md:px-10">
-        <div className="flex w-full flex-col items-center gap-8">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-6 py-16 text-center md:px-10">
+        <div className="flex w-full flex-col items-center gap-10">
           <MessageBanner message={message} />
-          <section className="flex w-full flex-col items-center gap-8 rounded-[44px] bg-white/90 p-10 text-brand-deep shadow-2xl backdrop-blur md:p-14">
-            <div className="flex w-full justify-center">
+          <section className="relative flex w-full flex-col items-center gap-10 rounded-[44px] border border-[#ffe0c2] bg-white p-12 text-brand-deep shadow-xl md:p-16">
+            <div className="pointer-events-none absolute -top-12 left-12 hidden h-24 w-24 rounded-3xl bg-[#ffe0c2] sm:block" />
+            <div className="pointer-events-none absolute -bottom-14 right-10 hidden h-20 w-20 rounded-3xl bg-[#5cd6ca] sm:block" />
+            <div className="relative flex w-full justify-center">
               <Image
                 src={symbol}
                 alt="Símbolo de Inglés Rápido Manta"
                 priority
-                className="w-full max-w-xs drop-shadow-lg sm:max-w-sm"
+                className="w-full max-w-xs drop-shadow-xl sm:max-w-sm"
               />
             </div>
             <div className="flex flex-col items-center gap-4">
               <p className="text-sm font-semibold uppercase tracking-[0.35em] text-brand-deep-soft">
                 Inglés Rápido · Manta
               </p>
-              <h1 className="text-4xl font-black leading-tight sm:text-5xl">
+              <h1 className="text-4xl font-black leading-tight text-brand-deep sm:text-5xl">
                 Bienvenidos a Inglés Rápido Manta
               </h1>
-              <p className="max-w-2xl text-lg text-brand-ink-muted sm:text-xl">
-                Estás a un paso de comenzar tu sesión. Toca continuar para registrarte, confirmar tu lección y unirte a la clase con energía.
+              <p className="max-w-2xl text-base text-brand-ink-muted sm:text-lg">
+                Pulsa continuar para registrar tu asistencia, elegir tu nivel y sumarte a la clase.
               </p>
             </div>
             <Link
               href="/registro"
-              className="cta-ripple inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-10 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-xl focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              className="cta-ripple inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-12 py-5 text-xl font-semibold uppercase tracking-wide text-white shadow-xl focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
             >
               Haz clic aquí para continuar
             </Link>

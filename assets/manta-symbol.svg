@@ -1,5 +1,8 @@
-<svg width="240" height="200" viewBox="0 0 240 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M40 40L120 100L40 160" stroke="#d0462d" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M110 40L190 100L110 160" stroke="#f7a52c" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M80 60L160 120L80 180" stroke="#47c3bc" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+<svg width="260" height="260" viewBox="0 0 260 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="260" height="260" rx="44" fill="#ffffff"/>
+  <circle cx="130" cy="130" r="96" fill="#ff7a23"/>
+  <path d="M214 130c0 46.868-37.132 85-84 85s-84-38.132-84-85" fill="#00bfa6"/>
+  <path d="M130 58c42.66 0 78 35.34 78 78 0 8.389-1.314 16.46-3.766 24.015C188.877 135.51 161.095 118 130 118c-31.095 0-58.877 17.51-74.234 41.985C53.314 152.46 52 144.389 52 136c0-42.66 35.34-78 78-78Z" fill="#ffe6cf"/>
+  <path d="M130 118c17.12 0 31 13.879 31 31 0 17.121-13.88 31-31 31-17.121 0-31-13.879-31-31 0-17.121 13.879-31 31-31Z" fill="#1e1b32"/>
+  <path d="M130 132c9.941 0 18 8.059 18 18 0 9.941-8.059 18-18 18-9.941 0-18-8.059-18-18 0-9.941 8.059-18 18-18Z" fill="#ffffff"/>
 </svg>

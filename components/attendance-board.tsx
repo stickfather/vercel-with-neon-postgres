@@ -86,7 +86,7 @@ export function AttendanceBoard({ attendances }: Props) {
 
   if (!attendances.length) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-[rgba(0,191,166,0.35)] bg-white/80 px-8 py-16 text-center text-lg text-brand-ink-muted shadow-inner">
+      <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#dde1ff] bg-white px-8 py-16 text-center text-lg text-brand-ink-muted shadow-inner">
         <span>Por ahora no hay estudiantes en clase.</span>
         <span className="text-sm">
           Cuando alguien se registre aparecerá aquí para poder retirarse con un toque.
@@ -101,8 +101,8 @@ export function AttendanceBoard({ attendances }: Props) {
         <div
           className={`rounded-3xl border px-5 py-3 text-sm font-medium ${
             status.type === "success"
-              ? "border-brand-teal bg-[#e1f7f3] text-brand-deep"
-              : "border-brand-orange bg-white/80 text-brand-ink"
+              ? "border-brand-teal bg-[#ddf4ef] text-brand-deep"
+              : "border-brand-orange bg-[#ffe8d7] text-brand-ink"
           }`}
         >
           <span className="flex items-center gap-3">
@@ -115,7 +115,7 @@ export function AttendanceBoard({ attendances }: Props) {
           </span>
         </div>
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {attendances.map((attendance) => {
           const accent = getLevelAccent(attendance.level);
           const formattedTime = formatTime(attendance.checkInTime, formatter);
@@ -125,19 +125,12 @@ export function AttendanceBoard({ attendances }: Props) {
               type="button"
               onClick={() => handleCheckout(attendance)}
               disabled={loadingId === attendance.id}
-              className="group flex min-h-[110px] flex-col justify-between rounded-3xl border border-transparent bg-white/95 px-5 py-4 text-left shadow transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+              className="group flex min-h-[112px] flex-col justify-between rounded-3xl border border-[#f1f2f8] bg-white px-5 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="text-base font-semibold text-brand-deep">
-                    {attendance.fullName}
-                  </span>
-                  {formattedTime && (
-                    <span className="text-xs text-brand-ink-muted">
-                      Ingreso {formattedTime}
-                    </span>
-                  )}
-                </div>
+                <span className="text-base font-semibold text-brand-deep">
+                  {attendance.fullName}
+                </span>
                 <span
                   className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide"
                   style={{
@@ -148,16 +141,17 @@ export function AttendanceBoard({ attendances }: Props) {
                   {attendance.level ?? "Nivel"}
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-brand-ink-muted">
-                  {attendance.lesson ? `Lección: ${attendance.lesson}` : "Lección por confirmar"}
+              <div className="flex items-center justify-between gap-3 text-xs text-brand-ink-muted sm:text-sm">
+                <span className="truncate">
+                  {attendance.lesson ?? "Lección por confirmar"}
                 </span>
-                <span
-                  className="rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-teal"
-                >
-                  {loadingId === attendance.id ? "Saliendo…" : "Salir"}
-                </span>
+                {formattedTime && <span>{formattedTime}</span>}
               </div>
+              <span
+                className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-teal"
+              >
+                {loadingId === attendance.id ? "Registrando salida…" : "Toca para salir"}
+              </span>
             </button>
           );
         })}

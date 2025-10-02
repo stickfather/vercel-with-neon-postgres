@@ -208,12 +208,12 @@ export function CheckInForm({
 
   return (
     <form
-      className="flex flex-col gap-6 rounded-[32px] bg-white/90 px-8 py-10 shadow-2xl backdrop-blur"
+      className="flex flex-col gap-7 rounded-[36px] border border-[#ffe0c2] bg-white px-10 py-12 shadow-xl"
       onSubmit={handleSubmit}
     >
       <header className="flex flex-col gap-1 text-left">
         <h1 className="text-3xl font-bold text-brand-deep">Registro de asistencia</h1>
-        <p className="text-sm text-brand-ink-muted">
+        <p className="text-xs text-brand-ink-muted md:text-sm">
           Busca tu nombre, elige el nivel y confirma la lección para unirte a la clase.
         </p>
       </header>
@@ -270,9 +270,9 @@ export function CheckInForm({
                     }`}
                   >
                     <span className="font-medium">{student.fullName}</span>
-                    {student.lastLessonLevel && student.lastLessonSequence !== null && (
+                    {student.lastLessonLevel && (
                       <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-                        Última: {student.lastLessonLevel} · #{student.lastLessonSequence}
+                        Último nivel: {student.lastLessonLevel}
                       </span>
                     )}
                   </button>
@@ -287,7 +287,7 @@ export function CheckInForm({
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Nivel
         </span>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           {levels.map((level) => {
             const isSelected = selectedLevel === level.level;
             const accent = getLevelAccent(level.level);
@@ -329,7 +329,7 @@ export function CheckInForm({
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Lección
         </span>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {lessonsForLevel.map((lesson) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
@@ -360,11 +360,6 @@ export function CheckInForm({
                 <span className="text-sm font-semibold uppercase tracking-wide">
                   {lesson.lesson}
                 </span>
-                {lesson.sequence !== null && (
-                  <span className="text-xs text-brand-ink-muted">
-                    Secuencia #{lesson.sequence}
-                  </span>
-                )}
               </button>
             );
           })}

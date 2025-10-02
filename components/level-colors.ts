@@ -37,9 +37,9 @@ export function getLevelAccent(level: string | null | undefined): LevelAccent {
       };
     case "B2":
       return {
-        primary: "#f97316",
-        background: "rgba(249, 115, 22, 0.18)",
-        chipBackground: "rgba(249, 115, 22, 0.14)",
+        primary: "#f24ebc",
+        background: "rgba(242, 78, 188, 0.18)",
+        chipBackground: "rgba(242, 78, 188, 0.14)",
       };
     case "C1":
       return {
