@@ -69,8 +69,8 @@ body {
 .lesson-footprints {
   position: absolute;
   top: 50%;
-  right: -96px;
-  width: 156px;
+  right: -80px;
+  width: 140px;
   height: 78px;
   transform: translateY(-50%) rotate(16deg);
   background-repeat: no-repeat;

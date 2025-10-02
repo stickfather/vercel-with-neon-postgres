@@ -393,8 +393,8 @@ export async function registerStaffCheckIn({
   }
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_attendance (id, staff_id, checkin_time)
-    VALUES (gen_random_uuid(), ${staffId}, now())
+    INSERT INTO staff_attendance (staff_id, checkin_time)
+    VALUES (${staffId}, now())
     RETURNING id
   `);
 
@@ -408,10 +408,16 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   const sql = getSqlClient();
   await closeExpiredStaffSessions(sql);
 
+  const parsedId = Number(attendanceId);
+
+  if (!Number.isFinite(parsedId)) {
+    throw new Error("La asistencia seleccionada no es válida.");
+  }
+
   const updatedRows = normalizeRows<SqlRow>(await sql`
     UPDATE staff_attendance
     SET checkout_time = now()
-    WHERE id = ${attendanceId}
+    WHERE id = ${parsedId}
       AND checkout_time IS NULL
     RETURNING id
   `);

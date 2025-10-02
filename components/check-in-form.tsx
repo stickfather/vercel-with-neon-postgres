@@ -233,10 +233,13 @@ export function CheckInForm({
     >
       <div className="pointer-events-none absolute -top-6 left-12 hidden h-20 w-20 -rotate-3 rounded-[28px] bg-[#ffe1ec]/70 blur-2xl sm:block" />
       <div className="pointer-events-none absolute -bottom-10 right-16 hidden h-24 w-24 rotate-6 rounded-[30px] bg-[#59d4c3]/45 blur-2xl lg:block" />
-      <header className="flex flex-col gap-1 text-left">
+      <header className="flex flex-col gap-2 text-left">
         <h1 className="text-3xl font-black text-brand-deep">Registro de asistencia</h1>
         <p className="max-w-lg text-xs text-brand-ink-muted md:text-sm">
           Busca tu nombre, elige tu nivel y pisa fuerte en la ruta de lecciones.
+        </p>
+        <p className="max-w-xl rounded-full border border-dashed border-[#ffb77a] bg-[#fff5eb] px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-brand-orange md:text-xs">
+          Asegúrate de elegir el nivel y la lección correctos antes de confirmar.
         </p>
       </header>
 
@@ -339,7 +342,7 @@ export function CheckInForm({
 
       <div className="flex flex-col gap-3">
         <span className="sr-only">Lección</span>
-        <div className="lesson-grid grid gap-x-14 gap-y-10 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+        <div className="lesson-grid grid justify-items-center gap-x-12 gap-y-8 px-2 sm:grid-cols-2 sm:px-4 md:grid-cols-3 lg:grid-cols-4 lg:px-6 2xl:grid-cols-6">
           {lessonsForLevel.map((lesson, index) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
@@ -356,7 +359,7 @@ export function CheckInForm({
             return (
               <div
                 key={lesson.id}
-                className={`lesson-step relative flex flex-col items-center xl:pr-20 2xl:pr-24 ${
+                className={`lesson-step relative flex flex-col items-center xl:px-10 2xl:px-12 ${
                   footprintCurve === "even" ? "xl:pt-4 2xl:pt-6" : "xl:pb-4 2xl:pb-6"
                 }`}
               >
@@ -368,7 +371,7 @@ export function CheckInForm({
                   }}
                   disabled={isFormDisabled}
                   className={`lesson-stop flex h-full w-full ${
-                    isExamPrep ? "min-h-[124px] min-w-[188px]" : "min-h-[92px] min-w-[132px]"
+                    isExamPrep ? "min-h-[116px] min-w-[176px]" : "min-h-[88px] min-w-[124px]"
                   } flex-col items-center justify-center gap-1.5 rounded-[26px] border-[3px] px-5 py-4 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                     isLongLabel ? "text-sm leading-snug" : "text-[15px]"
                   }`}
@@ -399,13 +402,6 @@ export function CheckInForm({
               </div>
             );
           })}
-          {!lessonsForLevel.length && (
-            <p
-              className="rounded-[28px] border border-dashed border-brand-orange bg-white/80 px-4 py-4 text-sm text-brand-ink"
-            >
-              Selecciona un nivel para ver las lecciones disponibles.
-            </p>
-          )}
         </div>
       </div>
 
