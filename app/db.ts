@@ -20,8 +20,8 @@ export type Student = {
   representative_phone: string | null;
   status_text: string | null;
   special_needs: boolean | null;
-  planned_level_min_level_code: string | null;
-  planned_level_max_level_code: string | null;
+  planned_level_min: string | null;
+  planned_level_max: string | null;
 };
 
 export async function fetchStudents(): Promise<Student[]> {
@@ -35,8 +35,8 @@ export async function fetchStudents(): Promise<Student[]> {
       representative_phone,
       status_text,
       special_needs,
-      planned_level_min_level_code,
-      planned_level_max_level_code
+      planned_level_min,
+      planned_level_max
     FROM students
     ORDER BY full_name ASC
   `;
