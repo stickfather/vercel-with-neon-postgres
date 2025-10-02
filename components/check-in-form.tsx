@@ -5,6 +5,30 @@ import { useRouter } from "next/navigation";
 import type { LevelLessons, StudentDirectoryEntry } from "@/app/db";
 import { getLevelAccent } from "@/components/level-colors";
 
+function hexToRgba(hex: string, alpha: number) {
+  let normalized = hex.trim();
+  if (normalized.startsWith("#")) {
+    normalized = normalized.slice(1);
+  }
+
+  if (normalized.length === 3) {
+    normalized = normalized
+      .split("")
+      .map((char) => char + char)
+      .join("");
+  }
+
+  if (normalized.length !== 6) {
+    return hex;
+  }
+
+  const r = Number.parseInt(normalized.slice(0, 2), 16);
+  const g = Number.parseInt(normalized.slice(2, 4), 16);
+  const b = Number.parseInt(normalized.slice(4, 6), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 type Props = {
   students: StudentDirectoryEntry[];
   levels: LevelLessons[];
@@ -319,13 +343,19 @@ export function CheckInForm({
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Lección
         </span>
-        <div className="lesson-grid grid gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <div className="lesson-grid grid gap-x-10 gap-y-12 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {lessonsForLevel.map((lesson, index) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
             const showTrail = index !== lessonsForLevel.length - 1;
+            const isLongLabel = lesson.lesson.length > 18;
+            const pawStrong = hexToRgba(accent.primary, 0.55);
+            const pawSoft = hexToRgba(accent.primary, 0.35);
             return (
-              <div key={lesson.id} className="lesson-step relative flex flex-col items-center">
+              <div
+                key={lesson.id}
+                className="lesson-step relative flex flex-col items-center xl:pr-12"
+              >
                 <button
                   type="button"
                   onClick={() => {
@@ -333,7 +363,9 @@ export function CheckInForm({
                     setLessonLocked(true);
                   }}
                   disabled={isFormDisabled}
-                  className="lesson-stop flex h-full w-full min-h-[112px] flex-col items-center justify-center gap-2 rounded-[28px] border-[3px] px-6 py-5 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  className={`lesson-stop flex h-full w-full min-h-[128px] min-w-[180px] flex-col items-center justify-center gap-2 rounded-[28px] border-[3px] px-7 py-6 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    isLongLabel ? "text-sm leading-snug" : "text-base"
+                  }`}
                   style={{
                     borderColor: accent.primary,
                     backgroundColor: isSelected ? accent.background : "#fffdf9",
@@ -343,14 +375,16 @@ export function CheckInForm({
                       : "0 8px 22px rgba(31,27,36,0.08)",
                   }}
                 >
-                  <span className="text-base font-black uppercase tracking-wide">{lesson.lesson}</span>
+                  <span className="font-black uppercase tracking-wide leading-tight">
+                    {lesson.lesson}
+                  </span>
                 </button>
                 {showTrail && (
                   <span
                     aria-hidden
                     className="lesson-footprints"
                     style={{
-                      backgroundImage: `radial-gradient(circle at 25% 50%, ${accent.primary} 0, ${accent.primary} 38%, transparent 40%), radial-gradient(circle at 75% 50%, ${accent.primary} 0, ${accent.primary} 38%, transparent 40%)`,
+                      backgroundImage: `radial-gradient(circle at 22% 68%, ${pawStrong} 0, ${pawStrong} 44%, transparent 46%), radial-gradient(circle at 44% 32%, ${pawSoft} 0, ${pawSoft} 42%, transparent 46%), radial-gradient(circle at 64% 82%, ${pawStrong} 0, ${pawStrong} 42%, transparent 46%), radial-gradient(circle at 90% 24%, ${pawSoft} 0, ${pawSoft} 40%, transparent 44%)`,
                     }}
                   />
                 )}

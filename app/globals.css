@@ -69,15 +69,20 @@ body {
 .lesson-footprints {
   position: absolute;
   top: 50%;
-  right: -32px;
-  width: 48px;
-  height: 18px;
-  transform: translateY(-50%);
-  background-repeat: repeat-x;
-  background-size: 22px 14px;
-  background-position: center;
-  opacity: 0.5;
-  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.15));
+  right: -56px;
+  width: 96px;
+  height: 44px;
+  transform: translateY(-50%) rotate(18deg);
+  background-repeat: no-repeat;
+  background-size: 18px 14px, 18px 14px, 18px 14px, 18px 14px;
+  background-position: 8% 70%, 38% 28%, 58% 82%, 86% 22%;
+  opacity: 0.62;
+  filter: drop-shadow(0 3px 6px rgba(15, 23, 42, 0.18));
+}
+
+.lesson-grid .lesson-step:nth-child(even) .lesson-footprints {
+  transform: translateY(-50%) rotate(-16deg) scaleX(-1);
+  background-position: 12% 32%, 34% 76%, 62% 24%, 86% 78%;
 }
 
 @media (max-width: 1279px) {
@@ -86,7 +91,7 @@ body {
   }
 }
 
-@media (min-width: 1536px) {
+@media (min-width: 1280px) {
   .lesson-grid .lesson-step:nth-child(6n) .lesson-footprints {
     display: none;
   }

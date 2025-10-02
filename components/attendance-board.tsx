@@ -113,13 +113,13 @@ export function AttendanceBoard({ attendances }: Props) {
           </span>
         </div>
       )}
-      <div className="attendance-grid grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      <div className="attendance-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {attendances.map((attendance, index) => {
           const accent = getLevelAccent(attendance.level);
           const formattedTime = formatTime(attendance.checkInTime, formatter);
           const variantClass = [
             "translate-y-0",
-            "-translate-y-1",
+            "-translate-y-1.5",
             "translate-y-2",
             "-translate-y-2",
           ][index % 4];
@@ -129,31 +129,20 @@ export function AttendanceBoard({ attendances }: Props) {
               type="button"
               onClick={() => handleCheckout(attendance)}
               disabled={loadingId === attendance.id}
-              className={`attendance-card ${variantClass} group flex min-h-[124px] flex-col gap-3 rounded-[24px] border-[3px] px-5 py-5 text-left shadow-[0_14px_34px_rgba(15,23,42,0.16)] transition hover:-translate-y-1 hover:shadow-[0_22px_46px_rgba(15,23,42,0.18)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-65`}
+              className={`attendance-card ${variantClass} group flex min-h-[92px] flex-col justify-between gap-3 rounded-[22px] border-[3px] px-4 py-4 text-left shadow-[0_12px_28px_rgba(15,23,42,0.14)] transition hover:-translate-y-1 hover:shadow-[0_20px_38px_rgba(15,23,42,0.18)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-65`}
               style={{
                 borderColor: accent.primary,
-                background: `linear-gradient(135deg, ${accent.background} 0%, rgba(255,255,255,0.96) 65%, ${accent.background} 100%)`,
+                background: `linear-gradient(140deg, ${accent.background} 0%, rgba(255,255,255,0.96) 58%, ${accent.background} 100%)`,
               }}
             >
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-base font-black text-brand-deep">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-base font-black leading-snug text-brand-deep">
                   {attendance.fullName}
                 </span>
-                <span
-                  className="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-deep"
-                  style={{ backgroundColor: accent.chipBackground, color: accent.primary }}
-                >
-                  {attendance.level ?? "Nivel"}
-                </span>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-brand-ink-muted">
-                {attendance.lesson && (
-                  <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-ink">
-                    {attendance.lesson}
-                  </span>
-                )}
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-brand-ink">
                 {formattedTime && (
-                  <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-ink">
+                  <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-brand-ink">
                     {formattedTime}
                   </span>
                 )}

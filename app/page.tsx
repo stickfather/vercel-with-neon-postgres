@@ -44,9 +44,9 @@ export default function Home() {
               </span>
             </div>
             <div className="flex flex-col gap-2 rounded-[32px] bg-[#eef3ff] px-6 py-4 shadow-[0_16px_36px_rgba(46,136,201,0.28)]">
-              <span className="text-sm font-semibold uppercase tracking-wide text-brand-ink">Experiencia kiosko</span>
+              <span className="text-sm font-semibold uppercase tracking-wide text-brand-ink">Charlas internacionales</span>
               <span className="text-base font-medium text-brand-ink-muted">
-                Todo el flujo está listo para que registres tu llegada y salida.
+                Prepárate para conversar con extranjeros y practicar tus nuevas habilidades.
               </span>
             </div>
           </div>
