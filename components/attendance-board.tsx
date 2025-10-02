@@ -66,10 +66,8 @@ export function AttendanceBoard({ attendances }: Props) {
         message: "¡Salida registrada, gracias por asistir!",
       });
 
-      const nameParam = encodeURIComponent(attendance.fullName);
       await new Promise((resolve) => setTimeout(resolve, 650));
-      router.push(`/?despedida=1&nombre=${nameParam}`);
-      router.refresh();
+      router.push("/");
     } catch (err) {
       console.error(err);
       setStatus({
@@ -115,7 +113,7 @@ export function AttendanceBoard({ attendances }: Props) {
           </span>
         </div>
       )}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {attendances.map((attendance) => {
           const accent = getLevelAccent(attendance.level);
           const formattedTime = formatTime(attendance.checkInTime, formatter);
@@ -125,33 +123,44 @@ export function AttendanceBoard({ attendances }: Props) {
               type="button"
               onClick={() => handleCheckout(attendance)}
               disabled={loadingId === attendance.id}
-              className="group flex min-h-[112px] flex-col justify-between rounded-3xl border border-[#f1f2f8] bg-white px-5 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+              className="group flex min-h-[126px] flex-col gap-3 rounded-3xl border-2 border-[#eef0ff] bg-gradient-to-br from-white via-[#fff5ec] to-[#e8fffa] px-5 py-5 text-left shadow-md transition hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
             >
               <div className="flex items-start justify-between gap-3">
                 <span className="text-base font-semibold text-brand-deep">
                   {attendance.fullName}
                 </span>
-                <span
-                  className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide"
-                  style={{
-                    backgroundColor: accent.chipBackground,
-                    color: accent.primary,
-                  }}
-                >
-                  {attendance.level ?? "Nivel"}
-                </span>
+                <div className="flex flex-col items-end gap-2 text-right">
+                  {formattedTime && (
+                    <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                      {formattedTime}
+                    </span>
+                  )}
+                  <span
+                    className="rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide"
+                    style={{
+                      backgroundColor: accent.chipBackground,
+                      color: accent.primary,
+                    }}
+                  >
+                    {attendance.level ?? "Nivel"}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center justify-between gap-3 text-xs text-brand-ink-muted sm:text-sm">
-                <span className="truncate">
-                  {attendance.lesson ?? "Lección por confirmar"}
-                </span>
-                {formattedTime && <span>{formattedTime}</span>}
-              </div>
-              <span
-                className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-teal"
+              <div
+                className="flex items-center justify-between gap-3 rounded-2xl bg-white/70 px-3 py-2 text-xs font-medium uppercase tracking-wide text-brand-ink-muted sm:text-sm"
+                style={{ border: `1px dashed ${accent.primary}` }}
               >
-                {loadingId === attendance.id ? "Registrando salida…" : "Toca para salir"}
-              </span>
+                <span className="flex items-center gap-2 text-brand-deep">
+                  <span aria-hidden className="flex items-center gap-1 text-base text-brand-orange">
+                    <span>⋯</span>
+                    <span>➜</span>
+                  </span>
+                  <span className="truncate">{attendance.lesson ?? "Lección por confirmar"}</span>
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                  {loadingId === attendance.id ? "Registrando salida…" : "Finalizar"}
+                </span>
+              </div>
             </button>
           );
         })}

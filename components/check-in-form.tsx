@@ -184,13 +184,10 @@ export function CheckInForm({
         message: "¡Asistencia confirmada, buen trabajo!",
       });
 
-      const nextName = payload?.studentName ?? selectedStudent?.fullName ?? "";
-      const targetName = encodeURIComponent(nextName);
-
       await new Promise((resolve) => setTimeout(resolve, 650));
 
       startTransition(() => {
-        router.push(`/?saludo=1&nombre=${targetName}`);
+        router.push("/");
       });
     } catch (error) {
       console.error(error);
@@ -208,11 +205,13 @@ export function CheckInForm({
 
   return (
     <form
-      className="flex flex-col gap-7 rounded-[36px] border border-[#ffe0c2] bg-white px-10 py-12 shadow-xl"
+      className="relative flex flex-col gap-8 rounded-[40px] border-2 border-[#ffcaa1] bg-gradient-to-br from-white via-[#fff6ec] to-[#e9fffa] px-12 py-14 shadow-2xl"
       onSubmit={handleSubmit}
     >
+      <div className="pointer-events-none absolute -top-5 left-10 hidden h-16 w-16 rounded-3xl bg-[#ffd4b8]/60 blur-xl sm:block" />
+      <div className="pointer-events-none absolute -bottom-7 right-12 hidden h-20 w-20 rounded-full bg-[#5cd6ca]/40 blur-2xl lg:block" />
       <header className="flex flex-col gap-1 text-left">
-        <h1 className="text-3xl font-bold text-brand-deep">Registro de asistencia</h1>
+        <h1 className="text-3xl font-black text-brand-deep">Registro de asistencia</h1>
         <p className="text-xs text-brand-ink-muted md:text-sm">
           Busca tu nombre, elige el nivel y confirma la lección para unirte a la clase.
         </p>
@@ -247,7 +246,7 @@ export function CheckInForm({
             onBlur={() => {
               setTimeout(() => setShowSuggestions(false), 120);
             }}
-            className="w-full rounded-2xl border border-transparent bg-white px-6 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl border-2 border-transparent bg-white px-6 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isFormDisabled}
           />
           {showSuggestions && filteredStudents.length > 0 && (
@@ -295,21 +294,19 @@ export function CheckInForm({
               <button
                 key={level.level}
                 type="button"
-                className={`group relative flex min-h-[56px] items-center justify-center rounded-2xl border-2 text-sm font-semibold uppercase tracking-wide transition ${
-                  isSelected
-                    ? "text-brand-deep"
-                    : "text-brand-deep"
-                }`}
+                className="group relative flex min-h-[70px] flex-col items-center justify-center gap-1 rounded-3xl border-2 px-4 text-sm font-bold uppercase tracking-wide transition"
                 style={
                   isSelected
                     ? {
-                        backgroundColor: accent.background,
+                        backgroundColor: accent.primary,
                         borderColor: accent.primary,
-                        color: accent.primary,
+                        color: "#ffffff",
+                        boxShadow: "0 16px 32px rgba(0, 0, 0, 0.12)",
                       }
                     : {
-                        borderColor: "transparent",
-                        backgroundColor: "rgba(255,255,255,0.92)",
+                        borderColor: accent.primary,
+                        backgroundColor: "rgba(255,255,255,0.96)",
+                        color: accent.primary,
                       }
                 }
                 onClick={() => {
@@ -318,7 +315,11 @@ export function CheckInForm({
                 }}
                 disabled={isFormDisabled}
               >
-                {level.level}
+                <span aria-hidden className="flex items-center gap-1 text-lg font-black">
+                  <span>➜</span>
+                  <span>➜</span>
+                </span>
+                <span>{level.level}</span>
               </button>
             );
           })}
@@ -329,7 +330,7 @@ export function CheckInForm({
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Lección
         </span>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {lessonsForLevel.map((lesson) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
@@ -342,21 +343,26 @@ export function CheckInForm({
                   setLessonLocked(true);
                 }}
                 disabled={isFormDisabled}
-                className="flex min-h-[74px] flex-col items-start gap-1 rounded-2xl border px-4 py-3 text-left transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-3xl border-2 px-4 py-4 text-center transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                 style={
                   isSelected
                     ? {
                         borderColor: accent.primary,
                         backgroundColor: accent.background,
                         color: accent.primary,
+                        boxShadow: "0 14px 28px rgba(0, 0, 0, 0.1)",
                       }
                     : {
-                        borderColor: "rgba(255,255,255,0.7)",
-                        backgroundColor: "rgba(255,255,255,0.95)",
-                        color: "#1e1b32",
+                        borderColor: accent.primary,
+                        backgroundColor: "rgba(255,255,255,0.96)",
+                        color: accent.primary,
                       }
                 }
               >
+                <span aria-hidden className="flex items-center gap-1 text-base font-black">
+                  <span>⋯</span>
+                  <span>➜</span>
+                </span>
                 <span className="text-sm font-semibold uppercase tracking-wide">
                   {lesson.lesson}
                 </span>

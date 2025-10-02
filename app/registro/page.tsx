@@ -48,8 +48,8 @@ export default async function RegistroPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-12 px-6 py-14 md:px-10 lg:px-12">
+    <div className="flex min-h-screen flex-col bg-white">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-12 px-6 py-14 md:px-10 lg:px-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             href="/"
@@ -65,14 +65,15 @@ export default async function RegistroPage() {
           </Link>
         </div>
 
-        <div className="grid gap-12 lg:grid-cols-[1.55fr_1fr]">
+        <div className="grid gap-12 lg:grid-cols-[1.7fr_1.3fr] xl:grid-cols-[1.6fr_1.4fr]">
           <CheckInForm
             students={students}
             levels={levels}
             disabled={!levels.length || !students.length}
             initialError={formError}
           />
-          <section className="flex min-h-[460px] flex-col gap-6 rounded-[36px] border border-[#dde1ff] bg-white px-10 py-10 shadow-xl">
+          <section className="relative flex min-h-[520px] flex-col gap-6 rounded-[40px] border-2 border-[#d6dcff] bg-gradient-to-br from-white via-[#f3f6ff] to-[#fff0e4] px-10 py-12 shadow-2xl">
+            <div className="pointer-events-none absolute -top-6 right-16 hidden h-20 w-20 rounded-full bg-[#ffb15c]/40 blur-2xl xl:block" />
             <header className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1 text-left">
                 <h2 className="text-2xl font-bold text-brand-deep">
