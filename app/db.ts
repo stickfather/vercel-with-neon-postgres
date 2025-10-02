@@ -83,7 +83,7 @@ export type StaffMemberRecord = {
 };
 
 export type ActiveStaffAttendance = {
-  id: number;
+  id: string;
   staffId: number;
   fullName: string;
   checkInTime: string;
@@ -252,7 +252,7 @@ export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance
 
   return rows
     .map((row) => ({
-      id: Number(row.id),
+      id: String(row.id),
       staffId: Number(row.staff_id),
       fullName: ((row.full_name as string | null) ?? "").trim(),
       checkInTime: row.checkin_time as string,
@@ -353,7 +353,7 @@ export async function registerStaffCheckIn({
   staffId,
 }: {
   staffId: number;
-}): Promise<{ attendanceId: number; staffName: string }> {
+}): Promise<{ attendanceId: string; staffName: string }> {
   const sql = getSqlClient();
   await closeExpiredStaffSessions(sql);
 
@@ -393,18 +393,18 @@ export async function registerStaffCheckIn({
   }
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_attendance (staff_id, checkin_time)
-    VALUES (${staffId}, now())
+    INSERT INTO staff_attendance (id, staff_id, checkin_time)
+    VALUES (gen_random_uuid(), ${staffId}, now())
     RETURNING id
   `);
 
   return {
-    attendanceId: Number(insertedRows[0].id),
+    attendanceId: String(insertedRows[0].id),
     staffName,
   };
 }
 
-export async function registerStaffCheckOut(attendanceId: number): Promise<void> {
+export async function registerStaffCheckOut(attendanceId: string): Promise<void> {
   const sql = getSqlClient();
   await closeExpiredStaffSessions(sql);
 

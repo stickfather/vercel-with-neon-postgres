@@ -307,7 +307,7 @@ export function CheckInForm({
 
       <div className="flex flex-col gap-2">
         <span className="sr-only">Nivel</span>
-        <div className="level-runway flex flex-wrap justify-center gap-4 rounded-full bg-[#fff3e6] px-4 py-3">
+        <div className="level-runway grid grid-cols-2 justify-items-center gap-3 rounded-full bg-[#fff3e6] px-4 py-3 sm:grid-cols-3 lg:grid-cols-5">
           {levels.map((level) => {
             const isSelected = selectedLevel === level.level;
             const accent = getLevelAccent(level.level);
@@ -315,7 +315,7 @@ export function CheckInForm({
               <button
                 key={level.level}
                 type="button"
-                className="group relative flex min-h-[92px] min-w-[112px] shrink-0 snap-center flex-col items-center justify-center rounded-[28px] border-[3px] px-6 text-3xl font-black uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                className="group relative flex min-h-[74px] min-w-[96px] shrink-0 flex-col items-center justify-center rounded-[26px] border-[3px] px-4 py-3 text-2xl font-black uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                 style={{
                   borderColor: accent.primary,
                   backgroundColor: isSelected ? accent.background : "#ffffff",
@@ -339,7 +339,7 @@ export function CheckInForm({
 
       <div className="flex flex-col gap-3">
         <span className="sr-only">Lección</span>
-        <div className="lesson-grid grid gap-x-12 gap-y-12 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        <div className="lesson-grid grid gap-x-14 gap-y-10 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
           {lessonsForLevel.map((lesson, index) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
@@ -356,8 +356,8 @@ export function CheckInForm({
             return (
               <div
                 key={lesson.id}
-                className={`lesson-step relative flex flex-col items-center xl:pr-16 ${
-                  footprintCurve === "even" ? "xl:pt-3" : "xl:pb-3"
+                className={`lesson-step relative flex flex-col items-center xl:pr-20 2xl:pr-24 ${
+                  footprintCurve === "even" ? "xl:pt-4 2xl:pt-6" : "xl:pb-4 2xl:pb-6"
                 }`}
               >
                 <button
@@ -368,9 +368,9 @@ export function CheckInForm({
                   }}
                   disabled={isFormDisabled}
                   className={`lesson-stop flex h-full w-full ${
-                    isExamPrep ? "min-h-[140px] min-w-[210px]" : "min-h-[112px] min-w-[164px]"
-                  } flex-col items-center justify-center gap-2 rounded-[28px] border-[3px] px-6 py-5 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                    isLongLabel ? "text-sm leading-snug" : "text-base"
+                    isExamPrep ? "min-h-[124px] min-w-[188px]" : "min-h-[92px] min-w-[132px]"
+                  } flex-col items-center justify-center gap-1.5 rounded-[26px] border-[3px] px-5 py-4 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    isLongLabel ? "text-sm leading-snug" : "text-[15px]"
                   }`}
                   style={{
                     borderColor: accent.primary,

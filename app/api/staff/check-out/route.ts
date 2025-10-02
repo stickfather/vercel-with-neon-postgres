@@ -5,15 +5,14 @@ export async function POST(request: Request) {
   try {
     const { attendanceId } = await request.json();
 
-    const parsedId = Number(attendanceId);
-    if (!Number.isFinite(parsedId)) {
+    if (!attendanceId || (typeof attendanceId !== "string" && typeof attendanceId !== "number")) {
       return NextResponse.json(
         { error: "El identificador de asistencia no es válido." },
         { status: 400 },
       );
     }
 
-    await registerStaffCheckOut(parsedId);
+    await registerStaffCheckOut(String(attendanceId));
 
     return NextResponse.json({ ok: true });
   } catch (error) {

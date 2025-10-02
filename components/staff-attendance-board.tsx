@@ -28,7 +28,7 @@ function formatTime(value: string, formatter: Intl.DateTimeFormat) {
 
 export function StaffAttendanceBoard({ attendances }: Props) {
   const router = useRouter();
-  const [loadingId, setLoadingId] = useState<number | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusState>(null);
 
   const formatter = useMemo(
