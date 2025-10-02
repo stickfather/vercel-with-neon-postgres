@@ -285,7 +285,7 @@ export function CheckInForm({
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Nivel
         </span>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+        <div className="level-runway flex snap-x gap-4 overflow-x-auto pb-2">
           {levels.map((level) => {
             const isSelected = selectedLevel === level.level;
             const accent = getLevelAccent(level.level);
@@ -293,14 +293,14 @@ export function CheckInForm({
               <button
                 key={level.level}
                 type="button"
-                className="group relative flex min-h-[90px] flex-col items-center justify-center gap-1 rounded-[28px] border-[3px] px-4 text-sm font-bold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                className="group relative flex min-h-[96px] min-w-[120px] shrink-0 snap-center flex-col items-center justify-center rounded-[28px] border-[3px] px-6 text-3xl font-black uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                 style={{
                   borderColor: accent.primary,
                   backgroundColor: isSelected ? accent.background : "#ffffff",
-                  color: isSelected ? accent.primary : accent.primary,
+                  color: accent.primary,
                   boxShadow: isSelected
-                    ? "0 18px 32px rgba(0,0,0,0.12)"
-                    : "0 4px 16px rgba(31,27,36,0.08)",
+                    ? "0 22px 38px rgba(0,0,0,0.16)"
+                    : "0 6px 20px rgba(31,27,36,0.08)",
                 }}
                 onClick={() => {
                   setSelectedLevel(level.level);
@@ -308,16 +308,7 @@ export function CheckInForm({
                 }}
                 disabled={isFormDisabled}
               >
-                <span className="text-xs font-semibold tracking-[0.3em] text-brand-ink-muted">
-                  NIVEL
-                </span>
-                <span className="text-2xl font-black">{level.level}</span>
-                <span
-                  aria-hidden
-                  className="absolute -right-2 top-1/2 hidden h-8 w-8 -translate-y-1/2 rounded-full bg-white/90 text-lg text-brand-ink-muted shadow-md ring-2 ring-offset-2 ring-offset-white md:flex"
-                >
-                  ⭐
-                </span>
+                <span className="leading-none">{level.level}</span>
               </button>
             );
           })}
@@ -328,43 +319,42 @@ export function CheckInForm({
         <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
           Lección
         </span>
-        <div className="lesson-trail grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {lessonsForLevel.map((lesson) => {
+        <div className="lesson-grid grid gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          {lessonsForLevel.map((lesson, index) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
+            const showTrail = index !== lessonsForLevel.length - 1;
             return (
-              <button
-                key={lesson.id}
-                type="button"
-                onClick={() => {
-                  setSelectedLesson(lesson.id.toString());
-                  setLessonLocked(true);
-                }}
-                disabled={isFormDisabled}
-                className="lesson-stop relative flex min-h-[104px] flex-col items-center justify-center gap-3 rounded-[28px] border-[3px] px-5 py-5 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                style={{
-                  borderColor: accent.primary,
-                  backgroundColor: isSelected ? accent.background : "#fffdf9",
-                  color: accent.primary,
-                  boxShadow: isSelected
-                    ? "0 18px 32px rgba(0,0,0,0.14)"
-                    : "0 6px 20px rgba(31,27,36,0.08)",
-                }}
-              >
-                <span
-                  aria-hidden
-                  className="trail-sign absolute -top-4 flex h-8 w-16 items-center justify-center rounded-full bg-white text-xs font-semibold uppercase tracking-wide shadow-md"
-                  style={{ border: `2px solid ${accent.primary}`, color: accent.primary }}
+              <div key={lesson.id} className="lesson-step relative flex flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedLesson(lesson.id.toString());
+                    setLessonLocked(true);
+                  }}
+                  disabled={isFormDisabled}
+                  className="lesson-stop flex h-full w-full min-h-[112px] flex-col items-center justify-center gap-2 rounded-[28px] border-[3px] px-6 py-5 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  style={{
+                    borderColor: accent.primary,
+                    backgroundColor: isSelected ? accent.background : "#fffdf9",
+                    color: accent.primary,
+                    boxShadow: isSelected
+                      ? "0 22px 36px rgba(0,0,0,0.14)"
+                      : "0 8px 22px rgba(31,27,36,0.08)",
+                  }}
                 >
-                  Ruta
-                </span>
-                <span className="text-xs font-semibold uppercase tracking-[0.25em] text-brand-ink-muted">
-                  Lección
-                </span>
-                <span className="text-base font-black uppercase tracking-wide">
-                  {lesson.lesson}
-                </span>
-              </button>
+                  <span className="text-base font-black uppercase tracking-wide">{lesson.lesson}</span>
+                </button>
+                {showTrail && (
+                  <span
+                    aria-hidden
+                    className="lesson-footprints"
+                    style={{
+                      backgroundImage: `radial-gradient(circle at 25% 50%, ${accent.primary} 0, ${accent.primary} 38%, transparent 40%), radial-gradient(circle at 75% 50%, ${accent.primary} 0, ${accent.primary} 38%, transparent 40%)`,
+                    }}
+                  />
+                )}
+              </div>
             );
           })}
           {!lessonsForLevel.length && (

@@ -56,7 +56,7 @@ export default async function RegistroPage() {
         <div className="absolute bottom-32 left-10 h-24 w-24 rotate-12 rounded-full border-8 border-[#ff7a23]/25" />
         <div className="absolute bottom-20 right-20 h-16 w-40 -rotate-6 rounded-[22px] bg-[#ffdde9]" />
       </div>
-      <main className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col gap-12 px-6 py-14 md:px-10 lg:px-12">
+      <main className="relative mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-12 px-6 py-14 md:px-10 lg:px-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             href="/"
@@ -72,16 +72,17 @@ export default async function RegistroPage() {
           </Link>
         </div>
 
-        <div className="grid gap-12 xl:grid-cols-[1.55fr_1.45fr]">
+        <div className="grid gap-12 xl:grid-cols-[1.45fr_1.55fr]">
           <CheckInForm
             students={students}
             levels={levels}
             disabled={!levels.length || !students.length}
             initialError={formError}
           />
-          <section className="relative flex min-h-[560px] flex-col gap-6 rounded-[48px] border-2 border-[#d6dcff] bg-gradient-to-br from-white via-[#f4f6ff] to-[#ffe9de] px-10 py-14 shadow-[0_28px_64px_rgba(15,23,42,0.16)]">
-            <div className="pointer-events-none absolute -top-6 left-10 hidden h-20 w-20 rotate-12 rounded-full bg-[#ffb15c]/35 blur-2xl xl:block" />
-            <div className="pointer-events-none absolute -bottom-8 right-16 hidden h-24 w-24 -rotate-6 rounded-full bg-[#59d4c3]/35 blur-2xl xl:block" />
+          <section className="relative flex min-h-[560px] flex-col gap-6 rounded-[48px] border-2 border-[#d6dcff] bg-gradient-to-br from-white via-[#f4f6ff] to-[#ffe9de] px-12 py-14 shadow-[0_32px_72px_rgba(15,23,42,0.16)]">
+            <div className="pointer-events-none absolute -top-10 left-16 hidden h-24 w-24 rotate-[18deg] rounded-[32px] bg-[#ffb15c]/40 blur-2xl xl:block" />
+            <div className="pointer-events-none absolute -bottom-12 right-20 hidden h-28 w-28 -rotate-[14deg] rounded-[34px] bg-[#59d4c3]/40 blur-2xl xl:block" />
+            <div className="pointer-events-none absolute inset-x-12 top-1/3 hidden h-16 rotate-3 bg-[repeating-linear-gradient(90deg,rgba(30,27,50,0.06),rgba(30,27,50,0.06)_12px,rgba(255,255,255,0)_12px,rgba(255,255,255,0)_30px)] opacity-60 blur-sm xl:block" />
             <header className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1 text-left">
                 <h2 className="text-3xl font-black text-brand-deep">Estudiantes en clase</h2>
