@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { inter } from "./fonts";
 
 export const metadata: Metadata = {
   title: "Inglés Rápido · Manta",
@@ -14,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={inter.variable}>
+    <html lang="es">
       <body className="bg-app text-app-ink antialiased">{children}</body>
     </html>
   );

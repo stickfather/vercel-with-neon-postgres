@@ -4,6 +4,8 @@ let sqlInstance: ReturnType<typeof neon> | null = null;
 
 const TIMEZONE = "America/Guayaquil";
 
+type SqlRow = Record<string, unknown>;
+
 function getSqlClient() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -13,6 +15,27 @@ function getSqlClient() {
     sqlInstance = neon(connectionString);
   }
   return sqlInstance;
+}
+
+function normalizeRows<T extends SqlRow>(result: unknown): T[] {
+  if (Array.isArray(result)) {
+    if (!result.length) {
+      return [];
+    }
+    if (Array.isArray(result[0])) {
+      return [];
+    }
+    return result as T[];
+  }
+
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) {
+      return normalizeRows<T>(rows);
+    }
+  }
+
+  return [];
 }
 
 export type StudentName = {
@@ -53,14 +76,14 @@ async function closeExpiredSessions(sql = getSqlClient()) {
 export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
 
-  const rows = await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     SELECT DISTINCT
       COALESCE(s.full_name, sa.full_name) AS full_name
     FROM student_attendance sa
     LEFT JOIN students s ON s.id = sa.student_id
     WHERE COALESCE(s.full_name, sa.full_name) IS NOT NULL
     ORDER BY full_name ASC
-  `;
+  `);
 
   return rows
     .map((row) => ({ fullName: row.full_name as string }))
@@ -70,11 +93,11 @@ export async function getStudentDirectory(): Promise<StudentName[]> {
 export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
   const sql = getSqlClient();
 
-  const rows = await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, lesson, level, seq
     FROM lessons
     ORDER BY level ASC, seq ASC NULLS LAST, lesson ASC
-  `;
+  `);
 
   const grouped = new Map<string, LessonOption[]>();
 
@@ -106,7 +129,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
-  const rows = await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       sa.id,
       COALESCE(s.full_name, sa.full_name) AS full_name,
@@ -118,7 +141,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
     LEFT JOIN lessons l ON l.id = sa.lesson_id
     WHERE sa.checkout_time IS NULL
     ORDER BY sa.checkin_time ASC
-  `;
+  `);
 
   return rows
     .map((row) => ({
@@ -141,25 +164,25 @@ async function findStudentIdByName(
     return null;
   }
 
-  const studentRow = await sql`
+  const studentRow = normalizeRows<SqlRow>(await sql`
     SELECT id
     FROM students
     WHERE LOWER(full_name) = LOWER(${normalized})
     LIMIT 1
-  `;
+  `);
 
   if (studentRow.length) {
     return Number(studentRow[0].id);
   }
 
-  const attendanceRow = await sql`
+  const attendanceRow = normalizeRows<SqlRow>(await sql`
     SELECT student_id
     FROM student_attendance
     WHERE LOWER(full_name) = LOWER(${normalized})
       AND student_id IS NOT NULL
     ORDER BY checkin_time DESC
     LIMIT 1
-  `;
+  `);
 
   if (attendanceRow.length) {
     return Number(attendanceRow[0].student_id);
@@ -185,12 +208,12 @@ export async function registerCheckIn({
     throw new Error("El nombre del estudiante es obligatorio.");
   }
 
-  const lessonRows = await sql`
+  const lessonRows = normalizeRows<SqlRow>(await sql`
     SELECT id, level
     FROM lessons
     WHERE id = ${lessonId}
     LIMIT 1
-  `;
+  `);
 
   if (!lessonRows.length) {
     throw new Error("La lección seleccionada no existe.");
@@ -208,7 +231,7 @@ export async function registerCheckIn({
     throw new Error("No se encontró el estudiante en la base de datos.");
   }
 
-  const existingRows = await sql`
+  const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
     FROM student_attendance
     WHERE checkout_time IS NULL
@@ -217,17 +240,17 @@ export async function registerCheckIn({
         OR LOWER(full_name) = LOWER(${trimmedName})
       )
     LIMIT 1
-  `;
+  `);
 
   if (existingRows.length) {
     throw new Error("El estudiante ya tiene una asistencia abierta.");
   }
 
-  const insertedRows = await sql`
+  const insertedRows = normalizeRows<SqlRow>(await sql`
     INSERT INTO student_attendance (student_id, full_name, lesson_id, checkin_time)
     VALUES (${studentId}, ${trimmedName}, ${lessonId}, now())
     RETURNING id
-  `;
+  `);
 
   return Number(insertedRows[0].id);
 }
@@ -236,13 +259,13 @@ export async function registerCheckOut(attendanceId: number): Promise<void> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
-  const updatedRows = await sql`
+  const updatedRows = normalizeRows<SqlRow>(await sql`
     UPDATE student_attendance
     SET checkout_time = now()
     WHERE id = ${attendanceId}
       AND checkout_time IS NULL
     RETURNING id
-  `;
+  `);
 
   if (!updatedRows.length) {
     throw new Error("La asistencia ya estaba cerrada o no existe.");

@@ -14,7 +14,7 @@ type SearchParams = {
 };
 
 type PageProps = {
-  searchParams?: SearchParams | Promise<SearchParams>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 function decodeName(nombre?: string) {
@@ -74,11 +74,20 @@ async function resolveSearchParams(
     return undefined;
   }
 
-  if (typeof (searchParams as Promise<SearchParams>).then === "function") {
-    return (await searchParams) ?? undefined;
+  const resolved = await searchParams;
+  if (!resolved) {
+    return undefined;
   }
 
-  return searchParams as SearchParams;
+  const saludoRaw = resolved.saludo;
+  const despedidaRaw = resolved.despedida;
+  const nombreRaw = resolved.nombre;
+
+  return {
+    saludo: Array.isArray(saludoRaw) ? saludoRaw[0] : saludoRaw,
+    despedida: Array.isArray(despedidaRaw) ? despedidaRaw[0] : despedidaRaw,
+    nombre: Array.isArray(nombreRaw) ? nombreRaw[0] : nombreRaw,
+  };
 }
 
 export default async function Home({ searchParams }: PageProps) {
