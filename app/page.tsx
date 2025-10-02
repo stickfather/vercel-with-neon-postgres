@@ -53,7 +53,7 @@ export default async function Home() {
     {
       label: "Planned level",
       render: (student) => {
-        const { planned_level_min_level_code: min, planned_level_max_level_code: max } = student;
+        const { planned_level_min: min, planned_level_max: max } = student;
         if (!min && !max) {
           return "—";
         }
