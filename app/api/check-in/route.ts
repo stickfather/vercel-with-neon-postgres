@@ -3,9 +3,9 @@ import { registerCheckIn } from "@/app/db";
 
 export async function POST(request: Request) {
   try {
-    const { fullName, level, lessonId, studentId } = await request.json();
+    const { level, lessonId, studentId } = await request.json();
 
-    if (!fullName || !level || !lessonId || !studentId) {
+    if (!level || !lessonId || !studentId) {
       return NextResponse.json(
         { error: "Faltan datos para registrar la asistencia." },
         { status: 400 },
@@ -22,14 +22,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const attendanceId = await registerCheckIn({
-      fullName,
+    const { attendanceId, studentName } = await registerCheckIn({
       level,
       lessonId: parsedLessonId,
       studentId: parsedStudentId,
     });
 
-    return NextResponse.json({ attendanceId });
+    return NextResponse.json({ attendanceId, studentName });
   } catch (error) {
     console.error("Error en check-in", error);
     const message =

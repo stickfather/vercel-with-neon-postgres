@@ -38,9 +38,12 @@ function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   return [];
 }
 
-export type StudentName = {
+export type StudentDirectoryEntry = {
   id: number;
   fullName: string;
+  lastLessonId: number | null;
+  lastLessonSequence: number | null;
+  lastLessonLevel: string | null;
 };
 
 export type LessonOption = {
@@ -57,6 +60,7 @@ export type LevelLessons = {
 
 export type ActiveAttendance = {
   id: number;
+  studentId: number;
   fullName: string;
   lesson: string | null;
   level: string | null;
@@ -74,12 +78,30 @@ async function closeExpiredSessions(sql = getSqlClient()) {
   `;
 }
 
-export async function getStudentDirectory(): Promise<StudentName[]> {
+export async function getStudentDirectory(): Promise<StudentDirectoryEntry[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name
-    FROM students
+    SELECT
+      s.id,
+      s.full_name,
+      last_attendance.lesson_id AS last_lesson_id,
+      last_attendance.lesson_seq AS last_lesson_seq,
+      last_attendance.lesson_level AS last_lesson_level
+    FROM students s
+    LEFT JOIN LATERAL (
+      SELECT
+        sa.lesson_id,
+        l.seq AS lesson_seq,
+        l.level AS lesson_level
+      FROM student_attendance sa
+      LEFT JOIN lessons l ON l.id = sa.lesson_id
+      WHERE sa.student_id = s.id
+        AND sa.checkout_time IS NOT NULL
+        AND sa.lesson_id IS NOT NULL
+      ORDER BY sa.checkin_time DESC
+      LIMIT 1
+    ) AS last_attendance ON TRUE
     WHERE full_name IS NOT NULL
       AND trim(full_name) <> ''
     ORDER BY full_name ASC
@@ -88,6 +110,13 @@ export async function getStudentDirectory(): Promise<StudentName[]> {
   return rows.map((row) => ({
     id: Number(row.id),
     fullName: (row.full_name as string).trim(),
+    lastLessonId: row.last_lesson_id === null ? null : Number(row.last_lesson_id),
+    lastLessonSequence:
+      row.last_lesson_seq === null ? null : Number(row.last_lesson_seq),
+    lastLessonLevel:
+      row.last_lesson_level === null
+        ? null
+        : ((row.last_lesson_level as string) ?? "").trim() || null,
   }));
 }
 
@@ -133,7 +162,8 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       sa.id,
-      COALESCE(s.full_name, sa.full_name) AS full_name,
+      sa.student_id,
+      s.full_name,
       sa.checkin_time,
       l.lesson,
       l.level
@@ -147,7 +177,8 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   return rows
     .map((row) => ({
       id: Number(row.id),
-      fullName: (row.full_name as string | null) ?? "",
+      studentId: Number(row.student_id),
+      fullName: ((row.full_name as string | null) ?? "").trim(),
       lesson: (row.lesson as string | null) ?? null,
       level: (row.level as string | null) ?? null,
       checkInTime: row.checkin_time as string,
@@ -156,23 +187,17 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
 }
 
 export async function registerCheckIn({
-  fullName,
   lessonId,
   level,
   studentId,
 }: {
-  fullName: string;
   lessonId: number;
   level: string;
   studentId: number;
-}): Promise<number> {
+}): Promise<{ attendanceId: number; studentName: string }>
+{
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
-
-  const trimmedName = fullName.trim();
-  if (!trimmedName) {
-    throw new Error("El nombre del estudiante es obligatorio.");
-  }
 
   const studentRows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name
@@ -204,7 +229,7 @@ export async function registerCheckIn({
   }
 
   const lesson = lessonRows[0];
-  const lessonLevel = (lesson.level as string | null) ?? "";
+  const lessonLevel = ((lesson.level as string | null) ?? "").trim();
   if (lessonLevel.toLowerCase() !== level.trim().toLowerCase()) {
     throw new Error("La lección no corresponde al nivel elegido.");
   }
@@ -222,12 +247,15 @@ export async function registerCheckIn({
   }
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO student_attendance (student_id, full_name, lesson_id, checkin_time)
-    VALUES (${studentId}, ${storedStudentName}, ${lessonId}, now())
+    INSERT INTO student_attendance (student_id, lesson_id, checkin_time)
+    VALUES (${studentId}, ${lessonId}, now())
     RETURNING id
   `);
 
-  return Number(insertedRows[0].id);
+  return {
+    attendanceId: Number(insertedRows[0].id),
+    studentName: storedStudentName,
+  };
 }
 
 export async function registerCheckOut(attendanceId: number): Promise<void> {

@@ -50,47 +50,29 @@ export default async function RegistroPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-14 md:px-10 lg:px-12">
-        <div className="flex w-full flex-col gap-4 rounded-[30px] bg-white/80 px-6 py-6 shadow-2xl backdrop-blur md:flex-row md:items-center md:justify-between">
-          <span className="text-xs font-semibold uppercase tracking-[0.4em] text-brand-deep-soft">
-            Registro de estudiantes
-          </span>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <Link
-              href="/"
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-sm font-semibold text-brand-deep shadow-sm transition hover:border-brand-teal hover:text-brand-teal"
-            >
-              ← Volver a bienvenida
-            </Link>
-            <Link
-              href="/administracion"
-              className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
-            >
-              Acceso del personal
-            </Link>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href="/"
+            className="inline-flex items-center justify-center rounded-full border border-transparent bg-white/80 px-4 py-2 text-sm font-semibold text-brand-deep shadow-sm backdrop-blur transition hover:border-brand-teal hover:text-brand-teal"
+          >
+            ← Volver a bienvenida
+          </Link>
+          <Link
+            href="/administracion"
+            className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
+          >
+            Acceso del personal
+          </Link>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[1.15fr_1fr]">
-          <div className="flex flex-col gap-6">
-            <CheckInForm
-              students={students}
-              levels={levels}
-              disabled={!levels.length || !students.length}
-              initialError={formError}
-            />
-            <div className="rounded-[28px] bg-white/75 px-7 py-6 text-sm text-brand-ink-muted shadow-2xl backdrop-blur">
-              <h2 className="mb-2 text-base font-semibold uppercase tracking-wide text-brand-deep">
-                Pasos rápidos
-              </h2>
-              <ol className="flex list-decimal flex-col gap-2 pl-5">
-                <li>Escribe tu nombre y selecciónalo de la lista desplegable.</li>
-                <li>Elige el nivel de tu curso.</li>
-                <li>Selecciona la lección programada.</li>
-                <li>Confirma tu asistencia y dirígete al aula.</li>
-              </ol>
-            </div>
-          </div>
-          <section className="flex flex-col gap-5 rounded-[34px] bg-white/85 px-7 py-8 shadow-2xl backdrop-blur">
+        <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
+          <CheckInForm
+            students={students}
+            levels={levels}
+            disabled={!levels.length || !students.length}
+            initialError={formError}
+          />
+          <section className="flex min-h-[420px] flex-col gap-6 rounded-[36px] bg-white/90 px-8 py-8 shadow-2xl backdrop-blur">
             <header className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1 text-left">
                 <h2 className="text-2xl font-bold text-brand-deep">
@@ -104,13 +86,15 @@ export default async function RegistroPage() {
                 {attendances.length}
               </span>
             </header>
-            {boardError ? (
-              <p className="rounded-3xl border border-brand-orange bg-[#fff4ec] px-5 py-3 text-sm font-medium text-brand-ink">
-                {boardError}
-              </p>
-            ) : (
-              <AttendanceBoard attendances={attendances} />
-            )}
+            <div className="flex-1">
+              {boardError ? (
+                <p className="rounded-3xl border border-brand-orange bg-[#fff4ec] px-5 py-3 text-sm font-medium text-brand-ink">
+                  {boardError}
+                </p>
+              ) : (
+                <AttendanceBoard attendances={attendances} />
+              )}
+            </div>
           </section>
         </div>
       </main>

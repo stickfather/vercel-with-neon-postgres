@@ -94,11 +94,11 @@ export default async function Home({ searchParams }: PageProps) {
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 py-16 text-center md:px-10">
         <div className="flex w-full flex-col items-center gap-8">
           <MessageBanner message={message} />
-          <section className="flex w-full flex-col items-center gap-8 rounded-[44px] bg-white/85 p-10 text-brand-deep shadow-2xl backdrop-blur md:p-14">
+          <section className="flex w-full flex-col items-center gap-8 rounded-[44px] bg-white/90 p-10 text-brand-deep shadow-2xl backdrop-blur md:p-14">
             <div className="flex w-full justify-center">
               <Image
                 src={symbol}
-                alt="Logotipo del South American Language Center Manta"
+                alt="Símbolo de Inglés Rápido Manta"
                 priority
                 className="w-full max-w-xs drop-shadow-lg sm:max-w-sm"
               />
@@ -108,18 +108,17 @@ export default async function Home({ searchParams }: PageProps) {
                 Inglés Rápido · Manta
               </p>
               <h1 className="text-4xl font-black leading-tight sm:text-5xl">
-                ¡Bienvenidos al kiosco de asistencia!
+                Bienvenidos a Inglés Rápido Manta
               </h1>
               <p className="max-w-2xl text-lg text-brand-ink-muted sm:text-xl">
-                Estamos listos para comenzar tu clase de hoy. Toca el botón para seguir al registro, confirma tus datos y prepárate
-                para vivir la experiencia <span className="font-semibold text-brand-teal">Inglés Rápido</span> en Manta.
+                Estás a un paso de comenzar tu sesión. Toca continuar para registrarte, confirmar tu lección y unirte a la clase con energía.
               </p>
             </div>
             <Link
               href="/registro"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-10 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-xl transition hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              className="cta-ripple inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-10 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-xl focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
             >
-              Toca aquí para continuar
+              Haz clic aquí para continuar
             </Link>
           </section>
         </div>

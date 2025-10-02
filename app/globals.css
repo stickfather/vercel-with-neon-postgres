@@ -4,9 +4,11 @@
   --app-orange: #ff7a23;
   --app-sun: #ffc23a;
   --app-teal: #00bfa6;
+  --app-coral: #ff5c5c;
+  --app-aqua: #5cd6ca;
   --app-deep: #1e1b32;
   --app-ink: #1f1b24;
-  --app-soft: #fff4ea;
+  --app-soft: #fff6ee;
   --app-white: #ffffff;
   color-scheme: only light;
 }
@@ -25,21 +27,17 @@ body {
 
 .bg-app {
   min-height: 100vh;
-  background-color: #fff9f2;
+  background-color: #fff8f1;
   background-image:
-    radial-gradient(circle at 6% 14%, rgba(0, 191, 166, 0.28) 0, transparent 55%),
-    radial-gradient(circle at 94% 18%, rgba(255, 122, 35, 0.24) 0, transparent 55%),
-    radial-gradient(circle at 18% 86%, rgba(92, 214, 202, 0.32) 0, transparent 60%),
-    radial-gradient(circle at 82% 82%, rgba(255, 194, 58, 0.28) 0, transparent 55%),
-    radial-gradient(220px 220px at 50% 38%, rgba(30, 27, 50, 0.08), transparent 70%),
-    linear-gradient(135deg, rgba(30, 27, 50, 0.05) 0%, rgba(30, 27, 50, 0) 55%);
+    radial-gradient(circle at 12% 18%, rgba(255, 122, 35, 0.18) 0, transparent 55%),
+    radial-gradient(circle at 80% 14%, rgba(92, 214, 202, 0.22) 0, transparent 55%),
+    radial-gradient(circle at 24% 82%, rgba(255, 92, 92, 0.16) 0, transparent 58%),
+    radial-gradient(circle at 78% 76%, rgba(255, 194, 58, 0.2) 0, transparent 54%),
+    linear-gradient(135deg, rgba(30, 27, 50, 0.08) 0%, rgba(30, 27, 50, 0) 55%);
   background-attachment: fixed;
 }
 
-.text-app-ink {
-  color: var(--app-ink);
-}
-
+.text-app-ink,
 .text-brand-ink {
   color: var(--app-ink);
 }
@@ -64,8 +62,16 @@ body {
   color: var(--app-teal);
 }
 
+.text-brand-orange {
+  color: var(--app-orange);
+}
+
 .bg-brand-orange {
   background-color: var(--app-orange);
+}
+
+.bg-brand-teal {
+  background-color: var(--app-teal);
 }
 
 .bg-brand-teal-soft {
@@ -109,4 +115,48 @@ button:focus-visible,
 textarea:focus-visible {
   outline: 3px solid rgba(0, 191, 166, 0.4);
   outline-offset: 2px;
+}
+
+.cta-ripple {
+  position: relative;
+  overflow: hidden;
+  transition: transform 150ms ease;
+}
+
+.cta-ripple:hover {
+  transform: translateY(-1px);
+}
+
+.cta-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 280ms ease, opacity 280ms ease;
+}
+
+.cta-ripple:hover::after {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.checkmark-pop {
+  animation: checkmark-pop 320ms ease-out;
+}
+
+@keyframes checkmark-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
