@@ -2,14 +2,21 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ActiveAttendance } from "@/app/db";
-import { getLevelAccent } from "@/components/level-colors";
+import type { ActiveStaffAttendance } from "@/app/db";
 
 type StatusState = { type: "error" | "success"; message: string } | null;
 
 type Props = {
-  attendances: ActiveAttendance[];
+  attendances: ActiveStaffAttendance[];
 };
+
+const accentPalette = [
+  { border: "#ff7a23", background: "rgba(255, 122, 35, 0.18)" },
+  { border: "#2e88c9", background: "rgba(46, 136, 201, 0.2)" },
+  { border: "#2f9d6a", background: "rgba(47, 157, 106, 0.2)" },
+  { border: "#f24ebc", background: "rgba(242, 78, 188, 0.2)" },
+  { border: "#ab47bc", background: "rgba(171, 71, 188, 0.22)" },
+];
 
 function formatTime(value: string, formatter: Intl.DateTimeFormat) {
   const date = new Date(value);
@@ -19,7 +26,7 @@ function formatTime(value: string, formatter: Intl.DateTimeFormat) {
   return formatter.format(date);
 }
 
-export function AttendanceBoard({ attendances }: Props) {
+export function StaffAttendanceBoard({ attendances }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [status, setStatus] = useState<StatusState>(null);
@@ -35,7 +42,7 @@ export function AttendanceBoard({ attendances }: Props) {
     [],
   );
 
-  const handleCheckout = async (attendance: ActiveAttendance) => {
+  const handleCheckout = async (attendance: ActiveStaffAttendance) => {
     if (
       !window.confirm(
         `¿Quieres registrar tu salida, ${attendance.fullName}?`,
@@ -47,7 +54,7 @@ export function AttendanceBoard({ attendances }: Props) {
     setStatus(null);
     setLoadingId(attendance.id);
     try {
-      const response = await fetch("/api/check-out", {
+      const response = await fetch("/api/staff/check-out", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -63,18 +70,18 @@ export function AttendanceBoard({ attendances }: Props) {
 
       setStatus({
         type: "success",
-        message: "¡Salida registrada, gracias por asistir!",
+        message: "¡Salida registrada, gracias por tu apoyo!",
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 650));
-      router.push("/");
-    } catch (err) {
-      console.error(err);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      router.refresh();
+    } catch (error) {
+      console.error(error);
       setStatus({
         type: "error",
         message:
-          err instanceof Error
-            ? err.message
+          error instanceof Error
+            ? error.message
             : "No pudimos cerrar la asistencia. Inténtalo nuevamente.",
       });
     } finally {
@@ -85,9 +92,9 @@ export function AttendanceBoard({ attendances }: Props) {
   if (!attendances.length) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#dde1ff] bg-white px-8 py-16 text-center text-lg text-brand-ink-muted shadow-inner">
-        <span>Por ahora no hay estudiantes en clase.</span>
+        <span>Por ahora no hay personal marcado como presente.</span>
         <span className="text-sm">
-          Cuando alguien se registre aparecerá aquí para poder retirarse con un toque.
+          Cuando alguien se registre aparecerá aquí para poder registrar su salida.
         </span>
       </div>
     );
@@ -103,35 +110,29 @@ export function AttendanceBoard({ attendances }: Props) {
               : "border-brand-orange bg-[#ffe8d7] text-brand-ink"
           }`}
         >
-          <span className="flex items-center gap-3">
-            {status.type === "success" && (
-              <span className="checkmark-pop flex h-7 w-7 items-center justify-center rounded-full bg-brand-teal text-white">
-                ✓
-              </span>
-            )}
-            {status.message}
-          </span>
+          {status.message}
         </div>
       )}
-      <div className="attendance-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {attendances.map((attendance, index) => {
-          const accent = getLevelAccent(attendance.level);
+          const accent = accentPalette[index % accentPalette.length];
           const formattedTime = formatTime(attendance.checkInTime, formatter);
-          const variantClass = [
+          const wiggle = [
             "translate-y-0",
             "-translate-y-1.5",
             "translate-y-2",
             "-translate-y-2",
           ][index % 4];
+
           return (
             <button
               key={attendance.id}
               type="button"
               onClick={() => handleCheckout(attendance)}
               disabled={loadingId === attendance.id}
-              className={`attendance-card ${variantClass} group flex min-h-[84px] flex-col items-center justify-center gap-2 rounded-[20px] border-[3px] px-4 py-5 text-center shadow-[0_12px_28px_rgba(15,23,42,0.14)] transition hover:-translate-y-1 hover:shadow-[0_20px_38px_rgba(15,23,42,0.18)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-65`}
+              className={`group flex min-h-[82px] flex-col items-center justify-center gap-2 rounded-[18px] border-[3px] px-4 py-5 text-center shadow-[0_12px_28px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_20px_36px_rgba(15,23,42,0.18)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-65 ${wiggle}`}
               style={{
-                borderColor: accent.primary,
+                borderColor: accent.border,
                 background: `linear-gradient(150deg, ${accent.background} 0%, rgba(255,255,255,0.98) 55%, ${accent.background} 100%)`,
               }}
             >

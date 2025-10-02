@@ -306,10 +306,8 @@ export function CheckInForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
-          Nivel
-        </span>
-        <div className="level-runway flex snap-x gap-4 overflow-x-auto pb-2">
+        <span className="sr-only">Nivel</span>
+        <div className="level-runway flex flex-wrap justify-center gap-4 rounded-full bg-[#fff3e6] px-4 py-3">
           {levels.map((level) => {
             const isSelected = selectedLevel === level.level;
             const accent = getLevelAccent(level.level);
@@ -317,7 +315,7 @@ export function CheckInForm({
               <button
                 key={level.level}
                 type="button"
-                className="group relative flex min-h-[96px] min-w-[120px] shrink-0 snap-center flex-col items-center justify-center rounded-[28px] border-[3px] px-6 text-3xl font-black uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                className="group relative flex min-h-[92px] min-w-[112px] shrink-0 snap-center flex-col items-center justify-center rounded-[28px] border-[3px] px-6 text-3xl font-black uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                 style={{
                   borderColor: accent.primary,
                   backgroundColor: isSelected ? accent.background : "#ffffff",
@@ -340,21 +338,27 @@ export function CheckInForm({
       </div>
 
       <div className="flex flex-col gap-3">
-        <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
-          Lección
-        </span>
-        <div className="lesson-grid grid gap-x-10 gap-y-12 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        <span className="sr-only">Lección</span>
+        <div className="lesson-grid grid gap-x-12 gap-y-12 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {lessonsForLevel.map((lesson, index) => {
             const isSelected = selectedLesson === lesson.id.toString();
             const accent = getLevelAccent(selectedLevel || lesson.level);
             const showTrail = index !== lessonsForLevel.length - 1;
             const isLongLabel = lesson.lesson.length > 18;
-            const pawStrong = hexToRgba(accent.primary, 0.55);
-            const pawSoft = hexToRgba(accent.primary, 0.35);
+            const pawStrong = hexToRgba(accent.primary, 0.5);
+            const pawSoft = hexToRgba(accent.primary, 0.32);
+            const isExamPrep = lesson.lesson
+              .toLowerCase()
+              .includes("preparación")
+              ? true
+              : lesson.lesson.toLowerCase().includes("preparacion");
+            const footprintCurve = index % 2 === 0 ? "even" : "odd";
             return (
               <div
                 key={lesson.id}
-                className="lesson-step relative flex flex-col items-center xl:pr-12"
+                className={`lesson-step relative flex flex-col items-center xl:pr-16 ${
+                  footprintCurve === "even" ? "xl:pt-3" : "xl:pb-3"
+                }`}
               >
                 <button
                   type="button"
@@ -363,7 +367,9 @@ export function CheckInForm({
                     setLessonLocked(true);
                   }}
                   disabled={isFormDisabled}
-                  className={`lesson-stop flex h-full w-full min-h-[128px] min-w-[180px] flex-col items-center justify-center gap-2 rounded-[28px] border-[3px] px-7 py-6 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                  className={`lesson-stop flex h-full w-full ${
+                    isExamPrep ? "min-h-[140px] min-w-[210px]" : "min-h-[112px] min-w-[164px]"
+                  } flex-col items-center justify-center gap-2 rounded-[28px] border-[3px] px-6 py-5 text-center shadow-lg transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                     isLongLabel ? "text-sm leading-snug" : "text-base"
                   }`}
                   style={{
@@ -382,9 +388,11 @@ export function CheckInForm({
                 {showTrail && (
                   <span
                     aria-hidden
-                    className="lesson-footprints"
+                    className={`lesson-footprints ${
+                      footprintCurve === "even" ? "lesson-footprints--even" : "lesson-footprints--odd"
+                    }`}
                     style={{
-                      backgroundImage: `radial-gradient(circle at 22% 68%, ${pawStrong} 0, ${pawStrong} 44%, transparent 46%), radial-gradient(circle at 44% 32%, ${pawSoft} 0, ${pawSoft} 42%, transparent 46%), radial-gradient(circle at 64% 82%, ${pawStrong} 0, ${pawStrong} 42%, transparent 46%), radial-gradient(circle at 90% 24%, ${pawSoft} 0, ${pawSoft} 40%, transparent 44%)`,
+                      backgroundImage: `radial-gradient(circle at 18% 72%, ${pawStrong} 0, ${pawStrong} 42%, transparent 46%), radial-gradient(circle at 32% 28%, ${pawSoft} 0, ${pawSoft} 44%, transparent 48%), radial-gradient(circle at 58% 78%, ${pawStrong} 0, ${pawStrong} 44%, transparent 48%), radial-gradient(circle at 84% 32%, ${pawSoft} 0, ${pawSoft} 42%, transparent 48%)`,
                     }}
                   />
                 )}

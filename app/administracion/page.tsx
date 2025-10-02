@@ -3,58 +3,44 @@ import Link from "next/link";
 
 const tiles = [
   {
-    href: "/",
-    title: "Pantalla de bienvenida",
-    description: "Configura el mensaje principal del kiosco y revisa la experiencia de llegada.",
-    accent: "from-[#ffe0c9] via-white to-[#ffd1a3]",
-  },
-  {
     href: "/registro",
     title: "Registro de estudiantes",
     description: "Gestiona la experiencia de check-in y verifica la asistencia activa.",
-    accent: "from-[#dff7f1] via-white to-[#a6f0e0]",
   },
   {
     href: "/administracion/registro-personal",
     title: "Registro del personal",
     description: "Anota las entradas y salidas del equipo académico y administrativo.",
-    accent: "from-[#e6e9ff] via-white to-[#c7cffc]",
   },
   {
     href: "/administracion/reportes-nomina",
     title: "Reportes de nómina",
     description: "Consulta resúmenes de pagos, bonos y asistencia del personal.",
-    accent: "from-[#ffe6ec] via-white to-[#ffccd9]",
   },
   {
     href: "/administracion/gestion-estudiantes",
     title: "Gestión de estudiantes",
     description: "Administra perfiles, progresos y observaciones de cada alumno.",
-    accent: "from-[#fff4d6] via-white to-[#ffe2a8]",
   },
   {
     href: "/administracion/panel-gerencial",
     title: "Panel gerencial",
     description: "Obtén métricas clave para la toma de decisiones del centro.",
-    accent: "from-[#e0f1ff] via-white to-[#b8deff]",
   },
   {
     href: "/administracion/calendario",
     title: "Calendario",
     description: "Coordina eventos, evaluaciones y actividades especiales.",
-    accent: "from-[#f2e9ff] via-white to-[#daccff]",
   },
   {
     href: "/administracion/configuracion",
     title: "Configuración",
     description: "Ajusta parámetros del kiosco, horarios y preferencias de la sede.",
-    accent: "from-[#e9fdf5] via-white to-[#c3f6e1]",
   },
   {
     href: "/administracion/ayuda",
     title: "Ayuda",
     description: "Accede a guías rápidas y soporte para resolver dudas del equipo.",
-    accent: "from-[#ffeef6] via-white to-[#ffd6eb]",
   },
 ];
 
@@ -85,7 +71,7 @@ export default function AdministracionPage() {
             <Link
               key={tile.href}
               href={tile.href}
-              className={`group relative flex min-h-[180px] flex-col gap-4 rounded-[32px] border-2 border-white/60 bg-gradient-to-br ${tile.accent} p-6 text-left shadow-[0_20px_48px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_rgba(15,23,42,0.16)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]`}
+              className={`group relative flex min-h-[180px] flex-col gap-4 rounded-[32px] border-2 border-white/70 bg-gradient-to-br from-[#e5f0ff] via-white to-[#c2d8ff] p-6 text-left shadow-[0_20px_48px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_rgba(15,23,42,0.16)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]`}
             >
               <span className="inline-flex w-fit items-center rounded-full bg-white/80 px-4 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
                 Abrir
