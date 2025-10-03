@@ -1,12 +1,14 @@
 import { neon } from "@neondatabase/serverless";
 
-let sqlInstance: ReturnType<typeof neon> | null = null;
+type SqlClient = ReturnType<typeof neon>;
+
+let sqlInstance: SqlClient | null = null;
 
 export const TIMEZONE = "America/Guayaquil";
 
 type SqlRow = Record<string, unknown>;
 
-function getSqlClient() {
+function getSqlClient(): SqlClient {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("No DATABASE_URL environment variable");
@@ -102,11 +104,38 @@ export async function closeExpiredStaffSessions(sql = getSqlClient()) {
   `;
 }
 
+function isPermissionDeniedError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "42501") return true;
+    if (typeof message === "string" && message.toLowerCase().includes("permission denied")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function safelyCloseExpiredSessions(
+  sql: SqlClient,
+  closer: (sql: SqlClient) => Promise<void>,
+): Promise<void> {
+  try {
+    await closer(sql);
+  } catch (error) {
+    if (isPermissionDeniedError(error)) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("Skipping session auto-closure due to permission error:", message);
+      return;
+    }
+    throw error;
+  }
+}
+
 /* ========= Students ========= */
 
 export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
-  await closeExpiredSessions(sql);
+  await safelyCloseExpiredSessions(sql, closeExpiredSessions);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT full_name
@@ -151,7 +180,7 @@ export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
 
 export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
-  await closeExpiredSessions(sql);
+  await safelyCloseExpiredSessions(sql, closeExpiredSessions);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
@@ -304,7 +333,7 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 
 export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
   const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
+  await safelyCloseExpiredSessions(sql, closeExpiredStaffSessions);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
