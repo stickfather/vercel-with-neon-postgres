@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createStaffMember, listStaffMembers } from "@/app/db";
+import { createStaffMember, listStaffMembers } from "@/features/staff/data/queries";
 
 export async function GET() {
   try {

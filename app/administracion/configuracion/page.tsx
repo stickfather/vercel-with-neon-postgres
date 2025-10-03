@@ -1,5 +1,5 @@
-import { listStaffMembers } from "@/app/db";
-import { StaffSettingsPanel } from "@/components/staff-settings-panel";
+import { listStaffMembers } from "@/features/staff/data/queries";
+import { StaffSettingsPanel } from "@/features/staff/components/staff-settings-panel";
 
 export const revalidate = 0;
 

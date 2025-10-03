@@ -2,9 +2,9 @@ import Link from "next/link";
 import {
   getActiveStaffAttendances,
   getStaffDirectory,
-} from "@/app/db";
-import { StaffAttendanceBoard } from "@/components/staff-attendance-board";
-import { StaffCheckInForm } from "@/components/staff-check-in-form";
+} from "@/features/staff/data/queries";
+import { StaffAttendanceBoard } from "@/features/staff/components/staff-attendance-board";
+import { StaffCheckInForm } from "@/features/staff/components/staff-check-in-form";
 
 export const revalidate = 0;
 

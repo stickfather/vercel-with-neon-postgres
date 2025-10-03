@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { StaffMemberRecord } from "@/app/db";
+import type { StaffMemberRecord } from "@/features/staff/data/queries";
 
 type StatusState = { type: "error" | "success"; message: string } | null;
 

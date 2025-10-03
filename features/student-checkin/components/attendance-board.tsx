@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ActiveAttendance } from "@/app/db";
-import { getLevelAccent } from "./level-colors";
+import type { ActiveAttendance } from "@/features/student-checkin/data/queries";
+import { getLevelAccent } from "../lib/level-colors";
 
 type Props = {
   attendances: ActiveAttendance[];

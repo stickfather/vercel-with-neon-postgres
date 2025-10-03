@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ActiveStaffAttendance } from "@/app/db";
+import type { ActiveStaffAttendance } from "@/features/staff/data/queries";
 
 type StatusState = { type: "error" | "success"; message: string } | null;
 

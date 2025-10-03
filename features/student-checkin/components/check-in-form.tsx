@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
-import type { LevelLessons, StudentName } from "@/app/db";
-import { getLevelAccent } from "./level-colors";
+import type { LevelLessons, StudentName } from "@/features/student-checkin/data/queries";
+import { getLevelAccent } from "@/features/student-checkin/lib/level-colors";
+
+const SUGGESTION_LIMIT = 6;
+const SUGGESTION_DEBOUNCE_MS = 220;
 
 type Props = {
-  students: StudentName[];
   levels: LevelLessons[];
   disabled?: boolean;
   initialError?: string | null;
@@ -18,15 +26,21 @@ type StatusState = {
   message: string;
 } | null;
 
+type FetchState = "idle" | "loading" | "error";
+
 export function CheckInForm({
-  students,
   levels,
   disabled = false,
   initialError = null,
   lessonsError = null,
 }: Props) {
   const router = useRouter();
-  const [fullName, setFullName] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState<StudentName | null>(null);
+  const [suggestions, setSuggestions] = useState<StudentName[]>([]);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+  const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
+  const [suggestionState, setSuggestionState] = useState<FetchState>("idle");
   const [selectedLevel, setSelectedLevel] = useState("");
   const [selectedLesson, setSelectedLesson] = useState<string>("");
   const [status, setStatus] = useState<StatusState>(
@@ -35,44 +49,93 @@ export function CheckInForm({
   const [isPending, startTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSteps, setShowSteps] = useState(false);
-  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
-  const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
-  const lastMatchedNameRef = useRef<string | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const suggestions = useMemo(() => {
-    const normalized = fullName.trim().toLowerCase();
-    const base = !normalized
-      ? students
-      : students.filter((student) =>
-          student.fullName.toLowerCase().includes(normalized),
-        );
-    return base.slice(0, 6);
-  }, [fullName, students]);
-
-  const matchedStudent = useMemo(() => {
-    const normalized = fullName.trim().toLowerCase();
-    if (!normalized) return null;
-    return (
-      students.find(
-        (student) => student.fullName.trim().toLowerCase() === normalized,
-      ) ?? null
-    );
-  }, [fullName, students]);
+  const isFormDisabled = disabled || Boolean(initialError);
 
   useEffect(() => {
-    if (!matchedStudent) {
-      lastMatchedNameRef.current = null;
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+      fetchAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSuggestionsOpen) {
+      setSuggestionState("idle");
+      return;
+    }
+
+    const controller = new AbortController();
+    fetchAbortRef.current?.abort();
+    fetchAbortRef.current = controller;
+
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+
+    setSuggestionState("loading");
+
+    fetchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ limit: String(SUGGESTION_LIMIT) });
+        if (studentQuery.trim()) {
+          params.set("query", studentQuery.trim());
+        }
+
+        const response = await fetch(`/api/students?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("No se pudo obtener la lista de estudiantes.");
+        }
+
+        const payload = (await response.json()) as { students?: StudentName[] };
+        if (controller.signal.aborted) return;
+
+        setSuggestions(Array.isArray(payload.students) ? payload.students : []);
+        setHighlightedSuggestion(0);
+        setSuggestionState("idle");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("No se pudieron cargar sugerencias", error);
+        setSuggestions([]);
+        setSuggestionState("error");
+      }
+    }, SUGGESTION_DEBOUNCE_MS);
+
+    return () => {
+      controller.abort();
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
+  }, [studentQuery, isSuggestionsOpen]);
+
+  useEffect(() => {
+    if (!selectedStudent) {
       setSelectedLevel("");
       setSelectedLesson("");
       return;
     }
-    const trimmed = matchedStudent.fullName.trim();
-    if (lastMatchedNameRef.current !== trimmed) {
-      lastMatchedNameRef.current = trimmed;
-      setSelectedLevel("");
-      setSelectedLesson("");
+    setSelectedLevel("");
+    setSelectedLesson("");
+  }, [selectedStudent?.id]);
+
+  useEffect(() => {
+    if (!selectedStudent) {
+      return;
     }
-  }, [matchedStudent]);
+
+    const trimmed = selectedStudent.fullName.trim();
+    if (trimmed !== studentQuery.trim()) {
+      setSelectedStudent(null);
+    }
+  }, [studentQuery, selectedStudent]);
 
   const lessonsForLevel = useMemo(() => {
     return levels.find((level) => level.level === selectedLevel)?.lessons ?? [];
@@ -105,9 +168,16 @@ export function CheckInForm({
     });
   }, [selectedLevel, sortedLessons]);
 
-  const isFormDisabled = disabled || Boolean(initialError);
   const canChooseProgression =
-    Boolean(matchedStudent) && !disabled && !initialError && Boolean(levels.length);
+    Boolean(selectedStudent) && !disabled && !initialError && Boolean(levels.length);
+
+  const handleSuggestionSelection = (student: StudentName) => {
+    setStudentQuery(student.fullName);
+    setSelectedStudent(student);
+    setSuggestions([]);
+    setIsSuggestionsOpen(false);
+    setStatus(null);
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -123,12 +193,12 @@ export function CheckInForm({
 
     setStatus(null);
 
-    const trimmedName = fullName.trim();
+    const trimmedName = studentQuery.trim();
     if (!trimmedName) {
       setStatus({ type: "error", message: "Ingresa tu nombre tal como aparece en la lista." });
       return;
     }
-    if (!matchedStudent) {
+    if (!selectedStudent) {
       setStatus({
         type: "error",
         message: "Selecciona tu nombre exactamente como aparece en la lista.",
@@ -152,7 +222,7 @@ export function CheckInForm({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          fullName: trimmedName,
+          studentId: selectedStudent.id,
           level: selectedLevel,
           lessonId: Number(selectedLesson),
         }),
@@ -170,7 +240,7 @@ export function CheckInForm({
       });
 
       startTransition(() => {
-        const targetName = encodeURIComponent(trimmedName);
+        const targetName = encodeURIComponent(selectedStudent.fullName.trim());
         router.push(`/?saludo=1&nombre=${targetName}`);
       });
     } catch (error) {
@@ -188,6 +258,7 @@ export function CheckInForm({
   };
 
   const accent = getLevelAccent(selectedLevel);
+  const isLoadingSuggestions = suggestionState === "loading";
 
   return (
     <form
@@ -222,15 +293,15 @@ export function CheckInForm({
             name="student-name"
             autoComplete="off"
             placeholder="Escribe y elige tu nombre"
-            value={fullName}
+            value={studentQuery}
             onChange={(event) => {
-              setFullName(event.target.value);
-              setHighlightedSuggestion(0);
-              if (status?.type === "error") {
-                setStatus(null);
-              }
+              setStudentQuery(event.target.value);
+              setStatus(null);
+              setIsSuggestionsOpen(true);
             }}
-            onFocus={() => setIsSuggestionsOpen(true)}
+            onFocus={() => {
+              setIsSuggestionsOpen(true);
+            }}
             onBlur={() => {
               setTimeout(() => setIsSuggestionsOpen(false), 120);
             }}
@@ -252,9 +323,7 @@ export function CheckInForm({
                 const suggestion = suggestions[highlightedSuggestion];
                 if (suggestion) {
                   event.preventDefault();
-                  setFullName(suggestion.fullName);
-                  setStatus(null);
-                  setIsSuggestionsOpen(false);
+                  handleSuggestionSelection(suggestion);
                 }
               }
             }}
@@ -269,37 +338,50 @@ export function CheckInForm({
                 : undefined
             }
             disabled={isFormDisabled}
+            aria-busy={isLoadingSuggestions}
           />
-          {isSuggestionsOpen && suggestions.length > 0 && (
+          {isSuggestionsOpen && (
             <ul
               id="student-suggestions"
               role="listbox"
               className="absolute z-10 mt-2 w-full rounded-3xl border border-[rgba(30,27,50,0.15)] bg-white/95 p-2 shadow-xl"
             >
-              {suggestions.map((student, index) => {
-                const isActive = index === highlightedSuggestion;
-                return (
-                  <li key={student.fullName} role="option" aria-selected={isActive} id={`student-option-${index}`}>
-                    <button
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setFullName(student.fullName);
-                        setStatus(null);
-                        setIsSuggestionsOpen(false);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ${
-                        isActive
-                          ? "bg-brand-teal-soft text-brand-deep"
-                          : "text-brand-ink"
-                      }`}
-                    >
-                      <span>{student.fullName}</span>
-                      {isActive && <span className="text-xs font-semibold uppercase text-brand-teal">Enter</span>}
-                    </button>
-                  </li>
-                );
-              })}
+              {isLoadingSuggestions ? (
+                <li className="px-4 py-3 text-sm text-brand-ink-muted">Cargando nombres…</li>
+              ) : suggestions.length ? (
+                suggestions.map((student, index) => {
+                  const isActive = index === highlightedSuggestion;
+                  return (
+                    <li key={student.id} role="option" aria-selected={isActive} id={`student-option-${index}`}>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleSuggestionSelection(student)}
+                        className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ${
+                          isActive
+                            ? "bg-brand-teal-soft text-brand-deep"
+                            : "text-brand-ink"
+                        }`}
+                      >
+                        <span>{student.fullName}</span>
+                        {isActive && (
+                          <span className="text-xs font-semibold uppercase text-brand-teal">
+                            Enter
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })
+              ) : suggestionState === "error" ? (
+                <li className="px-4 py-3 text-sm text-brand-ink">
+                  No pudimos cargar sugerencias. Intenta nuevamente.
+                </li>
+              ) : (
+                <li className="px-4 py-3 text-sm text-brand-ink">
+                  No encontramos coincidencias.
+                </li>
+              )}
             </ul>
           )}
         </div>

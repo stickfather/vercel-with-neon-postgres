@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { registerStaffCheckOut } from "@/app/db";
+import { registerStaffCheckOut } from "@/features/staff/data/queries";
 
 export async function POST(request: Request) {
   try {

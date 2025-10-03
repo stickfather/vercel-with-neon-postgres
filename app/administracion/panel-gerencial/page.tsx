@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AdminPlaceholder } from "@/components/admin-placeholder";
+import { AdminPlaceholder } from "@/features/administration/components/admin-placeholder";
 
 export const metadata: Metadata = {
   title: "Management dashboards · Inglés Rápido Manta",
