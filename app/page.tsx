@@ -31,13 +31,6 @@ function buildMessage({ saludo, despedida, nombre }: SearchParams) {
     };
   }
 
-  if (despedida) {
-    return {
-      tone: "informativo" as const,
-      text: `¡Hasta pronto, ${safeName || "estudiante"}! Gracias por compartir esta sesión con nosotros.`,
-    };
-  }
-
   return null;
 }
 

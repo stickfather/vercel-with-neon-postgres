@@ -6,6 +6,9 @@ import {
 import { AttendanceBoard } from "@/features/student-checkin/components/attendance-board";
 import { CheckInForm } from "@/features/student-checkin/components/check-in-form";
 
+const quickLinkBaseClass =
+  "inline-flex items-center justify-center rounded-full border border-transparent px-5 py-2 text-xs font-semibold uppercase tracking-wide shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
+
 export const revalidate = 0;
 
 export default async function RegistroPage() {
@@ -47,8 +50,8 @@ export default async function RegistroPage() {
         <div className="absolute right-4 top-24 h-52 w-52 rotate-[18deg] rounded-[36px] bg-[#ccf6f0] opacity-80" />
         <div className="absolute bottom-0 left-1/2 h-[460px] w-[120%] -translate-x-1/2 rounded-t-[180px] bg-gradient-to-r from-[#ffe7d1] via-[#ffffffef] to-[#c9f5ed]" />
       </div>
-      <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
-        <div className="flex flex-col gap-4 text-center sm:text-left">
+      <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-10 md:px-10 lg:px-14">
+        <div className="flex flex-col gap-3 text-center sm:text-left">
           <span className="inline-flex w-fit items-center justify-center rounded-full bg-white/90 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-deep shadow">
             Registro diario
           </span>
@@ -58,14 +61,14 @@ export default async function RegistroPage() {
           </p>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[1fr_1.45fr]">
+        <div className="grid gap-7 lg:grid-cols-[1.1fr_1.35fr]">
           <CheckInForm
             levels={levels}
             disabled={Boolean(formError)}
             initialError={formError}
             lessonsError={lessonsError}
           />
-          <aside className="flex flex-col gap-5 rounded-[36px] border border-white/70 bg-white/92 p-8 shadow-[0_24px_60px_rgba(15,23,42,0.14)] backdrop-blur">
+          <aside className="flex flex-col gap-5 rounded-[36px] border border-white/70 bg-white/94 p-8 shadow-[0_24px_60px_rgba(15,23,42,0.14)] backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col text-left">
                 <h2 className="text-xl font-bold text-brand-deep">Estudiantes en clase</h2>
@@ -86,26 +89,26 @@ export default async function RegistroPage() {
           </aside>
         </div>
 
-        <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/90 px-5 py-4 shadow-[0_18px_44px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/92 px-5 py-4 shadow-[0_18px_44px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-brand-ink-muted">
             ¿Necesitas otra acción? Usa los accesos directos para navegar rápidamente.
           </p>
           <div className="flex flex-wrap justify-end gap-3">
             <Link
               href="/administracion"
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              className={`${quickLinkBaseClass} bg-white text-brand-deep hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline-[#00bfa6]`}
             >
               Acceso administrativo
             </Link>
             <Link
               href="/"
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-deep text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#322d54] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              className={`${quickLinkBaseClass} bg-brand-deep text-white hover:bg-[#322d54] focus-visible:outline-[#00bfa6]`}
             >
               Volver a bienvenida
             </Link>
             <Link
               href="/administracion/registro-personal"
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
+              className={`${quickLinkBaseClass} bg-brand-teal text-white hover:bg-[#04a890] focus-visible:outline-[#ff7a23]`}
             >
               Check-in del personal
             </Link>
