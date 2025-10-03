@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { deleteStudentExam, updateStudentExam } from "@/features/administration/data/student-profile";
 
+type ExamParams = Promise<{ studentId: string; examId: string }>;
+
 export async function PUT(
   request: Request,
-  { params }: { params: { studentId: string; examId: string } },
+  { params }: { params: ExamParams }
 ) {
   try {
-    const examId = Number(params.examId);
+    const { examId: examIdStr } = await params;         // 👈 await params
+    const examId = Number(examIdStr);
     if (!Number.isFinite(examId)) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
@@ -33,10 +36,11 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { studentId: string; examId: string } },
+  { params }: { params: ExamParams }
 ) {
   try {
-    const examId = Number(params.examId);
+    const { examId: examIdStr } = await params;         // 👈 await params
+    const examId = Number(examIdStr);
     if (!Number.isFinite(examId)) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
