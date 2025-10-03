@@ -2,7 +2,7 @@ import { neon } from "@neondatabase/serverless";
 
 let sqlInstance: ReturnType<typeof neon> | null = null;
 
-const TIMEZONE = "America/Guayaquil";
+export const TIMEZONE = "America/Guayaquil";
 
 type SqlRow = Record<string, unknown>;
 
@@ -19,24 +19,20 @@ function getSqlClient() {
 
 function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   if (Array.isArray(result)) {
-    if (!result.length) {
-      return [];
-    }
-    if (Array.isArray(result[0])) {
-      return [];
-    }
+    if (!result.length) return [];
+    if (Array.isArray(result[0])) return [];
     return result as T[];
   }
-
   if (result && typeof result === "object" && "rows" in result) {
     const rows = (result as { rows?: unknown }).rows;
     if (Array.isArray(rows)) {
       return normalizeRows<T>(rows);
     }
   }
-
   return [];
 }
+
+/* ========= Shared domain types ========= */
 
 export type StudentName = {
   fullName: string;
@@ -62,7 +58,33 @@ export type ActiveAttendance = {
   checkInTime: string;
 };
 
-async function closeExpiredSessions(sql = getSqlClient()) {
+/* ========= Staff domain types ========= */
+
+export type StaffDirectoryEntry = {
+  id: number;
+  fullName: string;
+  role: string | null;
+};
+
+export type ActiveStaffAttendance = {
+  id: string;           // app uses string IDs for staff attendance UI
+  staffId: number;
+  fullName: string;
+  checkInTime: string;
+};
+
+export type StaffMemberRecord = {
+  id: number;
+  fullName: string;
+  role: string | null;
+  active: boolean;
+  hourlyWage: number | null;
+  weeklyHours: number | null;
+};
+
+/* ========= Student attendance helpers ========= */
+
+export async function closeExpiredSessions(sql = getSqlClient()) {
   await sql`
     UPDATE student_attendance AS sa
     SET checkout_time = date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
@@ -86,7 +108,7 @@ export async function getStudentDirectory(): Promise<StudentName[]> {
   `);
 
   return rows
-    .map((row) => ({ fullName: row.full_name as string }))
+    .map((row) => ({ fullName: (row.full_name as string) }))
     .filter((entry) => entry.fullName?.trim().length);
 }
 
@@ -103,12 +125,8 @@ export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
 
   for (const row of rows) {
     const level = ((row.level as string) ?? "").trim();
-    if (!level) {
-      continue;
-    }
-    if (!grouped.has(level)) {
-      grouped.set(level, []);
-    }
+    if (!level) continue;
+    if (!grouped.has(level)) grouped.set(level, []);
     grouped.get(level)!.push({
       id: Number(row.id),
       lesson: row.lesson as string,
@@ -118,10 +136,7 @@ export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
   }
 
   return Array.from(grouped.entries())
-    .map(([level, lessons]) => ({
-      level,
-      lessons,
-    }))
+    .map(([level, lessons]) => ({ level, lessons }))
     .filter((entry) => entry.lessons.length);
 }
 
@@ -154,48 +169,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
     .filter((attendance) => attendance.fullName.trim().length);
 }
 
-async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
-  const sql = getSqlClient();
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name, role
-    FROM staff_members
-    WHERE active IS TRUE
-    ORDER BY full_name ASC
-  `);
-
-  return rows
-    .map((row) => ({
-      id: Number(row.id),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
-      role: (row.role as string | null) ?? null,
-    }))
-    .filter((member) => member.fullName.length > 0);
-}
-
-async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
-  const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
-    FROM staff_attendance sa
-    LEFT JOIN staff_members sm ON sm.id = sa.staff_id
-    WHERE sa.checkout_time IS NULL
-    ORDER BY sa.checkin_time ASC
-  `);
-
-  return rows
-    .map((row) => ({
-      id: String(row.id),
-      staffId: Number(row.staff_id),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
-      checkInTime: row.checkin_time as string,
-    }))
-    .filter((attendance) => attendance.fullName.length > 0);
-}
-
-async function registerCheckIn({
+export async function registerCheckIn({
   lessonId,
   level,
   studentId,
@@ -203,8 +177,7 @@ async function registerCheckIn({
   lessonId: number;
   level: string;
   studentId: number;
-}): Promise<{ attendanceId: number; studentName: string }>
-{
+}): Promise<{ attendanceId: number; studentName: string }> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
@@ -267,7 +240,7 @@ async function registerCheckIn({
   };
 }
 
-async function registerCheckOut(attendanceId: number): Promise<void> {
+export async function registerCheckOut(attendanceId: number): Promise<void> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
@@ -284,7 +257,61 @@ async function registerCheckOut(attendanceId: number): Promise<void> {
   }
 }
 
-async function registerStaffCheckIn({
+/* ========= Staff helpers & CRUD ========= */
+
+export async function closeExpiredStaffSessions(sql = getSqlClient()) {
+  await sql`
+    UPDATE staff_attendance AS sa
+    SET checkout_time = date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
+      + INTERVAL '20 hours 30 minutes'
+    WHERE sa.checkout_time IS NULL
+      AND timezone(${TIMEZONE}, now()) >= date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
+      + INTERVAL '20 hours 30 minutes'
+  `;
+}
+
+export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT id, full_name, role
+    FROM staff_members
+    WHERE active IS TRUE
+    ORDER BY full_name ASC
+  `);
+
+  return rows
+    .map((row) => ({
+      id: Number(row.id),
+      fullName: ((row.full_name as string | null) ?? "").trim(),
+      role: (row.role as string | null) ?? null,
+    }))
+    .filter((member) => member.fullName.length > 0);
+}
+
+export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
+  const sql = getSqlClient();
+  await closeExpiredStaffSessions(sql);
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
+    FROM staff_attendance sa
+    LEFT JOIN staff_members sm ON sm.id = sa.staff_id
+    WHERE sa.checkout_time IS NULL
+    ORDER BY sa.checkin_time ASC
+  `);
+
+  return rows
+    .map((row) => ({
+      id: String(row.id),
+      staffId: Number(row.staff_id),
+      fullName: ((row.full_name as string | null) ?? "").trim(),
+      checkInTime: row.checkin_time as string,
+    }))
+    .filter((attendance) => attendance.fullName.length > 0);
+}
+
+export async function registerStaffCheckIn({
   staffId,
 }: {
   staffId: number;
@@ -327,6 +354,7 @@ async function registerStaffCheckIn({
     throw new Error("Esta persona ya tiene una asistencia abierta.");
   }
 
+  // If staff_attendance.id is not SERIAL, preserve existing behavior
   const nextIdRows = normalizeRows<SqlRow>(await sql`
     SELECT COALESCE(MAX(id), 0) + 1 AS next_id
     FROM staff_attendance
@@ -346,12 +374,11 @@ async function registerStaffCheckIn({
   };
 }
 
-async function registerStaffCheckOut(attendanceId: string): Promise<void> {
+export async function registerStaffCheckOut(attendanceId: string): Promise<void> {
   const sql = getSqlClient();
   await closeExpiredStaffSessions(sql);
 
   const parsedId = Number(attendanceId);
-
   if (!Number.isFinite(parsedId)) {
     throw new Error("La asistencia seleccionada no es válida.");
   }
@@ -370,14 +397,12 @@ async function registerStaffCheckOut(attendanceId: string): Promise<void> {
 }
 
 function toNullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function listStaffMembers(): Promise<StaffMemberRecord[]> {
+export async function listStaffMembers(): Promise<StaffMemberRecord[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -396,7 +421,7 @@ async function listStaffMembers(): Promise<StaffMemberRecord[]> {
   }));
 }
 
-async function createStaffMember({
+export async function createStaffMember({
   fullName,
   role,
   hourlyWage,
@@ -435,7 +460,7 @@ async function createStaffMember({
   };
 }
 
-async function updateStaffMember(
+export async function updateStaffMember(
   id: number,
   {
     fullName,
@@ -486,7 +511,7 @@ async function updateStaffMember(
   };
 }
 
-async function deleteStaffMember(id: number): Promise<void> {
+export async function deleteStaffMember(id: number): Promise<void> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -499,22 +524,3 @@ async function deleteStaffMember(id: number): Promise<void> {
     throw new Error("No se pudo eliminar al miembro del personal solicitado.");
   }
 }
-
-export {
-  TIMEZONE,
-  closeExpiredSessions,
-  closeExpiredStaffSessions,
-  getStudentDirectory,
-  getLevelsWithLessons,
-  getActiveAttendances,
-  getStaffDirectory,
-  getActiveStaffAttendances,
-  registerCheckIn,
-  registerCheckOut,
-  registerStaffCheckIn,
-  registerStaffCheckOut,
-  listStaffMembers,
-  createStaffMember,
-  updateStaffMember,
-  deleteStaffMember,
-};
