@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
 import { createPaymentScheduleEntry } from "@/features/administration/data/student-profile";
 
+type StudentParams = Promise<{ studentId: string }>;
+
 export async function POST(
   request: Request,
-  { params }: { params: { studentId: string } },
+  { params }: { params: StudentParams }
 ) {
   try {
-    const studentId = Number(params.studentId);
+    const { studentId: studentIdStr } = await params; // 👈 await params
+    const studentId = Number(studentIdStr);
+
     if (!Number.isFinite(studentId)) {
-      return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Identificador inválido." },
+        { status: 400 }
+      );
     }
 
     const body = await request.json();
