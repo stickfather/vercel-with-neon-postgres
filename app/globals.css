@@ -25,17 +25,17 @@ body {
 
 .bg-app {
   min-height: 100vh;
-  background-color: var(--app-soft);
+  background-color: #fdf4ec;
   background-image:
-    radial-gradient(circle at top left, rgba(255, 194, 58, 0.35), transparent 55%),
-    radial-gradient(circle at top right, rgba(0, 191, 166, 0.3), transparent 60%),
-    linear-gradient(115deg, rgba(30, 27, 50, 0.08) 0%, rgba(30, 27, 50, 0) 55%),
+    radial-gradient(circle at 12% 0%, rgba(255, 149, 44, 0.45), transparent 56%),
+    radial-gradient(circle at 86% 8%, rgba(0, 154, 168, 0.4), transparent 60%),
+    linear-gradient(120deg, rgba(30, 27, 50, 0.16) 0%, rgba(30, 27, 50, 0) 58%),
     repeating-linear-gradient(
-      -45deg,
-      rgba(30, 27, 50, 0.08) 0,
-      rgba(30, 27, 50, 0.08) 12px,
-      rgba(255, 122, 35, 0.05) 12px,
-      rgba(255, 122, 35, 0.05) 24px
+      -48deg,
+      rgba(30, 27, 50, 0.12) 0,
+      rgba(30, 27, 50, 0.12) 14px,
+      rgba(255, 122, 35, 0.08) 14px,
+      rgba(255, 122, 35, 0.08) 28px
     );
 }
 
@@ -112,4 +112,45 @@ button:focus-visible,
 textarea:focus-visible {
   outline: 3px solid rgba(0, 191, 166, 0.4);
   outline-offset: 2px;
+}
+
+@keyframes checkmark-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-checkmark {
+  animation: checkmark-pop 340ms ease-out;
+}
+
+.cta-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.25), transparent 60%);
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 180ms ease-out, transform 220ms ease-out;
+}
+
+.cta-ripple:hover::after,
+.cta-ripple:focus-visible::after {
+  opacity: 1;
+  transform: scale(1.1);
 }

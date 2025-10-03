@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActiveAttendance } from "@/app/db";
+import { getLevelAccent } from "./level-colors";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -12,6 +13,13 @@ export function AttendanceBoard({ attendances }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const formatter = useMemo(() => {
+    return new Intl.DateTimeFormat("es-EC", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, []);
 
   const handleCheckout = async (attendance: ActiveAttendance) => {
     setError(null);
@@ -48,37 +56,96 @@ export function AttendanceBoard({ attendances }: Props) {
 
   if (!attendances.length) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-white/60 bg-white/60 px-8 py-14 text-center text-lg text-brand-ink-muted shadow-inner">
-        <span>Por ahora no hay estudiantes en clase.</span>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-[32px] border border-dashed border-white/70 bg-white/70 px-8 py-16 text-center text-brand-ink-muted shadow-inner">
+        <span className="text-lg font-semibold text-brand-deep-soft">Por ahora no hay estudiantes en clase.</span>
         <span className="text-sm">
-          Cuando alguien se registre aparecerá aquí para poder retirarse con un toque.
+          Cuando alguien se registre aparecerá aquí para que pueda retirarse con un toque.
         </span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {error && (
-        <div className="rounded-3xl border border-brand-orange bg-white/80 px-5 py-3 text-sm font-medium text-brand-ink">
+        <div className="rounded-3xl border border-brand-orange bg-white/82 px-5 py-3 text-sm font-medium text-brand-ink">
           {error}
         </div>
       )}
-      <div className="flex flex-wrap gap-3">
-        {attendances.map((attendance) => (
-          <button
-            key={attendance.id}
-            type="button"
-            onClick={() => handleCheckout(attendance)}
-            disabled={loadingId === attendance.id}
-            className="group inline-flex min-w-[160px] items-center justify-between gap-3 rounded-full bg-gradient-to-r from-[#1e1b3220] via-[#00bfa620] to-[#ffc23a1a] px-6 py-3 text-left text-sm font-semibold text-brand-deep shadow hover:from-[#1e1b3233] hover:via-[#00bfa630] hover:to-[#ffc23a29] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            <span>{attendance.fullName}</span>
-            <span className="rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-teal">
-              {loadingId === attendance.id ? "Saliendo…" : "Salir"}
-            </span>
-          </button>
-        ))}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {attendances.map((attendance) => {
+          const accent = getLevelAccent(attendance.level);
+          const initials = attendance.fullName
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase())
+            .join("")
+            .slice(0, 2);
+          const checkInDate = attendance.checkInTime
+            ? new Date(attendance.checkInTime)
+            : null;
+          const formattedTime = checkInDate ? formatter.format(checkInDate) : "";
+          const isRecent = checkInDate
+            ? Date.now() - checkInDate.getTime() < 15 * 60 * 1000
+            : false;
+
+          return (
+            <article
+              key={attendance.id}
+              className="flex flex-col gap-4 rounded-[28px] border border-white/60 bg-white/92 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.1)] backdrop-blur"
+            >
+              <div className="flex items-start gap-4">
+                <span
+                  className="flex h-12 w-12 items-center justify-center rounded-full text-base font-bold text-white shadow-md"
+                  style={{
+                    background: `linear-gradient(135deg, ${accent.primary}, ${accent.primary}cc)`,
+                  }}
+                >
+                  {initials || attendance.fullName.charAt(0).toUpperCase()}
+                </span>
+                <div className="flex flex-1 flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-semibold text-brand-deep">{attendance.fullName}</h3>
+                    {isRecent && (
+                      <span className="rounded-full bg-brand-teal-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-teal">
+                        Nuevo ingreso
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-brand-ink-muted">
+                    {attendance.level && (
+                      <span
+                        className="rounded-full px-3 py-1 font-semibold uppercase tracking-wide"
+                        style={{
+                          backgroundColor: accent.chipBackground,
+                          color: accent.primary,
+                        }}
+                      >
+                        {attendance.level}
+                      </span>
+                    )}
+                    {attendance.lesson && <span>{attendance.lesson}</span>}
+                    {formattedTime && (
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-ink-muted/60" />
+                        {`Check-in ${formattedTime}`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCheckout(attendance)}
+                disabled={loadingId === attendance.id}
+                className="inline-flex items-center justify-center rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {loadingId === attendance.id ? "Registrando salida…" : "Salir de clase"}
+              </button>
+            </article>
+          );
+        })}
       </div>
     </div>
   );
