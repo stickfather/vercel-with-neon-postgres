@@ -3,32 +3,22 @@ import { registerCheckIn } from "@/app/db";
 
 export async function POST(request: Request) {
   try {
-    const { level, lessonId, studentId } = await request.json();
+    const { fullName, level, lessonId } = await request.json();
 
-    if (!level || !lessonId || !studentId) {
+    if (!fullName || !level || !lessonId) {
       return NextResponse.json(
         { error: "Faltan datos para registrar la asistencia." },
         { status: 400 },
       );
     }
 
-    const parsedLessonId = Number(lessonId);
-    const parsedStudentId = Number(studentId);
-
-    if (!Number.isFinite(parsedLessonId) || !Number.isFinite(parsedStudentId)) {
-      return NextResponse.json(
-        { error: "Los identificadores enviados no son válidos." },
-        { status: 400 },
-      );
-    }
-
-    const { attendanceId, studentName } = await registerCheckIn({
+    const attendanceId = await registerCheckIn({
+      fullName,
       level,
-      lessonId: parsedLessonId,
-      studentId: parsedStudentId,
+      lessonId: Number(lessonId),
     });
 
-    return NextResponse.json({ attendanceId, studentName });
+    return NextResponse.json({ attendanceId });
   } catch (error) {
     console.error("Error en check-in", error);
     const message =

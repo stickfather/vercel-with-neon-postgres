@@ -38,12 +38,8 @@ function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   return [];
 }
 
-export type StudentDirectoryEntry = {
-  id: number;
+export type StudentName = {
   fullName: string;
-  lastLessonId: number | null;
-  lastLessonSequence: number | null;
-  lastLessonLevel: string | null;
 };
 
 export type LessonOption = {
@@ -60,32 +56,9 @@ export type LevelLessons = {
 
 export type ActiveAttendance = {
   id: number;
-  studentId: number;
   fullName: string;
   lesson: string | null;
   level: string | null;
-  checkInTime: string;
-};
-
-export type StaffDirectoryEntry = {
-  id: number;
-  fullName: string;
-  role: string | null;
-};
-
-export type StaffMemberRecord = {
-  id: number;
-  fullName: string;
-  role: string | null;
-  active: boolean;
-  hourlyWage: number | null;
-  weeklyHours: number | null;
-};
-
-export type ActiveStaffAttendance = {
-  id: string;
-  staffId: number;
-  fullName: string;
   checkInTime: string;
 };
 
@@ -100,60 +73,24 @@ async function closeExpiredSessions(sql = getSqlClient()) {
   `;
 }
 
-async function closeExpiredStaffSessions(sql = getSqlClient()) {
-  await sql`
-    UPDATE staff_attendance AS sa
-    SET checkout_time = date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
-    WHERE sa.checkout_time IS NULL
-      AND timezone(${TIMEZONE}, now()) >= date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
-  `;
-}
-
-async function getStudentDirectory(): Promise<StudentDirectoryEntry[]> {
+export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      s.id,
-      s.full_name,
-      last_attendance.lesson_id AS last_lesson_id,
-      last_attendance.lesson_seq AS last_lesson_seq,
-      last_attendance.lesson_level AS last_lesson_level
-    FROM students s
-    LEFT JOIN LATERAL (
-      SELECT
-        sa.lesson_id,
-        l.seq AS lesson_seq,
-        l.level AS lesson_level
-      FROM student_attendance sa
-      LEFT JOIN lessons l ON l.id = sa.lesson_id
-      WHERE sa.student_id = s.id
-        AND sa.checkout_time IS NOT NULL
-        AND sa.lesson_id IS NOT NULL
-      ORDER BY sa.checkin_time DESC
-      LIMIT 1
-    ) AS last_attendance ON TRUE
-    WHERE full_name IS NOT NULL
-      AND trim(full_name) <> ''
+    SELECT DISTINCT
+      COALESCE(s.full_name, sa.full_name) AS full_name
+    FROM student_attendance sa
+    LEFT JOIN students s ON s.id = sa.student_id
+    WHERE COALESCE(s.full_name, sa.full_name) IS NOT NULL
     ORDER BY full_name ASC
   `);
 
-  return rows.map((row) => ({
-    id: Number(row.id),
-    fullName: (row.full_name as string).trim(),
-    lastLessonId: row.last_lesson_id === null ? null : Number(row.last_lesson_id),
-    lastLessonSequence:
-      row.last_lesson_seq === null ? null : Number(row.last_lesson_seq),
-    lastLessonLevel:
-      row.last_lesson_level === null
-        ? null
-        : ((row.last_lesson_level as string) ?? "").trim() || null,
-  }));
+  return rows
+    .map((row) => ({ fullName: row.full_name as string }))
+    .filter((entry) => entry.fullName?.trim().length);
 }
 
-async function getLevelsWithLessons(): Promise<LevelLessons[]> {
+export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -188,15 +125,14 @@ async function getLevelsWithLessons(): Promise<LevelLessons[]> {
     .filter((entry) => entry.lessons.length);
 }
 
-async function getActiveAttendances(): Promise<ActiveAttendance[]> {
+export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       sa.id,
-      sa.student_id,
-      s.full_name,
+      COALESCE(s.full_name, sa.full_name) AS full_name,
       sa.checkin_time,
       l.lesson,
       l.level
@@ -210,8 +146,7 @@ async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   return rows
     .map((row) => ({
       id: Number(row.id),
-      studentId: Number(row.student_id),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
+      fullName: (row.full_name as string | null) ?? "",
       lesson: (row.lesson as string | null) ?? null,
       level: (row.level as string | null) ?? null,
       checkInTime: row.checkin_time as string,
@@ -219,76 +154,58 @@ async function getActiveAttendances(): Promise<ActiveAttendance[]> {
     .filter((attendance) => attendance.fullName.trim().length);
 }
 
-async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
-  const sql = getSqlClient();
+async function findStudentIdByName(
+  sql: ReturnType<typeof neon>,
+  fullName: string,
+): Promise<number | null> {
+  const normalized = fullName.trim();
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name, role
-    FROM staff_members
-    WHERE active IS TRUE
-    ORDER BY full_name ASC
-  `);
+  if (!normalized) {
+    return null;
+  }
 
-  return rows
-    .map((row) => ({
-      id: Number(row.id),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
-      role: (row.role as string | null) ?? null,
-    }))
-    .filter((member) => member.fullName.length > 0);
-}
-
-async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
-  const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
-    FROM staff_attendance sa
-    LEFT JOIN staff_members sm ON sm.id = sa.staff_id
-    WHERE sa.checkout_time IS NULL
-    ORDER BY sa.checkin_time ASC
-  `);
-
-  return rows
-    .map((row) => ({
-      id: String(row.id),
-      staffId: Number(row.staff_id),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
-      checkInTime: row.checkin_time as string,
-    }))
-    .filter((attendance) => attendance.fullName.length > 0);
-}
-
-async function registerCheckIn({
-  lessonId,
-  level,
-  studentId,
-}: {
-  lessonId: number;
-  level: string;
-  studentId: number;
-}): Promise<{ attendanceId: number; studentName: string }>
-{
-  const sql = getSqlClient();
-  await closeExpiredSessions(sql);
-
-  const studentRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name
+  const studentRow = normalizeRows<SqlRow>(await sql`
+    SELECT id
     FROM students
-    WHERE id = ${studentId}
+    WHERE LOWER(full_name) = LOWER(${normalized})
     LIMIT 1
   `);
 
-  if (!studentRows.length) {
-    throw new Error("No encontramos al estudiante seleccionado en la base de datos.");
+  if (studentRow.length) {
+    return Number(studentRow[0].id);
   }
 
-  const studentRecord = studentRows[0];
-  const storedStudentName = ((studentRecord.full_name as string | null) ?? "").trim();
+  const attendanceRow = normalizeRows<SqlRow>(await sql`
+    SELECT student_id
+    FROM student_attendance
+    WHERE LOWER(full_name) = LOWER(${normalized})
+      AND student_id IS NOT NULL
+    ORDER BY checkin_time DESC
+    LIMIT 1
+  `);
 
-  if (!storedStudentName) {
-    throw new Error("El estudiante seleccionado no tiene un nombre registrado.");
+  if (attendanceRow.length) {
+    return Number(attendanceRow[0].student_id);
+  }
+
+  return null;
+}
+
+export async function registerCheckIn({
+  fullName,
+  lessonId,
+  level,
+}: {
+  fullName: string;
+  lessonId: number;
+  level: string;
+}): Promise<number> {
+  const sql = getSqlClient();
+  await closeExpiredSessions(sql);
+
+  const trimmedName = fullName.trim();
+  if (!trimmedName) {
+    throw new Error("El nombre del estudiante es obligatorio.");
   }
 
   const lessonRows = normalizeRows<SqlRow>(await sql`
@@ -303,16 +220,25 @@ async function registerCheckIn({
   }
 
   const lesson = lessonRows[0];
-  const lessonLevel = ((lesson.level as string | null) ?? "").trim();
+  const lessonLevel = (lesson.level as string | null) ?? "";
   if (lessonLevel.toLowerCase() !== level.trim().toLowerCase()) {
     throw new Error("La lección no corresponde al nivel elegido.");
+  }
+
+  const studentId = await findStudentIdByName(sql, trimmedName);
+
+  if (studentId === null) {
+    throw new Error("No se encontró el estudiante en la base de datos.");
   }
 
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
     FROM student_attendance
     WHERE checkout_time IS NULL
-      AND student_id = ${studentId}
+      AND (
+        student_id = ${studentId}
+        OR LOWER(full_name) = LOWER(${trimmedName})
+      )
     LIMIT 1
   `);
 
@@ -321,18 +247,15 @@ async function registerCheckIn({
   }
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO student_attendance (student_id, lesson_id, checkin_time)
-    VALUES (${studentId}, ${lessonId}, now())
+    INSERT INTO student_attendance (student_id, full_name, lesson_id, checkin_time)
+    VALUES (${studentId}, ${trimmedName}, ${lessonId}, now())
     RETURNING id
   `);
 
-  return {
-    attendanceId: Number(insertedRows[0].id),
-    studentName: storedStudentName,
-  };
+  return Number(insertedRows[0].id);
 }
 
-async function registerCheckOut(attendanceId: number): Promise<void> {
+export async function registerCheckOut(attendanceId: number): Promise<void> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
@@ -349,237 +272,4 @@ async function registerCheckOut(attendanceId: number): Promise<void> {
   }
 }
 
-async function registerStaffCheckIn({
-  staffId,
-}: {
-  staffId: number;
-}): Promise<{ attendanceId: string; staffName: string }> {
-  const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
-
-  const staffRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name, active
-    FROM staff_members
-    WHERE id = ${staffId}
-    LIMIT 1
-  `);
-
-  if (!staffRows.length) {
-    throw new Error("No encontramos a la persona seleccionada en la base de datos.");
-  }
-
-  const staffRecord = staffRows[0];
-  const staffName = ((staffRecord.full_name as string | null) ?? "").trim();
-  const isActive = Boolean(staffRecord.active ?? true);
-
-  if (!staffName) {
-    throw new Error("El miembro del personal no tiene un nombre registrado.");
-  }
-
-  if (!isActive) {
-    throw new Error("El miembro del personal está marcado como inactivo.");
-  }
-
-  const existingRows = normalizeRows<SqlRow>(await sql`
-    SELECT id
-    FROM staff_attendance
-    WHERE checkout_time IS NULL
-      AND staff_id = ${staffId}
-    LIMIT 1
-  `);
-
-  if (existingRows.length) {
-    throw new Error("Esta persona ya tiene una asistencia abierta.");
-  }
-
-  const nextIdRows = normalizeRows<SqlRow>(await sql`
-    SELECT COALESCE(MAX(id), 0) + 1 AS next_id
-    FROM staff_attendance
-  `);
-
-  const nextId = Number(nextIdRows[0]?.next_id ?? 1);
-
-  const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_attendance (id, staff_id, checkin_time)
-    VALUES (${nextId}, ${staffId}, now())
-    RETURNING id
-  `);
-
-  return {
-    attendanceId: String(insertedRows[0].id),
-    staffName,
-  };
-}
-
-async function registerStaffCheckOut(attendanceId: string): Promise<void> {
-  const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
-
-  const parsedId = Number(attendanceId);
-
-  if (!Number.isFinite(parsedId)) {
-    throw new Error("La asistencia seleccionada no es válida.");
-  }
-
-  const updatedRows = normalizeRows<SqlRow>(await sql`
-    UPDATE staff_attendance
-    SET checkout_time = now()
-    WHERE id = ${parsedId}
-      AND checkout_time IS NULL
-    RETURNING id
-  `);
-
-  if (!updatedRows.length) {
-    throw new Error("La asistencia ya estaba cerrada o no existe.");
-  }
-}
-
-function toNullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-async function listStaffMembers(): Promise<StaffMemberRecord[]> {
-  const sql = getSqlClient();
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name, role, active, hourly_wage, weekly_hours
-    FROM staff_members
-    ORDER BY full_name ASC
-  `);
-
-  return rows.map((row) => ({
-    id: Number(row.id),
-    fullName: ((row.full_name as string | null) ?? "").trim(),
-    role: (row.role as string | null) ?? null,
-    active: Boolean(row.active ?? false),
-    hourlyWage: toNullableNumber(row.hourly_wage),
-    weeklyHours: toNullableNumber(row.weekly_hours),
-  }));
-}
-
-async function createStaffMember({
-  fullName,
-  role,
-  hourlyWage,
-  weeklyHours,
-  active = true,
-}: {
-  fullName: string;
-  role?: string | null;
-  hourlyWage?: number | string | null;
-  weeklyHours?: number | string | null;
-  active?: boolean;
-}): Promise<StaffMemberRecord> {
-  const sql = getSqlClient();
-  const sanitizedName = fullName.trim();
-  if (!sanitizedName) {
-    throw new Error("El nombre del personal es obligatorio.");
-  }
-
-  const sanitizedRole = role ? role.trim() : null;
-  const wageValue = toNullableNumber(hourlyWage ?? null);
-  const weeklyValue = toNullableNumber(weeklyHours ?? null);
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_members (full_name, role, hourly_wage, weekly_hours, active)
-    VALUES (${sanitizedName}, ${sanitizedRole}, ${wageValue}, ${weeklyValue}, ${active})
-    RETURNING id, full_name, role, active, hourly_wage, weekly_hours
-  `);
-
-  return {
-    id: Number(rows[0].id),
-    fullName: sanitizedName,
-    role: sanitizedRole,
-    active,
-    hourlyWage: wageValue,
-    weeklyHours: weeklyValue,
-  };
-}
-
-async function updateStaffMember(
-  id: number,
-  {
-    fullName,
-    role,
-    hourlyWage,
-    weeklyHours,
-    active,
-  }: {
-    fullName: string;
-    role?: string | null;
-    hourlyWage?: number | string | null;
-    weeklyHours?: number | string | null;
-    active: boolean;
-  },
-): Promise<StaffMemberRecord> {
-  const sql = getSqlClient();
-  const sanitizedName = fullName.trim();
-  if (!sanitizedName) {
-    throw new Error("El nombre del personal es obligatorio.");
-  }
-
-  const sanitizedRole = role ? role.trim() : null;
-  const wageValue = toNullableNumber(hourlyWage ?? null);
-  const weeklyValue = toNullableNumber(weeklyHours ?? null);
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    UPDATE staff_members
-    SET full_name = ${sanitizedName},
-        role = ${sanitizedRole},
-        hourly_wage = ${wageValue},
-        weekly_hours = ${weeklyValue},
-        active = ${active}
-    WHERE id = ${id}
-    RETURNING id, full_name, role, active, hourly_wage, weekly_hours
-  `);
-
-  if (!rows.length) {
-    throw new Error("No encontramos a la persona seleccionada.");
-  }
-
-  return {
-    id: Number(rows[0].id),
-    fullName: sanitizedName,
-    role: sanitizedRole,
-    active,
-    hourlyWage: wageValue,
-    weeklyHours: weeklyValue,
-  };
-}
-
-async function deleteStaffMember(id: number): Promise<void> {
-  const sql = getSqlClient();
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    DELETE FROM staff_members
-    WHERE id = ${id}
-    RETURNING id
-  `);
-
-  if (!rows.length) {
-    throw new Error("No se pudo eliminar al miembro del personal solicitado.");
-  }
-}
-
-export {
-  TIMEZONE,
-  closeExpiredSessions,
-  closeExpiredStaffSessions,
-  getStudentDirectory,
-  getLevelsWithLessons,
-  getActiveAttendances,
-  getStaffDirectory,
-  getActiveStaffAttendances,
-  registerCheckIn,
-  registerCheckOut,
-  registerStaffCheckIn,
-  registerStaffCheckOut,
-  listStaffMembers,
-  createStaffMember,
-  updateStaffMember,
-  deleteStaffMember,
-};
+export { TIMEZONE, closeExpiredSessions };
