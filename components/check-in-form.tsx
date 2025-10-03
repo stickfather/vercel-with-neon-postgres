@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { LevelLessons, StudentDirectoryEntry } from "@/app/db";
+import type { LevelLessons, StudentName } from "@/app/db";
 import { getLevelAccent } from "@/components/level-colors";
 
 type Props = {
-  students: StudentDirectoryEntry[];
+  students: StudentName[];
   levels: LevelLessons[];
   disabled?: boolean;
   initialError?: string | null;
@@ -38,7 +38,7 @@ export function CheckInForm({
   const [lessonLocked, setLessonLocked] = useState(false);
 
   const studentMap = useMemo(() => {
-    const map = new Map<number, StudentDirectoryEntry & { normalized: string }>();
+    const map = new Map<number, StudentName & { normalized: string }>();
     for (const student of students) {
       map.set(student.id, {
         ...student,
