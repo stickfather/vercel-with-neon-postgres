@@ -3,32 +3,46 @@ import { registerCheckIn } from "@/app/db";
 
 export async function POST(request: Request) {
   try {
-    const { level, lessonId, studentId } = await request.json();
+    const body = await request.json();
 
-    if (!level || !lessonId || !studentId) {
+    // Accept a few common shapes from the client
+    const level: string = String(body.level ?? "").trim();
+    const lessonIdRaw = body.lessonId ?? body.lesson_id ?? body.lesson;
+    const fullNameRaw = body.fullName ?? body.full_name ?? body.name;
+
+    const parsedLessonId = Number(lessonIdRaw);
+    const fullName = String(fullNameRaw ?? "").trim();
+
+    if (!fullName) {
       return NextResponse.json(
-        { error: "Faltan datos para registrar la asistencia." },
-        { status: 400 },
+        { error: "El nombre del estudiante es obligatorio." },
+        { status: 400 }
+      );
+    }
+    if (!level) {
+      return NextResponse.json(
+        { error: "El nivel es obligatorio." },
+        { status: 400 }
+      );
+    }
+    if (!Number.isFinite(parsedLessonId)) {
+      return NextResponse.json(
+        { error: "La lección seleccionada no es válida." },
+        { status: 400 }
       );
     }
 
-    const parsedLessonId = Number(lessonId);
-    const parsedStudentId = Number(studentId);
-
-    if (!Number.isFinite(parsedLessonId) || !Number.isFinite(parsedStudentId)) {
-      return NextResponse.json(
-        { error: "Los identificadores enviados no son válidos." },
-        { status: 400 },
-      );
-    }
-
-    const { attendanceId, studentName } = await registerCheckIn({
-      level,
+    // New API: returns a number (attendanceId)
+    const attendanceId = await registerCheckIn({
+      fullName,
       lessonId: parsedLessonId,
-      studentId: parsedStudentId,
+      level,
     });
 
-    return NextResponse.json({ attendanceId, studentName });
+    return NextResponse.json({
+      attendanceId,
+      studentName: fullName, // preserve previous response shape
+    });
   } catch (error) {
     console.error("Error en check-in", error);
     const message =
