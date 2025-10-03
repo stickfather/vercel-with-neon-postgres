@@ -124,16 +124,16 @@ export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, lesson, level_code, seq
+    SELECT id, lesson, level, seq
     FROM lessons
     WHERE TRIM(COALESCE(lesson, '')) <> ''
-    ORDER BY level_code ASC, seq ASC NULLS LAST, lesson ASC
+    ORDER BY level ASC, seq ASC NULLS LAST, lesson ASC
   `);
 
   const grouped = new Map<string, LessonOption[]>();
 
   for (const row of rows) {
-    const level = ((row.level_code as string) ?? "").trim();
+    const level = ((row.level as string) ?? "").trim();
     if (!level) continue;
     if (!grouped.has(level)) grouped.set(level, []);
     grouped.get(level)!.push({
@@ -159,7 +159,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       COALESCE(s.full_name, sa.full_name) AS full_name,
       sa.checkin_time,
       l.lesson,
-      l.level_code AS level
+      l.level AS level
     FROM student_attendance sa
     LEFT JOIN students s ON s.id = sa.student_id
     LEFT JOIN lessons l ON l.id = sa.lesson_id
@@ -223,7 +223,7 @@ export async function registerCheckIn({
   if (!trimmedName) throw new Error("El nombre del estudiante es obligatorio.");
 
   const lessonRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, level_code
+    SELECT id, level
     FROM lessons
     WHERE id = ${lessonId}
     LIMIT 1
@@ -231,7 +231,7 @@ export async function registerCheckIn({
   if (!lessonRows.length) throw new Error("La lección seleccionada no existe.");
 
   const lesson = lessonRows[0];
-  const lessonLevel = ((lesson.level_code as string | null) ?? "").trim();
+  const lessonLevel = ((lesson.level as string | null) ?? "").trim();
   if (lessonLevel.toLowerCase() !== level.trim().toLowerCase()) {
     throw new Error("La lección no corresponde al nivel elegido.");
   }
