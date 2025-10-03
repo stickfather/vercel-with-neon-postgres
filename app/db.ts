@@ -73,7 +73,7 @@ async function closeExpiredSessions(sql = getSqlClient()) {
   `;
 }
 
-export async function getStudentDirectory(): Promise<StudentName[]> {
+async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -90,7 +90,7 @@ export async function getStudentDirectory(): Promise<StudentName[]> {
     .filter((entry) => entry.fullName?.trim().length);
 }
 
-export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
+async function getLevelsWithLessons(): Promise<LevelLessons[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -125,7 +125,7 @@ export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
     .filter((entry) => entry.lessons.length);
 }
 
-export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
+async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
@@ -191,7 +191,7 @@ async function findStudentIdByName(
   return null;
 }
 
-export async function registerCheckIn({
+async function registerCheckIn({
   fullName,
   lessonId,
   level,
@@ -255,7 +255,7 @@ export async function registerCheckIn({
   return Number(insertedRows[0].id);
 }
 
-export async function registerCheckOut(attendanceId: number): Promise<void> {
+async function registerCheckOut(attendanceId: number): Promise<void> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
@@ -272,4 +272,12 @@ export async function registerCheckOut(attendanceId: number): Promise<void> {
   }
 }
 
-export { TIMEZONE, closeExpiredSessions };
+export {
+  TIMEZONE,
+  closeExpiredSessions,
+  getStudentDirectory,
+  getLevelsWithLessons,
+  getActiveAttendances,
+  registerCheckIn,
+  registerCheckOut,
+};
