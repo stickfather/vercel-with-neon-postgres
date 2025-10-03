@@ -223,7 +223,7 @@ export async function registerCheckIn({
   if (!trimmedName) throw new Error("El nombre del estudiante es obligatorio.");
 
   const lessonRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, level
+    SELECT id, level_code
     FROM lessons
     WHERE id = ${lessonId}
     LIMIT 1
@@ -231,7 +231,7 @@ export async function registerCheckIn({
   if (!lessonRows.length) throw new Error("La lección seleccionada no existe.");
 
   const lesson = lessonRows[0];
-  const lessonLevel = (lesson.level as string | null) ?? "";
+  const lessonLevel = ((lesson.level_code as string | null) ?? "").trim();
   if (lessonLevel.toLowerCase() !== level.trim().toLowerCase()) {
     throw new Error("La lección no corresponde al nivel elegido.");
   }

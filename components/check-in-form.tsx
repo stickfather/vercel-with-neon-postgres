@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { LevelLessons, StudentName } from "@/app/db";
 import { getLevelAccent } from "./level-colors";
@@ -35,6 +35,7 @@ export function CheckInForm({
   const [showSteps, setShowSteps] = useState(false);
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
   const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
+  const lastMatchedNameRef = useRef<string | null>(null);
 
   const suggestions = useMemo(() => {
     const normalized = fullName.trim().toLowerCase();
@@ -45,6 +46,31 @@ export function CheckInForm({
         );
     return base.slice(0, 6);
   }, [fullName, students]);
+
+  const matchedStudent = useMemo(() => {
+    const normalized = fullName.trim().toLowerCase();
+    if (!normalized) return null;
+    return (
+      students.find(
+        (student) => student.fullName.trim().toLowerCase() === normalized,
+      ) ?? null
+    );
+  }, [fullName, students]);
+
+  useEffect(() => {
+    if (!matchedStudent) {
+      lastMatchedNameRef.current = null;
+      setSelectedLevel("");
+      setSelectedLesson("");
+      return;
+    }
+    const trimmed = matchedStudent.fullName.trim();
+    if (lastMatchedNameRef.current !== trimmed) {
+      lastMatchedNameRef.current = trimmed;
+      setSelectedLevel("");
+      setSelectedLesson("");
+    }
+  }, [matchedStudent]);
 
   const lessonsForLevel = useMemo(() => {
     return levels.find((level) => level.level === selectedLevel)?.lessons ?? [];
@@ -78,6 +104,8 @@ export function CheckInForm({
   }, [selectedLevel, sortedLessons]);
 
   const isFormDisabled = disabled || Boolean(initialError) || !levels.length;
+  const canChooseProgression =
+    Boolean(matchedStudent) && !disabled && !initialError && Boolean(levels.length);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -96,6 +124,13 @@ export function CheckInForm({
     const trimmedName = fullName.trim();
     if (!trimmedName) {
       setStatus({ type: "error", message: "Ingresa tu nombre tal como aparece en la lista." });
+      return;
+    }
+    if (!matchedStudent) {
+      setStatus({
+        type: "error",
+        message: "Selecciona tu nombre exactamente como aparece en la lista.",
+      });
       return;
     }
     if (!selectedLevel) {
@@ -189,6 +224,9 @@ export function CheckInForm({
             onChange={(event) => {
               setFullName(event.target.value);
               setHighlightedSuggestion(0);
+              if (status?.type === "error") {
+                setStatus(null);
+              }
             }}
             onFocus={() => setIsSuggestionsOpen(true)}
             onBlur={() => {
@@ -213,6 +251,7 @@ export function CheckInForm({
                 if (suggestion) {
                   event.preventDefault();
                   setFullName(suggestion.fullName);
+                  setStatus(null);
                   setIsSuggestionsOpen(false);
                 }
               }
@@ -244,6 +283,7 @@ export function CheckInForm({
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
                         setFullName(student.fullName);
+                        setStatus(null);
                         setIsSuggestionsOpen(false);
                       }}
                       className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ${
@@ -279,49 +319,55 @@ export function CheckInForm({
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {levels.map((level) => {
-              const levelAccent = getLevelAccent(level.level);
-              const isActive = selectedLevel === level.level;
-              return (
-                <button
-                  key={level.level}
-                  type="button"
-                  onClick={() => {
-                    setSelectedLevel(level.level);
-                    setStatus(null);
-                  }}
-                  className={`flex min-h-[56px] items-center justify-between rounded-[22px] border px-5 py-3 text-left text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                    isActive
-                      ? "border-transparent text-brand-deep"
-                      : "border-[rgba(30,27,50,0.15)] text-brand-ink"
-                  }`}
-                  style={{
-                    backgroundColor: isActive ? levelAccent.background : "rgba(255,255,255,0.85)",
-                    boxShadow: isActive ? "0 14px 32px rgba(15,23,42,0.14)" : "0 6px 18px rgba(15,23,42,0.06)",
-                  }}
-                  aria-pressed={isActive}
-                  disabled={isFormDisabled}
-                >
-                  <span className="text-lg font-black">{level.level}</span>
-                  <span
-                    className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide"
-                    style={{
-                      backgroundColor: levelAccent.chipBackground,
-                      color: levelAccent.primary,
+          {canChooseProgression ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {levels.map((level) => {
+                const levelAccent = getLevelAccent(level.level);
+                const isActive = selectedLevel === level.level;
+                return (
+                  <button
+                    key={level.level}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLevel(level.level);
+                      setStatus(null);
                     }}
+                    className={`flex min-h-[56px] items-center justify-between rounded-[22px] border px-5 py-3 text-left text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                      isActive
+                        ? "border-transparent text-brand-deep"
+                        : "border-[rgba(30,27,50,0.15)] text-brand-ink"
+                    }`}
+                    style={{
+                      backgroundColor: isActive ? levelAccent.background : "rgba(255,255,255,0.85)",
+                      boxShadow: isActive ? "0 14px 32px rgba(15,23,42,0.14)" : "0 6px 18px rgba(15,23,42,0.06)",
+                    }}
+                    aria-pressed={isActive}
+                    disabled={isFormDisabled || !canChooseProgression}
                   >
-                    {level.lessons.length} lecciones
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    <span className="text-lg font-black">{level.level}</span>
+                    <span
+                      className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide"
+                      style={{
+                        backgroundColor: levelAccent.chipBackground,
+                        color: levelAccent.primary,
+                      }}
+                    >
+                      {level.lessons.length} lecciones
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-[24px] border border-dashed border-brand-teal bg-white/70 px-5 py-4 text-sm text-brand-ink">
+              Selecciona primero tu nombre para ver los niveles disponibles.
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Lección</span>
-          {selectedLevel ? (
+          {selectedLevel && canChooseProgression ? (
             <div className="grid gap-3 sm:grid-cols-2">
               {sortedLessons.map((lesson) => {
                 const isActive = selectedLesson === lesson.id.toString();
@@ -340,7 +386,9 @@ export function CheckInForm({
                       boxShadow: isActive ? "0 14px 32px rgba(15,23,42,0.14)" : "0 6px 18px rgba(15,23,42,0.06)",
                     }}
                     aria-pressed={isActive}
-                    disabled={isFormDisabled || !sortedLessons.length}
+                    disabled={
+                      isFormDisabled || !sortedLessons.length || !canChooseProgression
+                    }
                   >
                     <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep-soft">
                       {lesson.sequence ? `Lección ${lesson.sequence}` : "Lección"}
@@ -350,9 +398,13 @@ export function CheckInForm({
                 );
               })}
             </div>
-          ) : (
+          ) : canChooseProgression ? (
             <div className="rounded-[24px] border border-dashed border-brand-orange bg-white/75 px-5 py-4 text-sm text-brand-ink">
               Selecciona primero tu nivel para sugerirte la lección indicada.
+            </div>
+          ) : (
+            <div className="rounded-[24px] border border-dashed border-brand-teal bg-white/70 px-5 py-4 text-sm text-brand-ink">
+              Ingresa y confirma tu nombre para continuar con el registro.
             </div>
           )}
         </div>
@@ -398,7 +450,14 @@ export function CheckInForm({
 
       <button
         type="submit"
-        disabled={isSubmitting || isPending || isFormDisabled}
+        disabled={
+          isSubmitting ||
+          isPending ||
+          isFormDisabled ||
+          !canChooseProgression ||
+          !selectedLevel ||
+          !selectedLesson
+        }
         className="cta-ripple mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-9 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-lg transition hover:bg-[#ff6a00] disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting || isPending ? "Registrando…" : "Confirmar asistencia"}
