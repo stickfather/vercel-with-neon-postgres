@@ -46,6 +46,37 @@ const tiles = [
   },
 ];
 
+const tileThemes = [
+  {
+    container: "border-[#5b50ff]/40 bg-[#24186b] text-white",
+    badge: "bg-white/20 text-white/90",
+    description: "text-white/75",
+    arrow: "text-[#ffdd70]",
+    orb: "bg-[#5b50ff]",
+  },
+  {
+    container: "border-[#ff9c66]/50 bg-[#ff6b4a] text-white",
+    badge: "bg-white/25 text-white/90",
+    description: "text-white/80",
+    arrow: "text-[#ffe9d6]",
+    orb: "bg-[#ff9c66]",
+  },
+  {
+    container: "border-[#3dd5c2]/45 bg-[#0f4c5c] text-white",
+    badge: "bg-white/20 text-white/85",
+    description: "text-white/75",
+    arrow: "text-[#64fce9]",
+    orb: "bg-[#2ad5c3]",
+  },
+  {
+    container: "border-[#ffd86f]/55 bg-[#3f2a02] text-[#fef3c7]",
+    badge: "bg-[#fef3c7]/20 text-[#fef3c7]",
+    description: "text-[#fef3c7]/80",
+    arrow: "text-[#ffd86f]",
+    orb: "bg-[#f59f0b]",
+  },
+];
+
 const tileTheme = {
   container:
     "border-[#fbbd83] bg-[#ffe7ce] text-brand-deep",
@@ -78,7 +109,8 @@ export default function AdministracionPage() {
           </p>
         </header>
         <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {tiles.map((tile) => {
+          {tiles.map((tile, index) => {
+            const theme = tileThemes[index % tileThemes.length];
             return (
               <Link
                 key={tile.href}
