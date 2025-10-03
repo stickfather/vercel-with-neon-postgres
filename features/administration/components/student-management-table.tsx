@@ -36,7 +36,7 @@ function useFormatters() {
   return { formatDate };
 }
 
-export default function StudentManagementTable({ students }: Props) {
+function StudentManagementTable({ students }: Props) {
   const { formatDate } = useFormatters();
 
   return (
@@ -88,7 +88,7 @@ export default function StudentManagementTable({ students }: Props) {
                 const lastLessonText: string | null =
                   (student as any).lastLesson ?? null;
 
-                // Abbreviation rule for “Preparación para el examen”
+                // Abbreviation rule for “Preparación para el examen” -> “Ex”
                 const lessonLabel = lastLessonText
                   ? /preparaci[oó]n\s+para\s+el\s+examen/i.test(lastLessonText)
                     ? "Ex"
@@ -100,8 +100,7 @@ export default function StudentManagementTable({ students }: Props) {
                 const lastAttendanceAt: string | null =
                   (student as any).lastAttendanceAt ?? s.last_seen_at ?? null;
 
-                const flagsFromArray: string[] =
-                  (student as any).flags ?? [];
+                const flagsFromArray: string[] = (student as any).flags ?? [];
 
                 // Derive human text from booleans in the view if no array provided
                 const derivedFlags: string[] = [];
@@ -161,7 +160,7 @@ export default function StudentManagementTable({ students }: Props) {
                           {status ?? "Sin estado"}
                         </span>
                         <span className="text-[11px] uppercase tracking-wide text-brand-ink-muted">
-                          {/* No explicit status_updated_at in the view; omit or map when available */}
+                          {/* Map status_updated_at when available */}
                         </span>
                       </div>
                     </td>
@@ -170,7 +169,7 @@ export default function StudentManagementTable({ students }: Props) {
                       <div className="flex flex-col gap-1">
                         <span className="font-semibold text-brand-deep">{lessonLabel}</span>
                         <span className="text-[11px] uppercase tracking-wide text-brand-ink-muted">
-                          {/* If you later add last_lesson_at, map here */}
+                          {/* Map last_lesson_at when available */}
                         </span>
                       </div>
                     </td>
@@ -232,3 +231,7 @@ export default function StudentManagementTable({ students }: Props) {
     </div>
   );
 }
+
+// Export both ways so any import style works
+export { StudentManagementTable };
+export default StudentManagementTable;
