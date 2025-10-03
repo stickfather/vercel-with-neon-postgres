@@ -1,57 +1,55 @@
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
 
-export type StudentWithFlags = {
+export type StudentManagementEntry = {
   id: number;
   fullName: string;
   status: string | null;
-  state: string | null;
-  flags: {
-    isAbsent: boolean;
-    isNewStudent: boolean;
-    isExamApproaching: boolean;
-    hasSpecialNeeds: boolean;
-    isSlowProgress: boolean;
-    instructivoActive: boolean;
-    instructivoOverdue: boolean;
-  };
+  flags: string[];
 };
 
-export async function listStudentsWithFlags(): Promise<StudentWithFlags[]> {
+function normalizeFlagList(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((value) => (typeof value === "string" ? value : value == null ? "" : String(value)))
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  }
+
+  if (typeof raw === "string") {
+    return raw
+      .split(/[,;\n]/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  if (raw && typeof raw === "object") {
+    return Object.values(raw)
+      .map((value) => (typeof value === "string" ? value.trim() : value == null ? "" : String(value)))
+      .filter((value) => value.length > 0);
+  }
+
+  return [];
+}
+
+export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
-      s.id,
-      s.full_name,
-      s.status,
-      s.state,
-      sf.is_absent,
-      sf.is_new_student,
-      sf.is_exam_approaching,
-      sf.has_special_needs,
-      sf.is_slow_progress,
-      sf.instructivo_active,
-      sf.instructivo_overdue
-    FROM students s
-    LEFT JOIN student_flags sf ON sf.student_id = s.id
-    ORDER BY s.full_name ASC
+      student_id,
+      full_name,
+      status,
+      flags
+    FROM public.student_management_v
+    ORDER BY full_name ASC
   `);
 
   return rows
     .map((row) => ({
-      id: Number(row.id),
+      id: Number(row["student_id"] ?? row.id ?? row["id"] ?? 0),
       fullName: ((row.full_name as string | null) ?? "").trim(),
       status: (row.status as string | null) ?? null,
-      state: (row.state as string | null) ?? null,
-      flags: {
-        isAbsent: Boolean(row["is_absent"] ?? false),
-        isNewStudent: Boolean(row["is_new_student"] ?? false),
-        isExamApproaching: Boolean(row["is_exam_approaching"] ?? false),
-        hasSpecialNeeds: Boolean(row["has_special_needs"] ?? false),
-        isSlowProgress: Boolean(row["is_slow_progress"] ?? false),
-        instructivoActive: Boolean(row["instructivo_active"] ?? false),
-        instructivoOverdue: Boolean(row["instructivo_overdue"] ?? false),
-      },
+      flags: normalizeFlagList(row.flags),
     }))
-    .filter((student) => student.fullName.length > 0);
+    .filter((student) => student.fullName.length > 0 && Number.isFinite(student.id) && student.id > 0);
 }
