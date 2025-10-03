@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { listStudentsWithFlags } from "@/features/administration/data/students";
+import { listStudentManagementEntries } from "@/features/administration/data/students";
 import { StudentManagementTable } from "@/features/administration/components/student-management-table";
 
 export const metadata: Metadata = {
@@ -10,11 +10,11 @@ export const metadata: Metadata = {
 export const revalidate = 0;
 
 export default async function GestionEstudiantesPage() {
-  let students = [] as Awaited<ReturnType<typeof listStudentsWithFlags>>;
+  let students = [] as Awaited<ReturnType<typeof listStudentManagementEntries>>;
   let dataError: string | null = null;
 
   try {
-    students = await listStudentsWithFlags();
+    students = await listStudentManagementEntries();
   } catch (error) {
     console.error("No se pudieron cargar los estudiantes", error);
     dataError =
