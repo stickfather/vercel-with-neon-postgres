@@ -145,7 +145,7 @@ export async function getStudentDirectory(): Promise<StudentName[]> {
   `);
 
   return rows
-    .map((row) => ({ fullName: (row.full_name as string) ?? "" }))
+    .map((row) => ({ fullName: ((row.full_name as string) ?? "").trim() }))
     .filter((entry) => entry.fullName.trim().length);
 }
 
@@ -217,7 +217,7 @@ async function findStudentIdByName(
   const studentRow = normalizeRows<SqlRow>(await sql`
     SELECT id
     FROM students
-    WHERE LOWER(full_name) = LOWER(${normalized})
+    WHERE LOWER(TRIM(full_name)) = LOWER(${normalized})
     LIMIT 1
   `);
   if (studentRow.length) return Number(studentRow[0].id);
@@ -225,7 +225,7 @@ async function findStudentIdByName(
   const attendanceRow = normalizeRows<SqlRow>(await sql`
     SELECT student_id
     FROM student_attendance
-    WHERE LOWER(full_name) = LOWER(${normalized})
+    WHERE LOWER(TRIM(full_name)) = LOWER(${normalized})
       AND student_id IS NOT NULL
     ORDER BY checkin_time DESC
     LIMIT 1
