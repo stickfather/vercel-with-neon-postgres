@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import Link from "next/link";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
 
@@ -8,32 +7,46 @@ type Props = {
   students: StudentManagementEntry[];
 };
 
-export function StudentManagementTable({ students }: Props) {
-  const dateTimeFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat("es-EC", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }),
-    [],
-  );
+type FlagKey =
+  | "isExamPreparation"
+  | "hasSpecialNeeds"
+  | "hasPaymentIssues"
+  | "isLowProgress"
+  | "isSlowProgress"
+  | "isDropoutRisk";
 
-  const dateFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat("es-EC", {
-        dateStyle: "medium",
-      }),
-    [],
-  );
-
-  const formatDate = (value: string | null, withTime = true) => {
-    if (!value) return "—";
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-      return "—";
-    }
-    return withTime ? dateTimeFormatter.format(parsed) : dateFormatter.format(parsed);
-  };
+const flagColumns: { key: FlagKey; label: string; description: string }[] = [
+  {
+    key: "isExamPreparation",
+    label: "Ex",
+    description: "Preparación para el examen",
+  },
+  {
+    key: "hasSpecialNeeds",
+    label: "NEE",
+    description: "Necesidades educativas especiales",
+  },
+  {
+    key: "hasPaymentIssues",
+    label: "Pagos",
+    description: "Alertas de pagos",
+  },
+  {
+    key: "isLowProgress",
+    label: "Progreso",
+    description: "Progreso bajo",
+  },
+  {
+    key: "isSlowProgress",
+    label: "Ritmo",
+    description: "Avance lento",
+  },
+  {
+    key: "isDropoutRisk",
+    label: "Riesgo",
+    description: "Riesgo de deserción",
+  },
+];
 
   return (
     <div className="flex flex-col gap-6">
@@ -61,117 +74,75 @@ export function StudentManagementTable({ students }: Props) {
                   Nombre
                 </th>
                 <th scope="col" className="px-4 py-3 font-semibold text-brand-deep">
+                  Nivel
+                </th>
+                <th scope="col" className="px-4 py-3 font-semibold text-brand-deep">
                   Estado
                 </th>
-                <th scope="col" className="px-4 py-3 font-semibold text-brand-deep">
-                  Última lección
-                </th>
-                <th scope="col" className="px-4 py-3 font-semibold text-brand-deep">
-                  Última asistencia
-                </th>
-                <th scope="col" className="px-4 py-3 font-semibold text-brand-deep">
-                  Banderas
-                </th>
-                <th scope="col" className="px-4 py-3 font-semibold text-brand-deep">
-                  Seguimiento
-                </th>
+                {flagColumns.map((column) => (
+                  <th
+                    key={column.key}
+                    scope="col"
+                    className="px-3 py-3 text-center font-semibold text-brand-deep"
+                    title={column.description}
+                  >
+                    {column.label}
+                  </th>
+                ))}
                 <th scope="col" className="px-4 py-3 font-semibold text-brand-deep">
                   Perfil
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
-              {students.map((student) => {
-                const flagText = student.flags.length
-                  ? student.flags.join(", ")
-                  : "—";
-                const lessonLabel = student.lastLesson
-                  ? student.lastLesson
-                  : student.lastLessonId
-                  ? `Lección ${student.lastLessonId}`
-                  : "Sin registro";
-                const progressionLabel =
-                  student.allowsProgression == null
-                    ? "Pendiente"
-                    : student.allowsProgression
-                    ? "Permitida"
-                    : "Revisar";
-                const progressionClasses =
-                  student.allowsProgression == null
-                    ? "bg-brand-deep-soft text-brand-deep"
-                    : student.allowsProgression
-                    ? "bg-brand-teal-soft text-brand-teal"
-                    : "bg-brand-orange/20 text-brand-orange";
-
-                return (
-                  <tr key={student.id} className="hover:bg-brand-teal-soft/25">
-                    <td className="px-6 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span className="font-semibold text-brand-deep">{student.fullName}</span>
-                        <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-                          Primera lección: {formatDate(student.firstLessonAt, false)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-brand-ink">
-                      <div className="flex flex-col gap-1">
-                        <span className="font-semibold text-brand-deep-soft">
-                          {student.status ?? "Sin estado"}
-                        </span>
-                        <span className="text-[11px] uppercase tracking-wide text-brand-ink-muted">
-                          Actualizado: {formatDate(student.statusUpdatedAt)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span className="font-semibold text-brand-deep">{lessonLabel}</span>
-                        <span className="text-[11px] uppercase tracking-wide text-brand-ink-muted">
-                          {formatDate(student.lastLessonAt)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm text-brand-ink">
-                        {formatDate(student.lastAttendanceAt)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-brand-ink">
-                      <div className="flex flex-col gap-1">
-                        <span>{flagText}</span>
-                        <span className="text-[11px] uppercase tracking-wide text-brand-ink-muted">
-                          {student.flagsUpdatedAt
-                            ? `Actualizado: ${formatDate(student.flagsUpdatedAt)}`
-                            : "Sin historial"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-2">
+              {students.map((student) => (
+                <tr key={student.id} className="hover:bg-brand-teal-soft/20">
+                  <td className="px-6 py-3">
+                    <span className="font-semibold text-brand-deep">{student.fullName}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-sm text-brand-ink">
+                      {student.level ?? "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="font-semibold text-brand-deep-soft">
+                      {student.state ?? "Sin estado"}
+                    </span>
+                  </td>
+                  {flagColumns.map((column) => {
+                    const isActive = student[column.key];
+                    return (
+                      <td key={column.key} className="px-3 py-3 text-center">
                         <span
-                          className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${progressionClasses}`}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold uppercase tracking-wide ${
+                            isActive
+                              ? "bg-brand-teal-soft text-brand-teal"
+                              : "bg-brand-ink-muted/10 text-brand-ink-muted"
+                          }`}
+                          aria-label={`${column.description}: ${isActive ? "Sí" : "No"}`}
                         >
-                          {progressionLabel}
+                          {isActive ? "Sí" : "—"}
                         </span>
-                        <span className="text-xs text-brand-ink-muted">
-                          Responsable: {student.instructiveOwner ?? "—"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/administracion/gestion-estudiantes/${student.id}`}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                      >
-                        Ver perfil
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                    );
+                  })}
+                  <td className="px-4 py-3">
+                    <Link
+                      href={{
+                        pathname: "/administracion/gestion-estudiantes/[studentId]",
+                        query: { studentId: String(student.id) },
+                      }}
+                      className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:opacity-90 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                    >
+                      Ver perfil
+                    </Link>
+                  </td>
+                </tr>
+              ))}
               {!students.length && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
+                  <td colSpan={flagColumns.length + 4} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
                     No encontramos estudiantes en la vista de gestión. Revisa los filtros o la configuración de la base de datos.
                   </td>
                 </tr>

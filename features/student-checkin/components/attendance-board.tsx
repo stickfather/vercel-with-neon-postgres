@@ -135,7 +135,7 @@ export function AttendanceBoard({ attendances }: Props) {
                   {levelAttendances.length} en clase
                 </span>
               </header>
-              <div className="flex flex-wrap gap-3">
+              <div className="grid max-h-[520px] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
                 {levelAttendances.map((attendance) => {
                   const levelAccent = getLevelAccent(attendance.level);
                   const checkInDate = attendance.checkInTime
@@ -144,9 +144,17 @@ export function AttendanceBoard({ attendances }: Props) {
                   const formattedTime = checkInDate
                     ? formatter.format(checkInDate)
                     : "";
-                  const lessonAbbreviation = attendance.lesson
-                    ? attendance.lesson.replace(/lecci[óo]n\s*/i, "L").replace(/\s+/g, "")
-                    : null;
+                  const lessonName = attendance.lesson?.trim() ?? "";
+                  let lessonAbbreviation: string | null = null;
+                  if (lessonName) {
+                    if (lessonName.toLowerCase() === "preparación para el examen") {
+                      lessonAbbreviation = "Ex";
+                    } else {
+                      lessonAbbreviation = lessonName
+                        .replace(/lecci[óo]n\s*/i, "L")
+                        .replace(/\s+/g, "");
+                    }
+                  }
                   const labelParts = [attendance.fullName.trim()];
                   if (lessonAbbreviation) labelParts.push(lessonAbbreviation);
                   if (formattedTime) labelParts.push(formattedTime);
@@ -159,13 +167,13 @@ export function AttendanceBoard({ attendances }: Props) {
                       type="button"
                       onClick={() => requestCheckout(attendance)}
                       disabled={isLoading}
-                      className="group relative flex min-h-[96px] min-w-[160px] max-w-[240px] flex-1 flex-col items-center justify-center gap-1 rounded-3xl border px-4 py-4 text-center text-sm font-semibold text-brand-deep shadow-[0_14px_32px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                      className="group relative flex min-h-[72px] min-w-[120px] flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-3 text-center text-[12px] font-semibold text-brand-deep shadow-[0_12px_26px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
                       style={{
                         backgroundColor: `${levelAccent.background}`,
                         borderColor: `${levelAccent.chipBackground}`,
                       }}
                     >
-                      <span className="line-clamp-3 w-full break-words text-[13px] font-semibold tracking-tight text-brand-deep">
+                      <span className="line-clamp-3 w-full break-words text-[12px] font-semibold tracking-tight text-brand-deep">
                         {label}
                       </span>
                       {isLoading && (

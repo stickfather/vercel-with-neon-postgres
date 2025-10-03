@@ -7,7 +7,7 @@ import { AttendanceBoard } from "@/features/student-checkin/components/attendanc
 import { CheckInForm } from "@/features/student-checkin/components/check-in-form";
 
 const quickLinkBaseClass =
-  "inline-flex items-center justify-center rounded-full border border-transparent px-5 py-2 text-xs font-semibold uppercase tracking-wide shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
+  "inline-flex items-center justify-center rounded-full border border-transparent px-5 py-2 text-xs font-semibold uppercase tracking-wide shadow transition hover:-translate-y-[1px] hover:opacity-90 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
 
 export const revalidate = 0;
 
@@ -61,7 +61,7 @@ export default async function RegistroPage() {
           </p>
         </div>
 
-        <div className="grid gap-7 lg:grid-cols-[1.1fr_1.35fr]">
+        <div className="grid gap-7 lg:grid-cols-[1.35fr_1fr]">
           <CheckInForm
             levels={levels}
             disabled={Boolean(formError)}
@@ -96,19 +96,19 @@ export default async function RegistroPage() {
           <div className="flex flex-wrap justify-end gap-3">
             <Link
               href="/administracion"
-              className={`${quickLinkBaseClass} bg-white text-brand-deep hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline-[#00bfa6]`}
+              className={`${quickLinkBaseClass} border border-brand-ink-muted/20 bg-white text-brand-deep focus-visible:outline-[#00bfa6]`}
             >
               Acceso administrativo
             </Link>
             <Link
               href="/"
-              className={`${quickLinkBaseClass} bg-brand-deep text-white hover:bg-[#322d54] focus-visible:outline-[#00bfa6]`}
+              className={`${quickLinkBaseClass} bg-brand-deep text-white focus-visible:outline-[#00bfa6]`}
             >
               Volver a bienvenida
             </Link>
             <Link
               href="/administracion/registro-personal"
-              className={`${quickLinkBaseClass} bg-brand-teal text-white hover:bg-[#04a890] focus-visible:outline-[#ff7a23]`}
+              className={`${quickLinkBaseClass} bg-brand-teal text-white focus-visible:outline-[#00bfa6]`}
             >
               Check-in del personal
             </Link>
