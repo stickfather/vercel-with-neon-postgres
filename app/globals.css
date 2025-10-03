@@ -154,3 +154,44 @@ textarea:focus-visible {
   opacity: 1;
   transform: scale(1.1);
 }
+
+.style-guide-card {
+  position: relative;
+  isolation: isolate;
+}
+
+.style-guide-card::before {
+  content: "";
+  position: absolute;
+  inset: -35% auto auto -55%;
+  width: 220%;
+  height: 70%;
+  background-image: repeating-linear-gradient(
+      -45deg,
+      #ff7a23 0,
+      #ff7a23 22px,
+      #1e1b32 22px,
+      #1e1b32 44px,
+      #ffffff 44px,
+      #ffffff 66px,
+      #00bfa6 66px,
+      #00bfa6 88px
+    );
+  opacity: 0.18;
+  transform: rotate(-4deg);
+  z-index: -1;
+}
+
+.style-guide-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -40% -30% auto;
+  width: 200%;
+  height: 80%;
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(255, 194, 58, 0.25) 0, rgba(255, 194, 58, 0.25) 26%, transparent 26%),
+    radial-gradient(circle at 60% 40%, rgba(255, 122, 35, 0.28) 0, rgba(255, 122, 35, 0.28) 24%, transparent 24%);
+  opacity: 0.8;
+  transform: rotate(12deg);
+  z-index: -1;
+}

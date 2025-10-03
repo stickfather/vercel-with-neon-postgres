@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import hero from "@/assets/home.png";
+import mantaSymbol from "@/assets/manta-symbol.svg";
 
 type SearchParams = {
   saludo?: string;
@@ -125,34 +125,29 @@ export default async function Home({ searchParams }: PageProps) {
                     Haz check-in aquí
                   </Link>
                 </div>
-                <div className="flex flex-wrap gap-3 text-sm text-brand-ink-muted">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow-sm">
-                    <span className="h-2 w-2 rounded-full bg-[#2f9d6a]" /> Niveles A1-A2
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow-sm">
-                    <span className="h-2 w-2 rounded-full bg-[#ff7a23]" /> Talleres conversacionales
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow-sm">
-                    <span className="h-2 w-2 rounded-full bg-[#2e88c9]" /> Tutorías express
-                  </span>
-                </div>
               </div>
               <div className="relative flex items-center justify-center">
-                <div className="relative w-full max-w-md overflow-hidden rounded-[48px] border border-white/70 bg-white/90 p-6 text-center shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur">
-                  <div className="absolute -top-10 right-6 inline-flex rotate-[12deg] rounded-full bg-[#ffe5d5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-brand-deep">
-                    Smile!
-                  </div>
-                  <div className="absolute -bottom-10 left-6 inline-flex rotate-[-10deg] rounded-full bg-[#d8f5ff] px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-brand-deep">
-                    #YouCanDoIt
-                  </div>
-                  <div className="relative h-80 w-full overflow-hidden rounded-[38px] bg-gradient-to-br from-[#ff7a23e6] via-[#ffc23acc] to-[#00bfa6cc] p-3">
-                    <div className="absolute inset-0 rounded-[32px] border border-white/45" />
-                    <Image
-                      src={hero}
-                      alt="Estudiantes celebrando en la sede de Inglés Rápido"
-                      className="h-full w-full rounded-[28px] object-cover"
-                      priority
-                    />
+                <div className="relative w-full max-w-md overflow-hidden rounded-[48px] border border-white/70 bg-white/90 p-1 text-left shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur">
+                  <div className="style-guide-card relative flex h-full flex-col justify-between overflow-hidden rounded-[44px] bg-[#fff4ea]">
+                    <div className="relative z-10 flex flex-col gap-2 px-8 pt-9 text-brand-deep">
+                      <span className="inline-flex w-fit items-center rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-orange">
+                        ¡Llegamos a!
+                      </span>
+                      <h2 className="text-3xl font-black uppercase tracking-wide">Manta</h2>
+                      <p className="max-w-[220px] text-sm font-semibold text-brand-ink-soft">#YouCanDoIt · Inglés Rápido</p>
+                    </div>
+                    <div className="relative z-10 flex justify-end px-8 pb-8">
+                      <div className="rounded-full bg-white/90 p-6 shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
+                        <Image
+                          src={mantaSymbol}
+                          alt="Símbolo de Inglés Rápido"
+                          width={72}
+                          height={72}
+                          className="h-16 w-16"
+                          priority
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

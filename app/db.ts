@@ -111,8 +111,7 @@ export async function getStudentDirectory(): Promise<StudentName[]> {
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT full_name
     FROM students
-    WHERE LOWER(TRIM(COALESCE(status, 'active'))) = 'active'
-      AND TRIM(COALESCE(full_name, '')) <> ''
+    WHERE TRIM(COALESCE(full_name, '')) <> ''
     ORDER BY full_name ASC
   `);
 
@@ -160,7 +159,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       COALESCE(s.full_name, sa.full_name) AS full_name,
       sa.checkin_time,
       l.lesson,
-      l.level
+      l.level_code AS level
     FROM student_attendance sa
     LEFT JOIN students s ON s.id = sa.student_id
     LEFT JOIN lessons l ON l.id = sa.lesson_id
