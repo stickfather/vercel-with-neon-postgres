@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import { AdminPlaceholder } from "@/features/administration/components/admin-placeholder";
 
 export const metadata: Metadata = {
-  title: "Management dashboards · Inglés Rápido Manta",
+  title: "Paneles gerenciales · Inglés Rápido Manta",
 };
 
 export default function PanelGerencialPage() {
   return (
     <AdminPlaceholder
-      title="Management dashboards"
+      title="Paneles gerenciales"
       description="Reúne indicadores de avance, ocupación y satisfacción para la dirección del centro. Muy pronto podrás visualizar KPIs en tiempo real."
       actions={[
         { href: "/administracion", label: "Volver al panel" },

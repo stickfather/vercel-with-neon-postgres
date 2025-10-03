@@ -82,10 +82,15 @@ export function StaffCheckInForm({
         message: "¡Registro de personal confirmado!",
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      const selectedMember = staffMembers.find((member) => member.id === selectedStaffId);
 
       startTransition(() => {
-        router.refresh();
+        if (selectedMember) {
+          const encoded = encodeURIComponent(selectedMember.fullName.trim());
+          router.push(`/?saludo=1&nombre=${encoded}`);
+          return;
+        }
+        router.push("/");
       });
     } catch (error) {
       console.error(error);

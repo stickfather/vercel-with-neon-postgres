@@ -25,9 +25,9 @@ export default async function ConfiguracionPage() {
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-12 px-6 py-16 md:px-10 lg:px-14">
         <header className="flex flex-col gap-3 text-left text-brand-deep">
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#1e1b32] px-4 py-1 text-xs font-semibold uppercase tracking-[0.38em] text-white">
-            Settings
+            Configuración
           </span>
-          <h1 className="text-4xl font-black sm:text-5xl">Staff settings</h1>
+          <h1 className="text-4xl font-black sm:text-5xl">Configuración del personal</h1>
           <p className="max-w-3xl text-base text-brand-ink-muted sm:text-lg">
             Administra quién forma parte del equipo, sus roles y horarios de referencia. Todos los cambios se reflejan de inmediato en el registro del personal.
           </p>

@@ -404,7 +404,7 @@ export function CheckInForm({
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
           {canChooseProgression ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
               {levels.map((level) => {
                 const levelAccent = getLevelAccent(level.level);
                 const isActive = selectedLevel === level.level;
@@ -416,27 +416,23 @@ export function CheckInForm({
                       setSelectedLevel(level.level);
                       setStatus(null);
                     }}
-                    className={`flex min-h-[56px] items-center justify-between rounded-[22px] border px-5 py-3 text-left text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    className={`flex h-[60px] items-center justify-center rounded-full border px-5 text-center text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                       isActive
                         ? "border-transparent text-brand-deep"
                         : "border-[rgba(30,27,50,0.15)] text-brand-ink"
                     }`}
                     style={{
                       backgroundColor: isActive ? levelAccent.background : "rgba(255,255,255,0.85)",
-                      boxShadow: isActive ? "0 14px 32px rgba(15,23,42,0.14)" : "0 6px 18px rgba(15,23,42,0.06)",
+                      boxShadow: isActive ? "0 12px 28px rgba(15,23,42,0.14)" : "0 4px 14px rgba(15,23,42,0.08)",
                     }}
                     aria-pressed={isActive}
                     disabled={isFormDisabled || !canChooseProgression}
                   >
-                    <span className="text-lg font-black">{level.level}</span>
                     <span
-                      className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide"
-                      style={{
-                        backgroundColor: levelAccent.chipBackground,
-                        color: levelAccent.primary,
-                      }}
+                      className="text-lg font-black"
+                      style={{ color: isActive ? levelAccent.primary : undefined }}
                     >
-                      {level.lessons.length} lecciones
+                      {level.level}
                     </span>
                   </button>
                 );
@@ -452,7 +448,7 @@ export function CheckInForm({
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Lección</span>
           {selectedLevel && canChooseProgression ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
               {sortedLessons.map((lesson) => {
                 const isActive = selectedLesson === lesson.id.toString();
                 return (
@@ -460,24 +456,23 @@ export function CheckInForm({
                     key={lesson.id}
                     type="button"
                     onClick={() => setSelectedLesson(lesson.id.toString())}
-                    className={`flex min-h-[60px] flex-col items-start justify-center gap-1 rounded-[22px] border px-5 py-4 text-left text-sm transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    className={`flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-[20px] border px-4 py-4 text-center text-sm transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                       isActive
                         ? "border-transparent text-brand-deep"
-                        : "border-[rgba(30,27,50,0.15)] text-brand-ink"
+                        : "border-[rgba(30,27,50,0.18)] text-brand-ink"
                     }`}
                     style={{
                       backgroundColor: isActive ? accent.background : "rgba(255,255,255,0.88)",
-                      boxShadow: isActive ? "0 14px 32px rgba(15,23,42,0.14)" : "0 6px 18px rgba(15,23,42,0.06)",
+                      boxShadow: isActive ? "0 12px 28px rgba(15,23,42,0.14)" : "0 4px 14px rgba(15,23,42,0.08)",
                     }}
                     aria-pressed={isActive}
                     disabled={
                       isFormDisabled || !sortedLessons.length || !canChooseProgression
                     }
                   >
-                    <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep-soft">
-                      {lesson.sequence ? `Lección ${lesson.sequence}` : "Lección"}
+                    <span className="text-base font-semibold text-brand-deep">
+                      {lesson.lesson}
                     </span>
-                    <span className="text-base font-semibold">{lesson.lesson}</span>
                   </button>
                 );
               })}

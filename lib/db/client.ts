@@ -34,23 +34,49 @@ export function normalizeRows<T extends SqlRow>(result: unknown): T[] {
 
 export async function closeExpiredSessions(sql = getSqlClient()) {
   await sql`
+    WITH vencidos AS (
+      SELECT
+        sa.id,
+        sa.checkin_time,
+        timezone(
+          ${TIMEZONE},
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+        ) AS checkout_programado
+      FROM student_attendance sa
+      WHERE sa.checkout_time IS NULL
+        AND timezone(${TIMEZONE}, now()) >= timezone(
+          ${TIMEZONE},
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+        )
+    )
     UPDATE student_attendance AS sa
-    SET checkout_time = date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
-    WHERE sa.checkout_time IS NULL
-      AND timezone(${TIMEZONE}, now()) >= date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
+    SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
+    FROM vencidos
+    WHERE sa.id = vencidos.id
   `;
 }
 
 export async function closeExpiredStaffSessions(sql = getSqlClient()) {
   await sql`
+    WITH vencidos AS (
+      SELECT
+        sa.id,
+        sa.checkin_time,
+        timezone(
+          ${TIMEZONE},
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+        ) AS checkout_programado
+      FROM staff_attendance sa
+      WHERE sa.checkout_time IS NULL
+        AND timezone(${TIMEZONE}, now()) >= timezone(
+          ${TIMEZONE},
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+        )
+    )
     UPDATE staff_attendance AS sa
-    SET checkout_time = date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
-    WHERE sa.checkout_time IS NULL
-      AND timezone(${TIMEZONE}, now()) >= date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
+    SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
+    FROM vencidos
+    WHERE sa.id = vencidos.id
   `;
 }
 

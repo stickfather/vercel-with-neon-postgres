@@ -47,13 +47,10 @@ export default async function RegistroPage() {
         <div className="absolute right-4 top-24 h-52 w-52 rotate-[18deg] rounded-[36px] bg-[#ccf6f0] opacity-80" />
         <div className="absolute bottom-0 left-1/2 h-[460px] w-[120%] -translate-x-1/2 rounded-t-[180px] bg-gradient-to-r from-[#ffe7d1] via-[#ffffffef] to-[#c9f5ed]" />
       </div>
-      <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
-        <header className="flex flex-col gap-4 rounded-[32px] border border-white/70 bg-white/92 px-6 py-6 shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-3 text-left">
-            <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-teal-soft px-5 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-brand-teal">
-              Registro de estudiantes
-            </span>
-            <h1 className="text-2xl font-black text-brand-deep sm:text-3xl">Check-in de estudiantes</h1>
+      <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-10 md:px-10 lg:px-14">
+        <header className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/92 px-5 py-4 shadow-[0_18px_44px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 text-left">
+            <h1 className="text-2xl font-black text-brand-deep sm:text-[28px]">Check-in de estudiantes</h1>
             <Link
               href="/"
               className="inline-flex w-fit items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow hover:border-brand-teal focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
@@ -77,14 +74,14 @@ export default async function RegistroPage() {
           </div>
         </header>
 
-        <div className="grid gap-10 lg:grid-cols-[1.45fr_1fr]">
+        <div className="grid gap-10 lg:grid-cols-[1fr_1.35fr]">
           <CheckInForm
             levels={levels}
             disabled={Boolean(formError)}
             initialError={formError}
             lessonsError={lessonsError}
           />
-          <aside className="flex flex-col gap-5 rounded-[36px] border border-white/70 bg-white/92 p-7 shadow-[0_22px_56px_rgba(15,23,42,0.12)] backdrop-blur">
+          <aside className="flex flex-col gap-5 rounded-[36px] border border-white/70 bg-white/92 p-8 shadow-[0_24px_60px_rgba(15,23,42,0.14)] backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-bold text-brand-deep">Estudiantes en clase</h2>
               <span className="rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-teal">
