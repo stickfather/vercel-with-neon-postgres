@@ -3,6 +3,7 @@ import {
   getActiveAttendances,
   getLevelsWithLessons,
 } from "@/features/student-checkin/data/queries";
+import { getActiveStaffAttendances } from "@/features/staff/data/queries";
 import { AttendanceBoard } from "@/features/student-checkin/components/attendance-board";
 import { CheckInForm } from "@/features/student-checkin/components/check-in-form";
 
@@ -11,9 +12,11 @@ export const revalidate = 0;
 export default async function RegistroPage() {
   let levels = [] as Awaited<ReturnType<typeof getLevelsWithLessons>>;
   let attendances = [] as Awaited<ReturnType<typeof getActiveAttendances>>;
+  let staffAttendances = [] as Awaited<ReturnType<typeof getActiveStaffAttendances>>;
   let formError: string | null = null;
   let lessonsError: string | null = null;
   let attendanceError: string | null = null;
+  let staffAttendanceError: string | null = null;
 
   try {
     levels = await getLevelsWithLessons();
@@ -40,6 +43,21 @@ export default async function RegistroPage() {
       "No pudimos cargar la lista de estudiantes en clase. Consulta el panel principal.";
   }
 
+  try {
+    staffAttendances = await getActiveStaffAttendances();
+  } catch (error) {
+    console.error("No se pudieron cargar las asistencias del personal", error);
+    staffAttendanceError =
+      "No pudimos cargar la lista del personal registrado. Consulta el panel de administración.";
+  }
+
+  const headerButtonBaseClass =
+    "inline-flex items-center justify-center rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
+  const staffTimeFormatter = new Intl.DateTimeFormat("es-EC", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden">
       <div className="pointer-events-none absolute inset-0 -z-10">
@@ -61,13 +79,13 @@ export default async function RegistroPage() {
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/administracion"
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow hover:border-brand-teal focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              className={`${headerButtonBaseClass} border border-transparent bg-white text-brand-deep shadow hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline-[#00bfa6]`}
             >
               Acceso administrativo
             </Link>
             <Link
               href="/administracion/registro-personal"
-              className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
+              className={`${headerButtonBaseClass} border border-transparent bg-brand-teal text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline-[#ff7a23]`}
             >
               Check-in del personal
             </Link>
@@ -88,15 +106,50 @@ export default async function RegistroPage() {
                 {attendances.length}
               </span>
             </div>
-            <p className="text-sm text-brand-ink-muted">
-              Confirma a quiénes ya están en tu aula y verifica la hora exacta de ingreso. Los nuevos ingresos aparecerán con un distintivo.
-            </p>
+            <p className="text-sm text-brand-ink-muted">Haz clic en tu burbuja para registrar tu salida.</p>
             {attendanceError && (
               <p className="rounded-3xl border border-brand-orange bg-white/85 px-4 py-3 text-xs font-medium text-brand-ink">
                 {attendanceError}
               </p>
             )}
             <AttendanceBoard attendances={attendances} />
+            <section className="flex flex-col gap-3 rounded-[28px] border border-dashed border-brand-teal/60 bg-white/80 p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
+                  Personal registrado
+                </h3>
+                <span className="rounded-full bg-brand-deep-soft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep">
+                  {staffAttendances.length}
+                </span>
+              </div>
+              {staffAttendanceError ? (
+                <p className="text-xs text-brand-ink">{staffAttendanceError}</p>
+              ) : staffAttendances.length ? (
+                <ul className="flex flex-col gap-2">
+                  {staffAttendances.map((staff) => {
+                    const checkIn = staff.checkInTime ? new Date(staff.checkInTime) : null;
+                    const formatted = checkIn ? staffTimeFormatter.format(checkIn) : null;
+                    return (
+                      <li
+                        key={staff.id}
+                        className="flex items-center justify-between gap-3 rounded-2xl bg-white/90 px-4 py-2 text-xs text-brand-ink"
+                      >
+                        <span className="font-semibold text-brand-deep">{staff.fullName}</span>
+                        {formatted && (
+                          <span className="rounded-full bg-brand-teal-soft px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-teal">
+                            {formatted}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-xs text-brand-ink-muted">
+                  Aún no hay registros del personal en esta jornada.
+                </p>
+              )}
+            </section>
           </aside>
         </div>
       </main>
