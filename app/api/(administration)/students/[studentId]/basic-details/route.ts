@@ -3,18 +3,26 @@ import { updateStudentBasicField } from "@/features/administration/data/student-
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { studentId: string } },
+  { params }: { params: Promise<{ studentId: string }> }   // 👈 params is a Promise now
 ) {
   try {
-    const studentId = Number(params.studentId);
+    const { studentId: studentIdStr } = await params;       // 👈 await it
+    const studentId = Number(studentIdStr);
+
     if (!Number.isFinite(studentId)) {
-      return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Identificador inválido." },
+        { status: 400 }
+      );
     }
 
     const { field, value } = await request.json();
 
     if (!field || typeof field !== "string") {
-      return NextResponse.json({ error: "Falta el campo a actualizar." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Falta el campo a actualizar." },
+        { status: 400 }
+      );
     }
 
     await updateStudentBasicField(studentId, field, value ?? null);
