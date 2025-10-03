@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import { AdminPlaceholder } from "@/components/admin-placeholder";
 
 export const metadata: Metadata = {
-  title: "Ayuda · Inglés Rápido Manta",
+  title: "Help · Inglés Rápido Manta",
 };
 
 export default function AyudaPage() {
   return (
     <AdminPlaceholder
-      title="Centro de ayuda"
+      title="Help center"
       description="Encuentra guías, preguntas frecuentes y contactos para soporte inmediato. Este módulo concentrará tutoriales y material para entrenar a nuevos miembros."
       actions={[
         { href: "/administracion", label: "Volver al panel" },

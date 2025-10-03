@@ -3,43 +3,38 @@ import Link from "next/link";
 
 const tiles = [
   {
-    href: "/registro",
-    title: "Registro de estudiantes",
-    description: "Gestiona la experiencia de check-in y verifica la asistencia activa.",
-  },
-  {
     href: "/administracion/registro-personal",
-    title: "Registro del personal",
-    description: "Anota las entradas y salidas del equipo académico y administrativo.",
+    title: "Staff check-in",
+    description: "Controla las entradas y salidas del equipo académico y administrativo.",
   },
   {
     href: "/administracion/reportes-nomina",
-    title: "Reportes de nómina",
-    description: "Consulta resúmenes de pagos, bonos y asistencia del personal.",
+    title: "Payroll reports",
+    description: "Consulta nóminas, bonos y ausencias del personal para cierres semanales.",
   },
   {
     href: "/administracion/gestion-estudiantes",
-    title: "Gestión de estudiantes",
-    description: "Administra perfiles, progresos y observaciones de cada alumno.",
+    title: "Student management",
+    description: "Actualiza datos, progreso y seguimientos personalizados de cada alumno.",
   },
   {
     href: "/administracion/panel-gerencial",
-    title: "Panel gerencial",
-    description: "Obtén métricas clave para la toma de decisiones del centro.",
+    title: "Management dashboards",
+    description: "Analiza métricas clave para tomar decisiones estratégicas en minutos.",
   },
   {
     href: "/administracion/calendario",
-    title: "Calendario",
-    description: "Coordina eventos, evaluaciones y actividades especiales.",
+    title: "Calendar",
+    description: "Coordina eventos, evaluaciones y actividades especiales de la sede.",
   },
   {
     href: "/administracion/configuracion",
-    title: "Configuración",
-    description: "Ajusta parámetros del kiosco, horarios y preferencias de la sede.",
+    title: "Settings",
+    description: "Ajusta horarios, accesos y preferencias generales del centro.",
   },
   {
     href: "/administracion/ayuda",
-    title: "Ayuda",
+    title: "Help",
     description: "Accede a guías rápidas y soporte para resolver dudas del equipo.",
   },
 ];
