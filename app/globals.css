@@ -1,26 +1,229 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --app-orange: #ff7a23;
+  --app-sun: #ffc23a;
+  --app-teal: #00bfa6;
+  --app-coral: #ff5c5c;
+  --app-aqua: #5cd6ca;
+  --app-deep: #1e1b32;
+  --app-ink: #1f1b24;
+  --app-soft: #fff6ee;
+  --app-white: #ffffff;
+  color-scheme: only light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--app-white);
+  color: var(--app-ink);
+}
+
+.registro-card {
+  position: relative;
+}
+
+.registro-card::before,
+.registro-card::after {
+  content: "";
+  position: absolute;
+  inset: -24px;
+  border-radius: 60px;
+  background: linear-gradient(135deg, rgba(255, 205, 165, 0.35), rgba(255, 255, 255, 0) 70%);
+  z-index: -1;
+}
+
+.registro-card::after {
+  inset: -40px -36px -52px;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 183, 92, 0.25), transparent 55%),
+    radial-gradient(circle at 70% 80%, rgba(89, 212, 195, 0.3), transparent 60%);
+  filter: blur(0.5px);
+  z-index: -2;
+}
+
+.lesson-stop {
+  position: relative;
+  isolation: isolate;
+}
+
+.lesson-stop::after {
+  content: "";
+  position: absolute;
+  inset: 12px 16px;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.6);
+  mix-blend-mode: lighten;
+  z-index: -1;
+}
+
+.attendance-grid {
+  position: relative;
+}
+
+.attendance-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 30%, rgba(255, 183, 92, 0.16), transparent 55%),
+    radial-gradient(circle at 80% 65%, rgba(94, 214, 202, 0.18), transparent 65%),
+    radial-gradient(circle at 60% 20%, rgba(46, 136, 201, 0.14), transparent 60%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.attendance-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.attendance-card::before {
+  content: "";
+  position: absolute;
+  inset: 16px 18px;
+  border-radius: 20px;
+  border: 2px dashed rgba(255, 255, 255, 0.48);
+  pointer-events: none;
+}
+
+.level-runway {
+  scrollbar-width: none;
+}
+
+.level-runway::-webkit-scrollbar {
+  display: none;
+}
+
+.bg-app {
+  min-height: 100vh;
+  background: var(--app-white);
+}
+
+.text-app-ink,
+.text-brand-ink {
+  color: var(--app-ink);
+}
+
+.text-brand-deep {
+  color: var(--app-deep);
+}
+
+.text-brand-deep-soft {
+  color: rgba(30, 27, 50, 0.7);
+}
+
+.text-brand-ink-soft {
+  color: rgba(31, 27, 36, 0.8);
+}
+
+.text-brand-ink-muted {
+  color: rgba(31, 27, 36, 0.65);
+}
+
+.text-brand-teal {
+  color: var(--app-teal);
+}
+
+.text-brand-orange {
+  color: var(--app-orange);
+}
+
+.bg-brand-orange {
+  background-color: var(--app-orange);
+}
+
+.bg-brand-teal {
+  background-color: var(--app-teal);
+}
+
+.bg-brand-teal-soft {
+  background-color: rgba(0, 191, 166, 0.15);
+}
+
+.border-brand-teal {
+  border-color: var(--app-teal);
+}
+
+.border-brand-orange {
+  border-color: var(--app-orange);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+input,
+select,
+button,
+textarea {
+  border-radius: 999px;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(0, 191, 166, 0.4);
+  outline-offset: 2px;
+}
+
+.cta-ripple {
+  position: relative;
+  overflow: hidden;
+  transition: transform 150ms ease;
+}
+
+.cta-ripple:hover {
+  transform: translateY(-1px);
+}
+
+.cta-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 280ms ease, opacity 280ms ease;
+}
+
+.cta-ripple:hover::after {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.checkmark-pop {
+  animation: checkmark-pop 320ms ease-out;
+}
+
+@keyframes checkmark-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
