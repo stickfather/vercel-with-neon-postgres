@@ -107,9 +107,6 @@ export default async function Home({ searchParams }: PageProps) {
                 <h1 className="text-4xl font-black leading-tight text-brand-deep sm:text-5xl">
                   ¡Tu aventura bilingüe empieza con una sonrisa!
                 </h1>
-                <p className="max-w-xl text-lg leading-relaxed text-brand-ink-soft sm:text-xl">
-                  Vive la energía de nuestro hub costero: música, high-fives y clases dinámicas listas para ti. Marca tu asistencia y corre a tu aula en cuestión de segundos.
-                </p>
                 <div className="flex flex-wrap items-center gap-4">
                   <Link
                     href="/registro"

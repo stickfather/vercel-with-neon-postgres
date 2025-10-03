@@ -11,6 +11,15 @@ import { useRouter } from "next/navigation";
 import type { LevelLessons, StudentName } from "@/features/student-checkin/data/queries";
 import { getLevelAccent } from "@/features/student-checkin/lib/level-colors";
 
+const lessonColorPalette = [
+  "linear-gradient(135deg, rgba(255,214,165,0.9), rgba(255,240,200,0.95))",
+  "linear-gradient(135deg, rgba(186,230,253,0.92), rgba(219,234,254,0.95))",
+  "linear-gradient(135deg, rgba(209,250,229,0.92), rgba(167,243,208,0.95))",
+  "linear-gradient(135deg, rgba(254,202,202,0.9), rgba(254,226,226,0.95))",
+  "linear-gradient(135deg, rgba(221,214,254,0.9), rgba(237,233,254,0.95))",
+  "linear-gradient(135deg, rgba(252,231,243,0.9), rgba(255,240,245,0.95))",
+] as const;
+
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
 
@@ -404,7 +413,7 @@ export function CheckInForm({
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
           {canChooseProgression ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               {levels.map((level) => {
                 const levelAccent = getLevelAccent(level.level);
                 const isActive = selectedLevel === level.level;
@@ -448,31 +457,35 @@ export function CheckInForm({
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Lección</span>
           {selectedLevel && canChooseProgression ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {sortedLessons.map((lesson) => {
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {sortedLessons.map((lesson, index) => {
                 const isActive = selectedLesson === lesson.id.toString();
                 const lessonLabel = lesson.lesson;
                 const isWideLabel = lessonLabel.length >= 22;
+                const paletteColor = lessonColorPalette[index % lessonColorPalette.length];
                 return (
                   <button
                     key={lesson.id}
                     type="button"
                     onClick={() => setSelectedLesson(lesson.id.toString())}
-                    className={`flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-6 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    className={`flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-5 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                       isActive
                         ? "border-transparent text-brand-deep"
-                        : "border-[rgba(30,27,50,0.18)] text-brand-ink"
-                    } ${isWideLabel ? "sm:col-span-2 xl:col-span-2" : ""}`}
+                        : "border-[rgba(30,27,50,0.12)] text-brand-ink"
+                    } ${isWideLabel ? "sm:col-span-2 lg:col-span-2" : ""}`}
                     style={{
-                      backgroundColor: isActive ? accent.background : "rgba(255,255,255,0.88)",
-                      boxShadow: isActive ? "0 12px 28px rgba(15,23,42,0.14)" : "0 4px 14px rgba(15,23,42,0.08)",
+                      background: isActive ? accent.background : paletteColor,
+                      boxShadow: isActive
+                        ? "0 12px 28px rgba(15,23,42,0.14)"
+                        : "0 6px 18px rgba(15,23,42,0.1)",
+                      color: isActive ? accent.primary : "#1e1b32",
                     }}
                     aria-pressed={isActive}
                     disabled={
                       isFormDisabled || !sortedLessons.length || !canChooseProgression
                     }
                   >
-                    <span className="text-base font-semibold leading-snug text-brand-deep">
+                    <span className="text-sm font-semibold leading-snug text-brand-deep sm:text-base">
                       {lessonLabel}
                     </span>
                   </button>

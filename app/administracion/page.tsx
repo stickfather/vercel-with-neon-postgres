@@ -119,7 +119,7 @@ export default function AdministracionPage() {
             </Link>
             <Link
               href="/registro"
-              className={`${actionButtonBaseClass} bg-brand-orange text-white hover:bg-[#ff6a00] focus-visible:outline-[#ff7a23]`}
+              className={`${actionButtonBaseClass} border border-brand-ink-muted/20 bg-white text-brand-deep focus-visible:outline-[#00bfa6]`}
             >
               Abrir check-in de estudiantes
             </Link>

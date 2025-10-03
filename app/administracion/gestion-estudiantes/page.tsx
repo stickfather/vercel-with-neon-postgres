@@ -51,7 +51,7 @@ export default async function GestionEstudiantesPage() {
             </Link>
             <Link
               href="/registro"
-              className={`${actionButtonBaseClass} border border-transparent bg-brand-orange text-white shadow hover:bg-[#ff6a00] focus-visible:outline-[#ff7a23]`}
+              className={`${actionButtonBaseClass} border border-brand-ink-muted/20 bg-white text-brand-deep shadow focus-visible:outline-[#00bfa6]`}
             >
               Abrir check-in de estudiantes
             </Link>

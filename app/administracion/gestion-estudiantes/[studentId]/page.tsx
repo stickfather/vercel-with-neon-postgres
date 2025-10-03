@@ -112,7 +112,7 @@ export default async function StudentProfilePage({
             </Link>
             <Link
               href="/registro"
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
+              className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:opacity-90 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
             >
               Abrir check-in de estudiantes
             </Link>
