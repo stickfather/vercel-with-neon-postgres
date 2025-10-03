@@ -157,14 +157,11 @@ export function CheckInForm({
       className="flex flex-col gap-7 rounded-[36px] border border-white/70 bg-white/92 px-9 py-11 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur"
       onSubmit={handleSubmit}
     >
-      <header className="flex flex-col gap-2">
+      <header className="flex flex-col gap-3">
         <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-deep-soft">
           Registro de asistencia
         </span>
         <h1 className="text-3xl font-black text-brand-deep">¡Marca tu llegada!</h1>
-        <p className="text-sm text-brand-ink-muted sm:text-base">
-          Busca tu nombre, selecciona el nivel y confirma la lección del día. Nuestro sistema recordará tu progreso para agilizar el proceso.
-        </p>
       </header>
 
       <div className="flex flex-col gap-3">

@@ -43,35 +43,41 @@ export default async function RegistroPage() {
         <div className="absolute bottom-0 left-1/2 h-[460px] w-[120%] -translate-x-1/2 rounded-t-[180px] bg-gradient-to-r from-[#ffe7d1] via-[#ffffffef] to-[#c9f5ed]" />
       </div>
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-14 md:px-10 lg:px-14">
-        <header className="flex flex-col gap-6 rounded-[40px] border border-white/70 bg-white/92 px-8 py-7 shadow-[0_22px_56px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <span className="inline-flex items-center gap-2 rounded-full bg-brand-teal-soft px-5 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-brand-teal">
-              Registro de estudiantes
-            </span>
-            <div className="hidden items-center gap-2 sm:flex">
+        <header className="flex flex-col gap-6 rounded-[40px] border border-white/70 bg-white/92 px-8 py-8 shadow-[0_22px_56px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 text-left">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-2 rounded-full bg-brand-teal-soft px-5 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-brand-teal">
+                Registro de estudiantes
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted shadow-sm">
+                Marca tu asistencia antes de entrar a clase
+              </span>
+            </div>
+            <h1 className="text-3xl font-black text-brand-deep sm:text-4xl">Check-in de estudiantes</h1>
+            <p className="max-w-2xl text-sm text-brand-ink-muted sm:text-base">
+              Encuentra tu nombre en segundos, selecciona tu nivel y deja que el sistema registre tu progreso automáticamente.
+            </p>
+            <div className="flex flex-wrap gap-3">
               <Link
                 href="/"
                 className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow hover:border-brand-teal focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
               >
-                Volver a bienvenida
-              </Link>
-              <Link
-                href="/administracion/registro-personal"
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow hover:border-brand-teal focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-              >
-                Acceso del personal
+                ← Volver a bienvenida
               </Link>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted shadow-sm">
-              Marca tu asistencia antes de entrar a clase
-            </span>
             <Link
-              href="/"
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow hover:border-brand-teal focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:hidden"
+              href="/administracion"
+              className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow hover:border-brand-teal focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
             >
-              Volver a bienvenida
+              Acceso administrativo
+            </Link>
+            <Link
+              href="/administracion/registro-personal"
+              className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
+            >
+              Check-in del personal
             </Link>
           </div>
         </header>
