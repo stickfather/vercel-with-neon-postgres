@@ -38,12 +38,8 @@ function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   return [];
 }
 
-export type StudentDirectoryEntry = {
-  id: number;
+export type StudentName = {
   fullName: string;
-  lastLessonId: number | null;
-  lastLessonSequence: number | null;
-  lastLessonLevel: string | null;
 };
 
 export type LessonOption = {
@@ -60,32 +56,9 @@ export type LevelLessons = {
 
 export type ActiveAttendance = {
   id: number;
-  studentId: number;
   fullName: string;
   lesson: string | null;
   level: string | null;
-  checkInTime: string;
-};
-
-export type StaffDirectoryEntry = {
-  id: number;
-  fullName: string;
-  role: string | null;
-};
-
-export type StaffMemberRecord = {
-  id: number;
-  fullName: string;
-  role: string | null;
-  active: boolean;
-  hourlyWage: number | null;
-  weeklyHours: number | null;
-};
-
-export type ActiveStaffAttendance = {
-  id: string;
-  staffId: number;
-  fullName: string;
   checkInTime: string;
 };
 
@@ -100,60 +73,24 @@ async function closeExpiredSessions(sql = getSqlClient()) {
   `;
 }
 
-async function closeExpiredStaffSessions(sql = getSqlClient()) {
-  await sql`
-    UPDATE staff_attendance AS sa
-    SET checkout_time = date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
-    WHERE sa.checkout_time IS NULL
-      AND timezone(${TIMEZONE}, now()) >= date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
-      + INTERVAL '20 hours 30 minutes'
-  `;
-}
-
-async function getStudentDirectory(): Promise<StudentDirectoryEntry[]> {
+export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      s.id,
-      s.full_name,
-      last_attendance.lesson_id AS last_lesson_id,
-      last_attendance.lesson_seq AS last_lesson_seq,
-      last_attendance.lesson_level AS last_lesson_level
-    FROM students s
-    LEFT JOIN LATERAL (
-      SELECT
-        sa.lesson_id,
-        l.seq AS lesson_seq,
-        l.level AS lesson_level
-      FROM student_attendance sa
-      LEFT JOIN lessons l ON l.id = sa.lesson_id
-      WHERE sa.student_id = s.id
-        AND sa.checkout_time IS NOT NULL
-        AND sa.lesson_id IS NOT NULL
-      ORDER BY sa.checkin_time DESC
-      LIMIT 1
-    ) AS last_attendance ON TRUE
-    WHERE full_name IS NOT NULL
-      AND trim(full_name) <> ''
+    SELECT DISTINCT
+      COALESCE(s.full_name, sa.full_name) AS full_name
+    FROM student_attendance sa
+    LEFT JOIN students s ON s.id = sa.student_id
+    WHERE COALESCE(s.full_name, sa.full_name) IS NOT NULL
     ORDER BY full_name ASC
   `);
 
-  return rows.map((row) => ({
-    id: Number(row.id),
-    fullName: (row.full_name as string).trim(),
-    lastLessonId: row.last_lesson_id === null ? null : Number(row.last_lesson_id),
-    lastLessonSequence:
-      row.last_lesson_seq === null ? null : Number(row.last_lesson_seq),
-    lastLessonLevel:
-      row.last_lesson_level === null
-        ? null
-        : ((row.last_lesson_level as string) ?? "").trim() || null,
-  }));
+  return rows
+    .map((row) => ({ fullName: row.full_name as string }))
+    .filter((entry) => entry.fullName?.trim().length);
 }
 
-async function getLevelsWithLessons(): Promise<LevelLessons[]> {
+export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -188,15 +125,14 @@ async function getLevelsWithLessons(): Promise<LevelLessons[]> {
     .filter((entry) => entry.lessons.length);
 }
 
-async function getActiveAttendances(): Promise<ActiveAttendance[]> {
+export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       sa.id,
-      sa.student_id,
-      s.full_name,
+      COALESCE(s.full_name, sa.full_name) AS full_name,
       sa.checkin_time,
       l.lesson,
       l.level
@@ -210,8 +146,7 @@ async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   return rows
     .map((row) => ({
       id: Number(row.id),
-      studentId: Number(row.student_id),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
+      fullName: (row.full_name as string | null) ?? "",
       lesson: (row.lesson as string | null) ?? null,
       level: (row.level as string | null) ?? null,
       checkInTime: row.checkin_time as string,
