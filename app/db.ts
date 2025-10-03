@@ -25,9 +25,7 @@ function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   }
   if (result && typeof result === "object" && "rows" in result) {
     const rows = (result as { rows?: unknown }).rows;
-    if (Array.isArray(rows)) {
-      return normalizeRows<T>(rows);
-    }
+    if (Array.isArray(rows)) return normalizeRows<T>(rows);
   }
   return [];
 }
@@ -65,7 +63,7 @@ export type StaffDirectoryEntry = {
 };
 
 export type ActiveStaffAttendance = {
-  id: string;       // UI treats as string
+  id: string; // UI treats as string
   staffId: number;
   fullName: string;
   checkInTime: string;
@@ -208,10 +206,7 @@ async function findStudentIdByName(
   return null;
 }
 
-/**
- * Check-in by student full name; resolves student_id internally.
- * Returns the new student_attendance id.
- */
+/** Check-in by student full name; resolves student_id internally. */
 export async function registerCheckIn({
   fullName,
   lessonId,
@@ -225,9 +220,7 @@ export async function registerCheckIn({
   await closeExpiredSessions(sql);
 
   const trimmedName = fullName.trim();
-  if (!trimmedName) {
-    throw new Error("El nombre del estudiante es obligatorio.");
-  }
+  if (!trimmedName) throw new Error("El nombre del estudiante es obligatorio.");
 
   const lessonRows = normalizeRows<SqlRow>(await sql`
     SELECT id, level
@@ -235,9 +228,7 @@ export async function registerCheckIn({
     WHERE id = ${lessonId}
     LIMIT 1
   `);
-  if (!lessonRows.length) {
-    throw new Error("La lección seleccionada no existe.");
-  }
+  if (!lessonRows.length) throw new Error("La lección seleccionada no existe.");
 
   const lesson = lessonRows[0];
   const lessonLevel = (lesson.level as string | null) ?? "";
@@ -355,12 +346,8 @@ export async function registerStaffCheckIn({
   const staffName = ((staffRecord.full_name as string | null) ?? "").trim();
   const isActive = Boolean(staffRecord.active ?? true);
 
-  if (!staffName) {
-    throw new Error("El miembro del personal no tiene un nombre registrado.");
-  }
-  if (!isActive) {
-    throw new Error("El miembro del personal está marcado como inactivo.");
-  }
+  if (!staffName) throw new Error("El miembro del personal no tiene un nombre registrado.");
+  if (!isActive) throw new Error("El miembro del personal está marcado como inactivo.");
 
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
@@ -373,7 +360,7 @@ export async function registerStaffCheckIn({
     throw new Error("Esta persona ya tiene una asistencia abierta.");
   }
 
-  // If staff_attendance.id is IDENTITY/SERIAL, replace this with DEFAULT
+  // If staff_attendance.id is IDENTITY/SERIAL, omit id column and values(nextId)
   const nextIdRows = normalizeRows<SqlRow>(await sql`
     SELECT COALESCE(MAX(id), 0) + 1 AS next_id
     FROM staff_attendance
@@ -451,9 +438,7 @@ export async function createStaffMember({
   const sql = getSqlClient();
 
   const sanitizedName = fullName.trim();
-  if (!sanitizedName) {
-    throw new Error("El nombre del personal es obligatorio.");
-  }
+  if (!sanitizedName) throw new Error("El nombre del personal es obligatorio.");
 
   const sanitizedRole = role ? role.trim() : null;
   const wageValue = toNullableNumber(hourlyWage ?? null);
@@ -494,9 +479,7 @@ export async function updateStaffMember(
   const sql = getSqlClient();
 
   const sanitizedName = fullName.trim();
-  if (!sanitizedName) {
-    throw new Error("El nombre del personal es obligatorio.");
-  }
+  if (!sanitizedName) throw new Error("El nombre del personal es obligatorio.");
 
   const sanitizedRole = role ? role.trim() : null;
   const wageValue = toNullableNumber(hourlyWage ?? null);
