@@ -262,7 +262,7 @@ export function CheckInForm({
 
   return (
     <form
-      className="flex flex-col gap-7 rounded-[36px] border border-white/70 bg-white/92 px-9 py-11 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur"
+      className="flex flex-col gap-8 rounded-[36px] border border-white/70 bg-white/95 px-10 py-12 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur"
       onSubmit={handleSubmit}
     >
       <header className="flex flex-col gap-3">
@@ -404,7 +404,7 @@ export function CheckInForm({
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
           {canChooseProgression ? (
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {levels.map((level) => {
                 const levelAccent = getLevelAccent(level.level);
                 const isActive = selectedLevel === level.level;
@@ -416,7 +416,7 @@ export function CheckInForm({
                       setSelectedLevel(level.level);
                       setStatus(null);
                     }}
-                    className={`flex h-[60px] items-center justify-center rounded-full border px-5 text-center text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    className={`flex min-h-[68px] items-center justify-center rounded-full border px-6 text-center text-base font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                       isActive
                         ? "border-transparent text-brand-deep"
                         : "border-[rgba(30,27,50,0.15)] text-brand-ink"
@@ -448,7 +448,7 @@ export function CheckInForm({
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Lección</span>
           {selectedLevel && canChooseProgression ? (
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               {sortedLessons.map((lesson) => {
                 const isActive = selectedLesson === lesson.id.toString();
                 const lessonLabel = lesson.lesson;
@@ -458,7 +458,7 @@ export function CheckInForm({
                     key={lesson.id}
                     type="button"
                     onClick={() => setSelectedLesson(lesson.id.toString())}
-                    className={`flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-[20px] border px-5 py-4 text-center text-sm transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    className={`flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-6 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                       isActive
                         ? "border-transparent text-brand-deep"
                         : "border-[rgba(30,27,50,0.18)] text-brand-ink"
@@ -472,7 +472,7 @@ export function CheckInForm({
                       isFormDisabled || !sortedLessons.length || !canChooseProgression
                     }
                   >
-                    <span className="text-sm font-semibold leading-snug text-brand-deep">
+                    <span className="text-base font-semibold leading-snug text-brand-deep">
                       {lessonLabel}
                     </span>
                   </button>

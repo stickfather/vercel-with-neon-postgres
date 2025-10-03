@@ -86,6 +86,9 @@ const tileTheme = {
   orb: "bg-[#ffc07f]",
 };
 
+const actionButtonBaseClass =
+  "inline-flex items-center justify-center rounded-full border border-transparent px-5 py-2 text-xs font-semibold uppercase tracking-wide shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
+
 export const metadata: Metadata = {
   title: "Panel administrativo · Inglés Rápido Manta",
 };
@@ -107,6 +110,20 @@ export default function AdministracionPage() {
           <p className="max-w-3xl text-base text-brand-ink-muted sm:text-lg">
             Esta es la base del equipo de Inglés Rápido Manta. Explora los paneles y herramientas internas para coordinar asistencias, reportes y comunicación.
           </p>
+          <div className="flex flex-wrap gap-3 pt-1">
+            <Link
+              href="/"
+              className={`${actionButtonBaseClass} bg-white text-brand-deep hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline-[#00bfa6]`}
+            >
+              ← Volver a bienvenida
+            </Link>
+            <Link
+              href="/registro"
+              className={`${actionButtonBaseClass} bg-brand-orange text-white hover:bg-[#ff6a00] focus-visible:outline-[#ff7a23]`}
+            >
+              Abrir check-in de estudiantes
+            </Link>
+          </div>
         </header>
         <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {tiles.map((tile, index) => {
