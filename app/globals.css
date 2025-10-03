@@ -25,18 +25,18 @@ body {
 
 .bg-app {
   min-height: 100vh;
-  background-color: var(--app-soft);
+  background-color: #fefcf8;
   background-image:
-    radial-gradient(circle at top left, rgba(255, 194, 58, 0.35), transparent 55%),
-    radial-gradient(circle at top right, rgba(0, 191, 166, 0.3), transparent 60%),
-    linear-gradient(115deg, rgba(30, 27, 50, 0.08) 0%, rgba(30, 27, 50, 0) 55%),
-    repeating-linear-gradient(
-      -45deg,
-      rgba(30, 27, 50, 0.08) 0,
-      rgba(30, 27, 50, 0.08) 12px,
-      rgba(255, 122, 35, 0.05) 12px,
-      rgba(255, 122, 35, 0.05) 24px
-    );
+    radial-gradient(circle at 12% 18%, rgba(0, 191, 166, 0.18), transparent 58%),
+    radial-gradient(circle at 85% 20%, rgba(255, 194, 58, 0.2), transparent 60%),
+    radial-gradient(circle at 20% 82%, rgba(255, 122, 35, 0.12), transparent 55%),
+    linear-gradient(130deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0.65) 42%, rgba(0, 191, 166, 0.08) 60%, rgba(255, 122, 35, 0.08) 100%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0px, rgba(255, 255, 255, 0.85) 14px, rgba(0, 191, 166, 0.08) 14px, rgba(0, 191, 166, 0.08) 28px);
+  background-size: cover, cover, cover, cover, 32px 32px;
+}
+
+.bg-brand-teal {
+  background-color: var(--app-teal);
 }
 
 .text-app-ink {

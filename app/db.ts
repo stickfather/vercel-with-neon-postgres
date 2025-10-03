@@ -63,14 +63,17 @@ export type ActiveAttendance = {
 };
 
 async function closeExpiredSessions(sql = getSqlClient()) {
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     UPDATE student_attendance AS sa
     SET checkout_time = date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
       + INTERVAL '20 hours 30 minutes'
     WHERE sa.checkout_time IS NULL
       AND timezone(${TIMEZONE}, now()) >= date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE})
       + INTERVAL '20 hours 30 minutes'
-  `;
+    RETURNING sa.id
+  `);
+
+  return rows.length;
 }
 
 export async function getStudentDirectory(): Promise<StudentName[]> {

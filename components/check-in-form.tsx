@@ -113,7 +113,7 @@ export function CheckInForm({
 
   return (
     <form
-      className="flex flex-col gap-6 rounded-[32px] bg-white/85 px-8 py-10 shadow-2xl backdrop-blur"
+      className="flex flex-col gap-6 rounded-[32px] border border-[rgba(0,191,166,0.16)] bg-white/80 px-8 py-10 shadow-2xl backdrop-blur-lg"
       onSubmit={handleSubmit}
     >
       <header className="flex flex-col gap-1 text-left">
@@ -137,7 +137,7 @@ export function CheckInForm({
           placeholder="Escribe y elige tu nombre"
           value={fullName}
           onChange={(event) => setFullName(event.target.value)}
-          className="w-full rounded-full border border-transparent bg-white px-6 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-full border border-[rgba(0,191,166,0.18)] bg-white px-6 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isFormDisabled}
         />
         <datalist id="student-names">
@@ -159,7 +159,7 @@ export function CheckInForm({
               setSelectedLevel(event.target.value);
               setSelectedLesson("");
             }}
-            className="w-full rounded-full border border-transparent bg-white px-5 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-full border border-[rgba(0,191,166,0.18)] bg-white px-5 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isFormDisabled}
           >
             <option value="">Selecciona tu nivel</option>
@@ -171,26 +171,46 @@ export function CheckInForm({
           </select>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold uppercase tracking-wide text-brand-deep" htmlFor="lesson">
+        <div className="flex flex-col gap-3">
+          <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
             Lección
-          </label>
-          <select
-            id="lesson"
-            value={selectedLesson}
-            onChange={(event) => setSelectedLesson(event.target.value)}
-            disabled={isFormDisabled || !lessonsForLevel.length}
-            className="w-full rounded-full border border-transparent bg-white px-5 py-3 text-base text-brand-ink shadow disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#00bfa6]"
-          >
-            <option value="">
-              {selectedLevel ? "Selecciona la lección" : "Elige primero tu nivel"}
-            </option>
-            {lessonsForLevel.map((lesson) => (
-              <option key={lesson.id} value={lesson.id.toString()}>
-                {lesson.lesson}
-              </option>
-            ))}
-          </select>
+          </span>
+          <input type="hidden" name="lessonId" value={selectedLesson} />
+          {!selectedLevel ? (
+            <div className="rounded-3xl border border-dashed border-[rgba(0,191,166,0.35)] bg-white/70 px-4 py-3 text-sm text-brand-ink-muted">
+              Elige primero tu nivel para ver las lecciones disponibles.
+            </div>
+          ) : !lessonsForLevel.length ? (
+            <div className="rounded-3xl border border-brand-orange bg-white/70 px-4 py-3 text-sm text-brand-ink">
+              Aún no hay lecciones disponibles para este nivel. Nuestro equipo lo resolverá en breve.
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {lessonsForLevel.map((lesson) => {
+                const value = lesson.id.toString();
+                const isSelected = selectedLesson === value;
+                return (
+                  <button
+                    key={lesson.id}
+                    type="button"
+                    onClick={() => setSelectedLesson(value)}
+                    className={`group flex min-w-[110px] flex-col items-start gap-1 rounded-full border px-5 py-2.5 text-left text-sm font-semibold transition ${
+                      isSelected
+                        ? "border-[#00bfa6] bg-[rgba(0,191,166,0.14)] text-brand-deep shadow"
+                        : "border-[rgba(30,27,50,0.12)] bg-white/90 text-brand-ink-soft hover:border-[#00bfa6] hover:text-brand-deep"
+                    }`}
+                    disabled={isFormDisabled}
+                    aria-pressed={isSelected}
+                  >
+                    <span>{lesson.lesson}</span>
+                    <span className="text-xs font-medium text-brand-teal">
+                      {lesson.sequence ? `#${lesson.sequence}` : lesson.level}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -204,7 +224,7 @@ export function CheckInForm({
         <div
           className={`rounded-3xl border px-5 py-3 text-sm font-medium ${
             status.type === "success"
-              ? "border-brand-teal bg-white/80 text-brand-ink"
+              ? "border-[rgba(0,191,166,0.45)] bg-[rgba(0,191,166,0.12)] text-brand-deep"
               : "border-brand-orange bg-white/75 text-brand-ink"
           }`}
         >

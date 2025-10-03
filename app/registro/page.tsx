@@ -26,7 +26,7 @@ export default async function RegistroPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-12">
-        <header className="flex flex-col items-start justify-between gap-4 rounded-[28px] bg-white/85 px-8 py-6 shadow-2xl backdrop-blur md:flex-row md:items-center">
+        <header className="flex flex-col items-start justify-between gap-4 rounded-[28px] border border-[rgba(0,191,166,0.18)] bg-white/80 px-8 py-6 shadow-2xl backdrop-blur-lg md:flex-row md:items-center">
           <div className="flex flex-col gap-1 text-left">
             <span className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-deep-soft">
               Inglés Rápido · Kiosco
@@ -40,7 +40,7 @@ export default async function RegistroPage() {
           </div>
           <Link
             href="/"
-            className="inline-flex items-center justify-center rounded-full bg-brand-orange px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            className="inline-flex items-center justify-center rounded-full bg-[#00bfa6] px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#00d4bc] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
           >
             Volver a inicio
           </Link>
@@ -53,7 +53,7 @@ export default async function RegistroPage() {
             disabled={!levels.length}
             initialError={loadError}
           />
-          <aside className="flex flex-col gap-5 rounded-[32px] bg-white/80 px-7 py-9 shadow-2xl backdrop-blur">
+          <aside className="flex flex-col gap-5 rounded-[32px] border border-[rgba(0,191,166,0.14)] bg-white/75 px-7 py-9 shadow-2xl backdrop-blur-lg">
             <h2 className="text-2xl font-bold text-brand-deep">¿Cómo funciona?</h2>
             <ol className="flex list-decimal flex-col gap-3 pl-5 text-brand-ink-muted">
               <li>Escribe tu nombre y selecciónalo de la lista.</li>
@@ -62,7 +62,7 @@ export default async function RegistroPage() {
               <li>Presiona “Confirmar asistencia”.</li>
               <li>Cuando termines, vuelve a tocar tu nombre en la pantalla principal.</li>
             </ol>
-            <div className="rounded-[24px] border border-dashed border-brand-teal bg-white/60 px-5 py-4 text-sm text-brand-ink">
+            <div className="rounded-[24px] border border-[#00bfa6] bg-[rgba(0,191,166,0.08)] px-5 py-4 text-sm text-brand-ink">
               <strong className="font-semibold text-brand-teal">Tip:</strong> Si no encuentras tu nombre, pídele apoyo a un asesor para actualizar la lista.
             </div>
           </aside>
