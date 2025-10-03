@@ -1,14 +1,7 @@
-import type { Metadata } from "next";
 import { listStaffMembers } from "@/app/db";
 import { StaffSettingsPanel } from "@/components/staff-settings-panel";
 
 export const revalidate = 0;
-
-export const metadata: Metadata = {
-  title: "Configuración del personal · Inglés Rápido Manta",
-  description:
-    "Administra los perfiles, horarios y estado activo del equipo desde la configuración central del kiosco.",
-};
 
 export default async function ConfiguracionPage() {
   let staffMembers = [] as Awaited<ReturnType<typeof listStaffMembers>>;

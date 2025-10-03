@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import {
   getActiveStaffAttendances,
@@ -8,12 +7,6 @@ import { StaffAttendanceBoard } from "@/components/staff-attendance-board";
 import { StaffCheckInForm } from "@/components/staff-check-in-form";
 
 export const revalidate = 0;
-
-export const metadata: Metadata = {
-  title: "Registro del personal · Inglés Rápido Manta",
-  description:
-    "Panel del personal para registrar ingresos y salidas, consultando la asistencia activa en la sede de Inglés Rápido Manta.",
-};
 
 export default async function RegistroPersonalPage() {
   let staffMembers = [] as Awaited<ReturnType<typeof getStaffDirectory>>;
