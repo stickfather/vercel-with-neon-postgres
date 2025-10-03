@@ -4,12 +4,15 @@ import {
   updatePaymentScheduleEntry,
 } from "@/features/administration/data/student-profile";
 
+type PayParams = Promise<{ studentId: string; entryId: string }>;
+
 export async function PUT(
   request: Request,
-  { params }: { params: { studentId: string; entryId: string } },
+  { params }: { params: PayParams }
 ) {
   try {
-    const entryId = Number(params.entryId);
+    const { entryId: entryIdStr } = await params; // 👈 await params
+    const entryId = Number(entryIdStr);
     if (!Number.isFinite(entryId)) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
@@ -36,10 +39,11 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { studentId: string; entryId: string } },
+  { params }: { params: PayParams }
 ) {
   try {
-    const entryId = Number(params.entryId);
+    const { entryId: entryIdStr } = await params; // 👈 await params
+    const entryId = Number(entryIdStr);
     if (!Number.isFinite(entryId)) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
