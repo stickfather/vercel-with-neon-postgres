@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { createStudentNote } from "@/features/administration/data/student-profile";
 
+type StudentParams = Promise<{ studentId: string }>;
+
 export async function POST(
   request: Request,
-  { params }: { params: { studentId: string } },
+  { params }: { params: StudentParams }
 ) {
   try {
-    const studentId = Number(params.studentId);
+    const { studentId: studentIdStr } = await params;   // 👈 await params
+    const studentId = Number(studentIdStr);
+
     if (!Number.isFinite(studentId)) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
@@ -15,7 +19,10 @@ export async function POST(
     const noteText = body?.note;
 
     if (!noteText || typeof noteText !== "string" || !noteText.trim()) {
-      return NextResponse.json({ error: "La nota no puede estar vacía." }, { status: 400 });
+      return NextResponse.json(
+        { error: "La nota no puede estar vacía." },
+        { status: 400 }
+      );
     }
 
     const note = await createStudentNote(studentId, {
