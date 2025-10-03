@@ -26,9 +26,10 @@ function formatDateISO(date: Date): string {
 export async function generateMetadata({
   params,
 }: {
-  params: { studentId: string };
+  params: Promise<{ studentId: string }>;
 }): Promise<Metadata> {
-  const studentId = Number(params.studentId);
+  const { studentId: studentIdStr } = await params; // 👈 params is a Promise in Next 15
+  const studentId = Number(studentIdStr);
   if (!Number.isFinite(studentId)) {
     return {
       title: "Perfil de estudiante · Inglés Rápido Manta",
@@ -48,9 +49,10 @@ export async function generateMetadata({
 export default async function StudentProfilePage({
   params,
 }: {
-  params: { studentId: string };
+  params: Promise<{ studentId: string }>;
 }) {
-  const studentId = Number(params.studentId);
+  const { studentId: studentIdStr } = await params; // 👈 await here too
+  const studentId = Number(studentIdStr);
   if (!Number.isFinite(studentId)) {
     notFound();
   }
@@ -61,17 +63,25 @@ export default async function StudentProfilePage({
   const startDate = formatDateISO(startRange);
   const endDate = formatDateISO(today);
 
-  const [basicDetails, paymentSchedule, notes, exams, stats, minutesByDay, cumulativeHours, lessonTimeline] =
-    await Promise.all([
-      getStudentBasicDetails(studentId),
-      listStudentPaymentSchedule(studentId),
-      listStudentNotes(studentId),
-      listStudentExams(studentId),
-      getStudentProgressStats(studentId, startDate, endDate, true),
-      getStudentMinutesByDay(studentId, startDate, endDate, true),
-      getStudentCumulativeHours(studentId, startDate, endDate, true),
-      getStudentLessonTimeline(studentId, startDate, endDate, true),
-    ]);
+  const [
+    basicDetails,
+    paymentSchedule,
+    notes,
+    exams,
+    stats,
+    minutesByDay,
+    cumulativeHours,
+    lessonTimeline,
+  ] = await Promise.all([
+    getStudentBasicDetails(studentId),
+    listStudentPaymentSchedule(studentId),
+    listStudentNotes(studentId),
+    listStudentExams(studentId),
+    getStudentProgressStats(studentId, startDate, endDate, true),
+    getStudentMinutesByDay(studentId, startDate, endDate, true),
+    getStudentCumulativeHours(studentId, startDate, endDate, true),
+    getStudentLessonTimeline(studentId, startDate, endDate, true),
+  ]);
 
   const studentName = basicDetails?.fullName ?? `Estudiante ${studentId}`;
 
