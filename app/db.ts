@@ -109,31 +109,32 @@ export async function getStudentDirectory(): Promise<StudentName[]> {
   await closeExpiredSessions(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT DISTINCT COALESCE(s.full_name, sa.full_name) AS full_name
-    FROM student_attendance sa
-    LEFT JOIN students s ON s.id = sa.student_id
-    WHERE COALESCE(s.full_name, sa.full_name) IS NOT NULL
+    SELECT full_name
+    FROM students
+    WHERE LOWER(TRIM(COALESCE(status, 'active'))) = 'active'
+      AND TRIM(COALESCE(full_name, '')) <> ''
     ORDER BY full_name ASC
   `);
 
   return rows
-    .map((row) => ({ fullName: row.full_name as string }))
-    .filter((entry) => entry.fullName?.trim().length);
+    .map((row) => ({ fullName: (row.full_name as string) ?? "" }))
+    .filter((entry) => entry.fullName.trim().length);
 }
 
 export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, lesson, level, seq
+    SELECT id, lesson, level_code, seq
     FROM lessons
-    ORDER BY level ASC, seq ASC NULLS LAST, lesson ASC
+    WHERE TRIM(COALESCE(lesson, '')) <> ''
+    ORDER BY level_code ASC, seq ASC NULLS LAST, lesson ASC
   `);
 
   const grouped = new Map<string, LessonOption[]>();
 
   for (const row of rows) {
-    const level = ((row.level as string) ?? "").trim();
+    const level = ((row.level_code as string) ?? "").trim();
     if (!level) continue;
     if (!grouped.has(level)) grouped.set(level, []);
     grouped.get(level)!.push({

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { LevelLessons, StudentName } from "@/app/db";
+import { getLevelAccent } from "./level-colors";
 
 type Props = {
   students: StudentName[];
@@ -31,12 +32,50 @@ export function CheckInForm({
   );
   const [isPending, startTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+  const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
+
+  const suggestions = useMemo(() => {
+    const normalized = fullName.trim().toLowerCase();
+    const base = !normalized
+      ? students
+      : students.filter((student) =>
+          student.fullName.toLowerCase().includes(normalized),
+        );
+    return base.slice(0, 6);
+  }, [fullName, students]);
 
   const lessonsForLevel = useMemo(() => {
-    return (
-      levels.find((level) => level.level === selectedLevel)?.lessons ?? []
-    );
+    return levels.find((level) => level.level === selectedLevel)?.lessons ?? [];
   }, [levels, selectedLevel]);
+
+  const sortedLessons = useMemo(() => {
+    return [...lessonsForLevel].sort((a, b) => {
+      const aSeq = a.sequence ?? Number.MAX_SAFE_INTEGER;
+      const bSeq = b.sequence ?? Number.MAX_SAFE_INTEGER;
+      return aSeq - bSeq;
+    });
+  }, [lessonsForLevel]);
+
+  useEffect(() => {
+    if (!selectedLevel) {
+      setSelectedLesson("");
+      return;
+    }
+    if (!sortedLessons.length) {
+      setSelectedLesson("");
+      return;
+    }
+    setSelectedLesson((previous) => {
+      if (previous && sortedLessons.some((lesson) => lesson.id.toString() === previous)) {
+        return previous;
+      }
+      const prioritized =
+        sortedLessons.find((lesson) => lesson.sequence !== null) ?? sortedLessons[0];
+      return prioritized.id.toString();
+    });
+  }, [selectedLevel, sortedLessons]);
 
   const isFormDisabled = disabled || Boolean(initialError) || !levels.length;
 
@@ -90,7 +129,7 @@ export function CheckInForm({
 
       setStatus({
         type: "success",
-        message: "¡Listo! Prepárate para comenzar tu clase.",
+        message: "¡Asistencia confirmada, buen trabajo!",
       });
 
       startTransition(() => {
@@ -111,86 +150,211 @@ export function CheckInForm({
     }
   };
 
+  const accent = getLevelAccent(selectedLevel);
+
   return (
     <form
-      className="flex flex-col gap-6 rounded-[32px] bg-white/85 px-8 py-10 shadow-2xl backdrop-blur"
+      className="flex flex-col gap-7 rounded-[36px] border border-white/70 bg-white/92 px-9 py-11 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur"
       onSubmit={handleSubmit}
     >
-      <header className="flex flex-col gap-1 text-left">
-        <h1 className="text-3xl font-bold text-brand-deep">
+      <header className="flex flex-col gap-3">
+        <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-deep-soft">
           Registro de asistencia
-        </h1>
-        <p className="text-brand-ink-muted">
-          Busca tu nombre, elige el nivel y confirma la lección para unirte a la clase.
-        </p>
+        </span>
+        <h1 className="text-3xl font-black text-brand-deep">¡Marca tu llegada!</h1>
       </header>
 
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-semibold uppercase tracking-wide text-brand-deep" htmlFor="student-name">
-          Nombre del estudiante
-        </label>
-        <input
-          id="student-name"
-          name="student-name"
-          list="student-names"
-          autoComplete="off"
-          placeholder="Escribe y elige tu nombre"
-          value={fullName}
-          onChange={(event) => setFullName(event.target.value)}
-          className="w-full rounded-full border border-transparent bg-white px-6 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isFormDisabled}
-        />
-        <datalist id="student-names">
-          {students.map((student) => (
-            <option key={student.fullName} value={student.fullName} />
-          ))}
-        </datalist>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-semibold uppercase tracking-wide text-brand-deep" htmlFor="student-name">
+            Nombre del estudiante
+          </label>
+          <button
+            type="button"
+            className="text-xs font-semibold uppercase tracking-wide text-brand-teal underline-offset-4 hover:underline"
+            onClick={() => setShowSteps((previous) => !previous)}
+            aria-expanded={showSteps}
+            aria-controls="quick-steps"
+          >
+            ¿Cómo funciona?
+          </button>
+        </div>
+        <div className="relative">
+          <input
+            id="student-name"
+            name="student-name"
+            autoComplete="off"
+            placeholder="Escribe y elige tu nombre"
+            value={fullName}
+            onChange={(event) => {
+              setFullName(event.target.value);
+              setHighlightedSuggestion(0);
+            }}
+            onFocus={() => setIsSuggestionsOpen(true)}
+            onBlur={() => {
+              setTimeout(() => setIsSuggestionsOpen(false), 120);
+            }}
+            onKeyDown={(event) => {
+              if (!suggestions.length) return;
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setIsSuggestionsOpen(true);
+                setHighlightedSuggestion((index) =>
+                  index + 1 >= suggestions.length ? 0 : index + 1,
+                );
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setIsSuggestionsOpen(true);
+                setHighlightedSuggestion((index) =>
+                  index - 1 < 0 ? suggestions.length - 1 : index - 1,
+                );
+              } else if (event.key === "Enter" && isSuggestionsOpen) {
+                const suggestion = suggestions[highlightedSuggestion];
+                if (suggestion) {
+                  event.preventDefault();
+                  setFullName(suggestion.fullName);
+                  setIsSuggestionsOpen(false);
+                }
+              }
+            }}
+            className="w-full rounded-full border border-transparent bg-white px-6 py-4 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+            aria-expanded={isSuggestionsOpen}
+            aria-controls="student-suggestions"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              isSuggestionsOpen && suggestions[highlightedSuggestion]
+                ? `student-option-${highlightedSuggestion}`
+                : undefined
+            }
+            disabled={isFormDisabled}
+          />
+          {isSuggestionsOpen && suggestions.length > 0 && (
+            <ul
+              id="student-suggestions"
+              role="listbox"
+              className="absolute z-10 mt-2 w-full rounded-3xl border border-[rgba(30,27,50,0.15)] bg-white/95 p-2 shadow-xl"
+            >
+              {suggestions.map((student, index) => {
+                const isActive = index === highlightedSuggestion;
+                return (
+                  <li key={student.fullName} role="option" aria-selected={isActive} id={`student-option-${index}`}>
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setFullName(student.fullName);
+                        setIsSuggestionsOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ${
+                        isActive
+                          ? "bg-brand-teal-soft text-brand-deep"
+                          : "text-brand-ink"
+                      }`}
+                    >
+                      <span>{student.fullName}</span>
+                      {isActive && <span className="text-xs font-semibold uppercase text-brand-teal">Enter</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        {showSteps && (
+          <div
+            id="quick-steps"
+            className="rounded-[28px] border border-dashed border-brand-teal bg-white/70 px-5 py-4 text-sm text-brand-ink"
+          >
+            <ol className="flex list-decimal flex-col gap-2 pl-5">
+              <li>Busca tu nombre y selecciónalo de las sugerencias.</li>
+              <li>Elige el nivel tocando la tarjeta correspondiente.</li>
+              <li>Confirma la lección sugerida o cámbiala según corresponda.</li>
+              <li>Presiona “Confirmar asistencia” para registrar tu ingreso.</li>
+            </ol>
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold uppercase tracking-wide text-brand-deep" htmlFor="level">
-            Nivel
-          </label>
-          <select
-            id="level"
-            value={selectedLevel}
-            onChange={(event) => {
-              setSelectedLevel(event.target.value);
-              setSelectedLesson("");
-            }}
-            className="w-full rounded-full border border-transparent bg-white px-5 py-3 text-base text-brand-ink shadow focus:border-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isFormDisabled}
-          >
-            <option value="">Selecciona tu nivel</option>
-            {levels.map((level) => (
-              <option key={level.level} value={level.level}>
-                {level.level}
-              </option>
-            ))}
-          </select>
+          <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {levels.map((level) => {
+              const levelAccent = getLevelAccent(level.level);
+              const isActive = selectedLevel === level.level;
+              return (
+                <button
+                  key={level.level}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLevel(level.level);
+                    setStatus(null);
+                  }}
+                  className={`flex min-h-[56px] items-center justify-between rounded-[22px] border px-5 py-3 text-left text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    isActive
+                      ? "border-transparent text-brand-deep"
+                      : "border-[rgba(30,27,50,0.15)] text-brand-ink"
+                  }`}
+                  style={{
+                    backgroundColor: isActive ? levelAccent.background : "rgba(255,255,255,0.85)",
+                    boxShadow: isActive ? "0 14px 32px rgba(15,23,42,0.14)" : "0 6px 18px rgba(15,23,42,0.06)",
+                  }}
+                  aria-pressed={isActive}
+                  disabled={isFormDisabled}
+                >
+                  <span className="text-lg font-black">{level.level}</span>
+                  <span
+                    className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide"
+                    style={{
+                      backgroundColor: levelAccent.chipBackground,
+                      color: levelAccent.primary,
+                    }}
+                  >
+                    {level.lessons.length} lecciones
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold uppercase tracking-wide text-brand-deep" htmlFor="lesson">
-            Lección
-          </label>
-          <select
-            id="lesson"
-            value={selectedLesson}
-            onChange={(event) => setSelectedLesson(event.target.value)}
-            disabled={isFormDisabled || !lessonsForLevel.length}
-            className="w-full rounded-full border border-transparent bg-white px-5 py-3 text-base text-brand-ink shadow disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#00bfa6]"
-          >
-            <option value="">
-              {selectedLevel ? "Selecciona la lección" : "Elige primero tu nivel"}
-            </option>
-            {lessonsForLevel.map((lesson) => (
-              <option key={lesson.id} value={lesson.id.toString()}>
-                {lesson.lesson}
-              </option>
-            ))}
-          </select>
+          <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Lección</span>
+          {selectedLevel ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {sortedLessons.map((lesson) => {
+                const isActive = selectedLesson === lesson.id.toString();
+                return (
+                  <button
+                    key={lesson.id}
+                    type="button"
+                    onClick={() => setSelectedLesson(lesson.id.toString())}
+                    className={`flex min-h-[60px] flex-col items-start justify-center gap-1 rounded-[22px] border px-5 py-4 text-left text-sm transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                      isActive
+                        ? "border-transparent text-brand-deep"
+                        : "border-[rgba(30,27,50,0.15)] text-brand-ink"
+                    }`}
+                    style={{
+                      backgroundColor: isActive ? accent.background : "rgba(255,255,255,0.88)",
+                      boxShadow: isActive ? "0 14px 32px rgba(15,23,42,0.14)" : "0 6px 18px rgba(15,23,42,0.06)",
+                    }}
+                    aria-pressed={isActive}
+                    disabled={isFormDisabled || !sortedLessons.length}
+                  >
+                    <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep-soft">
+                      {lesson.sequence ? `Lección ${lesson.sequence}` : "Lección"}
+                    </span>
+                    <span className="text-base font-semibold">{lesson.lesson}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-[24px] border border-dashed border-brand-orange bg-white/75 px-5 py-4 text-sm text-brand-ink">
+              Selecciona primero tu nivel para sugerirte la lección indicada.
+            </div>
+          )}
         </div>
       </div>
 
@@ -202,20 +366,40 @@ export function CheckInForm({
 
       {status && (
         <div
-          className={`rounded-3xl border px-5 py-3 text-sm font-medium ${
+          className={`flex items-center gap-3 rounded-3xl border px-5 py-4 text-sm font-medium ${
             status.type === "success"
-              ? "border-brand-teal bg-white/80 text-brand-ink"
-              : "border-brand-orange bg-white/75 text-brand-ink"
+              ? "border-brand-teal bg-white/85 text-brand-ink"
+              : "border-brand-orange bg-white/80 text-brand-ink"
           }`}
+          role="status"
+          aria-live="polite"
         >
-          {status.message}
+          {status.type === "success" ? (
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-teal text-white shadow-md animate-checkmark">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                className="h-5 w-5"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4 10-10" />
+              </svg>
+            </span>
+          ) : (
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-orange/90 text-white shadow-md">
+              !
+            </span>
+          )}
+          <span>{status.message}</span>
         </div>
       )}
 
       <button
         type="submit"
         disabled={isSubmitting || isPending || isFormDisabled}
-        className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-8 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-lg transition hover:bg-[#ff6a00] disabled:cursor-not-allowed disabled:opacity-70"
+        className="cta-ripple mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-9 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-lg transition hover:bg-[#ff6a00] disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting || isPending ? "Registrando…" : "Confirmar asistencia"}
       </button>
