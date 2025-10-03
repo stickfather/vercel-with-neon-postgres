@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ActiveAttendance } from "@/app/db";
-import { getLevelAccent } from "./level-colors";
+import type { ActiveAttendance } from "@/features/student-checkin/data/queries";
+import { getLevelAccent } from "../lib/level-colors";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -72,7 +72,7 @@ export function AttendanceBoard({ attendances }: Props) {
           {error}
         </div>
       )}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="flex flex-col gap-4">
         {attendances.map((attendance) => {
           const accent = getLevelAccent(attendance.level);
           const initials = attendance.fullName
@@ -93,9 +93,13 @@ export function AttendanceBoard({ attendances }: Props) {
           return (
             <article
               key={attendance.id}
-              className="flex flex-col gap-4 rounded-[28px] border border-white/60 bg-white/92 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.1)] backdrop-blur"
+              className="flex w-full flex-wrap items-center justify-between gap-4 rounded-[28px] border px-5 py-4 shadow-[0_18px_44px_rgba(15,23,42,0.12)] backdrop-blur"
+              style={{
+                backgroundColor: `${accent.background}`,
+                borderColor: `${accent.chipBackground}`,
+              }}
             >
-              <div className="flex items-start gap-4">
+              <div className="flex items-center gap-3">
                 <span
                   className="flex h-12 w-12 items-center justify-center rounded-full text-base font-bold text-white shadow-md"
                   style={{
@@ -104,16 +108,16 @@ export function AttendanceBoard({ attendances }: Props) {
                 >
                   {initials || attendance.fullName.charAt(0).toUpperCase()}
                 </span>
-                <div className="flex flex-1 flex-col gap-1">
+                <div className="flex flex-col gap-1 text-left">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-base font-semibold text-brand-deep">{attendance.fullName}</h3>
                     {isRecent && (
-                      <span className="rounded-full bg-brand-teal-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-teal">
+                      <span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-teal">
                         Nuevo ingreso
                       </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-brand-ink-muted">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-brand-ink">
                     {attendance.level && (
                       <span
                         className="rounded-full px-3 py-1 font-semibold uppercase tracking-wide"
@@ -125,11 +129,14 @@ export function AttendanceBoard({ attendances }: Props) {
                         {attendance.level}
                       </span>
                     )}
-                    {attendance.lesson && <span>{attendance.lesson}</span>}
+                    {attendance.lesson && (
+                      <span className="rounded-full bg-white/70 px-3 py-1 font-medium text-brand-deep/80">
+                        {attendance.lesson}
+                      </span>
+                    )}
                     {formattedTime && (
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-brand-ink-muted/60" />
-                        {`Check-in ${formattedTime}`}
+                      <span className="rounded-full bg-white/70 px-3 py-1 font-semibold text-brand-deep/80">
+                        {`Ingreso: ${formattedTime}`}
                       </span>
                     )}
                   </div>
@@ -139,7 +146,7 @@ export function AttendanceBoard({ attendances }: Props) {
                 type="button"
                 onClick={() => handleCheckout(attendance)}
                 disabled={loadingId === attendance.id}
-                className="inline-flex items-center justify-center rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex items-center justify-center rounded-full bg-brand-deep px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#322d54] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {loadingId === attendance.id ? "Registrando salida…" : "Salir de clase"}
               </button>

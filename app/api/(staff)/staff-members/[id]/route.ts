@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteStaffMember, updateStaffMember } from "@/app/db";
+import { deleteStaffMember, updateStaffMember } from "@/features/staff/data/queries";
 
 export async function PATCH(request: Request, context: any) {
   const params = await context.params;
