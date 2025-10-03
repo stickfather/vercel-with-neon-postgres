@@ -13,18 +13,35 @@ export default async function RegistroPage() {
   let students = [] as Awaited<ReturnType<typeof getStudentDirectory>>;
   let levels = [] as Awaited<ReturnType<typeof getLevelsWithLessons>>;
   let attendances = [] as Awaited<ReturnType<typeof getActiveAttendances>>;
-  let loadError: string | null = null;
+  let rosterError: string | null = null;
+  let lessonsError: string | null = null;
   let attendanceError: string | null = null;
 
-  try {
-    [students, levels] = await Promise.all([
-      getStudentDirectory(),
-      getLevelsWithLessons(),
-    ]);
-  } catch (error) {
-    console.error("No se pudieron cargar los datos para el registro", error);
-    loadError =
+  const [studentsResult, levelsResult] = await Promise.allSettled([
+    getStudentDirectory(),
+    getLevelsWithLessons(),
+  ]);
+
+  if (studentsResult.status === "fulfilled") {
+    students = studentsResult.value;
+  } else {
+    console.error(
+      "No se pudo cargar el directorio de estudiantes para el registro",
+      studentsResult.reason,
+    );
+    rosterError =
       "No pudimos conectar con la base de datos. Completa tu registro con ayuda del equipo.";
+  }
+
+  if (levelsResult.status === "fulfilled") {
+    levels = levelsResult.value;
+  } else {
+    console.error(
+      "No se pudieron cargar los niveles y lecciones disponibles",
+      levelsResult.reason,
+    );
+    lessonsError =
+      "No pudimos cargar la lista de niveles y lecciones. Nuestro equipo ya está trabajando en ello.";
   }
 
   try {
@@ -76,8 +93,9 @@ export default async function RegistroPage() {
           <CheckInForm
             students={students}
             levels={levels}
-            disabled={!levels.length}
-            initialError={loadError}
+            disabled={Boolean(rosterError)}
+            initialError={rosterError}
+            lessonsError={lessonsError}
           />
           <aside className="flex flex-col gap-5 rounded-[36px] border border-white/70 bg-white/92 p-7 shadow-[0_22px_56px_rgba(15,23,42,0.12)] backdrop-blur">
             <div className="flex items-center justify-between gap-3">

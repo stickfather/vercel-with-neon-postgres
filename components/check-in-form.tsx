@@ -10,6 +10,7 @@ type Props = {
   levels: LevelLessons[];
   disabled?: boolean;
   initialError?: string | null;
+  lessonsError?: string | null;
 };
 
 type StatusState = {
@@ -22,6 +23,7 @@ export function CheckInForm({
   levels,
   disabled = false,
   initialError = null,
+  lessonsError = null,
 }: Props) {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
@@ -103,7 +105,7 @@ export function CheckInForm({
     });
   }, [selectedLevel, sortedLessons]);
 
-  const isFormDisabled = disabled || Boolean(initialError) || !levels.length;
+  const isFormDisabled = disabled || Boolean(initialError);
   const canChooseProgression =
     Boolean(matchedStudent) && !disabled && !initialError && Boolean(levels.length);
 
@@ -412,7 +414,8 @@ export function CheckInForm({
 
       {!levels.length && !initialError && (
         <div className="rounded-3xl border border-brand-orange bg-white/75 px-5 py-3 text-sm font-medium text-brand-ink">
-          Aún no hay lecciones disponibles para seleccionar. Nuestro equipo lo resolverá en breve.
+          {lessonsError ??
+            "Aún no hay lecciones disponibles para seleccionar. Nuestro equipo lo resolverá en breve."}
         </div>
       )}
 
