@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { StaffDirectoryEntry } from "@/app/db";
+import type { StaffDirectoryEntry } from "@/features/staff/data/queries";
 
 type StatusState = { type: "error" | "success"; message: string } | null;
 

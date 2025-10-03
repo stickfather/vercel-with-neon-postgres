@@ -1,21 +1,31 @@
 import { NextResponse } from "next/server";
-import { registerCheckIn } from "@/app/db";
+import { registerCheckIn } from "@/features/student-checkin/data/queries";
 
 export async function POST(request: Request) {
   try {
-    const { fullName, level, lessonId } = await request.json();
+    const { studentId, level, lessonId } = await request.json();
 
-    if (!fullName || !level || !lessonId) {
+    if (!studentId || !level || !lessonId) {
       return NextResponse.json(
         { error: "Faltan datos para registrar la asistencia." },
         { status: 400 },
       );
     }
 
+    const parsedStudentId = Number(studentId);
+    const parsedLessonId = Number(lessonId);
+
+    if (!Number.isFinite(parsedStudentId) || !Number.isFinite(parsedLessonId)) {
+      return NextResponse.json(
+        { error: "Los identificadores enviados no son válidos." },
+        { status: 400 },
+      );
+    }
+
     const attendanceId = await registerCheckIn({
-      fullName,
+      studentId: parsedStudentId,
       level,
-      lessonId: Number(lessonId),
+      lessonId: parsedLessonId,
     });
 
     return NextResponse.json({ attendanceId });

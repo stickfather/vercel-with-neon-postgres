@@ -2,44 +2,32 @@ import Link from "next/link";
 import {
   getActiveAttendances,
   getLevelsWithLessons,
-  getStudentDirectory,
-} from "@/app/db";
-import { AttendanceBoard } from "@/components/attendance-board";
-import { CheckInForm } from "@/components/check-in-form";
+} from "@/features/student-checkin/data/queries";
+import { AttendanceBoard } from "@/features/student-checkin/components/attendance-board";
+import { CheckInForm } from "@/features/student-checkin/components/check-in-form";
 
 export const revalidate = 0;
 
 export default async function RegistroPage() {
-  let students = [] as Awaited<ReturnType<typeof getStudentDirectory>>;
   let levels = [] as Awaited<ReturnType<typeof getLevelsWithLessons>>;
   let attendances = [] as Awaited<ReturnType<typeof getActiveAttendances>>;
-  let rosterError: string | null = null;
+  let formError: string | null = null;
   let lessonsError: string | null = null;
   let attendanceError: string | null = null;
 
-  const [studentsResult, levelsResult] = await Promise.allSettled([
-    getStudentDirectory(),
-    getLevelsWithLessons(),
-  ]);
-
-  if (studentsResult.status === "fulfilled") {
-    students = studentsResult.value;
-  } else {
-    console.error(
-      "No se pudo cargar el directorio de estudiantes para el registro",
-      studentsResult.reason,
-    );
-    rosterError =
-      "No pudimos conectar con la base de datos. Completa tu registro con ayuda del equipo.";
-  }
-
-  if (levelsResult.status === "fulfilled") {
-    levels = levelsResult.value;
-  } else {
+  try {
+    levels = await getLevelsWithLessons();
+    if (!levels.length) {
+      lessonsError =
+        "Aún no hay lecciones disponibles para seleccionar. Nuestro equipo lo resolverá en breve.";
+    }
+  } catch (error) {
     console.error(
       "No se pudieron cargar los niveles y lecciones disponibles",
-      levelsResult.reason,
+      error,
     );
+    formError =
+      "No pudimos cargar la lista de niveles. Contacta a un asesor para registrar tu asistencia.";
     lessonsError =
       "No pudimos cargar la lista de niveles y lecciones. Nuestro equipo ya está trabajando en ello.";
   }
@@ -73,7 +61,7 @@ export default async function RegistroPage() {
               ← Volver a bienvenida
             </Link>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/administracion"
               className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow hover:border-brand-teal focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
@@ -91,10 +79,9 @@ export default async function RegistroPage() {
 
         <div className="grid gap-10 lg:grid-cols-[1.45fr_1fr]">
           <CheckInForm
-            students={students}
             levels={levels}
-            disabled={Boolean(rosterError)}
-            initialError={rosterError}
+            disabled={Boolean(formError)}
+            initialError={formError}
             lessonsError={lessonsError}
           />
           <aside className="flex flex-col gap-5 rounded-[36px] border border-white/70 bg-white/92 p-7 shadow-[0_22px_56px_rgba(15,23,42,0.12)] backdrop-blur">
