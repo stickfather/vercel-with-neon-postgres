@@ -451,16 +451,18 @@ export function CheckInForm({
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
               {sortedLessons.map((lesson) => {
                 const isActive = selectedLesson === lesson.id.toString();
+                const lessonLabel = lesson.lesson;
+                const isWideLabel = lessonLabel.length >= 22;
                 return (
                   <button
                     key={lesson.id}
                     type="button"
                     onClick={() => setSelectedLesson(lesson.id.toString())}
-                    className={`flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-[20px] border px-4 py-4 text-center text-sm transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    className={`flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-[20px] border px-5 py-4 text-center text-sm transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                       isActive
                         ? "border-transparent text-brand-deep"
                         : "border-[rgba(30,27,50,0.18)] text-brand-ink"
-                    }`}
+                    } ${isWideLabel ? "sm:col-span-2 xl:col-span-2" : ""}`}
                     style={{
                       backgroundColor: isActive ? accent.background : "rgba(255,255,255,0.88)",
                       boxShadow: isActive ? "0 12px 28px rgba(15,23,42,0.14)" : "0 4px 14px rgba(15,23,42,0.08)",
@@ -470,8 +472,8 @@ export function CheckInForm({
                       isFormDisabled || !sortedLessons.length || !canChooseProgression
                     }
                   >
-                    <span className="text-base font-semibold text-brand-deep">
-                      {lesson.lesson}
+                    <span className="text-sm font-semibold leading-snug text-brand-deep">
+                      {lessonLabel}
                     </span>
                   </button>
                 );

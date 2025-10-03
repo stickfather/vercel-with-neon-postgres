@@ -124,7 +124,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       sa.id,
-      COALESCE(s.full_name, sa.full_name) AS full_name,
+      COALESCE(s.full_name, '') AS full_name,
       sa.checkin_time,
       l.lesson,
       l.level AS level
@@ -203,8 +203,8 @@ export async function registerCheckIn({
   }
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO student_attendance (student_id, full_name, lesson_id, checkin_time)
-    VALUES (${studentId}, ${studentName}, ${lessonId}, now())
+    INSERT INTO student_attendance (student_id, lesson_id, checkin_time)
+    VALUES (${studentId}, ${lessonId}, now())
     RETURNING id
   `);
 
