@@ -44,7 +44,6 @@ export async function POST(
 
     const isPaid = Boolean(body?.isPaid);
     const receivedDate = typeof body?.receivedDate === "string" ? body.receivedDate : null;
-    const externalRef = typeof body?.externalRef === "string" ? body.externalRef.trim() || null : null;
     const note = typeof body?.note === "string" ? body.note.trim() || null : null;
 
     const entry = await createPaymentScheduleEntry(studentId, {
@@ -52,7 +51,6 @@ export async function POST(
       amount,
       isPaid,
       receivedDate,
-      externalRef,
       note,
     });
 

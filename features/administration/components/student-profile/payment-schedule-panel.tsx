@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
 import type { StudentPaymentScheduleEntry } from "@/features/administration/data/student-profile";
 
 type Props = {
@@ -8,46 +15,45 @@ type Props = {
   entries: StudentPaymentScheduleEntry[];
 };
 
-type Draft = {
+type AddFormState = {
   dueDate: string;
   amount: string;
-  externalRef: string;
   note: string;
 };
 
-type EditDraft = Draft & {
+type EditFormState = {
   isPaid: boolean;
   receivedDate: string;
+  note: string;
 };
 
-const INITIAL_DRAFT: Draft = {
+type ActiveRequest = "create" | "edit" | "delete" | null;
+
+type ModalProps = {
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children: ReactNode;
+};
+
+const INITIAL_ADD_FORM: AddFormState = {
   dueDate: "",
   amount: "",
-  externalRef: "",
   note: "",
 };
 
-const INITIAL_EDIT_DRAFT: EditDraft = {
-  dueDate: "",
-  amount: "",
+const INITIAL_EDIT_FORM: EditFormState = {
   isPaid: false,
   receivedDate: "",
-  externalRef: "",
   note: "",
 };
-
-function parseAmount(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed;
-}
 
 function formatDate(value: string | null): string {
   if (!value) return "Sin fecha";
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return value;
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
   return date.toLocaleDateString("es-EC", {
     day: "2-digit",
     month: "short",
@@ -55,14 +61,54 @@ function formatDate(value: string | null): string {
   });
 }
 
+function Modal({ title, description, onClose, children }: ModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-lg rounded-[32px] border border-white/80 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep-soft text-lg font-bold text-brand-deep transition hover:bg-brand-deep-soft/80"
+          aria-label="Cerrar ventana"
+        >
+          ×
+        </button>
+        <div className="flex flex-col gap-4 pr-6">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
+              Acción requerida
+            </span>
+            <h3 className="text-xl font-semibold text-brand-deep">{title}</h3>
+            {description ? (
+              <p className="text-sm text-brand-ink-muted">{description}</p>
+            ) : null}
+          </div>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function parseAmount(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed.replace(",", "."));
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
 export function PaymentSchedulePanel({ studentId, entries }: Props) {
+  const router = useRouter();
   const [items, setItems] = useState<StudentPaymentScheduleEntry[]>(entries);
-  const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingDraft, setEditingDraft] = useState<EditDraft>(INITIAL_EDIT_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<AddFormState>(INITIAL_ADD_FORM);
+  const [editingItem, setEditingItem] = useState<StudentPaymentScheduleEntry | null>(null);
+  const [editForm, setEditForm] = useState<EditFormState>(INITIAL_EDIT_FORM);
 
   useEffect(() => {
     setItems(entries);
@@ -80,38 +126,61 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
 
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
-      const aDate = a.dueDate ?? "";
-      const bDate = b.dueDate ?? "";
-      return aDate.localeCompare(bDate);
+      const aKey = a.dueDate ?? "";
+      const bKey = b.dueDate ?? "";
+      return aKey.localeCompare(bKey);
     });
   }, [items]);
 
-  const resetDraft = () => {
-    setDraft(INITIAL_DRAFT);
+  const closeAddModal = () => {
+    if (isPending && activeRequest === "create") return;
+    setIsAddOpen(false);
+    setAddForm(INITIAL_ADD_FORM);
   };
 
-  const validateNewPayment = (): { dueDate: string; amount: number } | null => {
-    const dueDate = draft.dueDate.trim();
+  const closeEditModal = () => {
+    if (isPending && activeRequest === "edit") return;
+    setEditingItem(null);
+    setEditForm(INITIAL_EDIT_FORM);
+  };
+
+  const openAddModal = () => {
+    setError(null);
+    setMessage(null);
+    setAddForm(INITIAL_ADD_FORM);
+    setIsAddOpen(true);
+  };
+
+  const openEditModal = (entry: StudentPaymentScheduleEntry) => {
+    setError(null);
+    setMessage(null);
+    setEditingItem(entry);
+    setEditForm({
+      isPaid: entry.isPaid,
+      receivedDate: entry.receivedDate ?? "",
+      note: entry.note ?? "",
+    });
+  };
+
+  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (activeRequest) return;
+
+    const dueDate = addForm.dueDate.trim();
     if (!dueDate) {
       setError("Debes ingresar una fecha de vencimiento.");
-      return null;
+      return;
     }
-    const amountNumber = parseAmount(draft.amount);
-    if (amountNumber == null || amountNumber <= 0) {
-      setError("El monto debe ser mayor a cero.");
-      return null;
-    }
-    return { dueDate, amount: amountNumber };
-  };
 
-  const handleCreate = () => {
-    const validated = validateNewPayment();
-    if (!validated) {
+    const amountNumber = parseAmount(addForm.amount);
+    if (amountNumber == null || amountNumber <= 0) {
+      setError("El monto debe ser un número mayor a cero.");
       return;
     }
 
     setError(null);
     setMessage(null);
+    setActiveRequest("create");
 
     startTransition(() => {
       void (async () => {
@@ -120,10 +189,9 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              dueDate: validated.dueDate,
-              amount: validated.amount,
-              externalRef: draft.externalRef.trim() || null,
-              note: draft.note.trim() || null,
+              dueDate,
+              amount: amountNumber,
+              note: addForm.note.trim() || null,
             }),
           });
           const payload = await response.json().catch(() => ({}));
@@ -132,7 +200,8 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
           }
           setItems((previous) => [...previous, payload as StudentPaymentScheduleEntry]);
           setMessage("Pago agregado correctamente.");
-          resetDraft();
+          closeAddModal();
+          router.refresh();
         } catch (err) {
           console.error(err);
           setError(
@@ -140,57 +209,63 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               ? err.message
               : "No se pudo crear el pago. Inténtalo nuevamente.",
           );
+        } finally {
+          setActiveRequest(null);
         }
       })();
     });
   };
 
-  const handleUpdate = (entryId: number) => {
+  const handleUpdate = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingItem || activeRequest) return;
+
+    const noteValue = editForm.note.trim() || null;
+    const receivedDateValue = editForm.receivedDate.trim();
+    const receivedDate = editForm.isPaid
+      ? receivedDateValue || new Date().toISOString().slice(0, 10)
+      : null;
+
     setError(null);
     setMessage(null);
-
-    const amountNumber = parseAmount(editingDraft.amount);
-    if (amountNumber != null && amountNumber <= 0) {
-      setError("El monto debe ser mayor a cero.");
-      return;
-    }
+    setActiveRequest("edit");
 
     startTransition(() => {
       void (async () => {
         try {
-          const response = await fetch(`/api/students/${studentId}/payment-schedule/${entryId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              dueDate: editingDraft.dueDate.trim() || null,
-              amount: amountNumber,
-              isPaid: editingDraft.isPaid,
-              receivedDate: editingDraft.receivedDate.trim() || null,
-              externalRef: editingDraft.externalRef.trim() || null,
-              note: editingDraft.note.trim() || null,
-            }),
-          });
+          const response = await fetch(
+            `/api/students/${studentId}/payment-schedule/${editingItem.id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                dueDate: editingItem.dueDate,
+                amount: editingItem.amount,
+                isPaid: editForm.isPaid,
+                receivedDate,
+                note: noteValue,
+              }),
+            },
+          );
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(payload?.error ?? "No se pudo actualizar el pago.");
           }
           setItems((previous) =>
             previous.map((item) =>
-              item.id === entryId
+              item.id === editingItem.id
                 ? {
                     ...item,
-                    dueDate: editingDraft.dueDate.trim() || null,
-                    amount: amountNumber,
-                    isPaid: editingDraft.isPaid,
-                    receivedDate: editingDraft.receivedDate.trim() || null,
-                    externalRef: editingDraft.externalRef.trim() || null,
-                    note: editingDraft.note.trim() || null,
+                    isPaid: editForm.isPaid,
+                    receivedDate,
+                    note: noteValue,
                   }
                 : item,
             ),
           );
           setMessage("Pago actualizado correctamente.");
-          setEditingId(null);
+          closeEditModal();
+          router.refresh();
         } catch (err) {
           console.error(err);
           setError(
@@ -198,29 +273,41 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               ? err.message
               : "No se pudo actualizar el pago. Inténtalo nuevamente.",
           );
+        } finally {
+          setActiveRequest(null);
         }
       })();
     });
   };
 
-  const handleDelete = (entryId: number) => {
+  const handleDelete = async (entryId: number) => {
+    if (activeRequest) return;
+    const target = items.find((item) => item.id === entryId);
+    if (!target) return;
+
+    const confirmation = globalThis.confirm?.(
+      "¿Deseas eliminar este pago del cronograma?",
+    );
+    if (!confirmation) return;
+
     setError(null);
     setMessage(null);
+    setActiveRequest("delete");
+
     startTransition(() => {
       void (async () => {
         try {
-          const response = await fetch(`/api/students/${studentId}/payment-schedule/${entryId}`, {
-            method: "DELETE",
-          });
+          const response = await fetch(
+            `/api/students/${studentId}/payment-schedule/${entryId}`,
+            { method: "DELETE" },
+          );
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(payload?.error ?? "No se pudo eliminar el pago.");
           }
           setItems((previous) => previous.filter((item) => item.id !== entryId));
           setMessage("Pago eliminado.");
-          if (editingId === entryId) {
-            setEditingId(null);
-          }
+          router.refresh();
         } catch (err) {
           console.error(err);
           setError(
@@ -228,32 +315,25 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               ? err.message
               : "No se pudo eliminar el pago. Inténtalo nuevamente.",
           );
+        } finally {
+          setActiveRequest(null);
         }
       })();
-    });
-  };
-
-  const startEditing = (item: StudentPaymentScheduleEntry) => {
-    setEditingId(item.id);
-    setEditingDraft({
-      dueDate: item.dueDate ?? "",
-      amount: item.amount == null ? "" : String(item.amount),
-      isPaid: item.isPaid,
-      receivedDate: item.receivedDate ?? "",
-      externalRef: item.externalRef ?? "",
-      note: item.note ?? "",
     });
   };
 
   return (
     <section className="flex flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <header className="flex flex-col gap-1 text-left">
-        <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">Panel 2</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
+          Panel 2
+        </span>
         <h2 className="text-2xl font-bold text-brand-deep">Cronograma de pagos</h2>
         <p className="text-sm text-brand-ink-muted">
-          Registra y controla los pagos esperados. Marca como pagado cuando recibas el monto.
+          Registra los cobros previstos y marca cuándo se reciben para mantener el estado al día.
         </p>
       </header>
+
       {error && (
         <p className="rounded-3xl border border-brand-orange bg-white/85 px-4 py-3 text-sm font-medium text-brand-ink">
           {error}
@@ -265,128 +345,50 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
         </p>
       )}
 
-      <div className="flex flex-col gap-4 rounded-[28px] border border-dashed border-brand-teal/40 bg-white/95 p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Agregar pago</h3>
-        <div className="grid gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))]">
-          <input
-            type="date"
-            value={draft.dueDate}
-            onChange={(event) => setDraft((previous) => ({ ...previous, dueDate: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Fecha"
-          />
-          <input
-            type="number"
-            value={draft.amount}
-            min="0"
-            step="0.01"
-            onChange={(event) => setDraft((previous) => ({ ...previous, amount: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Monto"
-          />
-          <input
-            type="text"
-            value={draft.externalRef}
-            onChange={(event) => setDraft((previous) => ({ ...previous, externalRef: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Referencia externa"
-          />
-          <input
-            type="text"
-            value={draft.note}
-            onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Nota"
-          />
-        </div>
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={isPending}
-            className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isPending ? "Guardando…" : "Agregar"}
-          </button>
-        </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={openAddModal}
+          className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+        >
+          Agregar pago
+        </button>
       </div>
 
       <div className="overflow-hidden rounded-[28px] border border-white/70 bg-white/95 shadow-inner">
-        <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left text-sm text-brand-ink">
-          <thead className="bg-brand-deep-soft/40 text-xs uppercase tracking-wide text-brand-ink">
+        <table className="min-w-full table-auto divide-y divide-brand-ink-muted/15 text-left text-sm text-brand-ink">
+          <thead className="bg-brand-teal-soft/40 text-xs uppercase tracking-wide text-brand-ink">
             <tr>
               <th className="px-4 py-3 font-semibold text-brand-deep">Fecha</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Monto</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Pagado</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Recibido</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Referencia</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Notas</th>
               <th className="px-4 py-3 text-right font-semibold text-brand-deep">Acciones</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-brand-ink-muted/15">
-            {sortedItems.map((item) => {
-              const isEditing = editingId === item.id;
-              const amountDisplay =
-                item.amount == null ? "—" : currencyFormatter.format(item.amount);
+          <tbody>
+            {sortedItems.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
+                  Aún no hay pagos programados. Usa el botón “Agregar pago” para crear el primero.
+                </td>
+              </tr>
+            ) : (
+              sortedItems.map((item) => {
+                const amountDisplay =
+                  item.amount == null ? "—" : currencyFormatter.format(item.amount);
+                const isDeleting = activeRequest === "delete" && isPending;
 
-              return (
-                <tr key={item.id} className="align-top hover:bg-brand-teal-soft/20">
-                  <td className="px-4 py-3 align-top">
-                    {isEditing ? (
-                      <input
-                        type="date"
-                        value={editingDraft.dueDate}
-                        onChange={(event) =>
-                          setEditingDraft((prev) => ({ ...prev, dueDate: event.target.value }))
-                        }
-                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-                      />
-                    ) : (
-                      <span className="font-semibold text-brand-deep">{formatDate(item.dueDate)}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={editingDraft.amount}
-                        onChange={(event) =>
-                          setEditingDraft((prev) => ({ ...prev, amount: event.target.value }))
-                        }
-                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-                      />
-                    ) : (
-                      <span>{amountDisplay}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    {isEditing ? (
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={editingDraft.isPaid}
-                          onChange={(event) =>
-                            setEditingDraft((prev) => ({
-                              ...prev,
-                              isPaid: event.target.checked,
-                              receivedDate:
-                                event.target.checked && !prev.receivedDate
-                                  ? new Date().toISOString().slice(0, 10)
-                                  : prev.receivedDate,
-                            }))
-                          }
-                          className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
-                        />
-                        <span className="font-semibold text-brand-deep">
-                          {editingDraft.isPaid ? "Sí" : "No"}
-                        </span>
-                      </label>
-                    ) : (
+                return (
+                  <tr key={item.id} className="divide-x divide-brand-ink-muted/10">
+                    <td className="px-4 py-3 align-top font-semibold text-brand-deep">
+                      {formatDate(item.dueDate)}
+                    </td>
+                    <td className="px-4 py-3 align-top text-brand-ink">{amountDisplay}</td>
+                    <td className="px-4 py-3 align-top">
                       <span
-                        className={`inline-flex min-w-[48px] items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                        className={`inline-flex min-w-[56px] items-center justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
                           item.isPaid
                             ? "bg-brand-teal-soft text-brand-teal"
                             : "bg-brand-ink-muted/15 text-brand-ink"
@@ -394,108 +396,191 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
                       >
                         {item.isPaid ? "Sí" : "No"}
                       </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    {isEditing ? (
-                      <input
-                        type="date"
-                        value={editingDraft.receivedDate}
-                        onChange={(event) =>
-                          setEditingDraft((prev) => ({ ...prev, receivedDate: event.target.value }))
-                        }
-                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-                      />
-                    ) : (
-                      <span>{formatDate(item.receivedDate)}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editingDraft.externalRef}
-                        onChange={(event) =>
-                          setEditingDraft((prev) => ({ ...prev, externalRef: event.target.value }))
-                        }
-                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-                      />
-                    ) : (
-                      <span className="block whitespace-normal break-words leading-relaxed">
-                        {item.externalRef ?? "—"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    {isEditing ? (
-                      <textarea
-                        value={editingDraft.note}
-                        onChange={(event) =>
-                          setEditingDraft((prev) => ({ ...prev, note: event.target.value }))
-                        }
-                        rows={2}
-                        className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-3 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-                      />
-                    ) : (
-                      <span className="block whitespace-normal break-words leading-relaxed">
-                        {item.note ?? "—"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      {isEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdate(item.id)}
-                            disabled={isPending}
-                            className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isPending ? "Guardando…" : "Guardar"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingId(null)}
-                            className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-deep-soft px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#322d54]"
-                          >
-                            Cancelar
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => startEditing(item)}
-                            className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(item.id)}
-                            disabled={isPending}
-                            className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Eliminar
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {!sortedItems.length && (
-              <tr>
-                <td colSpan={7} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
-                  Aún no se han registrado pagos para este estudiante.
-                </td>
-              </tr>
+                    </td>
+                    <td className="px-4 py-3 align-top text-brand-ink">
+                      {item.receivedDate ? formatDate(item.receivedDate) : "Sin registrar"}
+                    </td>
+                    <td className="px-4 py-3 align-top text-brand-ink">
+                      {item.note ? item.note : "—"}
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(item)}
+                          className="inline-flex items-center justify-center rounded-full border border-brand-teal/40 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(item.id)}
+                          disabled={isDeleting}
+                          className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#e06820] disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      {isAddOpen && (
+        <Modal
+          title="Agregar pago"
+          description="Define la fecha límite y el monto que debe cancelar el representante."
+          onClose={closeAddModal}
+        >
+          <form className="flex flex-col gap-4" onSubmit={handleCreate}>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Due date
+              <input
+                type="date"
+                value={addForm.dueDate}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, dueDate: event.target.value }))
+                }
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Amount
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={addForm.amount}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, amount: event.target.value }))
+                }
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Note (opcional)
+              <textarea
+                value={addForm.note}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, note: event.target.value }))
+                }
+                rows={3}
+                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                placeholder="Añade un recordatorio o detalle"
+              />
+            </label>
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeAddModal}
+                className="inline-flex items-center justify-center rounded-full border border-brand-teal/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={activeRequest === "create" && isPending}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {activeRequest === "create" && isPending ? "Guardando…" : "Guardar"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {editingItem && (
+        <Modal
+          title="Editar pago"
+          description="Actualiza el estado del pago según la información más reciente."
+          onClose={closeEditModal}
+        >
+          <form className="flex flex-col gap-4" onSubmit={handleUpdate}>
+            <div className="grid gap-3 rounded-2xl bg-white/90 p-4 shadow-inner sm:grid-cols-2">
+              <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Fecha de vencimiento
+                <span className="text-sm font-semibold text-brand-deep">
+                  {formatDate(editingItem.dueDate)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Monto
+                <span className="text-sm font-semibold text-brand-deep">
+                  {editingItem.amount == null
+                    ? "—"
+                    : currencyFormatter.format(editingItem.amount)}
+                </span>
+              </div>
+            </div>
+            <label className="flex items-center justify-between gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-inner">
+              <span className="text-sm font-semibold text-brand-deep">Pagado</span>
+              <input
+                type="checkbox"
+                checked={editForm.isPaid}
+                onChange={(event) =>
+                  setEditForm((previous) => ({
+                    ...previous,
+                    isPaid: event.target.checked,
+                    receivedDate: event.target.checked
+                      ? previous.receivedDate || new Date().toISOString().slice(0, 10)
+                      : "",
+                  }))
+                }
+                className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Fecha de recepción
+              <input
+                type="date"
+                value={editForm.receivedDate}
+                onChange={(event) =>
+                  setEditForm((previous) => ({
+                    ...previous,
+                    receivedDate: event.target.value,
+                  }))
+                }
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                disabled={!editForm.isPaid}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Nota (opcional)
+              <textarea
+                value={editForm.note}
+                onChange={(event) =>
+                  setEditForm((previous) => ({ ...previous, note: event.target.value }))
+                }
+                rows={3}
+                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                placeholder="Añade información relevante"
+              />
+            </label>
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="inline-flex items-center justify-center rounded-full border border-brand-teal/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={activeRequest === "edit" && isPending}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {activeRequest === "edit" && isPending ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </section>
   );
 }
@@ -504,23 +589,14 @@ export function PaymentSchedulePanelSkeleton() {
   return (
     <section className="flex animate-pulse flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <div className="flex flex-col gap-2">
-        <span className="h-3 w-32 rounded-full bg-brand-deep-soft/60" />
-        <span className="h-6 w-40 rounded-full bg-brand-deep-soft/80" />
-        <span className="h-3 w-72 max-w-full rounded-full bg-brand-deep-soft/50" />
+        <span className="h-3 w-28 rounded-full bg-brand-deep-soft/60" />
+        <span className="h-6 w-48 rounded-full bg-brand-deep-soft/80" />
+        <span className="h-3 w-64 max-w-full rounded-full bg-brand-deep-soft/50" />
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        {Array.from({ length: 2 }).map((_, index) => (
-          <div key={index} className="flex flex-col gap-3 rounded-[28px] border border-dashed border-brand-teal/30 bg-white/95 p-4">
-            <span className="h-4 w-20 rounded-full bg-brand-teal-soft/60" />
-            <span className="h-8 w-full rounded-2xl bg-brand-deep-soft/30" />
-          </div>
-        ))}
+      <div className="flex justify-end">
+        <span className="h-8 w-32 rounded-full bg-brand-deep-soft/40" />
       </div>
-      <div className="flex flex-col gap-2">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <span key={index} className="h-10 w-full rounded-full bg-brand-deep-soft/30" />
-        ))}
-      </div>
+      <div className="h-64 w-full rounded-[28px] bg-brand-deep-soft/20" />
     </section>
   );
 }

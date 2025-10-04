@@ -9,6 +9,24 @@ type Props = {
   attendances: ActiveAttendance[];
 };
 
+function splitName(fullName: string): [string, string | null] {
+  const words = fullName.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) {
+    return [fullName.trim(), null];
+  }
+
+  if (words.length >= 4) {
+    const top = words.slice(0, 2).join(" ");
+    const bottom = words.slice(2).join(" ");
+    return [top, bottom || null];
+  }
+
+  const half = Math.ceil(words.length / 2);
+  const top = words.slice(0, half).join(" ");
+  const bottom = words.slice(half).join(" ");
+  return [top, bottom || null];
+}
+
 export function AttendanceBoard({ attendances }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<number | null>(null);
@@ -128,7 +146,7 @@ export function AttendanceBoard({ attendances }: Props) {
                   {levelAttendances.length} en clase
                 </span>
               </header>
-              <div className="grid max-h-[70vh] grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-2 overflow-y-auto pr-1 sm:[grid-template-columns:repeat(auto-fill,minmax(72px,1fr))] lg:[grid-template-columns:repeat(auto-fill,minmax(80px,1fr))]">
+              <div className="grid max-h-[70vh] grid-cols-[repeat(auto-fill,minmax(40px,1fr))] gap-2 overflow-y-auto pr-1 sm:[grid-template-columns:repeat(auto-fill,minmax(48px,1fr))] lg:[grid-template-columns:repeat(auto-fill,minmax(56px,1fr))]">
                 {levelAttendances.map((attendance) => {
                   const accentForStudent = getLevelAccent(attendance.level);
                   const checkInDate = attendance.checkInTime
@@ -142,6 +160,7 @@ export function AttendanceBoard({ attendances }: Props) {
                   const bubbleLabel = formattedTime
                     ? `${displayName} • ${formattedTime}`
                     : displayName;
+                  const [firstLine, secondLine] = splitName(displayName);
 
                   return (
                     <button
@@ -149,7 +168,7 @@ export function AttendanceBoard({ attendances }: Props) {
                       type="button"
                       onClick={() => requestCheckout(attendance)}
                       disabled={isLoading}
-                      className="group relative flex min-h-[48px] min-w-[64px] flex-col items-center justify-center rounded-[18px] border px-2 py-1.5 text-center text-[10px] font-semibold leading-tight shadow-[0_8px_16px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                      className="group relative flex min-h-[32px] min-w-[40px] flex-col items-center justify-center gap-0.5 rounded-[14px] border px-1 py-0.5 text-center text-[9px] font-semibold leading-tight shadow-[0_6px_14px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
                       style={{
                         backgroundColor: accentForStudent.base,
                         borderColor: accentForStudent.border,
@@ -158,9 +177,14 @@ export function AttendanceBoard({ attendances }: Props) {
                       title={bubbleLabel}
                       aria-label={bubbleLabel}
                     >
-                      <span className="line-clamp-4 w-full break-words text-[10px] font-semibold tracking-tight">
-                        {displayName}
+                      <span className="w-full break-words text-[9px] font-semibold tracking-tight">
+                        {firstLine}
                       </span>
+                      {secondLine ? (
+                        <span className="w-full break-words text-[9px] font-semibold tracking-tight">
+                          {secondLine}
+                        </span>
+                      ) : null}
                       {isLoading && (
                         <span className="text-[10px] font-medium uppercase tracking-wide opacity-90">
                           Registrando salida…
@@ -207,7 +231,7 @@ export function AttendanceBoard({ attendances }: Props) {
                   type="button"
                   onClick={confirmCheckout}
                   disabled={loadingId === pendingCheckout.id}
-                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70 hover:text-white"
                 >
                   {loadingId === pendingCheckout.id ? "Registrando…" : "Sí, registrar salida"}
                 </button>

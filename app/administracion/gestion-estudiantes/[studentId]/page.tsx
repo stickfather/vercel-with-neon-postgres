@@ -41,7 +41,7 @@ import {
   getStudentProgressEvents,
 } from "@/features/administration/data/student-profile";
 
-export const revalidate = 30;
+export const revalidate = 0;
 
 function ensureDatabaseUrl() {
   if (!process.env.DATABASE_URL) {
@@ -288,7 +288,7 @@ export default async function StudentProfilePage({
   const endDate = formatDateISO(today);
 
   const primaryData = await loadPrimaryProfileData(studentId);
-  const studentName = primaryData.basicDetails?.fullName?.trim() || `Estudiante ${studentId}`;
+  const studentName = primaryData.basicDetails?.fullName?.trim() || "Nombre no disponible";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
