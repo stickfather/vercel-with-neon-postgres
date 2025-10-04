@@ -1,6 +1,29 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { unstable_cache } from "next/cache";
+
+import {
+  BasicDetailsPanel,
+  BasicDetailsPanelSkeleton,
+} from "@/features/administration/components/student-profile/basic-details-panel";
+import {
+  PaymentSchedulePanel,
+  PaymentSchedulePanelSkeleton,
+} from "@/features/administration/components/student-profile/payment-schedule-panel";
+import {
+  NotesPanel,
+  NotesPanelSkeleton,
+} from "@/features/administration/components/student-profile/notes-panel";
+import {
+  ExamsPanel,
+  ExamsPanelSkeleton,
+} from "@/features/administration/components/student-profile/exams-panel";
+import {
+  AttendancePanel,
+  AttendancePanelSkeleton,
+} from "@/features/administration/components/student-profile/attendance-panel";
 import {
   getStudentBasicDetails,
   listStudentPaymentSchedule,
@@ -11,16 +34,142 @@ import {
   getStudentCumulativeHours,
   getStudentLessonTimeline,
 } from "@/features/administration/data/student-profile";
-import { BasicDetailsPanel } from "@/features/administration/components/student-profile/basic-details-panel";
-import { PaymentSchedulePanel } from "@/features/administration/components/student-profile/payment-schedule-panel";
-import { NotesPanel } from "@/features/administration/components/student-profile/notes-panel";
-import { ExamsPanel } from "@/features/administration/components/student-profile/exams-panel";
-import { AttendancePanel } from "@/features/administration/components/student-profile/attendance-panel";
 
-export const revalidate = 0;
+const NOTES_REVALIDATE_SECONDS = 60;
+const EXAMS_REVALIDATE_SECONDS = 60;
+
+export const revalidate = 30;
+
+function ensureDatabaseUrl() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL environment variable is not configured.");
+  }
+}
+
+function coerceStudentId(value: unknown): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const integer = Math.trunc(parsed);
+  return integer > 0 ? integer : null;
+}
 
 function formatDateISO(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+const getStudentNotesCached = unstable_cache(
+  async (studentId: number) => listStudentNotes(studentId),
+  ["student-profile", "notes"],
+  { revalidate: NOTES_REVALIDATE_SECONDS },
+);
+
+const getStudentExamsCached = unstable_cache(
+  async (studentId: number) => listStudentExams(studentId),
+  ["student-profile", "exams"],
+  { revalidate: EXAMS_REVALIDATE_SECONDS },
+);
+
+type PrimaryProfileData = {
+  basicDetails: Awaited<ReturnType<typeof getStudentBasicDetails>>;
+  paymentSchedule: Awaited<ReturnType<typeof listStudentPaymentSchedule>>;
+  notes: Awaited<ReturnType<typeof listStudentNotes>>;
+  exams: Awaited<ReturnType<typeof listStudentExams>>;
+};
+
+type AttendanceData = {
+  stats: Awaited<ReturnType<typeof getStudentProgressStats>>;
+  minutesByDay: Awaited<ReturnType<typeof getStudentMinutesByDay>>;
+  cumulativeHours: Awaited<ReturnType<typeof getStudentCumulativeHours>>;
+  lessonTimeline: Awaited<ReturnType<typeof getStudentLessonTimeline>>;
+};
+
+const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
+  basicDetails: null,
+  paymentSchedule: [],
+  notes: [],
+  exams: [],
+};
+
+const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
+  stats: {
+    averageSessionLengthMinutes: null,
+    averageDaysPerWeek: null,
+    averageProgressPerWeek: null,
+  },
+  minutesByDay: [],
+  cumulativeHours: [],
+  lessonTimeline: [],
+};
+
+async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfileData> {
+  try {
+    ensureDatabaseUrl();
+    const [basicDetails, paymentSchedule, notes, exams] = await Promise.all([
+      getStudentBasicDetails(studentId),
+      listStudentPaymentSchedule(studentId),
+      getStudentNotesCached(studentId),
+      getStudentExamsCached(studentId),
+    ]);
+
+    return {
+      basicDetails,
+      paymentSchedule,
+      notes,
+      exams,
+    };
+  } catch (error) {
+    console.error("Failed to load student profile data", error);
+    return PRIMARY_DATA_FALLBACK;
+  }
+}
+
+async function loadAttendanceData(
+  studentId: number,
+  startDate: string,
+  endDate: string,
+): Promise<AttendanceData> {
+  try {
+    ensureDatabaseUrl();
+    const [stats, minutesByDay, cumulativeHours, lessonTimeline] = await Promise.all([
+      getStudentProgressStats(studentId, startDate, endDate, true),
+      getStudentMinutesByDay(studentId, startDate, endDate, true),
+      getStudentCumulativeHours(studentId, startDate, endDate, true),
+      getStudentLessonTimeline(studentId, startDate, endDate, true),
+    ]);
+
+    return {
+      stats,
+      minutesByDay,
+      cumulativeHours,
+      lessonTimeline,
+    };
+  } catch (error) {
+    console.error("Failed to load student attendance data", error);
+    return ATTENDANCE_DATA_FALLBACK;
+  }
+}
+
+async function AttendancePanelSection({
+  studentId,
+  startDate,
+  endDate,
+}: {
+  studentId: number;
+  startDate: string;
+  endDate: string;
+}) {
+  const data = await loadAttendanceData(studentId, startDate, endDate);
+
+  return (
+    <AttendancePanel
+      stats={data.stats}
+      minutesByDay={data.minutesByDay}
+      cumulativeHours={data.cumulativeHours}
+      lessonTimeline={data.lessonTimeline}
+      startDate={startDate}
+      endDate={endDate}
+    />
+  );
 }
 
 export async function generateMetadata({
@@ -28,22 +177,27 @@ export async function generateMetadata({
 }: {
   params: Promise<{ studentId: string }>;
 }): Promise<Metadata> {
-  const { studentId: studentIdStr } = await params; // 👈 params is a Promise in Next 15
-  const studentId = Number(studentIdStr);
-  if (!Number.isFinite(studentId)) {
-    return {
-      title: "Perfil de estudiante · Inglés Rápido Manta",
-    };
+  const { studentId: studentIdStr } = await params;
+  const studentId = coerceStudentId(studentIdStr);
+
+  if (!studentId) {
+    return { title: "Perfil de estudiante · Inglés Rápido Manta" };
   }
 
-  const details = await getStudentBasicDetails(studentId);
-  const name = details?.fullName?.trim();
+  try {
+    ensureDatabaseUrl();
+    const details = await getStudentBasicDetails(studentId);
+    const name = details?.fullName?.trim();
 
-  return {
-    title: name
-      ? `${name} · Perfil de estudiante · Inglés Rápido Manta`
-      : "Perfil de estudiante · Inglés Rápido Manta",
-  };
+    return {
+      title: name
+        ? `${name} · Perfil de estudiante · Inglés Rápido Manta`
+        : "Perfil de estudiante · Inglés Rápido Manta",
+    };
+  } catch (error) {
+    console.error("Failed to generate student metadata", error);
+    return { title: "Perfil de estudiante · Inglés Rápido Manta" };
+  }
 }
 
 export default async function StudentProfilePage({
@@ -51,9 +205,10 @@ export default async function StudentProfilePage({
 }: {
   params: Promise<{ studentId: string }>;
 }) {
-  const { studentId: studentIdStr } = await params; // 👈 await here too
-  const studentId = Number(studentIdStr);
-  if (!Number.isFinite(studentId)) {
+  const { studentId: studentIdStr } = await params;
+  const studentId = coerceStudentId(studentIdStr);
+
+  if (!studentId) {
     notFound();
   }
 
@@ -63,27 +218,8 @@ export default async function StudentProfilePage({
   const startDate = formatDateISO(startRange);
   const endDate = formatDateISO(today);
 
-  const [
-    basicDetails,
-    paymentSchedule,
-    notes,
-    exams,
-    stats,
-    minutesByDay,
-    cumulativeHours,
-    lessonTimeline,
-  ] = await Promise.all([
-    getStudentBasicDetails(studentId),
-    listStudentPaymentSchedule(studentId),
-    listStudentNotes(studentId),
-    listStudentExams(studentId),
-    getStudentProgressStats(studentId, startDate, endDate, true),
-    getStudentMinutesByDay(studentId, startDate, endDate, true),
-    getStudentCumulativeHours(studentId, startDate, endDate, true),
-    getStudentLessonTimeline(studentId, startDate, endDate, true),
-  ]);
-
-  const studentName = basicDetails?.fullName ?? `Estudiante ${studentId}`;
+  const primaryData = await loadPrimaryProfileData(studentId);
+  const studentName = primaryData.basicDetails?.fullName ?? `Estudiante ${studentId}`;
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
@@ -92,6 +228,7 @@ export default async function StudentProfilePage({
         <div className="absolute right-0 top-10 h-56 w-56 rotate-[12deg] rounded-[38px] bg-[#dff8f2] opacity-80" />
         <div className="absolute bottom-0 left-1/2 h-[480px] w-[120%] -translate-x-1/2 rounded-t-[180px] bg-gradient-to-r from-[#ffeede] via-white to-[#c9f5ed]" />
       </div>
+
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
         <header className="flex flex-col gap-4 rounded-[32px] border border-white/70 bg-white/92 px-7 py-8 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-deep">
@@ -120,18 +257,21 @@ export default async function StudentProfilePage({
         </header>
 
         <div className="flex flex-col gap-8 pb-10">
-          <BasicDetailsPanel studentId={studentId} details={basicDetails} />
-          <PaymentSchedulePanel studentId={studentId} entries={paymentSchedule} />
-          <NotesPanel studentId={studentId} notes={notes} />
-          <ExamsPanel studentId={studentId} exams={exams} />
-          <AttendancePanel
-            stats={stats}
-            minutesByDay={minutesByDay}
-            cumulativeHours={cumulativeHours}
-            lessonTimeline={lessonTimeline}
-            startDate={startDate}
-            endDate={endDate}
-          />
+          <Suspense fallback={<BasicDetailsPanelSkeleton />}>
+            <BasicDetailsPanel studentId={studentId} details={primaryData.basicDetails} />
+          </Suspense>
+          <Suspense fallback={<PaymentSchedulePanelSkeleton />}>
+            <PaymentSchedulePanel studentId={studentId} entries={primaryData.paymentSchedule} />
+          </Suspense>
+          <Suspense fallback={<NotesPanelSkeleton />}>
+            <NotesPanel studentId={studentId} notes={primaryData.notes} />
+          </Suspense>
+          <Suspense fallback={<ExamsPanelSkeleton />}>
+            <ExamsPanel studentId={studentId} exams={primaryData.exams} />
+          </Suspense>
+          <Suspense fallback={<AttendancePanelSkeleton />}>
+            <AttendancePanelSection studentId={studentId} startDate={startDate} endDate={endDate} />
+          </Suspense>
         </div>
       </main>
     </div>

@@ -385,3 +385,31 @@ export function ExamsPanel({ studentId, exams }: Props) {
     </section>
   );
 }
+
+export function ExamsPanelSkeleton() {
+  return (
+    <section className="flex animate-pulse flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
+      <div className="flex flex-col gap-2">
+        <span className="h-3 w-32 rounded-full bg-brand-deep-soft/60" />
+        <span className="h-6 w-28 rounded-full bg-brand-deep-soft/80" />
+        <span className="h-3 w-60 rounded-full bg-brand-deep-soft/50" />
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner">
+            <span className="h-3 w-24 rounded-full bg-brand-deep-soft/40" />
+            <span className="h-8 w-full rounded-xl bg-brand-deep-soft/30" />
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: 2 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner">
+            <span className="h-4 w-32 rounded-full bg-brand-deep-soft/40" />
+            <span className="h-12 w-full rounded-xl bg-brand-deep-soft/30" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}

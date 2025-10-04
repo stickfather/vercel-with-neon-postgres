@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { updateStudentBasicField } from "@/features/administration/data/student-profile";
+import {
+  isBasicDetailFieldKey,
+  updateStudentBasicField,
+} from "@/features/administration/data/student-profile";
 
 export async function PATCH(
   request: Request,
@@ -18,7 +21,7 @@ export async function PATCH(
 
     const { field, value } = await request.json();
 
-    if (!field || typeof field !== "string") {
+    if (!field || typeof field !== "string" || !isBasicDetailFieldKey(field)) {
       return NextResponse.json(
         { error: "Falta el campo a actualizar." },
         { status: 400 }

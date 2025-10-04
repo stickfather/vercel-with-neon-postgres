@@ -201,3 +201,39 @@ export function AttendancePanel({
     </section>
   );
 }
+
+export function AttendancePanelSkeleton() {
+  return (
+    <section className="flex animate-pulse flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
+      <div className="flex flex-col gap-2">
+        <span className="h-3 w-36 rounded-full bg-brand-deep-soft/60" />
+        <span className="h-6 w-44 rounded-full bg-brand-deep-soft/80" />
+        <span className="h-3 w-56 rounded-full bg-brand-deep-soft/50" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-2 rounded-[24px] bg-white/95 p-5 shadow-inner">
+            <span className="h-3 w-32 rounded-full bg-brand-deep-soft/40" />
+            <span className="h-6 w-20 rounded-full bg-brand-deep-soft/30" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {Array.from({ length: 2 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-3">
+            <span className="h-3 w-32 rounded-full bg-brand-deep-soft/40" />
+            <span className="h-40 w-full rounded-3xl bg-brand-deep-soft/30" />
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-3">
+        <span className="h-3 w-40 rounded-full bg-brand-deep-soft/40" />
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <span key={index} className="h-10 w-full rounded-2xl bg-brand-deep-soft/30" />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
