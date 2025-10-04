@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -41,7 +42,7 @@ import {
   getStudentProgressEvents,
 } from "@/features/administration/data/student-profile";
 
-export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
 function ensureDatabaseUrl() {
   if (!process.env.DATABASE_URL) {
@@ -113,6 +114,7 @@ const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
 };
 
 async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfileData> {
+  noStore();
   try {
     ensureDatabaseUrl();
     const [basicDetails, paymentSchedule, notes, exams, instructivos] = await Promise.all([
@@ -141,6 +143,7 @@ async function loadAttendanceData(
   startDate: string,
   endDate: string,
 ): Promise<AttendanceData> {
+  noStore();
   try {
     ensureDatabaseUrl();
     const excludeSundays = true;
@@ -246,6 +249,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ studentId: string }>;
 }): Promise<Metadata> {
+  noStore();
   const { studentId: studentIdStr } = await params;
   const studentId = coerceStudentId(studentIdStr);
 
