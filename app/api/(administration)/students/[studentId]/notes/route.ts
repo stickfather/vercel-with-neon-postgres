@@ -27,7 +27,6 @@ export async function POST(
 
     const note = await createStudentNote(studentId, {
       note: noteText.trim(),
-      category: body?.category ?? null,
     });
 
     return NextResponse.json(note);

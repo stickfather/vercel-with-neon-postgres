@@ -24,7 +24,6 @@ export async function PUT(
 
     await updateStudentNote(noteId, {
       note: noteText.trim(),
-      category: body?.category ?? null,
     });
 
     return NextResponse.json({ success: true });

@@ -18,12 +18,46 @@ export async function PUT(
     }
 
     const body = await request.json();
+    const dueDate =
+      typeof body?.dueDate === "string" && body.dueDate.trim().length
+        ? body.dueDate
+        : null;
+    const amountValue = body?.amount;
+    const amount =
+      amountValue == null || amountValue === ""
+        ? null
+        : typeof amountValue === "number"
+          ? amountValue
+          : Number(amountValue);
+
+    if (amount != null && (!Number.isFinite(amount) || amount <= 0)) {
+      return NextResponse.json(
+        { error: "El monto debe ser un número mayor a cero." },
+        { status: 400 },
+      );
+    }
+
+    const isPaid = Boolean(body?.isPaid);
+    const receivedDate =
+      typeof body?.receivedDate === "string" && body.receivedDate.trim().length
+        ? body.receivedDate
+        : null;
+    const externalRef =
+      typeof body?.externalRef === "string" && body.externalRef.trim().length
+        ? body.externalRef.trim()
+        : null;
+    const note =
+      typeof body?.note === "string" && body.note.trim().length
+        ? body.note.trim()
+        : null;
 
     await updatePaymentScheduleEntry(entryId, {
-      dueDate: body?.dueDate ?? null,
-      amount: body?.amount ?? null,
-      status: body?.status ?? null,
-      notes: body?.notes ?? null,
+      dueDate,
+      amount,
+      isPaid,
+      receivedDate,
+      externalRef,
+      note,
     });
 
     return NextResponse.json({ success: true });

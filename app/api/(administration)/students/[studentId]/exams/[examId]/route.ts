@@ -15,14 +15,35 @@ export async function PUT(
     }
 
     const body = await request.json();
+    const timeScheduled =
+      typeof body?.timeScheduled === "string" && body.timeScheduled.trim().length
+        ? body.timeScheduled
+        : null;
+    const scoreValue = body?.score;
+    const score =
+      scoreValue == null || scoreValue === ""
+        ? null
+        : typeof scoreValue === "number"
+          ? scoreValue
+          : Number(scoreValue);
+
+    if (score != null && !Number.isFinite(score)) {
+      return NextResponse.json(
+        { error: "La calificación debe ser numérica." },
+        { status: 400 },
+      );
+    }
+
+    const status = typeof body?.status === "string" ? body.status : null;
+    const passed = Boolean(body?.passed);
+    const notes = typeof body?.notes === "string" ? body.notes.trim() || null : null;
 
     await updateStudentExam(examId, {
-      examDate: body?.examDate ?? null,
-      examType: body?.examType ?? null,
-      status: body?.status ?? null,
-      location: body?.location ?? null,
-      result: body?.result ?? null,
-      notes: body?.notes ?? null,
+      timeScheduled,
+      status,
+      score,
+      passed,
+      notes,
     });
 
     return NextResponse.json({ success: true });

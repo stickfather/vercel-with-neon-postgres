@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import type { BasicDetailField, StudentBasicDetails } from "@/features/administration/data/student-profile";
 
 type Props = {
@@ -10,6 +10,11 @@ type Props = {
 };
 
 type FieldState = BasicDetailField;
+
+const BOOLEAN_LABEL: Record<string, string> = {
+  true: "Sí",
+  false: "No",
+};
 
 function getInputType(field: BasicDetailField) {
   switch (field.type) {
@@ -22,17 +27,37 @@ function getInputType(field: BasicDetailField) {
   }
 }
 
+function formatReadOnlyValue(field: FieldState): string {
+  if (field.type === "boolean") {
+    return BOOLEAN_LABEL[String(Boolean(field.value))];
+  }
+  if (typeof field.value === "string") {
+    return field.value || "Sin registrar";
+  }
+  if (field.value == null) return "Sin registrar";
+  return String(field.value);
+}
+
 export function BasicDetailsPanel({ studentId, details, onUpdated }: Props) {
   const [fields, setFields] = useState<FieldState[]>(details?.fields ?? []);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  useEffect(() => {
+    setFields(details?.fields ?? []);
+  }, [details]);
+
   const hasData = useMemo(() => fields.length > 0, [fields.length]);
 
-  const handleSubmit = (field: FieldState, rawValue: string) => {
+  const handleSubmit = (field: FieldState, rawValue: string | boolean) => {
     if (!field.editable) return;
-    const nextValue = rawValue.trim().length ? rawValue : null;
+    const nextValue =
+      field.type === "boolean"
+        ? Boolean(rawValue)
+        : typeof rawValue === "string" && rawValue.trim().length
+          ? rawValue.trim()
+          : null;
     setError(null);
     setStatusMessage(null);
 
@@ -119,15 +144,50 @@ export function BasicDetailsPanel({ studentId, details, onUpdated }: Props) {
           {fields.map((field) => {
             const inputType = getInputType(field);
             const pending = isPending;
-            const value = field.value ?? "";
+            const value =
+              typeof field.value === "string" || typeof field.value === "number"
+                ? String(field.value)
+                : field.value ?? "";
+            const stringValue =
+              typeof value === "string"
+                ? value
+                : value != null
+                  ? String(value)
+                  : "";
 
             if (!field.editable) {
               return (
                 <div key={field.key} className="flex flex-col gap-1 rounded-2xl bg-white/95 p-4 shadow-inner">
                   <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">{field.label}</span>
                   <span className="text-sm font-semibold text-brand-deep">
-                    {value || "Sin registrar"}
+                    {formatReadOnlyValue(field)}
                   </span>
+                </div>
+              );
+            }
+
+            if (field.type === "boolean") {
+              const checked = Boolean(field.value);
+              return (
+                <div key={field.key} className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                      {field.label}
+                    </span>
+                    <label className="inline-flex items-center gap-2" htmlFor={`basic-${field.key}`}>
+                      <input
+                        id={`basic-${field.key}`}
+                        type="checkbox"
+                        checked={checked}
+                        disabled={pending}
+                        onChange={(event) => handleSubmit(field, event.target.checked)}
+                        className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
+                      />
+                      <span className="text-sm font-semibold text-brand-deep">
+                        {checked ? "Sí" : "No"}
+                      </span>
+                    </label>
+                  </div>
                 </div>
               );
             }
@@ -143,24 +203,27 @@ export function BasicDetailsPanel({ studentId, details, onUpdated }: Props) {
                   handleSubmit(field, formValue);
                 }}
               >
-                <label className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted" htmlFor={`basic-${field.key}`}>
+                <label
+                  className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted"
+                  htmlFor={`basic-${field.key}`}
+                >
                   {field.label}
                 </label>
                 {field.type === "textarea" ? (
                   <textarea
                     id={`basic-${field.key}`}
                     name="value"
-                    defaultValue={value}
+                    defaultValue={stringValue}
                     rows={4}
-                    className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                    className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
                   />
                 ) : (
                   <input
                     id={`basic-${field.key}`}
                     name="value"
-                    defaultValue={value}
+                    defaultValue={stringValue}
                     type={inputType}
-                    className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                    className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
                   />
                 )}
                 <div className="flex items-center justify-end gap-2">
