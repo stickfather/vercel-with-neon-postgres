@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { unstable_cache } from "next/cache";
 
 import {
   BasicDetailsPanel,
@@ -38,10 +37,9 @@ import {
   getStudentMinutesByDay,
   getStudentCumulativeHours,
   getStudentLessonTimeline,
+  getStudentAttendanceStats,
+  getStudentProgressEvents,
 } from "@/features/administration/data/student-profile";
-
-const NOTES_REVALIDATE_SECONDS = 60;
-const EXAMS_REVALIDATE_SECONDS = 60;
 
 export const revalidate = 30;
 
@@ -62,18 +60,6 @@ function formatDateISO(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-const getStudentNotesCached = unstable_cache(
-  async (studentId: number) => listStudentNotes(studentId),
-  ["student-profile", "notes"],
-  { revalidate: NOTES_REVALIDATE_SECONDS },
-);
-
-const getStudentExamsCached = unstable_cache(
-  async (studentId: number) => listStudentExams(studentId),
-  ["student-profile", "exams"],
-  { revalidate: EXAMS_REVALIDATE_SECONDS },
-);
-
 type PrimaryProfileData = {
   basicDetails: Awaited<ReturnType<typeof getStudentBasicDetails>>;
   paymentSchedule: Awaited<ReturnType<typeof listStudentPaymentSchedule>>;
@@ -83,10 +69,14 @@ type PrimaryProfileData = {
 };
 
 type AttendanceData = {
+  attendanceStats: Awaited<ReturnType<typeof getStudentAttendanceStats>>;
   stats: Awaited<ReturnType<typeof getStudentProgressStats>>;
   minutesByDay: Awaited<ReturnType<typeof getStudentMinutesByDay>>;
   cumulativeHours: Awaited<ReturnType<typeof getStudentCumulativeHours>>;
   lessonTimeline: Awaited<ReturnType<typeof getStudentLessonTimeline>>;
+  progressEvents: Awaited<ReturnType<typeof getStudentProgressEvents>>;
+  excludeSundays: boolean;
+  error: string | null;
 };
 
 const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
@@ -98,14 +88,28 @@ const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
 };
 
 const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
+  attendanceStats: {
+    totalMinutes: null,
+    totalHours: null,
+    averageSessionMinutes: null,
+    averageSessionsPerDay: null,
+    averageMinutesPerDay: null,
+    averageMinutesPerDayExcludingSundays: null,
+    lessonChanges: null,
+    lessonsPerWeek: null,
+  },
   stats: {
     averageSessionLengthMinutes: null,
     averageDaysPerWeek: null,
     averageProgressPerWeek: null,
+    lessonsPerWeek: null,
   },
   minutesByDay: [],
   cumulativeHours: [],
   lessonTimeline: [],
+  progressEvents: [],
+  excludeSundays: true,
+  error: null,
 };
 
 async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfileData> {
@@ -114,8 +118,8 @@ async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfile
     const [basicDetails, paymentSchedule, notes, exams, instructivos] = await Promise.all([
       getStudentBasicDetails(studentId),
       listStudentPaymentSchedule(studentId),
-      getStudentNotesCached(studentId),
-      getStudentExamsCached(studentId),
+      listStudentNotes(studentId),
+      listStudentExams(studentId),
       listStudentInstructivos(studentId),
     ]);
 
@@ -139,22 +143,74 @@ async function loadAttendanceData(
 ): Promise<AttendanceData> {
   try {
     ensureDatabaseUrl();
-    const [stats, minutesByDay, cumulativeHours, lessonTimeline] = await Promise.all([
-      getStudentProgressStats(studentId, startDate, endDate, true),
-      getStudentMinutesByDay(studentId, startDate, endDate, true),
-      getStudentCumulativeHours(studentId, startDate, endDate, true),
-      getStudentLessonTimeline(studentId, startDate, endDate, true),
+    const excludeSundays = true;
+    const results = await Promise.allSettled([
+      getStudentAttendanceStats(studentId, startDate, endDate),
+      getStudentProgressStats(studentId, startDate, endDate, excludeSundays),
+      getStudentMinutesByDay(studentId, startDate, endDate, excludeSundays),
+      getStudentCumulativeHours(studentId, startDate, endDate),
+      getStudentLessonTimeline(studentId, startDate, endDate),
+      getStudentProgressEvents(studentId),
     ]);
 
+    const [
+      attendanceStatsResult,
+      progressStatsResult,
+      minutesByDayResult,
+      cumulativeHoursResult,
+      lessonTimelineResult,
+      progressEventsResult,
+    ] = results;
+
+    const errors: string[] = [];
+
+    const attendanceStats =
+      attendanceStatsResult.status === "fulfilled"
+        ? attendanceStatsResult.value
+        : (errors.push("No se pudo cargar el resumen de asistencia."), ATTENDANCE_DATA_FALLBACK.attendanceStats);
+    const stats =
+      progressStatsResult.status === "fulfilled"
+        ? progressStatsResult.value
+        : (errors.push("No se pudieron cargar los promedios de progreso."), ATTENDANCE_DATA_FALLBACK.stats);
+    const minutesByDay =
+      minutesByDayResult.status === "fulfilled"
+        ? minutesByDayResult.value
+        : (errors.push("No se pudieron cargar los minutos diarios."), ATTENDANCE_DATA_FALLBACK.minutesByDay);
+    const cumulativeHours =
+      cumulativeHoursResult.status === "fulfilled"
+        ? cumulativeHoursResult.value
+        : (errors.push("No se pudo cargar el acumulado de horas."), ATTENDANCE_DATA_FALLBACK.cumulativeHours);
+    const lessonTimeline =
+      lessonTimelineResult.status === "fulfilled"
+        ? lessonTimelineResult.value
+        : (errors.push("No se pudo cargar la línea de lecciones."), ATTENDANCE_DATA_FALLBACK.lessonTimeline);
+    const progressEvents =
+      progressEventsResult.status === "fulfilled"
+        ? progressEventsResult.value
+        : (errors.push("No se pudieron cargar los eventos de progreso."), ATTENDANCE_DATA_FALLBACK.progressEvents);
+
     return {
+      attendanceStats,
       stats,
       minutesByDay,
       cumulativeHours,
       lessonTimeline,
+      progressEvents,
+      excludeSundays,
+      error: errors.length ? errors.join(" ") : null,
     };
   } catch (error) {
     console.error("Failed to load student attendance data", error);
-    return ATTENDANCE_DATA_FALLBACK;
+    return {
+      ...ATTENDANCE_DATA_FALLBACK,
+      attendanceStats: { ...ATTENDANCE_DATA_FALLBACK.attendanceStats },
+      stats: { ...ATTENDANCE_DATA_FALLBACK.stats },
+      minutesByDay: [...ATTENDANCE_DATA_FALLBACK.minutesByDay],
+      cumulativeHours: [...ATTENDANCE_DATA_FALLBACK.cumulativeHours],
+      lessonTimeline: [...ATTENDANCE_DATA_FALLBACK.lessonTimeline],
+      progressEvents: [...ATTENDANCE_DATA_FALLBACK.progressEvents],
+      error: "No se pudo cargar la información de asistencia. Intenta nuevamente más tarde.",
+    };
   }
 }
 
@@ -171,10 +227,14 @@ async function AttendancePanelSection({
 
   return (
     <AttendancePanel
+      attendanceStats={data.attendanceStats}
       stats={data.stats}
       minutesByDay={data.minutesByDay}
       cumulativeHours={data.cumulativeHours}
       lessonTimeline={data.lessonTimeline}
+      progressEvents={data.progressEvents}
+      excludeSundays={data.excludeSundays}
+      errorMessage={data.error}
       startDate={startDate}
       endDate={endDate}
     />
@@ -241,9 +301,14 @@ export default async function StudentProfilePage({
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
         <header className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 text-left shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-brand-ink-muted">
-            <Link href="/administracion" className="text-brand-teal hover:underline">
-              ← Volver a administración
-            </Link>
+            <div className="flex flex-col gap-1">
+              <Link href="/administracion" className="text-brand-teal hover:underline">
+                ← Volver a administración
+              </Link>
+              <Link href="/administracion/gestion-estudiantes" className="text-brand-teal hover:underline">
+                ← Volver a gestión de estudiantes
+              </Link>
+            </div>
             <Link
               href="/registro"
               className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"

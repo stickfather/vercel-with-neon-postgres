@@ -40,27 +40,33 @@ function GraphButton({
   selected: boolean;
   onClick: () => void;
 }) {
-  const barWidth = Math.max(percentage, count > 0 ? 8 : 0);
+  const barWidth = Math.max(percentage, count > 0 ? 6 : 0);
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`flex flex-col gap-2 rounded-2xl border px-4 py-3 text-left transition ${
+      className={`flex items-center gap-3 rounded-2xl border px-3 py-2 text-left transition ${
         selected
           ? "border-brand-teal bg-brand-teal-soft/50 shadow"
           : "border-brand-ink-muted/20 bg-white/95 hover:border-brand-teal hover:bg-brand-teal-soft/30"
       }`}
     >
-      <div className="flex items-center justify-between gap-2 text-sm font-semibold text-brand-deep">
-        <span className="whitespace-pre-wrap break-words leading-snug">{label}</span>
-        <span className="text-xs font-semibold text-brand-ink-muted">{count}</span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-brand-deep-soft/40">
-        <div
-          className={`h-full rounded-full ${selected ? "bg-brand-teal" : "bg-brand-teal-soft"}`}
-          style={{ width: `${barWidth}%` }}
-        />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-center justify-between gap-2 text-xs font-semibold text-brand-deep">
+          <span className="truncate" title={label}>
+            {label}
+          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+            {count}
+          </span>
+        </div>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-brand-deep-soft/40">
+          <div
+            className={`h-full rounded-full ${selected ? "bg-brand-teal" : "bg-brand-teal-soft"}`}
+            style={{ width: `${barWidth}%` }}
+          />
+        </div>
       </div>
       <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
         {percentage}%
@@ -97,10 +103,10 @@ export function StudentManagementGraphs({
           Limpiar filtros
         </button>
       </header>
-      <div className="grid gap-5 md:grid-cols-2">
-        <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-5 lg:flex-row">
+        <div className="flex flex-1 flex-col gap-3">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Estados de estudiantes</h3>
-          <div className="grid gap-2">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
             {stateData.map((item) => (
               <GraphButton
                 key={item.key}
@@ -118,9 +124,9 @@ export function StudentManagementGraphs({
             )}
           </div>
         </div>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-1 flex-col gap-3">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Banderas de estudiantes</h3>
-          <div className="grid gap-2">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
             {flagData.map((item) => (
               <GraphButton
                 key={item.key}
