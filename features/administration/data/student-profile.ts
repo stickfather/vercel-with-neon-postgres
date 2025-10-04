@@ -1,3 +1,5 @@
+import { unstable_noStore as noStore } from "next/cache";
+
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
 
 export type BasicDetailFieldKey =
@@ -225,6 +227,7 @@ function normalizeFieldValue<T extends BasicDetailFieldType>(
 }
 
 export async function getStudentBasicDetails(studentId: number): Promise<StudentBasicDetails | null> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -260,6 +263,7 @@ export async function updateStudentBasicField(
   fieldKey: BasicDetailFieldKey,
   value: string | boolean | null,
 ): Promise<void> {
+  noStore();
   const sql = getSqlClient();
   const field = BASIC_DETAILS_FIELDS.find((item) => item.key === fieldKey);
 
@@ -331,6 +335,7 @@ export type StudentPaymentScheduleEntry = {
 export async function listStudentPaymentSchedule(
   studentId: number,
 ): Promise<StudentPaymentScheduleEntry[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -373,6 +378,7 @@ export async function createPaymentScheduleEntry(
     note?: string | null;
   },
 ): Promise<StudentPaymentScheduleEntry> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -419,6 +425,7 @@ export async function updatePaymentScheduleEntry(
     note: string | null;
   },
 ): Promise<void> {
+  noStore();
   const sql = getSqlClient();
 
   await sql`
@@ -433,6 +440,7 @@ export async function updatePaymentScheduleEntry(
 }
 
 export async function deletePaymentScheduleEntry(entryId: number): Promise<void> {
+  noStore();
   const sql = getSqlClient();
   await sql`
     DELETE FROM public.student_payment_schedule
@@ -448,6 +456,7 @@ export type StudentNote = {
 };
 
 export async function listStudentNotes(studentId: number): Promise<StudentNote[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -469,6 +478,7 @@ export async function createStudentNote(
   studentId: number,
   data: { note: string },
 ): Promise<StudentNote> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -494,6 +504,7 @@ export async function updateStudentNote(
   noteId: number,
   data: { note: string },
 ): Promise<void> {
+  noStore();
   const sql = getSqlClient();
   await sql`
     UPDATE public.student_notes
@@ -503,6 +514,7 @@ export async function updateStudentNote(
 }
 
 export async function deleteStudentNote(noteId: number): Promise<void> {
+  noStore();
   const sql = getSqlClient();
   await sql`
     DELETE FROM public.student_notes
@@ -521,6 +533,7 @@ export type StudentExam = {
 };
 
 export async function listStudentExams(studentId: number): Promise<StudentExam[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -559,6 +572,7 @@ export async function createStudentExam(
     notes: string | null;
   },
 ): Promise<StudentExam> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -590,6 +604,7 @@ export async function updateStudentExam(
     notes: string | null;
   },
 ): Promise<void> {
+  noStore();
   const sql = getSqlClient();
 
   await sql`
@@ -604,6 +619,7 @@ export async function updateStudentExam(
 }
 
 export async function deleteStudentExam(examId: number): Promise<void> {
+  noStore();
   const sql = getSqlClient();
   await sql`
     DELETE FROM public.exam_appointments
@@ -624,6 +640,7 @@ export type StudentInstructivo = {
 export async function listStudentInstructivos(
   studentId: number,
 ): Promise<StudentInstructivo[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -653,6 +670,7 @@ export async function createStudentInstructivo(
     createdBy?: string | null;
   },
 ): Promise<StudentInstructivo> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -683,6 +701,7 @@ export async function updateStudentInstructivo(
     createdBy: string | null;
   },
 ): Promise<void> {
+  noStore();
   const sql = getSqlClient();
   await sql`
     UPDATE public.student_instructivos
@@ -697,6 +716,7 @@ export async function updateStudentInstructivo(
 export async function deleteStudentInstructivo(
   instructivoId: number,
 ): Promise<void> {
+  noStore();
   const sql = getSqlClient();
   await sql`
     DELETE FROM public.student_instructivos
@@ -784,6 +804,7 @@ export async function getStudentProgressStats(
   endDate: string,
   excludeSundays: boolean,
 ): Promise<StudentProgressStats> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -821,6 +842,7 @@ export async function getStudentMinutesByDay(
   endDate: string,
   excludeSundays: boolean,
 ): Promise<MinutesByDayEntry[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -846,6 +868,7 @@ export async function getStudentCumulativeHours(
   startDate: string,
   endDate: string,
 ): Promise<CumulativeHoursEntry[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -871,6 +894,7 @@ export async function getStudentLessonTimeline(
   startDate: string,
   endDate: string,
 ): Promise<LessonTimelineEntry[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -894,6 +918,7 @@ export async function getStudentAttendanceStats(
   startDate: string,
   endDate: string,
 ): Promise<StudentAttendanceStats> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
@@ -955,6 +980,7 @@ export async function getStudentAttendanceStats(
 export async function getStudentProgressEvents(
   studentId: number,
 ): Promise<StudentProgressEvent[]> {
+  noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
