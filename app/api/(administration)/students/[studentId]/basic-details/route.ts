@@ -17,9 +17,10 @@ function normalizeStudentId(value: string): number | null {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { studentId: string } },
+  { params }: { params: Promise<{ studentId: string }> },
 ) {
-  const studentId = normalizeStudentId(params.studentId);
+  const resolvedParams = await params;
+  const studentId = normalizeStudentId(resolvedParams.studentId);
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
@@ -44,9 +45,10 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { studentId: string } },
+  { params }: { params: Promise<{ studentId: string }> },
 ) {
-  const studentId = normalizeStudentId(params.studentId);
+  const resolvedParams = await params;
+  const studentId = normalizeStudentId(resolvedParams.studentId);
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
@@ -68,7 +70,12 @@ export async function PATCH(
   }
 
   const allowedKeys = new Set<string>(EDITABLE_STUDENT_BASIC_DETAIL_KEYS as string[]);
-  const updatePayload: StudentBasicDetailsEditablePayload = {};
+  const updatePayload: Partial<
+    Record<
+      keyof StudentBasicDetailsEditablePayload,
+      StudentBasicDetailsEditablePayload[keyof StudentBasicDetailsEditablePayload]
+    >
+  > = {};
 
   for (const [key, value] of Object.entries(payload)) {
     if (allowedKeys.has(key)) {
@@ -86,7 +93,8 @@ export async function PATCH(
   }
 
   try {
-    const updated = await updateStudentBasicDetails(studentId, updatePayload);
+    const typedPayload = updatePayload as StudentBasicDetailsEditablePayload;
+    const updated = await updateStudentBasicDetails(studentId, typedPayload);
     revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
     return NextResponse.json(updated);
   } catch (error) {

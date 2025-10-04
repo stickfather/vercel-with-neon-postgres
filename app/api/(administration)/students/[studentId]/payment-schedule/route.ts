@@ -12,10 +12,11 @@ function normalizeStudentId(value: string): number | null {
 
 export async function POST(
   request: Request,
-  { params }: { params: { studentId: string } },
+  { params }: { params: Promise<{ studentId: string }> },
 ) {
   try {
-    const studentId = normalizeStudentId(params.studentId);
+    const resolvedParams = await params;
+    const studentId = normalizeStudentId(resolvedParams.studentId);
 
     if (studentId == null) {
       return NextResponse.json(

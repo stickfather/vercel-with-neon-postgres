@@ -255,15 +255,16 @@ export async function updateStudentBasicDetails(
     throw new Error("No se proporcionaron cambios para actualizar.");
   }
 
-  const assignments = sanitizedEntries.map(([key, value]) =>
-    sql`${sql.identifier([key])} = ${value ?? null}`,
+  const setFragments = sanitizedEntries.map(
+    ([key], index) => `"${key}" = $${index + 1}`,
   );
-  assignments.push(sql`updated_at = NOW()`);
+  setFragments.push("updated_at = NOW()");
 
-  const rows = normalizeRows<SqlRow>(await sql`
+  const values = sanitizedEntries.map(([, value]) => value ?? null);
+  const query = `
     UPDATE public.students
-    SET ${sql.join(assignments, sql`, `)}
-    WHERE id = ${studentId}::bigint
+    SET ${setFragments.join(", ")}
+    WHERE id = $${values.length + 1}::bigint
     RETURNING
       id,
       full_name,
@@ -284,7 +285,11 @@ export async function updateStudentBasicDetails(
       last_lesson_id,
       updated_at,
       created_at
-  `);
+  `;
+
+  const rows = normalizeRows<SqlRow>(
+    await sql.query(query, [...values, studentId]),
+  );
 
   if (!rows.length) {
     throw new Error("No se pudo actualizar la información del estudiante.");

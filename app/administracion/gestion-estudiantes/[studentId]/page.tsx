@@ -53,10 +53,6 @@ function formatDateISO(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-async function resolveParams<T>(params: T | Promise<T>): Promise<T> {
-  return Promise.resolve(params);
-}
-
 type PrimaryProfileData = {
   basicDetails: Awaited<ReturnType<typeof getStudentBasicDetails>>;
   paymentSchedule: Awaited<ReturnType<typeof listStudentPaymentSchedule>>;
@@ -243,10 +239,10 @@ async function AttendancePanelSection({
 export async function generateMetadata({
   params,
 }: {
-  params: { studentId: string } | Promise<{ studentId: string }>;
+  params: Promise<{ studentId: string }>;
 }): Promise<Metadata> {
   noStore();
-  const resolvedParams = await resolveParams(params);
+  const resolvedParams = await params;
   const studentId = Number(resolvedParams.studentId);
 
   if (!Number.isFinite(studentId)) {
@@ -272,9 +268,9 @@ export async function generateMetadata({
 export default async function StudentProfilePage({
   params,
 }: {
-  params: { studentId: string } | Promise<{ studentId: string }>;
+  params: Promise<{ studentId: string }>;
 }) {
-  const resolvedParams = await resolveParams(params);
+  const resolvedParams = await params;
   const studentId = Number(resolvedParams.studentId);
 
   if (!Number.isFinite(studentId)) {

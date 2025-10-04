@@ -15,11 +15,12 @@ function normalizeId(value: string): number | null {
 
 export async function PUT(
   request: Request,
-  { params }: { params: { studentId: string; instructivoId: string } },
+  { params }: { params: Promise<{ studentId: string; instructivoId: string }> },
 ) {
   try {
-    const instructivoId = normalizeId(params.instructivoId);
-    const studentId = normalizeId(params.studentId);
+    const resolvedParams = await params;
+    const instructivoId = normalizeId(resolvedParams.instructivoId);
+    const studentId = normalizeId(resolvedParams.studentId);
 
     if (instructivoId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
@@ -75,11 +76,12 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { studentId: string; instructivoId: string } },
+  { params }: { params: Promise<{ studentId: string; instructivoId: string }> },
 ) {
   try {
-    const instructivoId = normalizeId(params.instructivoId);
-    const studentId = normalizeId(params.studentId);
+    const resolvedParams = await params;
+    const instructivoId = normalizeId(resolvedParams.instructivoId);
+    const studentId = normalizeId(resolvedParams.studentId);
 
     if (instructivoId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
