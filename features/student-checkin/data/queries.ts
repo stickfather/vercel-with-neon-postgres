@@ -27,6 +27,7 @@ export type ActiveAttendance = {
   fullName: string;
   lesson: string | null;
   level: string | null;
+  lessonSequence: number | null;
   checkInTime: string;
 };
 
@@ -127,7 +128,8 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       COALESCE(s.full_name, '') AS full_name,
       sa.checkin_time,
       l.lesson,
-      l.level AS level
+      l.level AS level,
+      l.seq AS lesson_sequence
     FROM student_attendance sa
     LEFT JOIN students s ON s.id = sa.student_id
     LEFT JOIN lessons l ON l.id = sa.lesson_id
@@ -141,6 +143,8 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       fullName: (row.full_name as string | null) ?? "",
       lesson: (row.lesson as string | null) ?? null,
       level: (row.level as string | null) ?? null,
+      lessonSequence:
+        row.lesson_sequence == null ? null : Number(row.lesson_sequence),
       checkInTime: row.checkin_time as string,
     }))
     .filter((attendance) => attendance.fullName.trim().length);
