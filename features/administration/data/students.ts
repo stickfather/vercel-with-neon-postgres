@@ -5,12 +5,14 @@ export type StudentManagementEntry = {
   fullName: string;
   level: string | null;
   state: string | null;
+  isNewStudent: boolean;
+  isExamApproaching: boolean;
   isExamPreparation: boolean;
   hasSpecialNeeds: boolean;
-  hasPaymentIssues: boolean;
-  isLowProgress: boolean;
-  isSlowProgress: boolean;
-  isDropoutRisk: boolean;
+  isAbsent7Days: boolean;
+  isSlowProgress14Days: boolean;
+  hasActiveInstructive: boolean;
+  hasOverdueInstructive: boolean;
 };
 
 function coerceString(value: unknown): string | null {
@@ -66,6 +68,13 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
         ) ?? null,
       state:
         coerceString(pick(row, ["state", "status", "student_state"])) ?? null,
+      isNewStudent:
+        coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
+        false,
+      isExamApproaching:
+        coerceBoolean(
+          pick(row, ["is_exam_approaching", "exam_approaching", "upcoming_exam"]),
+        ) ?? false,
       isExamPreparation:
         coerceBoolean(
           pick(row, [
@@ -83,37 +92,38 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
             "is_special_needs",
           ]),
         ) ?? false,
-      hasPaymentIssues:
+      isAbsent7Days:
         coerceBoolean(
           pick(row, [
-            "has_payment_issues",
-            "payment_issues",
-            "is_payment_issue",
+            "is_absent_7d",
+            "absent_7d",
+            "is_absent_seven_days",
+            "absent_7_days",
           ]),
         ) ?? false,
-      isLowProgress:
+      isSlowProgress14Days:
         coerceBoolean(
           pick(row, [
-            "is_low_progress",
-            "low_progress",
-            "has_low_progress",
-          ]),
-        ) ?? false,
-      isSlowProgress:
-        coerceBoolean(
-          pick(row, [
+            "is_slow_progress_14d",
+            "slow_progress_14d",
             "is_slow_progress",
             "slow_progress",
-            "has_slow_progress",
           ]),
         ) ?? false,
-      isDropoutRisk:
+      hasActiveInstructive:
         coerceBoolean(
           pick(row, [
-            "is_dropout_risk",
-            "dropout_risk",
-            "is_dropout",
-            "dropout",
+            "instructivo_active",
+            "has_instructive_active",
+            "active_instructive",
+          ]),
+        ) ?? false,
+      hasOverdueInstructive:
+        coerceBoolean(
+          pick(row, [
+            "instructivo_overdue",
+            "has_instructive_overdue",
+            "overdue_instructive",
           ]),
         ) ?? false,
     }))
