@@ -116,6 +116,7 @@ export function AttendanceBoard({ attendances }: Props) {
       <div className="flex flex-col gap-4">
         {groupedAttendances.map(([level, levelAttendances]) => {
           const accent = getLevelAccent(level);
+
           return (
             <section
               key={level}
@@ -135,31 +136,20 @@ export function AttendanceBoard({ attendances }: Props) {
                   {levelAttendances.length} en clase
                 </span>
               </header>
-              <div className="grid max-h-[520px] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+              <div className="grid max-h-[70vh] grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-2 overflow-y-auto pr-1 sm:[grid-template-columns:repeat(auto-fill,minmax(96px,1fr))] lg:[grid-template-columns:repeat(auto-fill,minmax(104px,1fr))]">
                 {levelAttendances.map((attendance) => {
-                  const levelAccent = getLevelAccent(attendance.level);
+                  const accentForStudent = getLevelAccent(attendance.level);
                   const checkInDate = attendance.checkInTime
                     ? new Date(attendance.checkInTime)
                     : null;
                   const formattedTime = checkInDate
                     ? formatter.format(checkInDate)
                     : "";
-                  const lessonName = attendance.lesson?.trim() ?? "";
-                  let lessonAbbreviation: string | null = null;
-                  if (lessonName) {
-                    if (lessonName.toLowerCase() === "preparación para el examen") {
-                      lessonAbbreviation = "Ex";
-                    } else {
-                      lessonAbbreviation = lessonName
-                        .replace(/lecci[óo]n\s*/i, "L")
-                        .replace(/\s+/g, "");
-                    }
-                  }
-                  const labelParts = [attendance.fullName.trim()];
-                  if (lessonAbbreviation) labelParts.push(lessonAbbreviation);
-                  if (formattedTime) labelParts.push(formattedTime);
-                  const label = labelParts.filter(Boolean).join(" • ");
                   const isLoading = loadingId === attendance.id;
+                  const displayName = attendance.fullName.trim();
+                  const bubbleLabel = formattedTime
+                    ? `${displayName} • ${formattedTime}`
+                    : displayName;
 
                   return (
                     <button
@@ -167,17 +157,20 @@ export function AttendanceBoard({ attendances }: Props) {
                       type="button"
                       onClick={() => requestCheckout(attendance)}
                       disabled={isLoading}
-                      className="group relative flex min-h-[72px] min-w-[120px] flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-3 text-center text-[12px] font-semibold text-brand-deep shadow-[0_12px_26px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                      className="group relative flex min-h-[52px] min-w-[88px] flex-col items-center justify-center rounded-2xl border px-2 py-2 text-center text-[11px] font-semibold leading-tight shadow-[0_10px_18px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
                       style={{
-                        backgroundColor: `${levelAccent.background}`,
-                        borderColor: `${levelAccent.chipBackground}`,
+                        backgroundColor: accentForStudent.base,
+                        borderColor: accentForStudent.border,
+                        color: accentForStudent.primary,
                       }}
+                      title={bubbleLabel}
+                      aria-label={bubbleLabel}
                     >
-                      <span className="line-clamp-3 w-full break-words text-[12px] font-semibold tracking-tight text-brand-deep">
-                        {label}
+                      <span className="line-clamp-3 w-full break-words text-[11px] font-semibold tracking-tight">
+                        {displayName}
                       </span>
                       {isLoading && (
-                        <span className="text-[11px] font-medium uppercase tracking-wide text-brand-ink-muted">
+                        <span className="text-[10px] font-medium uppercase tracking-wide opacity-90">
                           Registrando salida…
                         </span>
                       )}
