@@ -2,25 +2,7 @@ import { unstable_noStore as noStore } from "next/cache";
 
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
 
-export type BasicDetailFieldKey =
-  | "fullName"
-  | "representativeName"
-  | "representativePhone"
-  | "representativeEmail"
-  | "hasSpecialNeeds"
-  | "contractStart"
-  | "contractEnd"
-  | "frozenStart"
-  | "frozenEnd"
-  | "currentLevel"
-  | "plannedLevelMin"
-  | "plannedLevelMax"
-  | "isOnline"
-  | "lastSeenAt"
-  | "lastLessonId"
-  | "status";
-
-type BasicDetailFieldType =
+export type BasicDetailFieldType =
   | "text"
   | "textarea"
   | "date"
@@ -28,145 +10,114 @@ type BasicDetailFieldType =
   | "boolean"
   | "datetime";
 
-type BasicDetailFieldConfig = {
-  key: BasicDetailFieldKey;
-  dbColumn: string;
+export type StudentBasicDetails = {
+  id: number;
+  full_name: string | null;
+  representative_name: string | null;
+  representative_phone: string | null;
+  representative_email: string | null;
+  has_special_needs: boolean | null;
+  contract_start: string | null;
+  contract_end: string | null;
+  frozen_start: string | null;
+  frozen_end: string | null;
+  current_level: string | null;
+  planned_level_min: string | null;
+  planned_level_max: string | null;
+  is_online: boolean | null;
+  status: string | null;
+  last_seen_at: string | null;
+  last_lesson_id: string | null;
+  updated_at: string | null;
+  created_at: string | null;
+};
+
+export type StudentBasicDetailFieldConfig = {
+  key: keyof Omit<StudentBasicDetails, "id">;
   label: string;
   type: BasicDetailFieldType;
   editable: boolean;
 };
 
-export type BasicDetailField = Omit<BasicDetailFieldConfig, "dbColumn"> & {
-  value: string | boolean | null;
-};
-
-export type StudentBasicDetails = {
-  id: number;
-  fullName: string;
-  fields: BasicDetailField[];
-};
-
-const BASIC_DETAILS_FIELDS: ReadonlyArray<BasicDetailFieldConfig> = [
+export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldConfig> = [
+  { key: "full_name", label: "Nombre completo", type: "text", editable: true },
   {
-    key: "fullName",
-    dbColumn: "full_name",
-    label: "Nombre completo",
-    type: "text",
-    editable: true,
-  },
-  {
-    key: "representativeName",
-    dbColumn: "representative_name",
+    key: "representative_name",
     label: "Nombre del representante",
     type: "text",
     editable: true,
   },
   {
-    key: "representativePhone",
-    dbColumn: "representative_phone",
+    key: "representative_phone",
     label: "Teléfono del representante",
     type: "text",
     editable: true,
   },
   {
-    key: "representativeEmail",
-    dbColumn: "representative_email",
+    key: "representative_email",
     label: "Correo del representante",
     type: "text",
     editable: true,
   },
   {
-    key: "hasSpecialNeeds",
-    dbColumn: "has_special_needs",
+    key: "has_special_needs",
     label: "Necesidades especiales",
     type: "boolean",
     editable: true,
   },
   {
-    key: "contractStart",
-    dbColumn: "contract_start",
+    key: "contract_start",
     label: "Inicio de contrato",
     type: "date",
     editable: true,
   },
   {
-    key: "contractEnd",
-    dbColumn: "contract_end",
+    key: "contract_end",
     label: "Fin de contrato",
     type: "date",
     editable: true,
   },
   {
-    key: "frozenStart",
-    dbColumn: "frozen_start",
+    key: "frozen_start",
     label: "Inicio de congelamiento",
     type: "date",
     editable: true,
   },
   {
-    key: "frozenEnd",
-    dbColumn: "frozen_end",
+    key: "frozen_end",
     label: "Fin de congelamiento",
     type: "date",
     editable: true,
   },
+  { key: "current_level", label: "Nivel actual", type: "text", editable: true },
   {
-    key: "currentLevel",
-    dbColumn: "current_level",
-    label: "Nivel actual",
-    type: "text",
-    editable: true,
-  },
-  {
-    key: "plannedLevelMin",
-    dbColumn: "planned_level_min",
+    key: "planned_level_min",
     label: "Nivel planificado mínimo",
     type: "text",
     editable: true,
   },
   {
-    key: "plannedLevelMax",
-    dbColumn: "planned_level_max",
+    key: "planned_level_max",
     label: "Nivel planificado máximo",
     type: "text",
     editable: true,
   },
   {
-    key: "isOnline",
-    dbColumn: "is_online",
+    key: "is_online",
     label: "Modalidad en línea",
     type: "boolean",
     editable: true,
   },
-  {
-    key: "lastSeenAt",
-    dbColumn: "last_seen_at",
-    label: "Última asistencia",
-    type: "datetime",
-    editable: false,
-  },
-  {
-    key: "lastLessonId",
-    dbColumn: "last_lesson_id",
-    label: "Última lección",
-    type: "text",
-    editable: false,
-  },
-  {
-    key: "status",
-    dbColumn: "status",
-    label: "Estado",
-    type: "text",
-    editable: false,
-  },
+  { key: "status", label: "Estado", type: "text", editable: false },
+  { key: "last_lesson_id", label: "Última lección", type: "text", editable: false },
+  { key: "last_seen_at", label: "Última asistencia", type: "datetime", editable: false },
+  { key: "updated_at", label: "Actualizado el", type: "datetime", editable: false },
+  { key: "created_at", label: "Creado el", type: "datetime", editable: false },
 ];
 
-export const BASIC_DETAIL_FIELD_KEYS: ReadonlyArray<BasicDetailFieldKey> =
-  BASIC_DETAILS_FIELDS.map((field) => field.key);
-
-export function isBasicDetailFieldKey(value: string): value is BasicDetailFieldKey {
-  return BASIC_DETAILS_FIELDS.some((field) => field.key === value);
-}
+export const EDITABLE_STUDENT_BASIC_DETAIL_KEYS: ReadonlyArray<
+  (typeof STUDENT_BASIC_DETAIL_FIELDS)[number]["key"]
+> = STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.editable).map((field) => field.key);
 
 type NormalizedFieldValue<T extends BasicDetailFieldType> = T extends "boolean"
   ? boolean | null
@@ -226,100 +177,125 @@ function normalizeFieldValue<T extends BasicDetailFieldType>(
   return null as NormalizedFieldValue<T>;
 }
 
+function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBasicDetails {
+  return {
+    id: Number(row.id ?? fallbackId),
+    full_name: normalizeFieldValue(row.full_name, "text"),
+    representative_name: normalizeFieldValue(row.representative_name, "text"),
+    representative_phone: normalizeFieldValue(row.representative_phone, "text"),
+    representative_email: normalizeFieldValue(row.representative_email, "text"),
+    has_special_needs: normalizeFieldValue(row.has_special_needs, "boolean"),
+    contract_start: normalizeFieldValue(row.contract_start, "date"),
+    contract_end: normalizeFieldValue(row.contract_end, "date"),
+    frozen_start: normalizeFieldValue(row.frozen_start, "date"),
+    frozen_end: normalizeFieldValue(row.frozen_end, "date"),
+    current_level: normalizeFieldValue(row.current_level, "text"),
+    planned_level_min: normalizeFieldValue(row.planned_level_min, "text"),
+    planned_level_max: normalizeFieldValue(row.planned_level_max, "text"),
+    is_online: normalizeFieldValue(row.is_online, "boolean"),
+    status: normalizeFieldValue(row.status, "text"),
+    last_seen_at: normalizeFieldValue(row.last_seen_at, "datetime"),
+    last_lesson_id: normalizeFieldValue(row.last_lesson_id, "text"),
+    updated_at: normalizeFieldValue(row.updated_at, "datetime"),
+    created_at: normalizeFieldValue(row.created_at, "datetime"),
+  };
+}
+
 export async function getStudentBasicDetails(studentId: number): Promise<StudentBasicDetails | null> {
   noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
+    SELECT
+      id,
+      full_name,
+      representative_name,
+      representative_phone,
+      representative_email,
+      has_special_needs,
+      contract_start,
+      contract_end,
+      frozen_start,
+      frozen_end,
+      current_level,
+      planned_level_min,
+      planned_level_max,
+      is_online,
+      status,
+      last_seen_at,
+      last_lesson_id,
+      updated_at,
+      created_at
     FROM public.students
-    WHERE id = ${studentId}
+    WHERE id = ${studentId}::bigint
     LIMIT 1
   `);
 
   if (!rows.length) return null;
 
-  const row = rows[0];
-  const id = Number(row.id ?? studentId);
-  const fullName = ((row.full_name as string | null) ?? "").trim();
-
-  const fields: BasicDetailField[] = BASIC_DETAILS_FIELDS.map((field) => ({
-    key: field.key,
-    label: field.label,
-    type: field.type,
-    editable: field.editable,
-    value: normalizeFieldValue(row[field.dbColumn], field.type),
-  }));
-
-  return {
-    id,
-    fullName,
-    fields,
-  };
+  return mapRowToStudentBasicDetails(rows[0], studentId);
 }
 
-export async function updateStudentBasicField(
+export type StudentBasicDetailsEditablePayload = Partial<
+  Pick<StudentBasicDetails, (typeof EDITABLE_STUDENT_BASIC_DETAIL_KEYS)[number]>
+>;
+
+export async function updateStudentBasicDetails(
   studentId: number,
-  fieldKey: BasicDetailFieldKey,
-  value: string | boolean | null,
-): Promise<void> {
+  payload: StudentBasicDetailsEditablePayload,
+): Promise<StudentBasicDetails> {
   noStore();
   const sql = getSqlClient();
-  const field = BASIC_DETAILS_FIELDS.find((item) => item.key === fieldKey);
 
-  if (!field) {
-    throw new Error("El campo seleccionado no existe o no es editable.");
+  const allowedKeys = new Set<string>(EDITABLE_STUDENT_BASIC_DETAIL_KEYS as string[]);
+  const entries = Object.entries(payload).filter(([, value]) => value !== undefined);
+  const sanitizedEntries = entries.filter(([key]) => allowedKeys.has(key));
+
+  if (!sanitizedEntries.length) {
+    throw new Error("No se proporcionaron cambios para actualizar.");
   }
 
-  if (!field.editable) {
-    throw new Error("Este campo es administrado automáticamente y no puede editarse.");
+  const setFragments = sanitizedEntries.map(
+    ([key], index) => `"${key}" = $${index + 1}`,
+  );
+  setFragments.push("updated_at = NOW()");
+
+  const values = sanitizedEntries.map(([, value]) => value ?? null);
+  const query = `
+    UPDATE public.students
+    SET ${setFragments.join(", ")}
+    WHERE id = $${values.length + 1}::bigint
+    RETURNING
+      id,
+      full_name,
+      representative_name,
+      representative_phone,
+      representative_email,
+      has_special_needs,
+      contract_start,
+      contract_end,
+      frozen_start,
+      frozen_end,
+      current_level,
+      planned_level_min,
+      planned_level_max,
+      is_online,
+      status,
+      last_seen_at,
+      last_lesson_id,
+      updated_at,
+      created_at
+  `;
+
+  const rows = normalizeRows<SqlRow>(
+    await sql.query(query, [...values, studentId]),
+  );
+
+  if (!rows.length) {
+    throw new Error("No se pudo actualizar la información del estudiante.");
   }
 
-  const sanitizedValue = value === undefined ? null : value;
-
-  switch (field.key) {
-    case "fullName":
-      await sql`UPDATE public.students SET full_name = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "representativeName":
-      await sql`UPDATE public.students SET representative_name = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "representativePhone":
-      await sql`UPDATE public.students SET representative_phone = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "representativeEmail":
-      await sql`UPDATE public.students SET representative_email = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "hasSpecialNeeds":
-      await sql`UPDATE public.students SET has_special_needs = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "contractStart":
-      await sql`UPDATE public.students SET contract_start = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "contractEnd":
-      await sql`UPDATE public.students SET contract_end = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "frozenStart":
-      await sql`UPDATE public.students SET frozen_start = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "frozenEnd":
-      await sql`UPDATE public.students SET frozen_end = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "currentLevel":
-      await sql`UPDATE public.students SET current_level = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "plannedLevelMin":
-      await sql`UPDATE public.students SET planned_level_min = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "plannedLevelMax":
-      await sql`UPDATE public.students SET planned_level_max = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    case "isOnline":
-      await sql`UPDATE public.students SET is_online = ${sanitizedValue} WHERE id = ${studentId}`;
-      break;
-    default:
-      throw new Error("No se puede actualizar el campo especificado.");
-  }
+  return mapRowToStudentBasicDetails(rows[0], studentId);
 }
 
 export type StudentPaymentScheduleEntry = {
@@ -332,6 +308,31 @@ export type StudentPaymentScheduleEntry = {
   note: string | null;
 };
 
+function mapPaymentScheduleRow(
+  row: SqlRow,
+  fallbackStudentId: number,
+): StudentPaymentScheduleEntry {
+  const isPaidValue = normalizeFieldValue(row.is_paid, "boolean");
+  const dueDateValue = normalizeFieldValue(row.due_date, "date");
+  const receivedDateValue = normalizeFieldValue(row.received_date, "date");
+  const noteValue = normalizeFieldValue(row.note, "text");
+
+  return {
+    id: Number(row.id),
+    studentId: Number(row.student_id ?? fallbackStudentId),
+    dueDate: typeof dueDateValue === "string" ? dueDateValue : null,
+    amount:
+      row.amount == null
+        ? null
+        : typeof row.amount === "number"
+          ? row.amount
+          : Number(row.amount),
+    isPaid: typeof isPaidValue === "boolean" ? isPaidValue : false,
+    receivedDate: typeof receivedDateValue === "string" ? receivedDateValue : null,
+    note: typeof noteValue === "string" ? noteValue : null,
+  };
+}
+
 export async function listStudentPaymentSchedule(
   studentId: number,
 ): Promise<StudentPaymentScheduleEntry[]> {
@@ -341,31 +342,11 @@ export async function listStudentPaymentSchedule(
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, student_id, due_date, amount, is_paid, received_date, note
     FROM public.student_payment_schedule
-    WHERE student_id = ${studentId}
+    WHERE student_id = ${studentId}::bigint
     ORDER BY due_date ASC NULLS LAST, id ASC
   `);
 
-  return rows.map((row) => {
-    const isPaidValue = normalizeFieldValue(row.is_paid, "boolean");
-    const dueDateValue = normalizeFieldValue(row.due_date, "date");
-    const receivedDateValue = normalizeFieldValue(row.received_date, "date");
-    const noteValue = normalizeFieldValue(row.note, "text");
-
-    return {
-      id: Number(row.id),
-      studentId: Number(row.student_id ?? studentId),
-      dueDate: typeof dueDateValue === "string" ? dueDateValue : null,
-      amount:
-        row.amount == null
-          ? null
-          : typeof row.amount === "number"
-            ? row.amount
-            : Number(row.amount),
-      isPaid: typeof isPaidValue === "boolean" ? isPaidValue : false,
-      receivedDate: typeof receivedDateValue === "string" ? receivedDateValue : null,
-      note: typeof noteValue === "string" ? noteValue : null,
-    };
-  });
+  return rows.map((row) => mapPaymentScheduleRow(row, studentId));
 }
 
 export async function createPaymentScheduleEntry(
@@ -391,7 +372,7 @@ export async function createPaymentScheduleEntry(
       note
     )
     VALUES (
-      ${studentId},
+      ${studentId}::bigint,
       ${data.dueDate},
       ${data.amount},
       ${data.isPaid ?? false},
@@ -405,14 +386,7 @@ export async function createPaymentScheduleEntry(
     throw new Error("No se pudo crear el cronograma de pagos.");
   }
 
-  const entry = rows[0];
-  const created = await listStudentPaymentSchedule(studentId);
-  const fresh = created.find((item) => item.id === Number(entry.id));
-  if (!fresh) {
-    throw new Error("No se pudo recuperar el pago creado.");
-  }
-
-  return fresh;
+  return mapPaymentScheduleRow(rows[0], studentId);
 }
 
 export async function updatePaymentScheduleEntry(
@@ -424,28 +398,44 @@ export async function updatePaymentScheduleEntry(
     receivedDate: string | null;
     note: string | null;
   },
-): Promise<void> {
+): Promise<StudentPaymentScheduleEntry> {
   noStore();
   const sql = getSqlClient();
 
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     UPDATE public.student_payment_schedule
     SET due_date = ${data.dueDate},
       amount = ${data.amount},
       is_paid = ${data.isPaid},
       received_date = ${data.receivedDate},
       note = ${data.note}
-    WHERE id = ${entryId}
-  `;
+    WHERE id = ${entryId}::bigint
+    RETURNING id, student_id, due_date, amount, is_paid, received_date, note
+  `);
+
+  if (!rows.length) {
+    throw new Error("No se pudo actualizar el cronograma de pagos.");
+  }
+
+  return mapPaymentScheduleRow(rows[0], Number(rows[0].student_id ?? 0));
 }
 
-export async function deletePaymentScheduleEntry(entryId: number): Promise<void> {
+export async function deletePaymentScheduleEntry(
+  entryId: number,
+): Promise<StudentPaymentScheduleEntry | null> {
   noStore();
   const sql = getSqlClient();
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.student_payment_schedule
-    WHERE id = ${entryId}
-  `;
+    WHERE id = ${entryId}::bigint
+    RETURNING id, student_id, due_date, amount, is_paid, received_date, note
+  `);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return mapPaymentScheduleRow(rows[0], Number(rows[0].student_id ?? 0));
 }
 
 export type StudentNote = {
@@ -462,7 +452,7 @@ export async function listStudentNotes(studentId: number): Promise<StudentNote[]
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, student_id, note, created_at
     FROM public.student_notes
-    WHERE student_id = ${studentId}
+    WHERE student_id = ${studentId}::bigint
     ORDER BY created_at DESC NULLS LAST, id DESC
   `);
 
@@ -483,7 +473,7 @@ export async function createStudentNote(
 
   const rows = normalizeRows<SqlRow>(await sql`
     INSERT INTO public.student_notes (student_id, note)
-    VALUES (${studentId}, ${data.note})
+    VALUES (${studentId}::bigint, ${data.note})
     RETURNING id, student_id, note, created_at
   `);
 
@@ -503,23 +493,49 @@ export async function createStudentNote(
 export async function updateStudentNote(
   noteId: number,
   data: { note: string },
-): Promise<void> {
+): Promise<StudentNote> {
   noStore();
   const sql = getSqlClient();
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     UPDATE public.student_notes
     SET note = ${data.note}
-    WHERE id = ${noteId}
-  `;
+    WHERE id = ${noteId}::bigint
+    RETURNING id, student_id, note, created_at
+  `);
+
+  if (!rows.length) {
+    throw new Error("No se pudo actualizar la nota.");
+  }
+
+  const row = rows[0];
+  return {
+    id: Number(row.id),
+    studentId: Number(row.student_id ?? 0),
+    note: ((row.note as string | null) ?? "").trim(),
+    createdAt: normalizeFieldValue(row.created_at, "datetime"),
+  };
 }
 
-export async function deleteStudentNote(noteId: number): Promise<void> {
+export async function deleteStudentNote(noteId: number): Promise<StudentNote | null> {
   noStore();
   const sql = getSqlClient();
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.student_notes
-    WHERE id = ${noteId}
-  `;
+    WHERE id = ${noteId}::bigint
+    RETURNING id, student_id, note, created_at
+  `);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const row = rows[0];
+  return {
+    id: Number(row.id),
+    studentId: Number(row.student_id ?? 0),
+    note: ((row.note as string | null) ?? "").trim(),
+    createdAt: normalizeFieldValue(row.created_at, "datetime"),
+  };
 }
 
 export type StudentExam = {
@@ -532,6 +548,24 @@ export type StudentExam = {
   notes: string | null;
 };
 
+function mapExamRow(row: SqlRow, fallbackStudentId: number): StudentExam {
+  const passedValue = normalizeFieldValue(row.passed, "boolean");
+  return {
+    id: Number(row.id),
+    studentId: Number(row.student_id ?? fallbackStudentId),
+    timeScheduled: normalizeFieldValue(row.time_scheduled, "datetime"),
+    status: normalizeFieldValue(row.status, "text"),
+    score:
+      row.score == null
+        ? null
+        : typeof row.score === "number"
+          ? row.score
+          : Number(row.score),
+    passed: typeof passedValue === "boolean" ? passedValue : false,
+    notes: normalizeFieldValue(row.notes, "text"),
+  };
+}
+
 export async function listStudentExams(studentId: number): Promise<StudentExam[]> {
   noStore();
   const sql = getSqlClient();
@@ -539,27 +573,11 @@ export async function listStudentExams(studentId: number): Promise<StudentExam[]
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, student_id, time_scheduled, status, score, passed, notes
     FROM public.exam_appointments
-    WHERE student_id = ${studentId}
+    WHERE student_id = ${studentId}::bigint
     ORDER BY time_scheduled DESC NULLS LAST, id DESC
   `);
 
-  return rows.map((row) => {
-    const passedValue = normalizeFieldValue(row.passed, "boolean");
-    return {
-      id: Number(row.id),
-      studentId: Number(row.student_id ?? studentId),
-      timeScheduled: normalizeFieldValue(row.time_scheduled, "datetime"),
-      status: normalizeFieldValue(row.status, "text"),
-      score:
-        row.score == null
-          ? null
-          : typeof row.score === "number"
-            ? row.score
-            : Number(row.score),
-      passed: typeof passedValue === "boolean" ? passedValue : false,
-      notes: normalizeFieldValue(row.notes, "text"),
-    };
-  });
+  return rows.map((row) => mapExamRow(row, studentId));
 }
 
 export async function createStudentExam(
@@ -577,7 +595,14 @@ export async function createStudentExam(
 
   const rows = normalizeRows<SqlRow>(await sql`
     INSERT INTO public.exam_appointments (student_id, time_scheduled, status, score, passed, notes)
-    VALUES (${studentId}, ${data.timeScheduled}, ${data.status ?? "scheduled"}, ${data.score}, ${data.passed}, ${data.notes})
+    VALUES (
+      ${studentId}::bigint,
+      ${data.timeScheduled},
+      ${data.status ?? "scheduled"},
+      ${data.score},
+      ${data.passed},
+      ${data.notes}
+    )
     RETURNING id, student_id, time_scheduled, status, score, passed, notes
   `);
 
@@ -585,13 +610,7 @@ export async function createStudentExam(
     throw new Error("No se pudo crear el examen.");
   }
 
-  const created = await listStudentExams(studentId);
-  const fresh = created.find((exam) => exam.id === Number(rows[0].id));
-  if (!fresh) {
-    throw new Error("No se pudo recuperar el examen creado.");
-  }
-
-  return fresh;
+  return mapExamRow(rows[0], studentId);
 }
 
 export async function updateStudentExam(
@@ -603,28 +622,42 @@ export async function updateStudentExam(
     passed: boolean;
     notes: string | null;
   },
-): Promise<void> {
+): Promise<StudentExam> {
   noStore();
   const sql = getSqlClient();
 
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     UPDATE public.exam_appointments
     SET time_scheduled = ${data.timeScheduled},
       status = ${data.status},
       score = ${data.score},
       passed = ${data.passed},
       notes = ${data.notes}
-    WHERE id = ${examId}
-  `;
+    WHERE id = ${examId}::bigint
+    RETURNING id, student_id, time_scheduled, status, score, passed, notes
+  `);
+
+  if (!rows.length) {
+    throw new Error("No se pudo actualizar el examen.");
+  }
+
+  return mapExamRow(rows[0], Number(rows[0].student_id ?? 0));
 }
 
-export async function deleteStudentExam(examId: number): Promise<void> {
+export async function deleteStudentExam(examId: number): Promise<StudentExam | null> {
   noStore();
   const sql = getSqlClient();
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.exam_appointments
-    WHERE id = ${examId}
-  `;
+    WHERE id = ${examId}::bigint
+    RETURNING id, student_id, time_scheduled, status, score, passed, notes
+  `);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return mapExamRow(rows[0], Number(rows[0].student_id ?? 0));
 }
 
 export type StudentInstructivo = {
@@ -637,6 +670,21 @@ export type StudentInstructivo = {
   createdAt: string | null;
 };
 
+function mapInstructivoRow(
+  row: SqlRow,
+  fallbackStudentId: number,
+): StudentInstructivo {
+  return {
+    id: Number(row.id),
+    studentId: Number(row.student_id ?? fallbackStudentId),
+    title: normalizeFieldValue(row.title, "text") ?? "",
+    content: normalizeFieldValue(row.content, "text") ?? "",
+    note: normalizeFieldValue(row.note, "text"),
+    createdBy: normalizeFieldValue(row.created_by, "text"),
+    createdAt: normalizeFieldValue(row.created_at, "datetime"),
+  };
+}
+
 export async function listStudentInstructivos(
   studentId: number,
 ): Promise<StudentInstructivo[]> {
@@ -646,19 +694,11 @@ export async function listStudentInstructivos(
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, student_id, title, content, note, created_by, created_at
     FROM public.student_instructivos
-    WHERE student_id = ${studentId}
+    WHERE student_id = ${studentId}::bigint
     ORDER BY created_at DESC NULLS LAST, id DESC
   `);
 
-  return rows.map((row) => ({
-    id: Number(row.id),
-    studentId: Number(row.student_id ?? studentId),
-    title: normalizeFieldValue(row.title, "text") ?? "",
-    content: normalizeFieldValue(row.content, "text") ?? "",
-    note: normalizeFieldValue(row.note, "text"),
-    createdBy: normalizeFieldValue(row.created_by, "text"),
-    createdAt: normalizeFieldValue(row.created_at, "datetime"),
-  }));
+  return rows.map((row) => mapInstructivoRow(row, studentId));
 }
 
 export async function createStudentInstructivo(
@@ -675,21 +715,21 @@ export async function createStudentInstructivo(
 
   const rows = normalizeRows<SqlRow>(await sql`
     INSERT INTO public.student_instructivos (student_id, title, content, note, created_by)
-    VALUES (${studentId}, ${data.title}, ${data.content}, ${data.note ?? null}, ${data.createdBy ?? null})
-    RETURNING id
+    VALUES (
+      ${studentId}::bigint,
+      ${data.title},
+      ${data.content},
+      ${data.note ?? null},
+      ${data.createdBy ?? null}
+    )
+    RETURNING id, student_id, title, content, note, created_by, created_at
   `);
 
   if (!rows.length) {
     throw new Error("No se pudo crear el instructivo.");
   }
 
-  const created = await listStudentInstructivos(studentId);
-  const fresh = created.find((item) => item.id === Number(rows[0].id));
-  if (!fresh) {
-    throw new Error("No se pudo recuperar el instructivo creado.");
-  }
-
-  return fresh;
+  return mapInstructivoRow(rows[0], studentId);
 }
 
 export async function updateStudentInstructivo(
@@ -700,28 +740,43 @@ export async function updateStudentInstructivo(
     note: string | null;
     createdBy: string | null;
   },
-): Promise<void> {
+): Promise<StudentInstructivo> {
   noStore();
   const sql = getSqlClient();
-  await sql`
+
+  const rows = normalizeRows<SqlRow>(await sql`
     UPDATE public.student_instructivos
     SET title = ${data.title},
       content = ${data.content},
       note = ${data.note},
       created_by = ${data.createdBy}
-    WHERE id = ${instructivoId}
-  `;
+    WHERE id = ${instructivoId}::bigint
+    RETURNING id, student_id, title, content, note, created_by, created_at
+  `);
+
+  if (!rows.length) {
+    throw new Error("No se pudo actualizar el instructivo.");
+  }
+
+  return mapInstructivoRow(rows[0], Number(rows[0].student_id ?? 0));
 }
 
 export async function deleteStudentInstructivo(
   instructivoId: number,
-): Promise<void> {
+): Promise<StudentInstructivo | null> {
   noStore();
   const sql = getSqlClient();
-  await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.student_instructivos
-    WHERE id = ${instructivoId}
-  `;
+    WHERE id = ${instructivoId}::bigint
+    RETURNING id, student_id, title, content, note, created_by, created_at
+  `);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return mapInstructivoRow(rows[0], Number(rows[0].student_id ?? 0));
 }
 
 function normalizeNumber(value: unknown): number | null {
@@ -755,6 +810,18 @@ function normalizeString(value: unknown): string | null {
     return String(value);
   }
   return null;
+}
+
+function isIsoSunday(date: string): boolean {
+  if (!date) return false;
+  const normalized = date.includes("T") ? date : `${date}T00:00:00Z`;
+  const parsed = Date.parse(normalized);
+  if (Number.isNaN(parsed)) {
+    return false;
+  }
+  const weekday = new Date(parsed).getUTCDay();
+  const isoDay = weekday === 0 ? 7 : weekday;
+  return isoDay === 7;
 }
 
 export type StudentProgressStats = {
@@ -809,7 +876,7 @@ export async function getStudentProgressStats(
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_progress_stats(${studentId}, ${startDate}, ${endDate}, ${excludeSundays})
+    FROM public.get_student_progress_stats(${studentId}::bigint, ${startDate}, ${endDate}, ${excludeSundays})
     LIMIT 1
   `);
 
@@ -847,7 +914,7 @@ export async function getStudentMinutesByDay(
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_minutes_by_day(${studentId}, ${startDate}, ${endDate}, ${excludeSundays})
+    FROM public.get_student_minutes_by_day(${studentId}::bigint, ${startDate}, ${endDate}, ${excludeSundays})
   `);
 
   return rows
@@ -860,7 +927,7 @@ export async function getStudentMinutesByDay(
             ? row.minutes
             : Number(row.minutes),
     }))
-    .filter((entry) => entry.date.length > 0);
+    .filter((entry) => entry.date.length > 0 && (!excludeSundays || !isIsoSunday(entry.date)));
 }
 
 export async function getStudentCumulativeHours(
@@ -873,7 +940,7 @@ export async function getStudentCumulativeHours(
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_cumulative_hours(${studentId}, ${startDate}, ${endDate})
+    FROM public.get_student_cumulative_hours(${studentId}::bigint, ${startDate}, ${endDate})
   `);
 
   return rows
@@ -899,7 +966,7 @@ export async function getStudentLessonTimeline(
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_daily_lesson(${studentId}, ${startDate}, ${endDate})
+    FROM public.get_student_daily_lesson(${studentId}::bigint, ${startDate}, ${endDate})
   `);
 
   return rows
@@ -923,7 +990,7 @@ export async function getStudentAttendanceStats(
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_attendance_stats(${studentId}, ${startDate}, ${endDate})
+    FROM public.get_student_attendance_stats(${studentId}::bigint, ${startDate}, ${endDate})
     LIMIT 1
   `);
 
@@ -985,7 +1052,7 @@ export async function getStudentProgressEvents(
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_progress_events(${studentId})
+    FROM public.get_student_progress_events(${studentId}::bigint)
   `);
 
   return rows

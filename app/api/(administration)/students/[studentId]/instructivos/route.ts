@@ -1,26 +1,37 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+
 import { createStudentInstructivo } from "@/features/administration/data/student-profile";
 
-type StudentParams = Promise<{ studentId: string }>;
+export const dynamic = "force-dynamic";
+
+function normalizeStudentId(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export async function POST(
   request: Request,
-  { params }: { params: StudentParams },
+  { params }: { params: Promise<{ studentId: string }> },
 ) {
   try {
-    const { studentId: studentIdStr } = await params;
-    const studentId = Number(studentIdStr);
+    const resolvedParams = await params;
+    const studentId = normalizeStudentId(resolvedParams.studentId);
 
-    if (!Number.isFinite(studentId)) {
+    if (studentId == null) {
       return NextResponse.json(
         { error: "Identificador inválido." },
         { status: 400 },
       );
     }
 
-    const body = await request.json();
-    const title = typeof body?.title === "string" ? body.title.trim() : "";
-    const content = typeof body?.content === "string" ? body.content.trim() : "";
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
+    }
+    const payload = body as Record<string, unknown>;
+    const title = typeof payload.title === "string" ? (payload.title as string).trim() : "";
+    const content = typeof payload.content === "string" ? (payload.content as string).trim() : "";
 
     if (!title) {
       return NextResponse.json(
@@ -36,10 +47,10 @@ export async function POST(
       );
     }
 
-    const note = typeof body?.note === "string" ? body.note.trim() || null : null;
+    const note = typeof payload.note === "string" ? (payload.note as string).trim() || null : null;
     const createdBy =
-      typeof body?.createdBy === "string" && body.createdBy.trim().length
-        ? body.createdBy.trim()
+      typeof payload.createdBy === "string" && (payload.createdBy as string).trim().length
+        ? (payload.createdBy as string).trim()
         : null;
 
     const instructivo = await createStudentInstructivo(studentId, {
@@ -49,6 +60,7 @@ export async function POST(
       createdBy,
     });
 
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
     return NextResponse.json(instructivo);
   } catch (error) {
     console.error("Error creating student instructivo", error);

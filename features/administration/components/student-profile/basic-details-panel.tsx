@@ -1,22 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import type { BasicDetailField, StudentBasicDetails } from "@/features/administration/data/student-profile";
+import { useRouter } from "next/navigation";
+
+import type {
+  BasicDetailFieldType,
+  StudentBasicDetailFieldConfig,
+  StudentBasicDetails,
+} from "@/features/administration/data/student-profile";
+import { STUDENT_BASIC_DETAIL_FIELDS } from "@/features/administration/data/student-profile";
 
 type Props = {
   studentId: number;
   details: StudentBasicDetails | null;
-  onUpdated?: () => void;
 };
 
-type FieldState = BasicDetailField;
+type FormState = StudentBasicDetails | null;
 
 const BOOLEAN_LABEL: Record<string, string> = {
   true: "Sí",
   false: "No",
 };
 
-function getInputType(field: BasicDetailField) {
+function getInputType(field: StudentBasicDetailFieldConfig) {
   switch (field.type) {
     case "date":
       return "date";
@@ -27,82 +33,69 @@ function getInputType(field: BasicDetailField) {
   }
 }
 
-function formatReadOnlyValue(field: FieldState): string {
-  if (field.type === "boolean") {
-    return BOOLEAN_LABEL[String(Boolean(field.value))];
+function formatReadOnlyValue(
+  value: string | boolean | null,
+  type: BasicDetailFieldType,
+): string {
+  if (type === "boolean") {
+    return BOOLEAN_LABEL[String(Boolean(value))];
   }
-  if (typeof field.value === "string") {
-    return field.value || "Sin registrar";
+
+  if (typeof value === "string") {
+    return value.length ? value : "Sin registrar";
   }
-  if (field.value == null) return "Sin registrar";
-  return String(field.value);
+
+  if (value == null) {
+    return "Sin registrar";
+  }
+
+  return String(value);
 }
 
-export function BasicDetailsPanel({ studentId, details, onUpdated }: Props) {
-  const [fields, setFields] = useState<FieldState[]>(details?.fields ?? []);
+function getDisplayValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value == null) {
+    return "";
+  }
+  return String(value);
+}
+
+function sanitizeValue(value: unknown, type: BasicDetailFieldType): unknown {
+  if (type === "boolean") {
+    return Boolean(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  if (value == null) {
+    return null;
+  }
+
+  return value;
+}
+
+export function BasicDetailsPanel({ studentId, details }: Props) {
+  const router = useRouter();
+  const [formState, setFormState] = useState<FormState>(details);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    setFields(details?.fields ?? []);
+    setFormState(details);
   }, [details]);
 
-  const hasData = useMemo(() => fields.length > 0, [fields.length]);
+  const editableFields = useMemo(
+    () => STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.editable),
+    [],
+  );
 
-  const handleSubmit = (field: FieldState, rawValue: string | boolean) => {
-    if (!field.editable) return;
-    const nextValue =
-      field.type === "boolean"
-        ? Boolean(rawValue)
-        : typeof rawValue === "string" && rawValue.trim().length
-          ? rawValue.trim()
-          : null;
-    setError(null);
-    setStatusMessage(null);
-
-    startTransition(() => {
-      void (async () => {
-        try {
-          const response = await fetch(`/api/students/${studentId}/basic-details`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ field: field.key, value: nextValue }),
-          });
-
-          const payload = await response.json().catch(() => ({}));
-
-          if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo guardar el cambio.");
-          }
-
-          setFields((previous) =>
-            previous.map((item) =>
-              item.key === field.key
-                ? {
-                    ...item,
-                    value: nextValue,
-                  }
-                : item,
-            ),
-          );
-          setStatusMessage("Cambios guardados correctamente.");
-          onUpdated?.();
-        } catch (err) {
-          console.error(err);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "No se pudo guardar el cambio. Inténtalo nuevamente.",
-          );
-        }
-      })();
-    });
-  };
-
-  if (!details) {
+  if (!formState) {
     return (
       <section className="flex flex-col gap-4 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.12)] backdrop-blur">
         <header className="flex flex-col gap-1 text-left">
@@ -115,6 +108,67 @@ export function BasicDetailsPanel({ studentId, details, onUpdated }: Props) {
       </section>
     );
   }
+
+  const handleFieldChange = (
+    field: StudentBasicDetailFieldConfig,
+    value: string | boolean,
+  ) => {
+    setFormState((previous) => {
+      if (!previous) return previous;
+      const nextValue = field.type === "boolean" ? Boolean(value) : (value as string);
+      return {
+        ...previous,
+        [field.key]: nextValue,
+      };
+    });
+  };
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!formState || isPending) return;
+
+    const payload: Record<string, unknown> = {};
+
+    for (const field of editableFields) {
+      const rawValue = (formState as Record<string, unknown>)[field.key];
+      payload[field.key] = sanitizeValue(rawValue, field.type);
+    }
+
+    setError(null);
+    setStatusMessage(null);
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          const response = await fetch(
+            `/api/(administration)/students/${studentId}/basic-details`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            },
+          );
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(data?.error ?? "No se pudo guardar la información.");
+          }
+
+          setFormState(data as StudentBasicDetails);
+          setStatusMessage("Cambios guardados correctamente.");
+          router.refresh();
+        } catch (err) {
+          console.error(err);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "No se pudo guardar la información. Inténtalo nuevamente.",
+          );
+        }
+      })();
+    });
+  };
 
   return (
     <section className="flex flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
@@ -135,111 +189,107 @@ export function BasicDetailsPanel({ studentId, details, onUpdated }: Props) {
           {statusMessage}
         </p>
       )}
-      {!hasData ? (
-        <p className="text-sm text-brand-ink-muted">
-          No hay campos configurados para este estudiante. Verifica la estructura de la tabla <code className="rounded bg-brand-deep-soft px-1.5 py-0.5 text-[11px]">public.students</code>.
-        </p>
-      ) : (
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <div className="grid gap-4 md:grid-cols-2">
-          {fields.map((field) => {
-            const inputType = getInputType(field);
-            const pending = isPending;
-            const value =
-              typeof field.value === "string" || typeof field.value === "number"
-                ? String(field.value)
-                : field.value ?? "";
-            const stringValue =
-              typeof value === "string"
-                ? value
-                : value != null
-                  ? String(value)
-                  : "";
+          {STUDENT_BASIC_DETAIL_FIELDS.map((field) => {
+            const value = (formState as Record<string, unknown>)[field.key] ?? null;
 
             if (!field.editable) {
               return (
                 <div key={field.key} className="flex flex-col gap-1 rounded-2xl bg-white/95 p-4 shadow-inner">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">{field.label}</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                    {field.label}
+                  </span>
                   <span className="text-sm font-semibold text-brand-deep">
-                    {formatReadOnlyValue(field)}
+                    {formatReadOnlyValue(value as string | boolean | null, field.type)}
                   </span>
                 </div>
               );
             }
 
             if (field.type === "boolean") {
-              const checked = Boolean(field.value);
+              const checked = Boolean(value);
               return (
-                <div key={field.key} className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                      {field.label}
+                <label
+                  key={field.key}
+                  htmlFor={`basic-${field.key}`}
+                  className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner"
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                    {field.label}
+                  </span>
+                  <span className="flex items-center justify-between gap-4">
+                    <span className="text-sm font-semibold text-brand-deep">
+                      {checked ? "Sí" : "No"}
                     </span>
-                    <label className="inline-flex items-center gap-2" htmlFor={`basic-${field.key}`}>
-                      <input
-                        id={`basic-${field.key}`}
-                        type="checkbox"
-                        checked={checked}
-                        disabled={pending}
-                        onChange={(event) => handleSubmit(field, event.target.checked)}
-                        className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
-                      />
-                      <span className="text-sm font-semibold text-brand-deep">
-                        {checked ? "Sí" : "No"}
-                      </span>
-                    </label>
-                  </div>
-                </div>
+                    <input
+                      id={`basic-${field.key}`}
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isPending}
+                      onChange={(event) => handleFieldChange(field, event.target.checked)}
+                      className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
+                    />
+                  </span>
+                </label>
+              );
+            }
+
+            if (field.type === "textarea") {
+              return (
+                <label
+                  key={field.key}
+                  htmlFor={`basic-${field.key}`}
+                  className="flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner"
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                    {field.label}
+                  </span>
+                  <textarea
+                    id={`basic-${field.key}`}
+                    name={field.key}
+                    disabled={isPending}
+                    value={getDisplayValue(value)}
+                    onChange={(event) => handleFieldChange(field, event.target.value)}
+                    rows={4}
+                    className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                  />
+                </label>
               );
             }
 
             return (
-              <form
+              <label
                 key={field.key}
+                htmlFor={`basic-${field.key}`}
                 className="flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const formData = new FormData(event.currentTarget);
-                  const formValue = String(formData.get("value") ?? "");
-                  handleSubmit(field, formValue);
-                }}
               >
-                <label
-                  className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted"
-                  htmlFor={`basic-${field.key}`}
-                >
+                <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                   {field.label}
-                </label>
-                {field.type === "textarea" ? (
-                  <textarea
-                    id={`basic-${field.key}`}
-                    name="value"
-                    defaultValue={stringValue}
-                    rows={4}
-                    className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                  />
-                ) : (
-                  <input
-                    id={`basic-${field.key}`}
-                    name="value"
-                    defaultValue={stringValue}
-                    type={inputType}
-                    className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                  />
-                )}
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    type="submit"
-                    disabled={pending}
-                    className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {pending ? "Guardando…" : "Guardar"}
-                  </button>
-                </div>
-              </form>
+                </span>
+                <input
+                  id={`basic-${field.key}`}
+                  name={field.key}
+                  type={getInputType(field)}
+                  disabled={isPending}
+                  value={getDisplayValue(value)}
+                  onChange={(event) => handleFieldChange(field, event.target.value)}
+                  className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                />
+              </label>
             );
           })}
         </div>
-      )}
+        <div className="flex items-center justify-end">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isPending ? "Guardando…" : "Guardar cambios"}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }

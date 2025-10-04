@@ -1,32 +1,42 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+
 import { deleteStudentNote, updateStudentNote } from "@/features/administration/data/student-profile";
 
-type NoteParams = Promise<{ studentId: string; noteId: string }>;
+export const dynamic = "force-dynamic";
+
+function normalizeId(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export async function PUT(
   request: Request,
-  { params }: { params: NoteParams }
+  { params }: { params: Promise<{ studentId: string; noteId: string }> },
 ) {
   try {
-    const { noteId: noteIdStr } = await params;   // 👈 await params
-    const noteId = Number(noteIdStr);
+    const resolvedParams = await params;
+    const noteId = normalizeId(resolvedParams.noteId);
+    const studentId = normalizeId(resolvedParams.studentId);
 
-    if (!Number.isFinite(noteId)) {
+    if (noteId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
 
-    const body = await request.json();
-    const noteText = body?.note;
+    const body = await request.json().catch(() => null);
+    const noteText = body && typeof body === "object" ? (body as Record<string, unknown>).note : null;
 
     if (!noteText || typeof noteText !== "string" || !noteText.trim()) {
       return NextResponse.json({ error: "La nota no puede estar vacía." }, { status: 400 });
     }
 
-    await updateStudentNote(noteId, {
+    const updated = await updateStudentNote(noteId, {
       note: noteText.trim(),
     });
 
-    return NextResponse.json({ success: true });
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
+
+    return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating student note", error);
     const message =
@@ -37,19 +47,22 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: NoteParams }
+  { params }: { params: Promise<{ studentId: string; noteId: string }> },
 ) {
   try {
-    const { noteId: noteIdStr } = await params;   // 👈 await params
-    const noteId = Number(noteIdStr);
+    const resolvedParams = await params;
+    const noteId = normalizeId(resolvedParams.noteId);
+    const studentId = normalizeId(resolvedParams.studentId);
 
-    if (!Number.isFinite(noteId)) {
+    if (noteId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
 
-    await deleteStudentNote(noteId);
+    const deleted = await deleteStudentNote(noteId);
 
-    return NextResponse.json({ success: true });
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
+
+    return NextResponse.json(deleted);
   } catch (error) {
     console.error("Error deleting student note", error);
     const message =

@@ -1,24 +1,35 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+
 import { createStudentExam } from "@/features/administration/data/student-profile";
 
-type StudentParams = Promise<{ studentId: string }>;
+export const dynamic = "force-dynamic";
+
+function normalizeStudentId(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export async function POST(
   request: Request,
-  { params }: { params: StudentParams }
+  { params }: { params: Promise<{ studentId: string }> },
 ) {
   try {
-    const { studentId: studentIdStr } = await params; // 👈 await params
-    const studentId = Number(studentIdStr);
-    if (!Number.isFinite(studentId)) {
+    const resolvedParams = await params;
+    const studentId = normalizeStudentId(resolvedParams.studentId);
+    if (studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
+    }
+    const payload = body as Record<string, unknown>;
 
     const timeScheduled =
-      typeof body?.timeScheduled === "string" && body.timeScheduled.trim().length
-        ? body.timeScheduled
+      typeof payload.timeScheduled === "string" && payload.timeScheduled.trim().length
+        ? (payload.timeScheduled as string)
         : null;
 
     if (!timeScheduled) {
@@ -28,7 +39,7 @@ export async function POST(
       );
     }
 
-    const scoreValue = body?.score;
+    const scoreValue = payload.score;
     const score =
       scoreValue == null || scoreValue === ""
         ? null
@@ -43,9 +54,12 @@ export async function POST(
       );
     }
 
-    const status = typeof body?.status === "string" ? body.status : null;
-    const passed = Boolean(body?.passed);
-    const notes = typeof body?.notes === "string" ? body.notes.trim() || null : null;
+    const status = typeof payload.status === "string" ? (payload.status as string) : null;
+    const passed = Boolean(payload.passed);
+    const notes =
+      typeof payload.notes === "string"
+        ? (payload.notes as string).trim() || null
+        : null;
 
     const exam = await createStudentExam(studentId, {
       timeScheduled,
@@ -55,6 +69,7 @@ export async function POST(
       notes,
     });
 
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
     return NextResponse.json(exam);
   } catch (error) {
     console.error("Error creating student exam", error);

@@ -1,22 +1,29 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+
 import { createStudentNote } from "@/features/administration/data/student-profile";
 
-type StudentParams = Promise<{ studentId: string }>;
+export const dynamic = "force-dynamic";
+
+function normalizeStudentId(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export async function POST(
   request: Request,
-  { params }: { params: StudentParams }
+  { params }: { params: Promise<{ studentId: string }> },
 ) {
   try {
-    const { studentId: studentIdStr } = await params;   // 👈 await params
-    const studentId = Number(studentIdStr);
+    const resolvedParams = await params;
+    const studentId = normalizeStudentId(resolvedParams.studentId);
 
-    if (!Number.isFinite(studentId)) {
+    if (studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
 
-    const body = await request.json();
-    const noteText = body?.note;
+    const body = await request.json().catch(() => null);
+    const noteText = body && typeof body === "object" ? (body as Record<string, unknown>).note : null;
 
     if (!noteText || typeof noteText !== "string" || !noteText.trim()) {
       return NextResponse.json(
@@ -29,6 +36,7 @@ export async function POST(
       note: noteText.trim(),
     });
 
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
     return NextResponse.json(note);
   } catch (error) {
     console.error("Error creating student note", error);

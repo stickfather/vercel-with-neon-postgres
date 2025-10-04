@@ -185,7 +185,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
     startTransition(() => {
       void (async () => {
         try {
-          const response = await fetch(`/api/students/${studentId}/payment-schedule`, {
+          const response = await fetch(`/api/(administration)/students/${studentId}/payment-schedule`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -234,7 +234,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
       void (async () => {
         try {
           const response = await fetch(
-            `/api/students/${studentId}/payment-schedule/${editingItem.id}`,
+            `/api/(administration)/students/${studentId}/payment-schedule/${editingItem.id}`,
             {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -251,17 +251,9 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
           if (!response.ok) {
             throw new Error(payload?.error ?? "No se pudo actualizar el pago.");
           }
+          const updatedEntry = payload as StudentPaymentScheduleEntry;
           setItems((previous) =>
-            previous.map((item) =>
-              item.id === editingItem.id
-                ? {
-                    ...item,
-                    isPaid: editForm.isPaid,
-                    receivedDate,
-                    note: noteValue,
-                  }
-                : item,
-            ),
+            previous.map((item) => (item.id === updatedEntry.id ? updatedEntry : item)),
           );
           setMessage("Pago actualizado correctamente.");
           closeEditModal();
@@ -298,14 +290,17 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
       void (async () => {
         try {
           const response = await fetch(
-            `/api/students/${studentId}/payment-schedule/${entryId}`,
+            `/api/(administration)/students/${studentId}/payment-schedule/${entryId}`,
             { method: "DELETE" },
           );
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(payload?.error ?? "No se pudo eliminar el pago.");
           }
-          setItems((previous) => previous.filter((item) => item.id !== entryId));
+          const deletedEntry = payload as StudentPaymentScheduleEntry | null;
+          setItems((previous) =>
+            previous.filter((item) => item.id !== (deletedEntry?.id ?? entryId)),
+          );
           setMessage("Pago eliminado.");
           router.refresh();
         } catch (err) {
@@ -408,7 +403,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
                         <button
                           type="button"
                           onClick={() => openEditModal(item)}
-                          className="inline-flex items-center justify-center rounded-full border border-brand-teal/40 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
                         >
                           Editar
                         </button>
@@ -479,7 +474,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               <button
                 type="button"
                 onClick={closeAddModal}
-                className="inline-flex items-center justify-center rounded-full border border-brand-teal/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
               >
                 Cancelar
               </button>
@@ -566,7 +561,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               <button
                 type="button"
                 onClick={closeEditModal}
-                className="inline-flex items-center justify-center rounded-full border border-brand-teal/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
               >
                 Cancelar
               </button>

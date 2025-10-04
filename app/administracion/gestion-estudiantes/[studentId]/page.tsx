@@ -1,6 +1,5 @@
 import { unstable_noStore as noStore } from "next/cache";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -48,13 +47,6 @@ function ensureDatabaseUrl() {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL environment variable is not configured.");
   }
-}
-
-function coerceStudentId(value: unknown): number | null {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  const integer = Math.trunc(parsed);
-  return integer > 0 ? integer : null;
 }
 
 function formatDateISO(date: Date): string {
@@ -250,17 +242,17 @@ export async function generateMetadata({
   params: Promise<{ studentId: string }>;
 }): Promise<Metadata> {
   noStore();
-  const { studentId: studentIdStr } = await params;
-  const studentId = coerceStudentId(studentIdStr);
+  const resolvedParams = await params;
+  const studentId = Number(resolvedParams.studentId);
 
-  if (!studentId) {
+  if (!Number.isFinite(studentId)) {
     return { title: "Perfil de estudiante · Inglés Rápido Manta" };
   }
 
   try {
     ensureDatabaseUrl();
     const details = await getStudentBasicDetails(studentId);
-    const name = details?.fullName?.trim();
+    const name = details?.full_name?.trim();
 
     return {
       title: name
@@ -278,11 +270,15 @@ export default async function StudentProfilePage({
 }: {
   params: Promise<{ studentId: string }>;
 }) {
-  const { studentId: studentIdStr } = await params;
-  const studentId = coerceStudentId(studentIdStr);
+  const resolvedParams = await params;
+  const studentId = Number(resolvedParams.studentId);
 
-  if (!studentId) {
-    notFound();
+  if (!Number.isFinite(studentId)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-lg font-semibold text-brand-deep">
+        ID inválido
+      </div>
+    );
   }
 
   const today = new Date();
@@ -292,7 +288,7 @@ export default async function StudentProfilePage({
   const endDate = formatDateISO(today);
 
   const primaryData = await loadPrimaryProfileData(studentId);
-  const studentName = primaryData.basicDetails?.fullName?.trim() || "Nombre no disponible";
+  const studentName = primaryData.basicDetails?.full_name?.trim() || "Nombre no disponible";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">

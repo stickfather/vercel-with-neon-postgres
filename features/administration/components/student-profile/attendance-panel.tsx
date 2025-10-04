@@ -57,9 +57,10 @@ function formatDateInGuayaquil(
 
 function formatNumber(value: number | null, digits = 1): string {
   if (value == null || !Number.isFinite(value)) return "—";
+  const normalizedDigits = Math.min(Math.max(digits, 1), 2);
   return new Intl.NumberFormat("es-EC", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
+    minimumFractionDigits: normalizedDigits,
+    maximumFractionDigits: normalizedDigits,
   }).format(value);
 }
 
@@ -84,7 +85,7 @@ function MinutesChart({ data }: { data: MinutesByDayEntry[] }) {
             <div
               className="w-8 rounded-t-full bg-brand-teal-soft"
               style={{ height }}
-              title={`${item.minutes} minutos`}
+              title={`${label}: ${item.minutes} minutos`}
             />
             <span className="text-[10px] font-medium uppercase tracking-wide text-brand-ink-muted">
               {label}
@@ -141,7 +142,17 @@ function CumulativeChart({ data }: { data: CumulativeHoursEntry[] }) {
         {data.map((item, index) => {
           const x = (index / Math.max(data.length - 1, 1)) * (width - 40) + 20;
           const y = height - (item.hours / maxHours) * (height - 40) - 20;
-          return <circle key={item.date} cx={x} cy={y} r={3} fill="#00bfa6" />;
+          const label = formatDateInGuayaquil(item.date, {
+            day: "2-digit",
+            month: "short",
+          });
+          return (
+            <g key={item.date}>
+              <circle cx={x} cy={y} r={3} fill="#00bfa6">
+                <title>{`${label}: ${item.hours.toFixed(2)} horas`}</title>
+              </circle>
+            </g>
+          );
         })}
       </svg>
     </div>
@@ -259,54 +270,71 @@ export function AttendancePanel({
     {
       key: "totalMinutes",
       label: "Minutos totales",
-      value: formatNumber(attendanceStats.totalMinutes, 0),
+      value: attendanceStats.totalMinutes,
+      digits: 1,
     },
     {
       key: "totalHours",
       label: "Horas totales",
-      value: formatNumber(attendanceStats.totalHours, 1),
+      value: attendanceStats.totalHours,
+      digits: 1,
     },
     {
       key: "avgSessionMinutes",
       label: "Minutos promedio por sesión",
-      value: formatNumber(attendanceStats.averageSessionMinutes ?? stats.averageSessionLengthMinutes, 1),
+      value: attendanceStats.averageSessionMinutes ?? stats.averageSessionLengthMinutes,
+      digits: 1,
     },
     {
       key: "avgSessionsPerDay",
       label: "Sesiones promedio por día",
-      value: formatNumber(attendanceStats.averageSessionsPerDay, 2),
+      value: attendanceStats.averageSessionsPerDay,
+      digits: 2,
     },
     {
       key: "avgMinutesPerDay",
       label: "Minutos promedio por día",
-      value: formatNumber(attendanceStats.averageMinutesPerDay, 1),
+      value: attendanceStats.averageMinutesPerDay,
+      digits: 1,
     },
     {
       key: "avgMinutesPerDayExclSun",
       label: "Minutos por día (sin domingos)",
-      value: formatNumber(attendanceStats.averageMinutesPerDayExcludingSundays, 1),
+      value: attendanceStats.averageMinutesPerDayExcludingSundays,
+      digits: 1,
     },
     {
       key: "lessonChanges",
       label: "Cambios de lección",
-      value: formatNumber(attendanceStats.lessonChanges, 0),
+      value: attendanceStats.lessonChanges,
+      digits: 1,
     },
     {
       key: "lessonsPerWeek",
       label: "Lecciones por semana",
-      value: formatNumber(attendanceStats.lessonsPerWeek ?? stats.lessonsPerWeek, 2),
+      value: attendanceStats.lessonsPerWeek ?? stats.lessonsPerWeek,
+      digits: 2,
     },
     {
       key: "averageDaysPerWeek",
       label: "Días promedio por semana",
-      value: formatNumber(stats.averageDaysPerWeek, 2),
+      value: stats.averageDaysPerWeek,
+      digits: 2,
     },
     {
       key: "averageProgressPerWeek",
       label: "Progreso promedio por semana",
-      value: formatNumber(stats.averageProgressPerWeek, 2),
+      value: stats.averageProgressPerWeek,
+      digits: 2,
     },
-  ];
+  ].map((metric) => ({
+    ...metric,
+    formatted: formatNumber(metric.value, metric.digits),
+    tooltip:
+      metric.value == null || !Number.isFinite(metric.value)
+        ? "Sin dato"
+        : formatNumber(metric.value, metric.digits),
+  }));
 
   const dateRangeLabel = `${formatDateInGuayaquil(startDate, { day: "2-digit", month: "short", year: "numeric" })} al ${formatDateInGuayaquil(endDate, { day: "2-digit", month: "short", year: "numeric" })}`;
 
@@ -337,7 +365,12 @@ export function AttendancePanel({
             <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
               {metric.label}
             </span>
-            <span className="text-3xl font-black text-brand-deep">{metric.value}</span>
+            <span
+              className="text-3xl font-black text-brand-deep"
+              title={metric.tooltip}
+            >
+              {metric.formatted}
+            </span>
           </div>
         ))}
       </div>
