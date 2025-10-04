@@ -1,6 +1,5 @@
 import { unstable_noStore as noStore } from "next/cache";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -50,15 +49,12 @@ function ensureDatabaseUrl() {
   }
 }
 
-function coerceStudentId(value: unknown): number | null {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  const integer = Math.trunc(parsed);
-  return integer > 0 ? integer : null;
-}
-
 function formatDateISO(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+async function resolveParams<T>(params: T | Promise<T>): Promise<T> {
+  return Promise.resolve(params);
 }
 
 type PrimaryProfileData = {
@@ -247,20 +243,20 @@ async function AttendancePanelSection({
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ studentId: string }>;
+  params: { studentId: string } | Promise<{ studentId: string }>;
 }): Promise<Metadata> {
   noStore();
-  const { studentId: studentIdStr } = await params;
-  const studentId = coerceStudentId(studentIdStr);
+  const resolvedParams = await resolveParams(params);
+  const studentId = Number(resolvedParams.studentId);
 
-  if (!studentId) {
+  if (!Number.isFinite(studentId)) {
     return { title: "Perfil de estudiante · Inglés Rápido Manta" };
   }
 
   try {
     ensureDatabaseUrl();
     const details = await getStudentBasicDetails(studentId);
-    const name = details?.fullName?.trim();
+    const name = details?.full_name?.trim();
 
     return {
       title: name
@@ -276,13 +272,17 @@ export async function generateMetadata({
 export default async function StudentProfilePage({
   params,
 }: {
-  params: Promise<{ studentId: string }>;
+  params: { studentId: string } | Promise<{ studentId: string }>;
 }) {
-  const { studentId: studentIdStr } = await params;
-  const studentId = coerceStudentId(studentIdStr);
+  const resolvedParams = await resolveParams(params);
+  const studentId = Number(resolvedParams.studentId);
 
-  if (!studentId) {
-    notFound();
+  if (!Number.isFinite(studentId)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-lg font-semibold text-brand-deep">
+        ID inválido
+      </div>
+    );
   }
 
   const today = new Date();
@@ -292,7 +292,7 @@ export default async function StudentProfilePage({
   const endDate = formatDateISO(today);
 
   const primaryData = await loadPrimaryProfileData(studentId);
-  const studentName = primaryData.basicDetails?.fullName?.trim() || "Nombre no disponible";
+  const studentName = primaryData.basicDetails?.full_name?.trim() || "Nombre no disponible";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">

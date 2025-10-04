@@ -1,23 +1,34 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+
 import {
   deletePaymentScheduleEntry,
   updatePaymentScheduleEntry,
 } from "@/features/administration/data/student-profile";
 
-type PayParams = Promise<{ studentId: string; entryId: string }>;
+export const dynamic = "force-dynamic";
+
+function normalizeId(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export async function PUT(
   request: Request,
-  { params }: { params: PayParams }
+  { params }: { params: { studentId: string; entryId: string } },
 ) {
   try {
-    const { entryId: entryIdStr } = await params; // 👈 await params
-    const entryId = Number(entryIdStr);
-    if (!Number.isFinite(entryId)) {
+    const entryId = normalizeId(params.entryId);
+    const studentId = normalizeId(params.studentId);
+
+    if (entryId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
+    }
     const dueDate =
       typeof body?.dueDate === "string" && body.dueDate.trim().length
         ? body.dueDate
@@ -47,7 +58,7 @@ export async function PUT(
         ? body.note.trim()
         : null;
 
-    await updatePaymentScheduleEntry(entryId, {
+    const updated = await updatePaymentScheduleEntry(entryId, {
       dueDate,
       amount,
       isPaid,
@@ -55,7 +66,8 @@ export async function PUT(
       note,
     });
 
-    return NextResponse.json({ success: true });
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
+    return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating payment schedule entry", error);
     const message =
@@ -68,18 +80,20 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: PayParams }
+  { params }: { params: { studentId: string; entryId: string } },
 ) {
   try {
-    const { entryId: entryIdStr } = await params; // 👈 await params
-    const entryId = Number(entryIdStr);
-    if (!Number.isFinite(entryId)) {
+    const entryId = normalizeId(params.entryId);
+    const studentId = normalizeId(params.studentId);
+    if (entryId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
 
-    await deletePaymentScheduleEntry(entryId);
+    const deleted = await deletePaymentScheduleEntry(entryId);
 
-    return NextResponse.json({ success: true });
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
+
+    return NextResponse.json(deleted);
   } catch (error) {
     console.error("Error deleting payment schedule entry", error);
     const message =

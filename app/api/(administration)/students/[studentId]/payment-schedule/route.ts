@@ -1,24 +1,33 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+
 import { createPaymentScheduleEntry } from "@/features/administration/data/student-profile";
 
-type StudentParams = Promise<{ studentId: string }>;
+export const dynamic = "force-dynamic";
+
+function normalizeStudentId(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export async function POST(
   request: Request,
-  { params }: { params: StudentParams }
+  { params }: { params: { studentId: string } },
 ) {
   try {
-    const { studentId: studentIdStr } = await params; // 👈 await params
-    const studentId = Number(studentIdStr);
+    const studentId = normalizeStudentId(params.studentId);
 
-    if (!Number.isFinite(studentId)) {
+    if (studentId == null) {
       return NextResponse.json(
         { error: "Identificador inválido." },
         { status: 400 }
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
+    }
     const dueDate = typeof body?.dueDate === "string" ? body.dueDate : null;
     const amountValue = body?.amount;
     const amount =
@@ -54,6 +63,7 @@ export async function POST(
       note,
     });
 
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
     return NextResponse.json(entry);
   } catch (error) {
     console.error("Error creating payment schedule entry", error);
