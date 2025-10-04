@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import type { StudentNote } from "@/features/administration/data/student-profile";
 
 type Props = {
@@ -10,20 +10,22 @@ type Props = {
 
 type Draft = {
   note: string;
-  category: string;
 };
 
 const INITIAL_DRAFT: Draft = {
   note: "",
-  category: "",
 };
 
-function formatDate(value: string | null): string {
-  if (!value) return "";
-  return new Date(value).toLocaleDateString("es-EC", {
+function formatDateTime(value: string | null): string {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  return date.toLocaleString("es-EC", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -36,6 +38,10 @@ export function NotesPanel({ studentId, notes }: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  useEffect(() => {
+    setItems(notes);
+  }, [notes]);
+
   const sortedNotes = useMemo(() => {
     return [...items].sort((a, b) => {
       const aDate = a.createdAt ?? "";
@@ -45,6 +51,11 @@ export function NotesPanel({ studentId, notes }: Props) {
   }, [items]);
 
   const handleCreate = () => {
+    if (!draft.note.trim()) {
+      setError("La nota no puede estar vacía.");
+      return;
+    }
+
     setError(null);
     setMessage(null);
     startTransition(() => {
@@ -53,16 +64,13 @@ export function NotesPanel({ studentId, notes }: Props) {
           const response = await fetch(`/api/students/${studentId}/notes`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              note: draft.note.trim(),
-              category: draft.category.trim() || null,
-            }),
+            body: JSON.stringify({ note: draft.note.trim() }),
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(payload?.error ?? "No se pudo crear la nota.");
           }
-          setItems((previous) => [payload, ...previous]);
+          setItems((previous) => [payload as StudentNote, ...previous]);
           setMessage("Nota agregada.");
           setDraft(INITIAL_DRAFT);
         } catch (err) {
@@ -78,6 +86,11 @@ export function NotesPanel({ studentId, notes }: Props) {
   };
 
   const handleUpdate = (noteId: number) => {
+    if (!editingDraft.note.trim()) {
+      setError("La nota no puede estar vacía.");
+      return;
+    }
+
     setError(null);
     setMessage(null);
     startTransition(() => {
@@ -86,10 +99,7 @@ export function NotesPanel({ studentId, notes }: Props) {
           const response = await fetch(`/api/students/${studentId}/notes/${noteId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              note: editingDraft.note.trim(),
-              category: editingDraft.category.trim() || null,
-            }),
+            body: JSON.stringify({ note: editingDraft.note.trim() }),
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
@@ -101,7 +111,6 @@ export function NotesPanel({ studentId, notes }: Props) {
                 ? {
                     ...item,
                     note: editingDraft.note.trim(),
-                    category: editingDraft.category.trim() || null,
                   }
                 : item,
             ),
@@ -172,31 +181,22 @@ export function NotesPanel({ studentId, notes }: Props) {
 
       <div className="flex flex-col gap-3 rounded-[28px] border border-dashed border-brand-teal/40 bg-white/95 p-4">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nueva nota</h3>
-        <div className="grid gap-3 md:grid-cols-[1fr_200px]">
-          <textarea
-            value={draft.note}
-            onChange={(event) => setDraft((prev) => ({ ...prev, note: event.target.value }))}
-            rows={3}
-            className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Detalle la interacción o seguimiento"
-          />
-          <div className="flex flex-col gap-2">
-            <input
-              type="text"
-              value={draft.category}
-              onChange={(event) => setDraft((prev) => ({ ...prev, category: event.target.value }))}
-              className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
-              placeholder="Etiqueta (opcional)"
-            />
-            <button
-              type="button"
-              onClick={handleCreate}
-              disabled={isPending}
-              className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isPending ? "Guardando…" : "Agregar"}
-            </button>
-          </div>
+        <textarea
+          value={draft.note}
+          onChange={(event) => setDraft({ note: event.target.value })}
+          rows={3}
+          className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
+          placeholder="Detalle la interacción o seguimiento"
+        />
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={isPending}
+            className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isPending ? "Guardando…" : "Agregar"}
+          </button>
         </div>
       </div>
 
@@ -211,10 +211,7 @@ export function NotesPanel({ studentId, notes }: Props) {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col text-left">
                   <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                    {formatDate(note.createdAt) || "Fecha desconocida"}
-                  </span>
-                  <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-                    {note.category ?? "Sin etiqueta"}
+                    {formatDateTime(note.createdAt)}
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -242,7 +239,7 @@ export function NotesPanel({ studentId, notes }: Props) {
                         type="button"
                         onClick={() => {
                           setEditingId(note.id);
-                          setEditingDraft({ note: note.note, category: note.category ?? "" });
+                          setEditingDraft({ note: note.note });
                         }}
                         className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                       >
@@ -261,31 +258,24 @@ export function NotesPanel({ studentId, notes }: Props) {
                 </div>
               </div>
               {isEditing ? (
-                <>
-                  <textarea
-                    value={editingDraft.note}
-                    onChange={(event) => setEditingDraft((prev) => ({ ...prev, note: event.target.value }))}
-                    rows={4}
-                    className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-3 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={editingDraft.category}
-                    onChange={(event) => setEditingDraft((prev) => ({ ...prev, category: event.target.value }))}
-                    className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
-                    placeholder="Etiqueta"
-                  />
-                </>
+                <textarea
+                  value={editingDraft.note}
+                  onChange={(event) => setEditingDraft({ note: event.target.value })}
+                  rows={4}
+                  className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
+                />
               ) : (
-                <p className="whitespace-pre-wrap text-sm text-brand-ink">{note.note}</p>
+                <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-brand-ink">
+                  {note.note || "Sin contenido"}
+                </p>
               )}
             </article>
           );
         })}
         {!sortedNotes.length && (
-          <p className="rounded-[28px] border border-dashed border-brand-ink-muted/40 bg-white/95 px-5 py-6 text-center text-sm text-brand-ink-muted">
-            Aún no hay notas registradas para este estudiante.
-          </p>
+          <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 text-center text-sm text-brand-ink-muted shadow-inner">
+            No hay notas registradas todavía.
+          </div>
         )}
       </div>
     </section>
@@ -297,19 +287,14 @@ export function NotesPanelSkeleton() {
     <section className="flex animate-pulse flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <div className="flex flex-col gap-2">
         <span className="h-3 w-32 rounded-full bg-brand-deep-soft/60" />
-        <span className="h-6 w-28 rounded-full bg-brand-deep-soft/80" />
-        <span className="h-3 w-64 rounded-full bg-brand-deep-soft/50" />
-      </div>
-      <div className="flex flex-col gap-3 rounded-[28px] border border-dashed border-brand-teal/30 bg-white/95 p-4">
-        <span className="h-4 w-24 rounded-full bg-brand-teal-soft/60" />
-        <span className="h-16 w-full rounded-2xl bg-brand-deep-soft/30" />
-        <span className="h-10 w-32 rounded-full bg-brand-deep-soft/40" />
+        <span className="h-6 w-40 rounded-full bg-brand-deep-soft/80" />
+        <span className="h-3 w-72 max-w-full rounded-full bg-brand-deep-soft/50" />
       </div>
       <div className="flex flex-col gap-3">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner">
-            <span className="h-3 w-32 rounded-full bg-brand-deep-soft/40" />
-            <span className="h-12 w-full rounded-xl bg-brand-deep-soft/30" />
+        {Array.from({ length: 2 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/95 p-5 shadow-inner">
+            <span className="h-3 w-28 rounded-full bg-brand-deep-soft/40" />
+            <span className="h-16 w-full rounded-2xl bg-brand-deep-soft/30" />
           </div>
         ))}
       </div>

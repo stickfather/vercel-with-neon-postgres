@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import type { StudentPaymentScheduleEntry } from "@/features/administration/data/student-profile";
 
 type Props = {
@@ -11,32 +11,63 @@ type Props = {
 type Draft = {
   dueDate: string;
   amount: string;
-  status: string;
-  notes: string;
+  externalRef: string;
+  note: string;
+};
+
+type EditDraft = Draft & {
+  isPaid: boolean;
+  receivedDate: string;
 };
 
 const INITIAL_DRAFT: Draft = {
   dueDate: "",
   amount: "",
-  status: "",
-  notes: "",
+  externalRef: "",
+  note: "",
+};
+
+const INITIAL_EDIT_DRAFT: EditDraft = {
+  dueDate: "",
+  amount: "",
+  isPaid: false,
+  receivedDate: "",
+  externalRef: "",
+  note: "",
 };
 
 function parseAmount(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  return date.toLocaleDateString("es-EC", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export function PaymentSchedulePanel({ studentId, entries }: Props) {
   const [items, setItems] = useState<StudentPaymentScheduleEntry[]>(entries);
   const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingDraft, setEditingDraft] = useState<Draft>(INITIAL_DRAFT);
+  const [editingDraft, setEditingDraft] = useState<EditDraft>(INITIAL_EDIT_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setItems(entries);
+  }, [entries]);
+
   const currencyFormatter = useMemo(
     () =>
       new Intl.NumberFormat("es-EC", {
@@ -59,9 +90,29 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
     setDraft(INITIAL_DRAFT);
   };
 
+  const validateNewPayment = (): { dueDate: string; amount: number } | null => {
+    const dueDate = draft.dueDate.trim();
+    if (!dueDate) {
+      setError("Debes ingresar una fecha de vencimiento.");
+      return null;
+    }
+    const amountNumber = parseAmount(draft.amount);
+    if (amountNumber == null || amountNumber <= 0) {
+      setError("El monto debe ser mayor a cero.");
+      return null;
+    }
+    return { dueDate, amount: amountNumber };
+  };
+
   const handleCreate = () => {
+    const validated = validateNewPayment();
+    if (!validated) {
+      return;
+    }
+
     setError(null);
     setMessage(null);
+
     startTransition(() => {
       void (async () => {
         try {
@@ -69,17 +120,17 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              dueDate: draft.dueDate || null,
-              amount: parseAmount(draft.amount),
-              status: draft.status.trim() || null,
-              notes: draft.notes.trim() || null,
+              dueDate: validated.dueDate,
+              amount: validated.amount,
+              externalRef: draft.externalRef.trim() || null,
+              note: draft.note.trim() || null,
             }),
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(payload?.error ?? "No se pudo crear el pago.");
           }
-          setItems((previous) => [...previous, payload]);
+          setItems((previous) => [...previous, payload as StudentPaymentScheduleEntry]);
           setMessage("Pago agregado correctamente.");
           resetDraft();
         } catch (err) {
@@ -97,6 +148,13 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
   const handleUpdate = (entryId: number) => {
     setError(null);
     setMessage(null);
+
+    const amountNumber = parseAmount(editingDraft.amount);
+    if (amountNumber != null && amountNumber <= 0) {
+      setError("El monto debe ser mayor a cero.");
+      return;
+    }
+
     startTransition(() => {
       void (async () => {
         try {
@@ -104,10 +162,12 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              dueDate: editingDraft.dueDate || null,
-              amount: parseAmount(editingDraft.amount),
-              status: editingDraft.status.trim() || null,
-              notes: editingDraft.notes.trim() || null,
+              dueDate: editingDraft.dueDate.trim() || null,
+              amount: amountNumber,
+              isPaid: editingDraft.isPaid,
+              receivedDate: editingDraft.receivedDate.trim() || null,
+              externalRef: editingDraft.externalRef.trim() || null,
+              note: editingDraft.note.trim() || null,
             }),
           });
           const payload = await response.json().catch(() => ({}));
@@ -119,10 +179,12 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               item.id === entryId
                 ? {
                     ...item,
-                    dueDate: editingDraft.dueDate || null,
-                    amount: parseAmount(editingDraft.amount),
-                    status: editingDraft.status.trim() || null,
-                    notes: editingDraft.notes.trim() || null,
+                    dueDate: editingDraft.dueDate.trim() || null,
+                    amount: amountNumber,
+                    isPaid: editingDraft.isPaid,
+                    receivedDate: editingDraft.receivedDate.trim() || null,
+                    externalRef: editingDraft.externalRef.trim() || null,
+                    note: editingDraft.note.trim() || null,
                   }
                 : item,
             ),
@@ -171,13 +233,25 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
     });
   };
 
+  const startEditing = (item: StudentPaymentScheduleEntry) => {
+    setEditingId(item.id);
+    setEditingDraft({
+      dueDate: item.dueDate ?? "",
+      amount: item.amount == null ? "" : String(item.amount),
+      isPaid: item.isPaid,
+      receivedDate: item.receivedDate ?? "",
+      externalRef: item.externalRef ?? "",
+      note: item.note ?? "",
+    });
+  };
+
   return (
     <section className="flex flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <header className="flex flex-col gap-1 text-left">
         <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">Panel 2</span>
         <h2 className="text-2xl font-bold text-brand-deep">Cronograma de pagos</h2>
         <p className="text-sm text-brand-ink-muted">
-          Registra, ajusta o elimina pagos programados para mantener la cartera al día.
+          Registra y controla los pagos esperados. Marca como pagado cuando recibas el monto.
         </p>
       </header>
       {error && (
@@ -193,34 +267,36 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
 
       <div className="flex flex-col gap-4 rounded-[28px] border border-dashed border-brand-teal/40 bg-white/95 p-4">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Agregar pago</h3>
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))]">
           <input
             type="date"
             value={draft.dueDate}
             onChange={(event) => setDraft((previous) => ({ ...previous, dueDate: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
+            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
             placeholder="Fecha"
           />
           <input
             type="number"
             value={draft.amount}
+            min="0"
+            step="0.01"
             onChange={(event) => setDraft((previous) => ({ ...previous, amount: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
+            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
             placeholder="Monto"
           />
           <input
             type="text"
-            value={draft.status}
-            onChange={(event) => setDraft((previous) => ({ ...previous, status: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Estado"
+            value={draft.externalRef}
+            onChange={(event) => setDraft((previous) => ({ ...previous, externalRef: event.target.value }))}
+            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
+            placeholder="Referencia externa"
           />
           <input
             type="text"
-            value={draft.notes}
-            onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Notas"
+            value={draft.note}
+            onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))}
+            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
+            placeholder="Nota"
           />
         </div>
         <div className="flex justify-end">
@@ -236,14 +312,16 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
       </div>
 
       <div className="overflow-hidden rounded-[28px] border border-white/70 bg-white/95 shadow-inner">
-        <table className="min-w-full divide-y divide-brand-ink-muted/20 text-left text-sm text-brand-ink">
+        <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left text-sm text-brand-ink">
           <thead className="bg-brand-deep-soft/40 text-xs uppercase tracking-wide text-brand-ink">
             <tr>
               <th className="px-4 py-3 font-semibold text-brand-deep">Fecha</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Monto</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Estado</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Pagado</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Recibido</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Referencia</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Notas</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep text-right">Acciones</th>
+              <th className="px-4 py-3 text-right font-semibold text-brand-deep">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-ink-muted/15">
@@ -253,26 +331,32 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
                 item.amount == null ? "—" : currencyFormatter.format(item.amount);
 
               return (
-                <tr key={item.id} className="hover:bg-brand-teal-soft/20">
+                <tr key={item.id} className="align-top hover:bg-brand-teal-soft/20">
                   <td className="px-4 py-3 align-top">
                     {isEditing ? (
                       <input
                         type="date"
                         value={editingDraft.dueDate}
-                        onChange={(event) => setEditingDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
-                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
+                        onChange={(event) =>
+                          setEditingDraft((prev) => ({ ...prev, dueDate: event.target.value }))
+                        }
+                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
                       />
                     ) : (
-                      <span className="font-semibold text-brand-deep">{item.dueDate ?? "Sin fecha"}</span>
+                      <span className="font-semibold text-brand-deep">{formatDate(item.dueDate)}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 align-top">
                     {isEditing ? (
                       <input
                         type="number"
+                        min="0"
+                        step="0.01"
                         value={editingDraft.amount}
-                        onChange={(event) => setEditingDraft((prev) => ({ ...prev, amount: event.target.value }))}
-                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
+                        onChange={(event) =>
+                          setEditingDraft((prev) => ({ ...prev, amount: event.target.value }))
+                        }
+                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
                       />
                     ) : (
                       <span>{amountDisplay}</span>
@@ -280,26 +364,82 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
                   </td>
                   <td className="px-4 py-3 align-top">
                     {isEditing ? (
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={editingDraft.isPaid}
+                          onChange={(event) =>
+                            setEditingDraft((prev) => ({
+                              ...prev,
+                              isPaid: event.target.checked,
+                              receivedDate:
+                                event.target.checked && !prev.receivedDate
+                                  ? new Date().toISOString().slice(0, 10)
+                                  : prev.receivedDate,
+                            }))
+                          }
+                          className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
+                        />
+                        <span className="font-semibold text-brand-deep">
+                          {editingDraft.isPaid ? "Sí" : "No"}
+                        </span>
+                      </label>
+                    ) : (
+                      <span
+                        className={`inline-flex min-w-[48px] items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                          item.isPaid
+                            ? "bg-brand-teal-soft text-brand-teal"
+                            : "bg-brand-ink-muted/15 text-brand-ink"
+                        }`}
+                      >
+                        {item.isPaid ? "Sí" : "No"}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    {isEditing ? (
                       <input
-                        type="text"
-                        value={editingDraft.status}
-                        onChange={(event) => setEditingDraft((prev) => ({ ...prev, status: event.target.value }))}
-                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
+                        type="date"
+                        value={editingDraft.receivedDate}
+                        onChange={(event) =>
+                          setEditingDraft((prev) => ({ ...prev, receivedDate: event.target.value }))
+                        }
+                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
                       />
                     ) : (
-                      <span>{item.status ?? "Sin estado"}</span>
+                      <span>{formatDate(item.receivedDate)}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editingDraft.externalRef}
+                        onChange={(event) =>
+                          setEditingDraft((prev) => ({ ...prev, externalRef: event.target.value }))
+                        }
+                        className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
+                      />
+                    ) : (
+                      <span className="block whitespace-normal break-words leading-relaxed">
+                        {item.externalRef ?? "—"}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 align-top">
                     {isEditing ? (
                       <textarea
-                        value={editingDraft.notes}
-                        onChange={(event) => setEditingDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                        value={editingDraft.note}
+                        onChange={(event) =>
+                          setEditingDraft((prev) => ({ ...prev, note: event.target.value }))
+                        }
                         rows={2}
-                        className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-3 py-2 text-sm text-brand-ink focus:border-brand-teal focus:outline-none"
+                        className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-3 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
                       />
                     ) : (
-                      <span>{item.notes ?? "—"}</span>
+                      <span className="block whitespace-normal break-words leading-relaxed">
+                        {item.note ?? "—"}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 align-top">
@@ -316,9 +456,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingId(null);
-                            }}
+                            onClick={() => setEditingId(null)}
                             className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-deep-soft px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#322d54]"
                           >
                             Cancelar
@@ -328,15 +466,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
                         <>
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingId(item.id);
-                              setEditingDraft({
-                                dueDate: item.dueDate ?? "",
-                                amount: item.amount == null ? "" : String(item.amount),
-                                status: item.status ?? "",
-                                notes: item.notes ?? "",
-                              });
-                            }}
+                            onClick={() => startEditing(item)}
                             className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                           >
                             Editar
@@ -358,7 +488,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
             })}
             {!sortedItems.length && (
               <tr>
-                <td colSpan={5} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
+                <td colSpan={7} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
                   Aún no se han registrado pagos para este estudiante.
                 </td>
               </tr>

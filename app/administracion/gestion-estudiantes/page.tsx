@@ -22,7 +22,7 @@ export default async function GestionEstudiantesPage() {
   }
 
   const actionButtonBaseClass =
-    "inline-flex items-center justify-center rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-wide transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
+    "inline-flex items-center justify-center rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
@@ -32,17 +32,17 @@ export default async function GestionEstudiantesPage() {
         <div className="absolute bottom-0 left-1/2 h-[420px] w-[120%] -translate-x-1/2 rounded-t-[170px] bg-gradient-to-r from-[#ffeede] via-white to-[#c9f5ed]" />
       </div>
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
-        <header className="flex flex-col gap-4 rounded-[32px] border border-white/70 bg-white/92 px-7 py-8 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-deep">
+        <header className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 text-left shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
             Gestión académica
           </span>
-          <div className="flex flex-col gap-3 text-brand-deep">
+          <div className="flex flex-col gap-2 text-brand-deep">
             <h1 className="text-3xl font-black sm:text-4xl">Gestión de estudiantes</h1>
-            <p className="max-w-3xl text-base text-brand-ink-muted sm:text-lg">
-              Visualiza el estado general de cada estudiante y las banderas clave asignadas por el equipo académico. Usa los filtros para centrarte en los casos prioritarios.
+            <p className="max-w-3xl text-sm text-brand-ink-muted sm:text-base">
+              Visualiza el estado general de cada estudiante y utiliza los gráficos interactivos para filtrar por prioridades.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3 pt-2">
+          <div className="flex flex-wrap gap-3 pt-1">
             <Link
               href="/administracion"
               className={`${actionButtonBaseClass} border border-transparent bg-white text-brand-deep shadow hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline-[#00bfa6]`}
