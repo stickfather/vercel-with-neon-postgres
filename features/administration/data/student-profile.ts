@@ -1,10 +1,27 @@
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
 
-export type BasicDetailField = {
-  key: string;
+export type BasicDetailFieldKey =
+  | "fullName"
+  | "preferredName"
+  | "email"
+  | "phone"
+  | "whatsapp"
+  | "birthdate"
+  | "startDate"
+  | "currentLevel"
+  | "currentLesson"
+  | "status"
+  | "notes";
+
+type BasicDetailFieldConfig = {
+  key: BasicDetailFieldKey;
+  dbColumn: string;
   label: string;
   type: "text" | "textarea" | "date" | "number";
   editable: boolean;
+};
+
+export type BasicDetailField = Omit<BasicDetailFieldConfig, "dbColumn"> & {
   value: string | null;
 };
 
@@ -14,19 +31,92 @@ export type StudentBasicDetails = {
   fields: BasicDetailField[];
 };
 
-const BASIC_DETAILS_FIELDS: Array<Omit<BasicDetailField, "value">> = [
-  { key: "full_name", label: "Nombre completo", type: "text", editable: true },
-  { key: "preferred_name", label: "Nombre preferido", type: "text", editable: true },
-  { key: "email", label: "Correo electrónico", type: "text", editable: true },
-  { key: "phone", label: "Teléfono", type: "text", editable: true },
-  { key: "whatsapp", label: "WhatsApp", type: "text", editable: true },
-  { key: "birthdate", label: "Fecha de nacimiento", type: "date", editable: true },
-  { key: "start_date", label: "Fecha de inicio", type: "date", editable: true },
-  { key: "current_level", label: "Nivel actual", type: "text", editable: true },
-  { key: "current_lesson", label: "Lección actual", type: "text", editable: true },
-  { key: "status", label: "Estado", type: "text", editable: false },
-  { key: "notes", label: "Notas", type: "textarea", editable: true },
+const BASIC_DETAILS_FIELDS: ReadonlyArray<BasicDetailFieldConfig> = [
+  {
+    key: "fullName",
+    dbColumn: "full_name",
+    label: "Nombre completo",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "preferredName",
+    dbColumn: "preferred_name",
+    label: "Nombre preferido",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "email",
+    dbColumn: "email",
+    label: "Correo electrónico",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "phone",
+    dbColumn: "phone",
+    label: "Teléfono",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "whatsapp",
+    dbColumn: "whatsapp",
+    label: "WhatsApp",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "birthdate",
+    dbColumn: "birthdate",
+    label: "Fecha de nacimiento",
+    type: "date",
+    editable: true,
+  },
+  {
+    key: "startDate",
+    dbColumn: "start_date",
+    label: "Fecha de inicio",
+    type: "date",
+    editable: true,
+  },
+  {
+    key: "currentLevel",
+    dbColumn: "current_level",
+    label: "Nivel actual",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "currentLesson",
+    dbColumn: "current_lesson",
+    label: "Lección actual",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "status",
+    dbColumn: "status",
+    label: "Estado",
+    type: "text",
+    editable: false,
+  },
+  {
+    key: "notes",
+    dbColumn: "notes",
+    label: "Notas",
+    type: "textarea",
+    editable: true,
+  },
 ];
+
+export const BASIC_DETAIL_FIELD_KEYS: ReadonlyArray<BasicDetailFieldKey> =
+  BASIC_DETAILS_FIELDS.map((field) => field.key);
+
+export function isBasicDetailFieldKey(value: string): value is BasicDetailFieldKey {
+  return BASIC_DETAILS_FIELDS.some((field) => field.key === value);
+}
 
 function normalizeFieldValue(value: unknown, type: BasicDetailField["type"]): string | null {
   if (value == null) return null;
@@ -58,9 +148,12 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
   const id = Number(row.id ?? studentId);
   const fullName = ((row.full_name as string | null) ?? "").trim();
 
-  const fields: BasicDetailField[] = BASIC_DETAILS_FIELDS.filter((field) => field.key in row).map((field) => ({
-    ...field,
-    value: normalizeFieldValue(row[field.key], field.type),
+  const fields: BasicDetailField[] = BASIC_DETAILS_FIELDS.map((field) => ({
+    key: field.key,
+    label: field.label,
+    type: field.type,
+    editable: field.editable,
+    value: normalizeFieldValue(row[field.dbColumn], field.type),
   }));
 
   return {
@@ -72,7 +165,7 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
 
 export async function updateStudentBasicField(
   studentId: number,
-  fieldKey: string,
+  fieldKey: BasicDetailFieldKey,
   value: string | null,
 ): Promise<void> {
   const sql = getSqlClient();
@@ -89,10 +182,10 @@ export async function updateStudentBasicField(
   const sanitizedValue = value === undefined ? null : value;
 
   switch (field.key) {
-    case "full_name":
+    case "fullName":
       await sql`UPDATE public.students SET full_name = ${sanitizedValue} WHERE id = ${studentId}`;
       break;
-    case "preferred_name":
+    case "preferredName":
       await sql`UPDATE public.students SET preferred_name = ${sanitizedValue} WHERE id = ${studentId}`;
       break;
     case "email":
@@ -107,13 +200,13 @@ export async function updateStudentBasicField(
     case "birthdate":
       await sql`UPDATE public.students SET birthdate = ${sanitizedValue} WHERE id = ${studentId}`;
       break;
-    case "start_date":
+    case "startDate":
       await sql`UPDATE public.students SET start_date = ${sanitizedValue} WHERE id = ${studentId}`;
       break;
-    case "current_level":
+    case "currentLevel":
       await sql`UPDATE public.students SET current_level = ${sanitizedValue} WHERE id = ${studentId}`;
       break;
-    case "current_lesson":
+    case "currentLesson":
       await sql`UPDATE public.students SET current_lesson = ${sanitizedValue} WHERE id = ${studentId}`;
       break;
     case "notes":

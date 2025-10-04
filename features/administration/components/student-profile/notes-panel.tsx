@@ -291,3 +291,28 @@ export function NotesPanel({ studentId, notes }: Props) {
     </section>
   );
 }
+
+export function NotesPanelSkeleton() {
+  return (
+    <section className="flex animate-pulse flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
+      <div className="flex flex-col gap-2">
+        <span className="h-3 w-32 rounded-full bg-brand-deep-soft/60" />
+        <span className="h-6 w-28 rounded-full bg-brand-deep-soft/80" />
+        <span className="h-3 w-64 rounded-full bg-brand-deep-soft/50" />
+      </div>
+      <div className="flex flex-col gap-3 rounded-[28px] border border-dashed border-brand-teal/30 bg-white/95 p-4">
+        <span className="h-4 w-24 rounded-full bg-brand-teal-soft/60" />
+        <span className="h-16 w-full rounded-2xl bg-brand-deep-soft/30" />
+        <span className="h-10 w-32 rounded-full bg-brand-deep-soft/40" />
+      </div>
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner">
+            <span className="h-3 w-32 rounded-full bg-brand-deep-soft/40" />
+            <span className="h-12 w-full rounded-xl bg-brand-deep-soft/30" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
