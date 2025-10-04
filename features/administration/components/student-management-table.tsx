@@ -109,10 +109,7 @@ function StudentManagementTable({ students }: Props) {
 
                     <td className="px-4 py-3">
                       <Link
-                        href={{
-                          pathname: "/administracion/gestion-estudiantes/[studentId]",
-                          params: { studentId: String(student.id) },
-                        }}
+                        href={`/administracion/gestion-estudiantes/${student.id}`}
                         className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                       >
                         Ver perfil
