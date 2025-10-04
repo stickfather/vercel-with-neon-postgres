@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
 import type { StudentExam } from "@/features/administration/data/student-profile";
 
 type Props = {
@@ -8,32 +15,40 @@ type Props = {
   exams: StudentExam[];
 };
 
-type Draft = {
-  timeScheduled: string;
-  status: string;
-  score: string;
-  passed: boolean;
-  notes: string;
+type ActiveRequest = "create" | "edit" | "delete" | null;
+
+type AddFormState = {
+  scheduledAt: string;
+  examType: string;
+  grade: string;
+  note: string;
 };
 
-const INITIAL_DRAFT: Draft = {
-  timeScheduled: "",
-  status: "scheduled",
-  score: "",
-  passed: false,
-  notes: "",
+type EditFormState = {
+  grade: string;
+  isCompleted: boolean;
+  note: string;
 };
 
-function toDateTimeLocal(value: string | null): string {
-  if (!value) return "";
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)) {
-    return normalized;
-  }
-  const date = new Date(normalized);
-  if (!Number.isFinite(date.getTime())) return "";
-  return date.toISOString().slice(0, 16);
-}
+type ModalProps = {
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children: ReactNode;
+};
+
+const INITIAL_ADD_FORM: AddFormState = {
+  scheduledAt: "",
+  examType: "",
+  grade: "",
+  note: "",
+};
+
+const INITIAL_EDIT_FORM: EditFormState = {
+  grade: "",
+  isCompleted: false,
+  note: "",
+};
 
 function formatDateTime(value: string | null): string {
   if (!value) return "Sin fecha";
@@ -52,19 +67,51 @@ function formatDateTime(value: string | null): string {
 function parseScore(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const parsed = Number(trimmed);
+  const parsed = Number(trimmed.replace(",", "."));
   if (!Number.isFinite(parsed)) return null;
   return parsed;
 }
 
+function Modal({ title, description, onClose, children }: ModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-xl rounded-[32px] border border-white/80 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep-soft text-lg font-bold text-brand-deep transition hover:bg-brand-deep-soft/80"
+          aria-label="Cerrar ventana"
+        >
+          ×
+        </button>
+        <div className="flex flex-col gap-4 pr-6">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
+              Acción requerida
+            </span>
+            <h3 className="text-xl font-semibold text-brand-deep">{title}</h3>
+            {description ? (
+              <p className="text-sm text-brand-ink-muted">{description}</p>
+            ) : null}
+          </div>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ExamsPanel({ studentId, exams }: Props) {
+  const router = useRouter();
   const [items, setItems] = useState<StudentExam[]>(exams);
-  const [draft, setDraft] = useState<Draft>(INITIAL_DRAFT);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingDraft, setEditingDraft] = useState<Draft>(INITIAL_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<AddFormState>(INITIAL_ADD_FORM);
+  const [editingExam, setEditingExam] = useState<StudentExam | null>(null);
+  const [editForm, setEditForm] = useState<EditFormState>(INITIAL_EDIT_FORM);
 
   useEffect(() => {
     setItems(exams);
@@ -78,20 +125,60 @@ export function ExamsPanel({ studentId, exams }: Props) {
     });
   }, [items]);
 
-  const handleCreate = () => {
-    if (!draft.timeScheduled.trim()) {
+  const closeAddModal = () => {
+    if (isPending && activeRequest === "create") return;
+    setIsAddOpen(false);
+    setAddForm(INITIAL_ADD_FORM);
+  };
+
+  const closeEditModal = () => {
+    if (isPending && activeRequest === "edit") return;
+    setEditingExam(null);
+    setEditForm(INITIAL_EDIT_FORM);
+  };
+
+  const openAddModal = () => {
+    setError(null);
+    setMessage(null);
+    setAddForm(INITIAL_ADD_FORM);
+    setIsAddOpen(true);
+  };
+
+  const openEditModal = (exam: StudentExam) => {
+    setError(null);
+    setMessage(null);
+    setEditingExam(exam);
+    setEditForm({
+      grade: exam.score == null ? "" : String(exam.score),
+      isCompleted: exam.passed,
+      note: exam.notes ?? "",
+    });
+  };
+
+  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (activeRequest) return;
+
+    if (!addForm.scheduledAt.trim()) {
       setError("Debes indicar la fecha y hora programada.");
       return;
     }
 
-    const scoreNumber = parseScore(draft.score);
-    if (draft.score.trim() && scoreNumber == null) {
+    if (!addForm.examType.trim()) {
+      setError("Selecciona el tipo de examen.");
+      return;
+    }
+
+    const scoreNumber = parseScore(addForm.grade);
+    if (addForm.grade.trim() && scoreNumber == null) {
       setError("La calificación debe ser numérica.");
       return;
     }
 
     setError(null);
     setMessage(null);
+    setActiveRequest("create");
+
     startTransition(() => {
       void (async () => {
         try {
@@ -99,11 +186,11 @@ export function ExamsPanel({ studentId, exams }: Props) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              timeScheduled: draft.timeScheduled.trim(),
-              status: draft.status.trim() || null,
+              timeScheduled: addForm.scheduledAt.trim(),
+              status: addForm.examType.trim(),
               score: scoreNumber,
-              passed: draft.passed,
-              notes: draft.notes.trim() || null,
+              passed: false,
+              notes: addForm.note.trim() || null,
             }),
           });
           const payload = await response.json().catch(() => ({}));
@@ -112,7 +199,8 @@ export function ExamsPanel({ studentId, exams }: Props) {
           }
           setItems((previous) => [payload as StudentExam, ...previous]);
           setMessage("Examen creado.");
-          setDraft(INITIAL_DRAFT);
+          closeAddModal();
+          router.refresh();
         } catch (err) {
           console.error(err);
           setError(
@@ -120,59 +208,63 @@ export function ExamsPanel({ studentId, exams }: Props) {
               ? err.message
               : "No se pudo crear el examen. Inténtalo nuevamente.",
           );
+        } finally {
+          setActiveRequest(null);
         }
       })();
     });
   };
 
-  const handleUpdate = (examId: number) => {
-    if (!editingDraft.timeScheduled.trim()) {
-      setError("Debes indicar la fecha y hora programada.");
-      return;
-    }
+  const handleUpdate = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingExam || activeRequest) return;
 
-    const scoreNumber = parseScore(editingDraft.score);
-    if (editingDraft.score.trim() && scoreNumber == null) {
+    const scoreNumber = parseScore(editForm.grade);
+    if (editForm.grade.trim() && scoreNumber == null) {
       setError("La calificación debe ser numérica.");
       return;
     }
 
     setError(null);
     setMessage(null);
+    setActiveRequest("edit");
+
     startTransition(() => {
       void (async () => {
         try {
-          const response = await fetch(`/api/students/${studentId}/exams/${examId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              timeScheduled: editingDraft.timeScheduled.trim(),
-              status: editingDraft.status.trim() || null,
-              score: scoreNumber,
-              passed: editingDraft.passed,
-              notes: editingDraft.notes.trim() || null,
-            }),
-          });
+          const response = await fetch(
+            `/api/students/${studentId}/exams/${editingExam.id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                timeScheduled: editingExam.timeScheduled,
+                status: editingExam.status,
+                score: scoreNumber,
+                passed: editForm.isCompleted,
+                notes: editForm.note.trim() || null,
+              }),
+            },
+          );
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             throw new Error(payload?.error ?? "No se pudo actualizar el examen.");
           }
           setItems((previous) =>
             previous.map((item) =>
-              item.id === examId
+              item.id === editingExam.id
                 ? {
                     ...item,
-                    timeScheduled: editingDraft.timeScheduled.trim(),
-                    status: editingDraft.status.trim() || null,
                     score: scoreNumber,
-                    passed: editingDraft.passed,
-                    notes: editingDraft.notes.trim() || null,
+                    passed: editForm.isCompleted,
+                    notes: editForm.note.trim() || null,
                   }
                 : item,
             ),
           );
           setMessage("Examen actualizado.");
-          setEditingId(null);
+          closeEditModal();
+          router.refresh();
         } catch (err) {
           console.error(err);
           setError(
@@ -180,14 +272,22 @@ export function ExamsPanel({ studentId, exams }: Props) {
               ? err.message
               : "No se pudo actualizar el examen. Inténtalo nuevamente.",
           );
+        } finally {
+          setActiveRequest(null);
         }
       })();
     });
   };
 
-  const handleDelete = (examId: number) => {
+  const handleDelete = async (examId: number) => {
+    if (activeRequest) return;
+    const confirmation = globalThis.confirm?.("¿Eliminar este examen?");
+    if (!confirmation) return;
+
     setError(null);
     setMessage(null);
+    setActiveRequest("delete");
+
     startTransition(() => {
       void (async () => {
         try {
@@ -200,9 +300,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
           }
           setItems((previous) => previous.filter((item) => item.id !== examId));
           setMessage("Examen eliminado.");
-          if (editingId === examId) {
-            setEditingId(null);
-          }
+          router.refresh();
         } catch (err) {
           console.error(err);
           setError(
@@ -210,31 +308,25 @@ export function ExamsPanel({ studentId, exams }: Props) {
               ? err.message
               : "No se pudo eliminar el examen. Inténtalo nuevamente.",
           );
+        } finally {
+          setActiveRequest(null);
         }
       })();
-    });
-  };
-
-  const startEditing = (exam: StudentExam) => {
-    setEditingId(exam.id);
-    setEditingDraft({
-      timeScheduled: toDateTimeLocal(exam.timeScheduled),
-      status: exam.status ?? "",
-      score: exam.score == null ? "" : String(exam.score),
-      passed: exam.passed,
-      notes: exam.notes ?? "",
     });
   };
 
   return (
     <section className="flex flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <header className="flex flex-col gap-1 text-left">
-        <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">Panel 4</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
+          Panel 4
+        </span>
         <h2 className="text-2xl font-bold text-brand-deep">Exámenes</h2>
         <p className="text-sm text-brand-ink-muted">
-          Agenda y registra los resultados de los exámenes oficiales del estudiante.
+          Registra la programación de evaluaciones y su resultado para seguir el avance académico.
         </p>
       </header>
+
       {error && (
         <p className="rounded-3xl border border-brand-orange bg-white/85 px-4 py-3 text-sm font-medium text-brand-ink">
           {error}
@@ -246,199 +338,241 @@ export function ExamsPanel({ studentId, exams }: Props) {
         </p>
       )}
 
-      <div className="flex flex-col gap-4 rounded-[28px] border border-dashed border-brand-teal/40 bg-white/95 p-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Agregar examen</h3>
-        <div className="grid gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))]">
-          <input
-            type="datetime-local"
-            value={draft.timeScheduled}
-            onChange={(event) => setDraft((prev) => ({ ...prev, timeScheduled: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-          />
-          <input
-            type="text"
-            value={draft.status}
-            onChange={(event) => setDraft((prev) => ({ ...prev, status: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Estado"
-          />
-          <input
-            type="number"
-            step="0.01"
-            value={draft.score}
-            onChange={(event) => setDraft((prev) => ({ ...prev, score: event.target.value }))}
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-            placeholder="Calificación"
-          />
-        </div>
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <label className="inline-flex items-center gap-2 text-sm font-semibold text-brand-deep" htmlFor="draft-passed">
-            <input
-              id="draft-passed"
-              type="checkbox"
-              checked={draft.passed}
-              onChange={(event) => setDraft((prev) => ({ ...prev, passed: event.target.checked }))}
-              className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
-            />
-            Aprobado
-          </label>
-          <textarea
-            value={draft.notes}
-            onChange={(event) => setDraft((prev) => ({ ...prev, notes: event.target.value }))}
-            rows={2}
-            className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none md:max-w-xl"
-            placeholder="Notas"
-          />
-        </div>
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={isPending}
-            className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isPending ? "Guardando…" : "Agregar"}
-          </button>
-        </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={openAddModal}
+          className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+        >
+          Agregar examen
+        </button>
       </div>
 
-      <div className="flex flex-col gap-4">
-        {sortedExams.map((exam) => {
-          const isEditing = editingId === exam.id;
-          return (
-            <article
-              key={exam.id}
-              className="flex flex-col gap-4 rounded-[28px] border border-white/70 bg-white/95 p-5 shadow-inner"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-col text-left">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+      <div className="overflow-hidden rounded-[28px] border border-white/70 bg-white/95 shadow-inner">
+        <table className="min-w-full table-auto divide-y divide-brand-ink-muted/15 text-left text-sm text-brand-ink">
+          <thead className="bg-brand-teal-soft/40 text-xs uppercase tracking-wide text-brand-ink">
+            <tr>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Fecha y hora</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Tipo de examen</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Calificación</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Estado</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Nota</th>
+              <th className="px-4 py-3 text-right font-semibold text-brand-deep">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedExams.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
+                  No hay exámenes registrados. Usa el botón “Agregar examen” para programar el primero.
+                </td>
+              </tr>
+            ) : (
+              sortedExams.map((exam) => (
+                <tr key={exam.id} className="divide-x divide-brand-ink-muted/10">
+                  <td className="px-4 py-3 align-top font-semibold text-brand-deep">
                     {formatDateTime(exam.timeScheduled)}
-                  </span>
-                  <span className="text-sm font-semibold text-brand-deep">
-                    {exam.status ?? "Sin estado"}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {isEditing ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdate(exam.id)}
-                        disabled={isPending}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isPending ? "Guardando…" : "Guardar"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingId(null)}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-deep-soft px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#322d54]"
-                      >
-                        Cancelar
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => startEditing(exam)}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(exam.id)}
-                        disabled={isPending}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Eliminar
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                    Calificación
-                  </span>
-                  {isEditing ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editingDraft.score}
-                      onChange={(event) =>
-                        setEditingDraft((prev) => ({ ...prev, score: event.target.value }))
-                      }
-                      className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-3 py-1 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-                    />
-                  ) : (
-                    <span className="text-sm text-brand-ink">
-                      {exam.score == null ? "—" : exam.score}
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                    Aprobado
-                  </span>
-                  {isEditing ? (
-                    <label className="inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={editingDraft.passed}
-                        onChange={(event) =>
-                          setEditingDraft((prev) => ({ ...prev, passed: event.target.checked }))
-                        }
-                        className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
-                      />
-                      <span className="text-sm font-semibold text-brand-deep">
-                        {editingDraft.passed ? "Sí" : "No"}
-                      </span>
-                    </label>
-                  ) : (
+                  </td>
+                  <td className="px-4 py-3 align-top text-brand-ink">
+                    {exam.status ? exam.status : "Sin tipo"}
+                  </td>
+                  <td className="px-4 py-3 align-top text-brand-ink">
+                    {exam.score == null ? "—" : exam.score}
+                  </td>
+                  <td className="px-4 py-3 align-top">
                     <span
-                      className={`inline-flex min-w-[48px] items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                      className={`inline-flex min-w-[80px] items-center justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
                         exam.passed
                           ? "bg-brand-teal-soft text-brand-teal"
                           : "bg-brand-ink-muted/15 text-brand-ink"
                       }`}
                     >
-                      {exam.passed ? "Sí" : "No"}
+                      {exam.passed ? "Completado" : "Pendiente"}
                     </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                  Notas
-                </span>
-                {isEditing ? (
-                  <textarea
-                    value={editingDraft.notes}
-                    onChange={(event) =>
-                      setEditingDraft((prev) => ({ ...prev, notes: event.target.value }))
-                    }
-                    rows={3}
-                    className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink focus:border-brand-teal focus:outline-none"
-                  />
-                ) : (
-                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-brand-ink">
-                    {exam.notes ?? "Sin notas"}
-                  </p>
-                )}
-              </div>
-            </article>
-          );
-        })}
-        {!sortedExams.length && (
-          <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 text-center text-sm text-brand-ink-muted shadow-inner">
-            No hay exámenes registrados todavía.
-          </div>
-        )}
+                  </td>
+                  <td className="px-4 py-3 align-top text-brand-ink">
+                    {exam.notes ? exam.notes : "—"}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(exam)}
+                        className="inline-flex items-center justify-center rounded-full border border-brand-teal/40 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(exam.id)}
+                        disabled={activeRequest === "delete" && isPending}
+                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#e06820] disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
+
+      {isAddOpen && (
+        <Modal
+          title="Agregar examen"
+          description="Programa un nuevo examen indicando fecha, hora y tipo de evaluación."
+          onClose={closeAddModal}
+        >
+          <form className="flex flex-col gap-4" onSubmit={handleCreate}>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Exam date/time
+              <input
+                type="datetime-local"
+                value={addForm.scheduledAt}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, scheduledAt: event.target.value }))
+                }
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Exam type
+              <input
+                type="text"
+                value={addForm.examType}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, examType: event.target.value }))
+                }
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                placeholder="Ej. Placement, Final, Nivel"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Grade (opcional)
+              <input
+                type="number"
+                step="0.01"
+                value={addForm.grade}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, grade: event.target.value }))
+                }
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Note (opcional)
+              <textarea
+                value={addForm.note}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, note: event.target.value }))
+                }
+                rows={3}
+                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                placeholder="Añade detalles o requisitos"
+              />
+            </label>
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeAddModal}
+                className="inline-flex items-center justify-center rounded-full border border-brand-teal/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={activeRequest === "create" && isPending}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {activeRequest === "create" && isPending ? "Guardando…" : "Guardar"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {editingExam && (
+        <Modal
+          title="Editar examen"
+          description="Registra la calificación, el estado de finalización y notas complementarias."
+          onClose={closeEditModal}
+        >
+          <form className="flex flex-col gap-4" onSubmit={handleUpdate}>
+            <div className="grid gap-3 rounded-2xl bg-white/90 p-4 shadow-inner sm:grid-cols-2">
+              <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Fecha programada
+                <span className="text-sm font-semibold text-brand-deep">
+                  {formatDateTime(editingExam.timeScheduled)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Tipo de examen
+                <span className="text-sm font-semibold text-brand-deep">
+                  {editingExam.status || "Sin tipo"}
+                </span>
+              </div>
+            </div>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Grade (opcional)
+              <input
+                type="number"
+                step="0.01"
+                value={editForm.grade}
+                onChange={(event) =>
+                  setEditForm((previous) => ({ ...previous, grade: event.target.value }))
+                }
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-inner">
+              <span className="text-sm font-semibold text-brand-deep">Completado</span>
+              <input
+                type="checkbox"
+                checked={editForm.isCompleted}
+                onChange={(event) =>
+                  setEditForm((previous) => ({
+                    ...previous,
+                    isCompleted: event.target.checked,
+                  }))
+                }
+                className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+              Nota (opcional)
+              <textarea
+                value={editForm.note}
+                onChange={(event) =>
+                  setEditForm((previous) => ({ ...previous, note: event.target.value }))
+                }
+                rows={3}
+                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                placeholder="Añade comentarios del examinador"
+              />
+            </label>
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="inline-flex items-center justify-center rounded-full border border-brand-teal/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-0.5 hover:border-brand-teal hover:bg-brand-teal-soft/40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={activeRequest === "edit" && isPending}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {activeRequest === "edit" && isPending ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </section>
   );
 }
@@ -447,18 +581,14 @@ export function ExamsPanelSkeleton() {
   return (
     <section className="flex animate-pulse flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <div className="flex flex-col gap-2">
-        <span className="h-3 w-32 rounded-full bg-brand-deep-soft/60" />
+        <span className="h-3 w-24 rounded-full bg-brand-deep-soft/60" />
         <span className="h-6 w-48 rounded-full bg-brand-deep-soft/80" />
-        <span className="h-3 w-72 max-w-full rounded-full bg-brand-deep-soft/50" />
+        <span className="h-3 w-64 max-w-full rounded-full bg-brand-deep-soft/50" />
       </div>
-      <div className="flex flex-col gap-3">
-        {Array.from({ length: 2 }).map((_, index) => (
-          <div key={index} className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/95 p-5 shadow-inner">
-            <span className="h-3 w-40 rounded-full bg-brand-deep-soft/40" />
-            <span className="h-16 w-full rounded-2xl bg-brand-deep-soft/30" />
-          </div>
-        ))}
+      <div className="flex justify-end">
+        <span className="h-8 w-32 rounded-full bg-brand-deep-soft/40" />
       </div>
+      <div className="h-64 w-full rounded-[28px] bg-brand-deep-soft/20" />
     </section>
   );
 }

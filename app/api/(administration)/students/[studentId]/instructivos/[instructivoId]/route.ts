@@ -6,16 +6,6 @@ import {
 
 type InstructivoParams = Promise<{ studentId: string; instructivoId: string }>;
 
-function parseExamId(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return Math.trunc(parsed);
-  }
-  return null;
-}
-
 export async function PUT(
   request: Request,
   { params }: { params: InstructivoParams },
@@ -29,30 +19,34 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const dueDate = typeof body?.dueDate === "string" ? body.dueDate : null;
+    const title = typeof body?.title === "string" ? body.title.trim() : "";
+    const content = typeof body?.content === "string" ? body.content.trim() : "";
 
-    if (!dueDate) {
+    if (!title) {
       return NextResponse.json(
-        { error: "La fecha de entrega es obligatoria." },
+        { error: "El título es obligatorio." },
         { status: 400 },
       );
     }
 
-    const examId = parseExamId(body?.examId);
-    const completed = Boolean(body?.completed);
-    let completedAt = typeof body?.completedAt === "string" ? body.completedAt : null;
-    const notes = typeof body?.notes === "string" ? body.notes.trim() || null : null;
-
-    if (completed && !completedAt) {
-      completedAt = new Date().toISOString().slice(0, 16);
+    if (!content) {
+      return NextResponse.json(
+        { error: "Debes ingresar las instrucciones o contenido." },
+        { status: 400 },
+      );
     }
 
+    const note = typeof body?.note === "string" ? body.note.trim() || null : null;
+    const createdBy =
+      typeof body?.createdBy === "string" && body.createdBy.trim().length
+        ? body.createdBy.trim()
+        : null;
+
     await updateStudentInstructivo(instructivoId, {
-      examId,
-      dueDate,
-      completed,
-      completedAt,
-      notes,
+      title,
+      content,
+      note,
+      createdBy,
     });
 
     return NextResponse.json({ success: true });

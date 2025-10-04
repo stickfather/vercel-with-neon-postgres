@@ -42,10 +42,6 @@ export async function PUT(
       typeof body?.receivedDate === "string" && body.receivedDate.trim().length
         ? body.receivedDate
         : null;
-    const externalRef =
-      typeof body?.externalRef === "string" && body.externalRef.trim().length
-        ? body.externalRef.trim()
-        : null;
     const note =
       typeof body?.note === "string" && body.note.trim().length
         ? body.note.trim()
@@ -56,7 +52,6 @@ export async function PUT(
       amount,
       isPaid,
       receivedDate,
-      externalRef,
       note,
     });
 
