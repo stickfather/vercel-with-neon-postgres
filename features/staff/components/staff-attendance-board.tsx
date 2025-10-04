@@ -4,8 +4,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActiveStaffAttendance } from "@/features/staff/data/queries";
 
-type StatusState = { type: "error" | "success"; message: string } | null;
-
 type Props = {
   attendances: ActiveStaffAttendance[];
 };
@@ -29,7 +27,10 @@ function formatTime(value: string, formatter: Intl.DateTimeFormat) {
 export function StaffAttendanceBoard({ attendances }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [status, setStatus] = useState<StatusState>(null);
+  const [pendingCheckout, setPendingCheckout] = useState<ActiveStaffAttendance | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
 
   const formatter = useMemo(
     () =>
@@ -42,16 +43,21 @@ export function StaffAttendanceBoard({ attendances }: Props) {
     [],
   );
 
-  const handleCheckout = async (attendance: ActiveStaffAttendance) => {
-    if (
-      !window.confirm(
-        `¿Quieres registrar tu salida, ${attendance.fullName}?`,
-      )
-    ) {
-      return;
-    }
+  const requestCheckout = (attendance: ActiveStaffAttendance) => {
+    setError(null);
+    setPendingCheckout(attendance);
+  };
 
-    setStatus(null);
+  const closeConfirmation = () => {
+    setPendingCheckout(null);
+    setError(null);
+  };
+
+  const confirmCheckout = async () => {
+    if (!pendingCheckout) return;
+
+    const attendance = pendingCheckout;
+    setError(null);
     setLoadingId(attendance.id);
     try {
       const response = await fetch("/api/staff/check-out", {
@@ -68,22 +74,16 @@ export function StaffAttendanceBoard({ attendances }: Props) {
         throw new Error(payload?.error ?? "No se pudo registrar la salida.");
       }
 
-      setStatus({
-        type: "success",
-        message: "¡Salida registrada, gracias por tu apoyo!",
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      router.refresh();
+      const encodedName = encodeURIComponent(attendance.fullName.trim());
+      setPendingCheckout(null);
+      router.push(`/?saludo=1&nombre=${encodedName}`);
     } catch (error) {
       console.error(error);
-      setStatus({
-        type: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "No pudimos cerrar la asistencia. Inténtalo nuevamente.",
-      });
+      setError(
+        error instanceof Error
+          ? error.message
+          : "No pudimos cerrar la asistencia. Inténtalo nuevamente.",
+      );
     } finally {
       setLoadingId(null);
     }
@@ -102,15 +102,9 @@ export function StaffAttendanceBoard({ attendances }: Props) {
 
   return (
     <div className="flex flex-col gap-5">
-      {status && (
-        <div
-          className={`rounded-3xl border px-5 py-3 text-sm font-medium ${
-            status.type === "success"
-              ? "border-brand-teal bg-[#ddf4ef] text-brand-deep"
-              : "border-brand-orange bg-[#ffe8d7] text-brand-ink"
-          }`}
-        >
-          {status.message}
+      {error && !pendingCheckout && (
+        <div className="rounded-3xl border border-brand-orange bg-[#ffe8d7] px-5 py-3 text-sm font-medium text-brand-ink">
+          {error}
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -128,7 +122,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
             <button
               key={attendance.id}
               type="button"
-              onClick={() => handleCheckout(attendance)}
+              onClick={() => requestCheckout(attendance)}
               disabled={loadingId === attendance.id}
               className={`group flex min-h-[82px] flex-col items-center justify-center gap-2 rounded-[18px] border-[3px] px-4 py-5 text-center shadow-[0_12px_28px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_20px_36px_rgba(15,23,42,0.18)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-65 ${wiggle}`}
               style={{
@@ -148,6 +142,47 @@ export function StaffAttendanceBoard({ attendances }: Props) {
           );
         })}
       </div>
+      {pendingCheckout && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.4)] px-4 py-6 backdrop-blur-sm">
+          <div className="max-w-md rounded-[32px] border border-white/80 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
+                  Confirmar salida
+                </span>
+                <p className="text-base font-semibold text-brand-deep">
+                  ¿Registrar la salida de {pendingCheckout.fullName.trim()}?
+                </p>
+                <p className="text-sm text-brand-ink-muted">
+                  Una vez confirmada, la asistencia se cerrará y deberás registrar un nuevo ingreso la próxima vez que visites la sede.
+                </p>
+              </div>
+              {error && (
+                <div className="rounded-2xl border border-brand-orange bg-white/80 px-4 py-3 text-sm font-medium text-brand-ink">
+                  {error}
+                </div>
+              )}
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeConfirmation}
+                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmCheckout}
+                  disabled={loadingId === pendingCheckout.id}
+                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                >
+                  {loadingId === pendingCheckout.id ? "Registrando…" : "Sí, registrar salida"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

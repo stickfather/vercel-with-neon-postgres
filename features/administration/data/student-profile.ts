@@ -737,10 +737,55 @@ export async function deleteStudentInstructivo(
   `;
 }
 
+function normalizeNumber(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeInteger(value: unknown): number | null {
+  const parsed = normalizeNumber(value);
+  if (parsed == null) return null;
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function normalizeString(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return String(value);
+  }
+  return null;
+}
+
 export type StudentProgressStats = {
   averageSessionLengthMinutes: number | null;
   averageDaysPerWeek: number | null;
   averageProgressPerWeek: number | null;
+  lessonsPerWeek: number | null;
+};
+
+export type StudentAttendanceStats = {
+  totalMinutes: number | null;
+  totalHours: number | null;
+  averageSessionMinutes: number | null;
+  averageSessionsPerDay: number | null;
+  averageMinutesPerDay: number | null;
+  averageMinutesPerDayExcludingSundays: number | null;
+  lessonChanges: number | null;
+  lessonsPerWeek: number | null;
 };
 
 export type MinutesByDayEntry = {
@@ -755,8 +800,15 @@ export type CumulativeHoursEntry = {
 
 export type LessonTimelineEntry = {
   date: string;
-  lesson: string | null;
-  level: string | null;
+  lessonId: string | null;
+  lessonLabel: string | null;
+};
+
+export type StudentProgressEvent = {
+  occurredAt: string;
+  description: string | null;
+  fromLessonLabel: string | null;
+  toLessonLabel: string | null;
 };
 
 export async function getStudentProgressStats(
@@ -778,6 +830,7 @@ export async function getStudentProgressStats(
       averageSessionLengthMinutes: null,
       averageDaysPerWeek: null,
       averageProgressPerWeek: null,
+      lessonsPerWeek: null,
     };
   }
 
@@ -785,18 +838,13 @@ export async function getStudentProgressStats(
   const avgSession = row.average_session_length_minutes ?? row.avg_session_length_minutes ?? row.avg_session_length ?? null;
   const avgDays = row.average_days_per_week ?? row.avg_days_per_week ?? null;
   const avgProgress = row.average_rate_of_progress_per_week ?? row.avg_progress_per_week ?? row.average_progress_per_week ?? null;
-
-  const normalizeNumber = (value: unknown): number | null => {
-    if (value == null) return null;
-    if (typeof value === "number") return value;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
+  const lessonsPerWeek = row.lessons_per_week ?? row.avg_lessons_per_week ?? row.lessons_per_week_30d ?? null;
 
   return {
     averageSessionLengthMinutes: normalizeNumber(avgSession),
     averageDaysPerWeek: normalizeNumber(avgDays),
     averageProgressPerWeek: normalizeNumber(avgProgress),
+    lessonsPerWeek: normalizeNumber(lessonsPerWeek),
   };
 }
 
@@ -830,13 +878,12 @@ export async function getStudentCumulativeHours(
   studentId: number,
   startDate: string,
   endDate: string,
-  excludeSundays: boolean,
 ): Promise<CumulativeHoursEntry[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_cumulative_hours(${studentId}, ${startDate}, ${endDate}, ${excludeSundays})
+    FROM public.get_student_cumulative_hours(${studentId}, ${startDate}, ${endDate})
   `);
 
   return rows
@@ -856,20 +903,112 @@ export async function getStudentLessonTimeline(
   studentId: number,
   startDate: string,
   endDate: string,
-  excludeSundays: boolean,
 ): Promise<LessonTimelineEntry[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
-    FROM public.get_student_daily_lesson(${studentId}, ${startDate}, ${endDate}, ${excludeSundays})
+    FROM public.get_student_daily_lesson(${studentId}, ${startDate}, ${endDate})
   `);
 
   return rows
     .map((row) => ({
       date: normalizeFieldValue(row.date ?? row.day ?? row.session_date, "date") ?? "",
-      lesson: (row.lesson as string | null) ?? null,
-      level: (row.level as string | null) ?? null,
+      lessonId: normalizeString(row.lesson_id ?? row.lessonid ?? row.lesson ?? null),
+      lessonLabel:
+        normalizeString(row.lesson_label ?? row.lesson_name ?? row.lesson ?? null) ??
+        normalizeString(row.level ?? row.lesson_level ?? null),
     }))
     .filter((entry) => entry.date.length > 0);
+}
+
+export async function getStudentAttendanceStats(
+  studentId: number,
+  startDate: string,
+  endDate: string,
+): Promise<StudentAttendanceStats> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.get_student_attendance_stats(${studentId}, ${startDate}, ${endDate})
+    LIMIT 1
+  `);
+
+  if (!rows.length) {
+    return {
+      totalMinutes: null,
+      totalHours: null,
+      averageSessionMinutes: null,
+      averageSessionsPerDay: null,
+      averageMinutesPerDay: null,
+      averageMinutesPerDayExcludingSundays: null,
+      lessonChanges: null,
+      lessonsPerWeek: null,
+    };
+  }
+
+  const row = rows[0];
+
+  const totalMinutes = row.total_minutes ?? row.total_mins ?? row.total_minutes_in_range ?? null;
+  const totalHours = row.total_hours ?? row.total_hours_in_range ?? null;
+  const avgSession =
+    row.avg_session_minutes ??
+    row.average_session_minutes ??
+    row.avg_session_length_minutes ??
+    row.avg_session_length ??
+    null;
+  const avgSessionsPerDay = row.avg_sessions_per_day ?? row.average_sessions_per_day ?? null;
+  const avgMinutesPerDay = row.avg_minutes_per_day ?? row.average_minutes_per_day ?? null;
+  const avgMinutesPerDayExclSun =
+    row.avg_minutes_per_day_excl_sun ??
+    row.avg_minutes_per_day_without_sundays ??
+    row.average_minutes_per_day_excl_sundays ??
+    null;
+  const lessonChanges = row.lesson_changes ?? row.lesson_change_count ?? row.total_lesson_changes ?? null;
+  const lessonsPerWeek =
+    row.lessons_per_week_30d ??
+    row.lessons_per_week ??
+    row.avg_lessons_per_week ??
+    row.lessons_per_week_recent ??
+    null;
+
+  return {
+    totalMinutes: normalizeNumber(totalMinutes),
+    totalHours: normalizeNumber(totalHours),
+    averageSessionMinutes: normalizeNumber(avgSession),
+    averageSessionsPerDay: normalizeNumber(avgSessionsPerDay),
+    averageMinutesPerDay: normalizeNumber(avgMinutesPerDay),
+    averageMinutesPerDayExcludingSundays: normalizeNumber(avgMinutesPerDayExclSun),
+    lessonChanges: normalizeInteger(lessonChanges),
+    lessonsPerWeek: normalizeNumber(lessonsPerWeek),
+  };
+}
+
+export async function getStudentProgressEvents(
+  studentId: number,
+): Promise<StudentProgressEvent[]> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.get_student_progress_events(${studentId})
+  `);
+
+  return rows
+    .map((row) => {
+      const occurredAt =
+        normalizeFieldValue(row.event_time ?? row.occurred_at ?? row.recorded_at, "datetime") ?? "";
+
+      return {
+        occurredAt,
+        description:
+          normalizeString(row.description ?? row.event_label ?? row.event ?? row.change_type ?? null),
+        fromLessonLabel:
+          normalizeString(row.from_lesson ?? row.previous_lesson ?? row.previous_lesson_label ?? null),
+        toLessonLabel:
+          normalizeString(row.to_lesson ?? row.next_lesson ?? row.lesson_label ?? row.new_lesson_label ?? null),
+      };
+    })
+    .filter((entry) => entry.occurredAt.length > 0);
 }

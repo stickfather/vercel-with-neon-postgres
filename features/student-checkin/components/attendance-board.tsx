@@ -16,9 +16,6 @@ export function AttendanceBoard({ attendances }: Props) {
   const [pendingCheckout, setPendingCheckout] = useState<ActiveAttendance | null>(
     null,
   );
-  const [checkoutSuccess, setCheckoutSuccess] = useState<{
-    name: string;
-  } | null>(null);
 
   const formatter = useMemo(() => {
     return new Intl.DateTimeFormat("es-EC", {
@@ -68,11 +65,9 @@ export function AttendanceBoard({ attendances }: Props) {
         throw new Error(payload?.error ?? "No se pudo registrar la salida.");
       }
 
-      setCheckoutSuccess({
-        name: attendance.fullName.trim(),
-      });
+      const encodedName = encodeURIComponent(attendance.fullName.trim());
       setPendingCheckout(null);
-      router.refresh();
+      router.push(`/?saludo=1&nombre=${encodedName}`);
     } catch (err) {
       console.error(err);
       setError(
@@ -87,10 +82,7 @@ export function AttendanceBoard({ attendances }: Props) {
 
   const closeConfirmation = () => {
     setPendingCheckout(null);
-  };
-
-  const closeSuccessMessage = () => {
-    setCheckoutSuccess(null);
+    setError(null);
   };
 
   if (!attendances.length) {
@@ -136,7 +128,7 @@ export function AttendanceBoard({ attendances }: Props) {
                   {levelAttendances.length} en clase
                 </span>
               </header>
-              <div className="grid max-h-[70vh] grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-2 overflow-y-auto pr-1 sm:[grid-template-columns:repeat(auto-fill,minmax(96px,1fr))] lg:[grid-template-columns:repeat(auto-fill,minmax(104px,1fr))]">
+              <div className="grid max-h-[70vh] grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-2 overflow-y-auto pr-1 sm:[grid-template-columns:repeat(auto-fill,minmax(72px,1fr))] lg:[grid-template-columns:repeat(auto-fill,minmax(80px,1fr))]">
                 {levelAttendances.map((attendance) => {
                   const accentForStudent = getLevelAccent(attendance.level);
                   const checkInDate = attendance.checkInTime
@@ -157,7 +149,7 @@ export function AttendanceBoard({ attendances }: Props) {
                       type="button"
                       onClick={() => requestCheckout(attendance)}
                       disabled={isLoading}
-                      className="group relative flex min-h-[52px] min-w-[88px] flex-col items-center justify-center rounded-2xl border px-2 py-2 text-center text-[11px] font-semibold leading-tight shadow-[0_10px_18px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                      className="group relative flex min-h-[48px] min-w-[64px] flex-col items-center justify-center rounded-[18px] border px-2 py-1.5 text-center text-[10px] font-semibold leading-tight shadow-[0_8px_16px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
                       style={{
                         backgroundColor: accentForStudent.base,
                         borderColor: accentForStudent.border,
@@ -166,7 +158,7 @@ export function AttendanceBoard({ attendances }: Props) {
                       title={bubbleLabel}
                       aria-label={bubbleLabel}
                     >
-                      <span className="line-clamp-3 w-full break-words text-[11px] font-semibold tracking-tight">
+                      <span className="line-clamp-4 w-full break-words text-[10px] font-semibold tracking-tight">
                         {displayName}
                       </span>
                       {isLoading && (
@@ -225,27 +217,6 @@ export function AttendanceBoard({ attendances }: Props) {
         </div>
       )}
 
-      {checkoutSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
-          <div className="max-w-md rounded-[32px] border border-white/70 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
-            <div className="flex flex-col gap-4 text-center">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-teal text-white shadow-md">
-                👋
-              </span>
-              <p className="text-lg font-semibold text-brand-deep">
-                ¡Hasta pronto, {checkoutSuccess.name || "estudiante"}! Gracias por compartir esta sesión con nosotros.
-              </p>
-              <button
-                type="button"
-                onClick={closeSuccessMessage}
-                className="inline-flex items-center justify-center self-center rounded-full border border-transparent bg-brand-deep px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#322d54] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
