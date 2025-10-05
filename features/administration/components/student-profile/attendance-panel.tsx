@@ -330,64 +330,6 @@ export function AttendancePanel({
     year: "numeric",
   })} al ${formatDateInGuayaquil(endDate, { day: "2-digit", month: "short", year: "numeric" })}`;
 
-  const studentAvgSessionMinutes =
-    attendanceStats.averageSessionMinutes ?? stats.averageSessionLengthMinutes ?? null;
-  const globalAvgSessionMinutes = stats.globalAverageSessionLengthMinutes ?? null;
-  const studentAvgSessionHours =
-    studentAvgSessionMinutes != null ? studentAvgSessionMinutes / 60 : null;
-  const globalAvgSessionHours =
-    globalAvgSessionMinutes != null ? globalAvgSessionMinutes / 60 : null;
-
-  const studentLessonsPerWeek = attendanceStats.lessonsPerWeek ?? stats.lessonsPerWeek ?? null;
-  const globalLessonsPerWeek = stats.globalLessonsPerWeek ?? null;
-
-  const sessionTimeDeltaPct =
-    studentAvgSessionHours != null &&
-    globalAvgSessionHours != null &&
-    globalAvgSessionHours > 0
-      ? (studentAvgSessionHours / globalAvgSessionHours - 1) * 100
-      : null;
-
-  const lessonsPerWeekDeltaPct =
-    studentLessonsPerWeek != null &&
-    globalLessonsPerWeek != null &&
-    globalLessonsPerWeek > 0
-      ? (studentLessonsPerWeek / globalLessonsPerWeek - 1) * 100
-      : null;
-
-  const relativeMetrics = [
-    {
-      key: "sessionTime",
-      label: "Tiempo por sesión vs promedio",
-      studentValue: studentAvgSessionHours,
-      globalValue: globalAvgSessionHours,
-      delta: sessionTimeDeltaPct,
-      unit: "h",
-    },
-    {
-      key: "lessonsPerWeek",
-      label: "Lecciones/semana vs promedio",
-      studentValue: studentLessonsPerWeek,
-      globalValue: globalLessonsPerWeek,
-      delta: lessonsPerWeekDeltaPct,
-      unit: "",
-    },
-  ].map((metric) => ({
-    ...metric,
-    formattedStudent:
-      metric.studentValue == null || !Number.isFinite(metric.studentValue)
-        ? "—"
-        : `${formatNumber(metric.studentValue, 2)}${metric.unit}`,
-    formattedGlobal:
-      metric.globalValue == null || !Number.isFinite(metric.globalValue)
-        ? "—"
-        : `${formatNumber(metric.globalValue, 2)}${metric.unit}`,
-    formattedDelta:
-      metric.delta == null || !Number.isFinite(metric.delta)
-        ? "—"
-        : `${metric.delta >= 0 ? "+" : ""}${formatNumber(metric.delta, 2)}%`,
-  }));
-
   return (
     <section className="flex flex-col gap-5 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <header className="flex flex-col gap-1 text-left">
@@ -429,33 +371,6 @@ export function AttendancePanel({
           Cada punto representa la lección alcanzada en la fecha indicada desde el inicio de contrato.
         </p>
       </div>
-
-      <div className="grid gap-3 rounded-2xl border border-white/60 bg-white/80 p-4">
-        {relativeMetrics.map((metric) => (
-          <div key={metric.key} className="flex flex-col gap-1 text-[11px] leading-tight text-brand-deep">
-            <span className="font-semibold uppercase tracking-wide text-brand-ink-muted">{metric.label}</span>
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-semibold text-brand-deep">
-                Estudiante: <span className="text-brand-deep/80">{metric.formattedStudent}</span>
-              </span>
-              <span className="font-semibold text-brand-ink-muted">
-                Promedio global: <span className="text-brand-ink-muted/70">{metric.formattedGlobal}</span>
-              </span>
-              <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                  metric.delta == null || !Number.isFinite(metric.delta)
-                    ? "bg-slate-100 text-slate-600"
-                    : metric.delta >= 0
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-rose-100 text-rose-700"
-                }`}
-              >
-                {metric.formattedDelta}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -483,14 +398,6 @@ export function AttendancePanelSkeleton() {
       <div className="flex flex-col gap-3">
         <span className="h-3 w-44 rounded-full bg-brand-deep-soft/40" />
         <span className="h-48 w-full rounded-3xl bg-brand-deep-soft/30" />
-      </div>
-      <div className="grid gap-3 rounded-2xl border border-white/60 bg-white/80 p-4">
-        {Array.from({ length: 2 }).map((_, index) => (
-          <div key={index} className="flex flex-col gap-2">
-            <span className="h-3 w-52 rounded-full bg-brand-deep-soft/40" />
-            <span className="h-3 w-64 rounded-full bg-brand-deep-soft/30" />
-          </div>
-        ))}
       </div>
     </section>
   );

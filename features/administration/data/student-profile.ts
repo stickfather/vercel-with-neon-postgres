@@ -961,8 +961,6 @@ export type StudentProgressStats = {
   averageDaysPerWeek: number | null;
   averageProgressPerWeek: number | null;
   lessonsPerWeek: number | null;
-  globalAverageSessionLengthMinutes: number | null;
-  globalLessonsPerWeek: number | null;
 };
 
 export type StudentAttendanceStats = {
@@ -1020,8 +1018,6 @@ export async function getStudentProgressStats(
       averageDaysPerWeek: null,
       averageProgressPerWeek: null,
       lessonsPerWeek: null,
-      globalAverageSessionLengthMinutes: null,
-      globalLessonsPerWeek: null,
     };
   }
 
@@ -1030,25 +1026,11 @@ export async function getStudentProgressStats(
   const avgDays = row.average_days_per_week ?? row.avg_days_per_week ?? null;
   const avgProgress = row.average_rate_of_progress_per_week ?? row.avg_progress_per_week ?? row.average_progress_per_week ?? null;
   const lessonsPerWeek = row.lessons_per_week ?? row.avg_lessons_per_week ?? row.lessons_per_week_30d ?? null;
-  const globalAvgSession =
-    row.global_average_session_length_minutes ??
-    row.global_avg_session_length_minutes ??
-    row.global_avg_session_minutes ??
-    row.global_average_session_minutes ??
-    null;
-  const globalLessonsPerWeek =
-    row.global_lessons_per_week ??
-    row.global_avg_lessons_per_week ??
-    row.global_lessons_per_week_30d ??
-    null;
-
   return {
     averageSessionLengthMinutes: normalizeNumber(avgSession),
     averageDaysPerWeek: normalizeNumber(avgDays),
     averageProgressPerWeek: normalizeNumber(avgProgress),
     lessonsPerWeek: normalizeNumber(lessonsPerWeek),
-    globalAverageSessionLengthMinutes: normalizeNumber(globalAvgSession),
-    globalLessonsPerWeek: normalizeNumber(globalLessonsPerWeek),
   };
 }
 

@@ -277,6 +277,14 @@ export async function fetchPayrollMatrix({
 }): Promise<PayrollMatrixResponse> {
   const sql = getSqlClient();
 
+  const viewColumns = await fetchTableColumns(sql, "public", "staff_day_matrix_v");
+  const staffNameColumn = findColumn(viewColumns, [
+    "staff_name",
+    "staff_full_name",
+    "full_name",
+    "name",
+  ]);
+
   const [rawYear, rawMonth] = month.split("-");
   const year = Number(rawYear);
   const monthIndex = Number(rawMonth) - 1;
@@ -292,19 +300,35 @@ export async function fetchPayrollMatrix({
   const monthStartIso = toIsoDateString(monthStart);
   const nextMonthIso = toIsoDateString(nextMonthStart);
 
-  const rows = normalizeRows<SqlRow>(await sql`
+  const selectColumns = [
+    "m.staff_id AS staff_id",
+    staffNameColumn
+      ? `m.${quoteIdentifier(staffNameColumn)} AS staff_name`
+      : null,
+    "m.work_date AS work_date",
+    "m.total_hours AS total_hours",
+    "m.approved AS approved",
+    "m.approved_hours AS approved_hours",
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(",\n      ");
+
+  const query = `
     SELECT
-      m.staff_id AS staff_id,
-      m.staff_name AS staff_name,
-      m.work_date AS work_date,
-      m.total_hours AS total_hours,
-      m.approved AS approved,
-      m.approved_hours AS approved_hours
+      ${selectColumns}
     FROM public.staff_day_matrix_v m
-    WHERE m.work_date >= ${monthStartIso}::date
-      AND m.work_date < ${nextMonthIso}::date
+    WHERE m.work_date >= $1::date
+      AND m.work_date < $2::date
     ORDER BY m.staff_id, m.work_date
-  `);
+  `;
+
+  const unsafeSql = sql as unknown as {
+    unsafe: (text: string, params?: unknown[]) => Promise<unknown>;
+  };
+
+  const rows = normalizeRows<SqlRow>(
+    await unsafeSql.unsafe(query, [monthStartIso, nextMonthIso]),
+  );
 
   const days = enumerateDays(monthStart, monthEnd);
 
