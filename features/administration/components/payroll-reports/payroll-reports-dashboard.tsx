@@ -115,17 +115,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [],
   );
 
-  const moneyFormatter = useMemo(
-    () =>
-      new Intl.NumberFormat("es-EC", {
-        style: "currency",
-        currency: "USD",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }),
-    [],
-  );
-
   const dayHeaderFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat("es-EC", {
@@ -427,17 +416,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     return map;
   }, [monthStatusRows]);
 
-  const monthSummary = useMemo(() => {
-    const approvedDays = monthStatusRows.reduce((sum, row) => sum + row.approvedDays, 0);
-    const approvedHours = monthStatusRows.reduce((sum, row) => sum + row.approvedHours, 0);
-    const totalPaid = monthStatusRows.reduce((sum, row) => sum + row.amountPaid, 0);
-    return {
-      approvedDays,
-      approvedHours,
-      totalPaid,
-    };
-  }, [monthStatusRows]);
-
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
   const compactCellText = effectiveCellWidth <= 28;
@@ -625,39 +603,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               </div>
             </section>
 
-            <section className="grid gap-4 rounded-[28px] border border-white/70 bg-white/92 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)] backdrop-blur md:grid-cols-3">
-              <div className="flex flex-col gap-1 rounded-[24px] border border-brand-ink-muted/10 bg-brand-teal-soft/30 px-5 py-4 text-brand-deep">
-                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                  Días aprobados
-                </span>
-                <span className="text-3xl font-black">{monthSummary.approvedDays}</span>
-                <span className="text-xs text-brand-ink-muted">
-                  Registros confirmados durante el mes seleccionado.
-                </span>
-              </div>
-              <div className="flex flex-col gap-1 rounded-[24px] border border-brand-ink-muted/10 bg-brand-deep-soft/40 px-5 py-4 text-brand-deep">
-                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                  Horas aprobadas
-                </span>
-                <span className="text-3xl font-black">
-                  {hoursFormatter.format(monthSummary.approvedHours)} h
-                </span>
-                <span className="text-xs text-brand-ink-muted">
-                  Total acumulado según las aprobaciones registradas.
-                </span>
-              </div>
-              <div className="flex flex-col gap-1 rounded-[24px] border border-brand-ink-muted/10 bg-brand-orange/10 px-5 py-4 text-brand-deep">
-                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                  Pagos reportados
-                </span>
-                <span className="text-3xl font-black">
-                  {moneyFormatter.format(monthSummary.totalPaid)}
-                </span>
-                <span className="text-xs text-brand-ink-muted">
-                  Suma de los pagos registrados en el estado mensual.
-                </span>
-              </div>
-            </section>
           </div>
         )}
       </main>

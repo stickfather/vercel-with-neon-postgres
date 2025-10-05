@@ -53,6 +53,37 @@ function toIsoDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeDateLike(value: unknown): string | null {
+  if (!value && value !== 0) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : toIsoDateString(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) {
+      return null;
+    }
+
+    const directMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (directMatch) {
+      return directMatch[1];
+    }
+
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      return toIsoDateString(parsed);
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
 function enumerateDays(from: Date, to: Date): string[] {
   const days: string[] = [];
   const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
@@ -344,7 +375,7 @@ export async function fetchPayrollMatrix({
   for (const row of rows) {
     const staffId = Number(row.staff_id);
     if (!Number.isFinite(staffId)) continue;
-    const workDate = coerceString(row.work_date);
+    const workDate = normalizeDateLike(row.work_date);
     if (!workDate) continue;
 
     if (!grouped.has(staffId)) {
