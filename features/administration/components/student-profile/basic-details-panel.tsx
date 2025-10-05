@@ -48,6 +48,17 @@ const STATUS_STYLE_MAP: Record<string, { label: string; className: string }> = {
 
 const DEFAULT_STATUS_CLASS = "bg-brand-deep-soft text-brand-deep";
 
+const FINAL_ROW_FIELD_KEYS = new Set<
+  StudentBasicDetailFieldConfig["key"]
+>([
+  "hasSpecialNeeds",
+  "isOnline",
+  "lastLessonId",
+  "lastSeenAt",
+  "updatedAt",
+  "createdAt",
+]);
+
 type StudentFlagKey =
   | "isNewStudent"
   | "isExamApproaching"
@@ -351,7 +362,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           {error}
         </p>
       )}
-          {statusMessage && (
+      {statusMessage && (
         <p className="rounded-3xl border border-brand-teal bg-brand-teal-soft/60 px-4 py-3 text-sm font-medium text-brand-teal">
           {statusMessage}
         </p>
@@ -393,23 +404,27 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           {orderedFields.map((field) => {
             const value = (formState as Record<string, unknown>)[field.key] ?? null;
             let gridSpanClass = "col-span-1";
             if (field.type === "textarea") {
-              gridSpanClass += " md:col-span-2 xl:col-span-4";
+              gridSpanClass += " md:col-span-2 xl:col-span-6";
             } else if (!field.editable || field.type === "datetime") {
-              gridSpanClass += " md:col-span-2 xl:col-span-2";
+              gridSpanClass += " md:col-span-2 xl:col-span-3";
             } else {
-              gridSpanClass += " md:col-span-1 xl:col-span-1";
+              gridSpanClass += " md:col-span-1 xl:col-span-2";
+            }
+
+            if (FINAL_ROW_FIELD_KEYS.has(field.key)) {
+              gridSpanClass = "col-span-1 md:col-span-1 xl:col-span-1";
             }
 
             if (!field.editable) {
               return (
                 <div
                   key={field.key}
-                  className={`flex flex-col gap-1 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
+                  className={`flex h-full flex-col gap-1.5 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
                 >
                   <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                     {field.label}
@@ -427,7 +442,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
                 <label
                   key={field.key}
                   htmlFor={`basic-${field.key}`}
-                  className={`flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
+                  className={`flex h-full flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
                 >
                   <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                     {field.label}
@@ -454,7 +469,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
                 <label
                   key={field.key}
                   htmlFor={`basic-${field.key}`}
-                  className={`flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
+                  className={`flex h-full flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
                 >
                   <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                     {field.label}
@@ -476,7 +491,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               <label
                 key={field.key}
                 htmlFor={`basic-${field.key}`}
-                className={`flex flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
+                className={`flex h-full flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner ${gridSpanClass}`}
               >
                 <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                   {field.label}
@@ -524,7 +539,7 @@ export function BasicDetailsPanelSkeleton() {
           ))}
         </div>
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         {Array.from({ length: 8 }).map((_, index) => (
           <div key={index} className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
             <span className="h-3 w-20 rounded-full bg-brand-deep-soft/50" />

@@ -435,7 +435,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
         >
           <form className="flex flex-col gap-4" onSubmit={handleCreate}>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Due date
+              Fecha límite
               <input
                 type="date"
                 value={addForm.dueDate}
@@ -447,7 +447,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Amount
+              Monto
               <input
                 type="number"
                 min="0"
@@ -461,7 +461,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Note (opcional)
+              Nota (opcional)
               <textarea
                 value={addForm.note}
                 onChange={(event) =>

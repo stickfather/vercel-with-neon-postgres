@@ -365,9 +365,9 @@ export async function updateStudentBasicDetails(
     }
 
     const cast = LEVEL_CODE_FIELDS.has(key) ? "::level_code" : "";
-    return `s.${columnName} = $${index + 1}${cast}`;
+    return `${columnName} = $${index + 1}${cast}`;
   });
-  setFragments.push("s.updated_at = NOW()");
+  setFragments.push("updated_at = NOW()");
 
   const values = sanitizedEntries.map(([, value]) => (value === undefined ? null : value));
   const query = `

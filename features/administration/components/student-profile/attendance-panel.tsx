@@ -303,16 +303,16 @@ export function AttendancePanel({
         )}
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {summaryMetrics.map((metric) => (
           <div
             key={metric.key}
-            className="flex flex-col gap-2 rounded-[24px] bg-white/95 p-5 shadow-inner"
+            className="flex h-full flex-col justify-between gap-3 rounded-[24px] border border-white/70 bg-white/95 p-5 text-left shadow-inner"
           >
             <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
               {metric.label}
             </span>
-            <span className="text-3xl font-black text-brand-deep" title={metric.tooltip}>
+            <span className="text-3xl font-black tracking-tight text-brand-deep" title={metric.tooltip}>
               {metric.formatted}
             </span>
           </div>
@@ -341,9 +341,12 @@ export function AttendancePanelSkeleton() {
         <span className="h-3 w-56 rounded-full bg-brand-deep-soft/50" />
         <span className="h-3 w-60 rounded-full bg-brand-deep-soft/40" />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {Array.from({ length: 5 }).map((_, index) => (
-          <div key={index} className="flex flex-col gap-2 rounded-[24px] bg-white/95 p-5 shadow-inner">
+          <div
+            key={index}
+            className="flex h-full flex-col gap-3 rounded-[24px] border border-white/70 bg-white/95 p-5 shadow-inner"
+          >
             <span className="h-3 w-32 rounded-full bg-brand-deep-soft/40" />
             <span className="h-6 w-20 rounded-full bg-brand-deep-soft/30" />
           </div>

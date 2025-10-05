@@ -424,7 +424,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
         >
           <form className="flex flex-col gap-4" onSubmit={handleCreate}>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Exam date/time
+              Fecha y hora del examen
               <input
                 type="datetime-local"
                 value={addForm.scheduledAt}
@@ -436,7 +436,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Exam type
+              Tipo de examen
               <input
                 type="text"
                 value={addForm.examType}
@@ -449,7 +449,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Grade (opcional)
+              Calificación (opcional)
               <input
                 type="number"
                 step="0.01"
@@ -461,7 +461,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Note (opcional)
+              Nota (opcional)
               <textarea
                 value={addForm.note}
                 onChange={(event) =>
@@ -514,7 +514,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
               </div>
             </div>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Grade (opcional)
+              Calificación (opcional)
               <input
                 type="number"
                 step="0.01"
