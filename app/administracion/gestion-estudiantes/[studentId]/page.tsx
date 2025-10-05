@@ -102,26 +102,58 @@ const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
 
 async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfileData> {
   noStore();
+
+  let basicDetails: Awaited<ReturnType<typeof getStudentBasicDetails>>;
   try {
-    const [basicDetails, paymentSchedule, notes, exams, instructivos] = await Promise.all([
-      getStudentBasicDetails(studentId),
+    basicDetails = await getStudentBasicDetails(studentId);
+  } catch (error) {
+    console.error("Failed to load student basic details", error);
+    throw error;
+  }
+
+  if (!basicDetails) {
+    return PRIMARY_DATA_FALLBACK;
+  }
+
+  const [paymentScheduleResult, notesResult, examsResult, instructivosResult] =
+    await Promise.allSettled([
       listStudentPaymentSchedule(studentId),
       listStudentNotes(studentId),
       listStudentExams(studentId),
       listStudentInstructivos(studentId),
     ]);
 
-    return {
-      basicDetails,
-      paymentSchedule,
-      notes,
-      exams,
-      instructivos,
-    };
-  } catch (error) {
-    console.error("Failed to load student profile data", error);
-    return PRIMARY_DATA_FALLBACK;
-  }
+  const paymentSchedule =
+    paymentScheduleResult.status === "fulfilled"
+      ? paymentScheduleResult.value
+      : (console.error("Failed to load payment schedule", paymentScheduleResult.reason),
+        PRIMARY_DATA_FALLBACK.paymentSchedule);
+
+  const notes =
+    notesResult.status === "fulfilled"
+      ? notesResult.value
+      : (console.error("Failed to load student notes", notesResult.reason),
+        PRIMARY_DATA_FALLBACK.notes);
+
+  const exams =
+    examsResult.status === "fulfilled"
+      ? examsResult.value
+      : (console.error("Failed to load student exams", examsResult.reason),
+        PRIMARY_DATA_FALLBACK.exams);
+
+  const instructivos =
+    instructivosResult.status === "fulfilled"
+      ? instructivosResult.value
+      : (console.error("Failed to load student instructivos", instructivosResult.reason),
+        PRIMARY_DATA_FALLBACK.instructivos);
+
+  return {
+    basicDetails,
+    paymentSchedule,
+    notes,
+    exams,
+    instructivos,
+  };
 }
 
 async function loadAttendanceData(
