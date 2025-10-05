@@ -1,4 +1,5 @@
 import { unstable_noStore as noStore } from "next/cache";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -288,6 +289,12 @@ export default async function StudentProfilePage({
   const endDate = formatDateISO(today);
 
   const primaryData = await loadPrimaryProfileData(studentId);
+  
+  // If student doesn't exist, show not-found page
+  if (!primaryData.basicDetails) {
+    notFound();
+  }
+  
   const studentName = primaryData.basicDetails?.full_name?.trim() || "Nombre no disponible";
 
   return (
