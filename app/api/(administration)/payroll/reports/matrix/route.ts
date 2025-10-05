@@ -3,18 +3,17 @@ import { fetchPayrollMatrix } from "@/features/administration/data/payroll-repor
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const from = searchParams.get("from");
-  const to = searchParams.get("to");
+  const month = searchParams.get("month");
 
-  if (!from || !to) {
+  if (!month) {
     return NextResponse.json(
-      { error: "Debes indicar las fechas 'from' y 'to'." },
+      { error: "Debes indicar el parámetro 'month' en formato 'YYYY-MM'." },
       { status: 400 },
     );
   }
 
   try {
-    const data = await fetchPayrollMatrix({ from, to });
+    const data = await fetchPayrollMatrix({ month });
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error al obtener la matriz de nómina", error);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DaySession,
   MatrixCell,
@@ -24,8 +24,15 @@ type SelectedCell = {
   staffName: string;
   workDate: string;
   hours: number;
-  status: MatrixCell["status"];
+  approved: MatrixCell["approved"];
 };
+
+const STAFF_COLUMN_WIDTH = 220;
+const PAID_COLUMN_WIDTH = 88;
+const PAID_DATE_COLUMN_WIDTH = 160;
+const TRAILING_COLUMNS_WIDTH = PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
+const MIN_CELL_WIDTH = 24;
+const GRID_PADDING = 32;
 
 function getMonthRange(month: string): { from: string; to: string } {
   const [yearString, monthString] = month.split("-");
@@ -96,6 +103,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  const matrixContainerRef = useRef<HTMLDivElement | null>(null);
+  const [cellWidth, setCellWidth] = useState<number>(48);
+
   const hoursFormatter = useMemo(
     () =>
       new Intl.NumberFormat("es-EC", {
@@ -144,6 +154,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [],
   );
 
+  const paidDateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("es-EC", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+      }),
+    [],
+  );
+
   const { from, to } = useMemo(() => getMonthRange(selectedMonth), [selectedMonth]);
 
   const refreshData = useCallback(async () => {
@@ -152,7 +172,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     try {
       const [matrixResponse, monthStatusResponse] = await Promise.all([
         fetch(
-          `/api/payroll/reports/matrix?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+          `/api/payroll/reports/matrix?month=${encodeURIComponent(selectedMonth)}`,
         ),
         fetch(
           `/api/payroll/reports/month-status?month=${encodeURIComponent(selectedMonth)}`,
@@ -184,7 +204,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [from, to, selectedMonth]);
+  }, [selectedMonth]);
 
   useEffect(() => {
     void refreshData();
@@ -197,7 +217,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         staffName: row.staffName ?? `Personal #${row.staffId}`,
         workDate: cell.date,
         hours: cell.hours,
-        status: cell.status,
+        approved: cell.approved,
       });
       setSessionsLoading(true);
       setSessionsError(null);
@@ -281,6 +301,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [sessionEdits],
   );
 
+  const recalculateCellWidth = useCallback((containerWidth: number, daysCount: number) => {
+    if (!daysCount) return;
+    const available =
+      containerWidth - STAFF_COLUMN_WIDTH - TRAILING_COLUMNS_WIDTH - GRID_PADDING;
+    const computed = available > 0 ? Math.floor(available / daysCount) : MIN_CELL_WIDTH;
+    setCellWidth(Math.max(MIN_CELL_WIDTH, computed));
+  }, []);
+
   const handleApprove = useCallback(async () => {
     if (!selectedCell) return;
     setActionLoading(true);
@@ -361,6 +389,44 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     }
   }, [closeModal, editableSessions, hasOverrides, refreshData, selectedCell]);
 
+  useEffect(() => {
+    const element = matrixContainerRef.current;
+    if (!element) return;
+
+    const daysCount = matrixData?.days.length ?? 0;
+    if (daysCount > 0) {
+      recalculateCellWidth(element.getBoundingClientRect().width, daysCount);
+    }
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        if (!width) continue;
+        const days = matrixData?.days.length ?? 0;
+        if (!days) continue;
+        recalculateCellWidth(width, days);
+      }
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [matrixData?.days.length, recalculateCellWidth]);
+
+  const monthStatusByStaff = useMemo(() => {
+    const map = new Map<number, PayrollMonthStatusRow>();
+    for (const row of monthStatusRows) {
+      map.set(row.staffId, row);
+    }
+    return map;
+  }, [monthStatusRows]);
+
   const monthSummary = useMemo(() => {
     const approvedDays = monthStatusRows.reduce((sum, row) => sum + row.approvedDays, 0);
     const approvedHours = monthStatusRows.reduce((sum, row) => sum + row.approvedHours, 0);
@@ -372,6 +438,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     };
   }, [monthStatusRows]);
 
+  const matrixDays = matrixData?.days ?? [];
+  const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
+  const compactCellText = effectiveCellWidth <= 28;
   const staffCount = matrixData?.rows.length ?? 0;
 
   return (
@@ -440,85 +509,117 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </div>
               </div>
 
-              <div className="overflow-x-auto px-4 pb-6 pt-4">
+              <div ref={matrixContainerRef} className="px-4 pb-6 pt-4">
                 {isLoading ? (
                   <div className="flex h-40 items-center justify-center text-sm text-brand-ink-muted">
                     Cargando matriz…
                   </div>
                 ) : !matrixData || !matrixData.rows.length ? (
                   <div className="flex h-40 items-center justify-center text-sm text-brand-ink-muted">
-                    No encontramos registros de asistencia en el rango seleccionado.
+                    No encontramos registros de asistencia en el mes seleccionado.
                   </div>
                 ) : (
-                  <div className="min-w-full overflow-x-auto">
-                    <table className="min-w-full border-separate border-spacing-0 text-sm">
-                      <thead>
-                        <tr>
-                          <th className="sticky left-0 z-20 bg-white px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink">
-                            Personal
-                          </th>
-                          {matrixData.days.map((day) => (
-                            <th
-                              key={day}
-                              className="min-w-[88px] border-b border-brand-ink-muted/10 px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted"
-                            >
-                              <div className="flex flex-col items-center">
-                                <span>{formatDayLabel(day, dayHeaderFormatter)}</span>
-                                <span className="text-[10px] uppercase text-brand-ink-muted/70">
-                                  {formatDayLabel(day, weekdayFormatter)}
-                                </span>
-                              </div>
-                            </th>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-brand-deep">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] text-orange-900">
+                        <span className="h-2 w-2 rounded-full bg-orange-500" />
+                        Pendiente
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-900">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        Aprobado
+                      </span>
+                    </div>
+                    <div className="overflow-hidden rounded-2xl border border-brand-ink-muted/10">
+                      <table className="w-full table-fixed border-collapse text-[10px] leading-tight text-brand-deep">
+                        <colgroup>
+                          <col style={{ width: `${STAFF_COLUMN_WIDTH}px` }} />
+                          {matrixDays.map((day) => (
+                            <col key={`col-${day}`} style={{ width: `${effectiveCellWidth}px` }} />
                           ))}
-                          <th className="sticky right-[160px] z-20 bg-white px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-brand-ink">
-                            Total aprobado
-                          </th>
-                          <th className="sticky right-0 z-20 bg-white px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-brand-ink">
-                            Pagado
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {matrixData.rows.map((row) => (
-                          <tr key={row.staffId} className="border-b border-brand-ink-muted/10">
-                            <th className="sticky left-0 z-10 bg-white/95 px-4 py-3 text-left text-sm font-semibold text-brand-deep shadow-[6px_0_12px_rgba(15,23,42,0.05)]">
-                              <div className="flex flex-col">
-                                <span>{row.staffName ?? `Personal #${row.staffId}`}</span>
-                                <span className="text-xs font-medium text-brand-ink-muted">
-                                  ID: {row.staffId}
-                                </span>
-                              </div>
+                          <col style={{ width: `${PAID_COLUMN_WIDTH}px` }} />
+                          <col style={{ width: `${PAID_DATE_COLUMN_WIDTH}px` }} />
+                        </colgroup>
+                        <thead>
+                          <tr className="bg-brand-deep-soft/40 text-brand-ink">
+                            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide">
+                              Personal
                             </th>
-                            {row.cells.map((cell) => (
-                              <td key={cell.date} className="px-1 py-1 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => openModal(row, cell)}
-                                  className={`flex w-full flex-col items-center justify-center rounded-2xl px-1 py-2 text-xs font-semibold text-brand-deep shadow transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                                    cell.status === "approved"
-                                      ? "bg-emerald-100/80 text-emerald-900 hover:bg-emerald-100"
-                                      : "bg-orange-100/80 text-orange-900 hover:bg-orange-100"
-                                  }`}
-                                >
-                                  <span className="text-base font-bold">
-                                    {hoursFormatter.format(cell.hours)}
+                            {matrixDays.map((day) => (
+                              <th
+                                key={day}
+                                className="px-1 py-2 text-center font-semibold uppercase text-brand-ink-muted"
+                              >
+                                <div className="flex flex-col items-center leading-tight text-brand-ink">
+                                  <span className="text-[11px]">
+                                    {formatDayLabel(day, dayHeaderFormatter)}
                                   </span>
-                                  <span className="uppercase tracking-wide">
-                                    {cell.status === "approved" ? "Aprobado" : "Pendiente"}
+                                  <span className="text-[9px] uppercase text-brand-ink-muted">
+                                    {formatDayLabel(day, weekdayFormatter)}
                                   </span>
-                                </button>
-                              </td>
+                                </div>
+                              </th>
                             ))}
-                            <td className="sticky right-[160px] bg-white/95 px-3 py-3 text-right font-semibold text-brand-deep shadow-[-6px_0_12px_rgba(15,23,42,0.05)]">
-                              {moneyFormatter.format(row.totalApprovedAmount)}
-                            </td>
-                            <td className="sticky right-0 bg-white/95 px-3 py-3 text-right font-semibold text-brand-deep shadow-[-6px_0_12px_rgba(15,23,42,0.05)]">
-                              {moneyFormatter.format(row.amountPaid)}
-                            </td>
+                            <th className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
+                              Pagado
+                            </th>
+                            <th className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
+                              Fecha de pago
+                            </th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {matrixData.rows.map((row) => {
+                            const monthStatus = monthStatusByStaff.get(row.staffId);
+                            const paidLabel = monthStatus?.paid ? "Sí" : "No";
+                            const paidAtIso = monthStatus?.paidAt ?? null;
+                            const paidAtText =
+                              paidAtIso && !Number.isNaN(Date.parse(paidAtIso))
+                                ? paidDateFormatter.format(new Date(paidAtIso))
+                                : "—";
+
+                            return (
+                              <tr key={row.staffId} className="odd:bg-white even:bg-brand-deep-soft/20">
+                                <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
+                                  <div className="flex flex-col gap-0.5 whitespace-nowrap">
+                                    <span className={compactCellText ? "text-[10px]" : "text-xs"}>
+                                      {row.staffName ?? `Personal #${row.staffId}`}
+                                    </span>
+                                    <span className="text-[9px] font-medium text-brand-ink-muted">
+                                      ID: {row.staffId}
+                                    </span>
+                                  </div>
+                                </th>
+                                {row.cells.map((cell) => (
+                                  <td key={cell.date} className="px-1 py-1 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => openModal(row, cell)}
+                                      className={`inline-flex h-8 w-full items-center justify-center rounded-md border px-1 py-0.5 font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                        cell.approved
+                                          ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
+                                          : "border-orange-500 bg-orange-500/85 text-white hover:bg-orange-500"
+                                      } ${compactCellText ? "text-[9px]" : "text-[10px]"}`}
+                                      style={{ minWidth: `${effectiveCellWidth}px` }}
+                                    >
+                                      <span className="whitespace-nowrap">
+                                        {hoursFormatter.format(cell.hours)}
+                                      </span>
+                                    </button>
+                                  </td>
+                                ))}
+                                <td className="px-2 py-1 text-center font-semibold text-brand-deep">
+                                  {paidLabel}
+                                </td>
+                                <td className="px-2 py-1 text-center text-brand-ink-muted">
+                                  {paidAtText}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -575,7 +676,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             <div className="flex flex-col gap-4 pr-10 text-brand-deep">
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                  {selectedCell.status === "approved" ? "Día aprobado" : "Pendiente de aprobación"}
+                  {selectedCell.approved ? "Día aprobado" : "Pendiente de aprobación"}
                 </span>
                 <h2 className="text-2xl font-black">{selectedCell.staffName}</h2>
                 <p className="text-sm text-brand-ink-muted">

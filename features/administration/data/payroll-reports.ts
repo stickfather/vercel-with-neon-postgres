@@ -5,18 +5,18 @@ import {
   TIMEZONE,
 } from "@/lib/db/client";
 
+type SqlClient = ReturnType<typeof getSqlClient>;
+
 export type MatrixCell = {
   date: string;
   hours: number;
-  status: "approved" | "pending";
+  approved: boolean;
 };
 
 export type MatrixRow = {
   staffId: number;
   staffName?: string;
   cells: MatrixCell[];
-  totalApprovedAmount: number;
-  amountPaid: number;
 };
 
 export type PayrollMatrixResponse = {
@@ -102,116 +102,217 @@ function coerceString(value: unknown): string | null {
   return null;
 }
 
+function toInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+  if (typeof value === "string" && value.trim().length) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.round(parsed);
+    }
+  }
+  return null;
+}
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function toMinutesFromHours(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.round(value * 60);
+  }
+  if (typeof value === "string" && value.trim().length) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.round(parsed * 60);
+    }
+  }
+  return null;
+}
+
+function findColumn(columns: string[], candidates: string[]): string | null {
+  for (const candidate of candidates) {
+    if (columns.includes(candidate)) return candidate;
+  }
+  return null;
+}
+
+async function fetchTableColumns(
+  sql: SqlClient,
+  schema: string,
+  table: string,
+): Promise<string[]> {
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = ${schema}
+      AND table_name = ${table}
+  `);
+
+  return rows
+    .map((row) => coerceString(row.column_name))
+    .filter((name): name is string => Boolean(name))
+    .map((name) => name);
+}
+
+type StaffDayTableInfo = {
+  schema: string;
+  name: string;
+  staffIdColumn: string;
+  workDateColumn: string;
+  approvedColumn: string;
+  approvedMinutesColumn: string;
+  totalMinutesColumn: string | null;
+  approvedAtColumn: string | null;
+  approvedByColumn: string | null;
+};
+
+let staffDayTableCache: StaffDayTableInfo | null = null;
+
+async function resolveStaffDayTable(sql: SqlClient): Promise<StaffDayTableInfo> {
+  if (staffDayTableCache) return staffDayTableCache;
+
+  const usageRows = normalizeRows<SqlRow>(await sql`
+    SELECT table_schema, table_name
+    FROM information_schema.view_table_usage
+    WHERE view_schema = 'public'
+      AND view_name = 'staff_day_matrix_v'
+  `);
+
+  for (const row of usageRows) {
+    const schema = coerceString(row.table_schema) ?? "public";
+    const tableName = coerceString(row.table_name);
+    if (!tableName) continue;
+
+    const columns = await fetchTableColumns(sql, schema, tableName);
+    const staffIdColumn = findColumn(columns, ["staff_id"]);
+    const workDateColumn = findColumn(columns, ["work_date", "workday", "date"]);
+    const approvedColumn = findColumn(columns, ["approved", "is_approved"]);
+    const approvedMinutesColumn = findColumn(columns, [
+      "approved_minutes",
+      "approved_total_minutes",
+    ]);
+    const totalMinutesColumn = findColumn(columns, [
+      "total_minutes",
+      "minutes",
+      "total_work_minutes",
+    ]);
+    const approvedAtColumn = findColumn(columns, ["approved_at"]);
+    const approvedByColumn = findColumn(columns, ["approved_by", "approved_by_user"]);
+
+    if (staffIdColumn && workDateColumn && approvedColumn && approvedMinutesColumn) {
+      staffDayTableCache = {
+        schema,
+        name: tableName,
+        staffIdColumn,
+        workDateColumn,
+        approvedColumn,
+        approvedMinutesColumn,
+        totalMinutesColumn: totalMinutesColumn ?? null,
+        approvedAtColumn: approvedAtColumn ?? null,
+        approvedByColumn: approvedByColumn ?? null,
+      };
+      return staffDayTableCache;
+    }
+  }
+
+  throw new Error(
+    "No se pudo identificar la tabla base para las aprobaciones de asistencia del personal.",
+  );
+}
+
+async function applyStaffDayApproval(
+  sql: SqlClient,
+  staffId: number,
+  workDate: string,
+  approvedMinutes: number | null,
+): Promise<void> {
+  const table = await resolveStaffDayTable(sql);
+  const alias = "t";
+  const params: Array<number | string> = [staffId, workDate];
+
+  let approvedMinutesExpression: string;
+  if (approvedMinutes != null && Number.isFinite(approvedMinutes)) {
+    const rounded = Math.max(0, Math.round(approvedMinutes));
+    params.push(rounded);
+    approvedMinutesExpression = `$${params.length}`;
+  } else if (table.totalMinutesColumn) {
+    approvedMinutesExpression = `COALESCE(${alias}.${quoteIdentifier(table.approvedMinutesColumn)}, ${alias}.${quoteIdentifier(table.totalMinutesColumn)})`;
+  } else {
+    approvedMinutesExpression = `${alias}.${quoteIdentifier(table.approvedMinutesColumn)}`;
+  }
+
+  const updates: string[] = [
+    `${quoteIdentifier(table.approvedColumn)} = TRUE`,
+    `${quoteIdentifier(table.approvedMinutesColumn)} = ${approvedMinutesExpression}`,
+  ];
+
+  if (table.approvedAtColumn) {
+    updates.push(`${quoteIdentifier(table.approvedAtColumn)} = NOW()`);
+  }
+  if (table.approvedByColumn) {
+    updates.push(`${quoteIdentifier(table.approvedByColumn)} = current_user`);
+  }
+
+  const tableRef = `${quoteIdentifier(table.schema)}.${quoteIdentifier(table.name)}`;
+  const query = `
+    UPDATE ${tableRef} AS ${alias}
+    SET ${updates.join(", ")}
+    WHERE ${alias}.${quoteIdentifier(table.staffIdColumn)} = $1::bigint
+      AND ${alias}.${quoteIdentifier(table.workDateColumn)} = $2::date
+  `;
+
+  const client = sql as unknown as {
+    unsafe: (query: string, params?: unknown[]) => Promise<unknown>;
+  };
+  await client.unsafe(query, params);
+}
+
 export async function fetchPayrollMatrix({
-  from,
-  to,
+  month,
 }: {
-  from: string;
-  to: string;
+  month: string;
 }): Promise<PayrollMatrixResponse> {
   const sql = getSqlClient();
 
-  const fromDate = new Date(`${from}T00:00:00Z`);
-  const toDate = new Date(`${to}T00:00:00Z`);
+  const [rawYear, rawMonth] = month.split("-");
+  const year = Number(rawYear);
+  const monthIndex = Number(rawMonth) - 1;
 
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    throw new Error("Las fechas proporcionadas no son válidas.");
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) {
+    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
   }
 
-  if (fromDate.getTime() > toDate.getTime()) {
-    throw new Error("La fecha inicial no puede ser posterior a la fecha final.");
-  }
+  const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+  const nextMonthStart = new Date(Date.UTC(year, monthIndex + 1, 1));
+  const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0));
+
+  const monthStartIso = toIsoDateString(monthStart);
+  const nextMonthIso = toIsoDateString(nextMonthStart);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       m.staff_id AS staff_id,
+      m.staff_name AS staff_name,
       m.work_date AS work_date,
-      ROUND(m.total_hours::numeric, 2) AS hours,
+      m.total_hours AS total_hours,
       m.approved AS approved,
-      m.approved_minutes AS approved_minutes,
-      m.approved_by AS approved_by,
-      m.approved_at AT TIME ZONE ${TIMEZONE} AS approved_at
+      m.approved_hours AS approved_hours
     FROM public.staff_day_matrix_v m
-    WHERE m.work_date BETWEEN ${from}::date AND ${to}::date
+    WHERE m.work_date >= ${monthStartIso}::date
+      AND m.work_date < ${nextMonthIso}::date
     ORDER BY m.staff_id, m.work_date
   `);
 
-  const staffIds = Array.from(
-    new Set(
-      rows
-        .map((row) => Number(row.staff_id))
-        .filter((id) => Number.isFinite(id) && id > 0),
-    ),
-  );
-
-  const staffInfo = new Map<
-    number,
-    { name: string; hourlyRate: number }
-  >();
-
-  if (staffIds.length) {
-    const staffRows = normalizeRows<SqlRow>(await sql`
-      SELECT id, full_name, hourly_wage
-      FROM staff_members
-      WHERE id = ANY(${staffIds}::bigint[])
-    `);
-
-    for (const row of staffRows) {
-      const id = Number(row.id);
-      if (!Number.isFinite(id)) continue;
-      const name = coerceString(row.full_name) ?? undefined;
-      const hourlyRate = toNumber(row.hourly_wage ?? 0);
-      staffInfo.set(id, { name: name ?? "", hourlyRate });
-    }
-  }
-
-  const monthStart = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), 1));
-  const monthEnd = new Date(Date.UTC(toDate.getUTCFullYear(), toDate.getUTCMonth(), 1));
-  const months: string[] = [];
-  const monthCursor = new Date(monthStart);
-  while (monthCursor.getTime() <= monthEnd.getTime()) {
-    const monthKey = `${monthCursor.getUTCFullYear()}-${String(
-      monthCursor.getUTCMonth() + 1,
-    ).padStart(2, "0")}`;
-    months.push(monthKey);
-    monthCursor.setUTCMonth(monthCursor.getUTCMonth() + 1);
-  }
-
-  const paidAmountByStaff = new Map<number, number>();
-
-  if (staffIds.length && months.length) {
-    const monthRows = normalizeRows<SqlRow>(await sql`
-      SELECT
-        v.staff_id,
-        to_char(v.month, 'YYYY-MM') AS month_key,
-        COALESCE(v.amount_paid, 0) AS amount_paid
-      FROM public.payroll_month_status_v v
-      WHERE v.month BETWEEN date_trunc('month', ${from}::date)
-        AND date_trunc('month', ${to}::date)
-        AND v.staff_id = ANY(${staffIds}::bigint[])
-    `);
-
-    for (const row of monthRows) {
-      const staffId = Number(row.staff_id);
-      if (!Number.isFinite(staffId)) continue;
-      const monthKey = coerceString(row.month_key);
-      if (!monthKey || !months.includes(monthKey)) continue;
-      const amount = toNumber(row.amount_paid ?? 0, 2);
-      paidAmountByStaff.set(
-        staffId,
-        Number(((paidAmountByStaff.get(staffId) ?? 0) + amount).toFixed(2)),
-      );
-    }
-  }
-
-  const days = enumerateDays(fromDate, toDate);
+  const days = enumerateDays(monthStart, monthEnd);
 
   const grouped = new Map<
     number,
     {
       staffId: number;
       staffName?: string;
-      hourlyRate: number;
       cells: Map<string, MatrixCell>;
     }
   >();
@@ -223,23 +324,21 @@ export async function fetchPayrollMatrix({
     if (!workDate) continue;
 
     if (!grouped.has(staffId)) {
-      const info = staffInfo.get(staffId);
       grouped.set(staffId, {
         staffId,
-        staffName: info?.name,
-        hourlyRate: info?.hourlyRate ?? 0,
+        staffName: coerceString(row.staff_name) ?? undefined,
         cells: new Map(),
       });
     }
 
-    const container = grouped.get(staffId)!;
-    const hours = toNumber(row.hours ?? row.total_hours ?? 0, 2);
+    const totalHours = toNumber(row.total_hours ?? 0, 2);
     const approved = toBoolean(row.approved);
+    const approvedHours = toNumber(row.approved_hours ?? row.total_hours ?? 0, 2);
 
-    container.cells.set(workDate, {
+    grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
-      hours,
-      status: approved ? "approved" : "pending",
+      hours: approved ? approvedHours : totalHours,
+      approved,
     });
   }
 
@@ -249,19 +348,13 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, status: "pending" };
+      return { date: day, hours: 0, approved: false };
     });
-
-    const approvedHours = cells
-      .filter((cell) => cell.status === "approved")
-      .reduce((sum, cell) => sum + cell.hours, 0);
 
     matrixRows.push({
       staffId: value.staffId,
       staffName: value.staffName,
       cells,
-      totalApprovedAmount: Number((approvedHours * value.hourlyRate).toFixed(2)),
-      amountPaid: paidAmountByStaff.get(value.staffId) ?? 0,
     });
   }
 
@@ -326,7 +419,7 @@ export async function approveStaffDay({
   workDate: string;
 }): Promise<void> {
   const sql = getSqlClient();
-  await sql`SELECT public.approve_staff_day(${staffId}::bigint, ${workDate}::date)`;
+  await applyStaffDayApproval(sql, staffId, workDate, null);
 }
 
 function ensureIsoString(value: string | null | undefined): string | null {
@@ -369,7 +462,23 @@ export async function overrideSessionsAndApprove({
       `;
     }
 
-    await sql`SELECT public.approve_staff_day(${staffId}::bigint, ${workDate}::date)`;
+    const recalculatedRows = normalizeRows<SqlRow>(await sql`
+      SELECT
+        m.total_minutes AS total_minutes,
+        m.approved_minutes AS approved_minutes,
+        m.total_hours AS total_hours
+      FROM public.staff_day_matrix_v m
+      WHERE m.staff_id = ${staffId}::bigint
+        AND m.work_date = ${workDate}::date
+      LIMIT 1
+    `);
+
+    const metrics = recalculatedRows[0] ?? {};
+    const recalculatedMinutes =
+      toInteger(metrics.total_minutes ?? metrics.minutes ?? null) ??
+      toMinutesFromHours(metrics.total_hours ?? metrics.hours ?? null);
+
+    await applyStaffDayApproval(sql, staffId, workDate, recalculatedMinutes);
     await sql`COMMIT`;
   } catch (error) {
     await sql`ROLLBACK`;

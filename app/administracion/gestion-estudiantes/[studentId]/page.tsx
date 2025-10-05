@@ -86,6 +86,8 @@ const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
     averageDaysPerWeek: null,
     averageProgressPerWeek: null,
     lessonsPerWeek: null,
+    globalAverageSessionLengthMinutes: null,
+    globalLessonsPerWeek: null,
   },
   lessonTimeline: [],
   excludeSundays: true,
