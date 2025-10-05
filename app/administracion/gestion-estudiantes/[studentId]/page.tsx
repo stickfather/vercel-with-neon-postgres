@@ -35,11 +35,8 @@ import {
   listStudentExams,
   listStudentInstructivos,
   getStudentProgressStats,
-  getStudentMinutesByDay,
-  getStudentCumulativeHours,
   getStudentLessonTimeline,
   getStudentAttendanceStats,
-  getStudentProgressEvents,
 } from "@/features/administration/data/student-profile";
 
 export const dynamic = "force-dynamic";
@@ -59,10 +56,7 @@ type PrimaryProfileData = {
 type AttendanceData = {
   attendanceStats: Awaited<ReturnType<typeof getStudentAttendanceStats>>;
   stats: Awaited<ReturnType<typeof getStudentProgressStats>>;
-  minutesByDay: Awaited<ReturnType<typeof getStudentMinutesByDay>>;
-  cumulativeHours: Awaited<ReturnType<typeof getStudentCumulativeHours>>;
   lessonTimeline: Awaited<ReturnType<typeof getStudentLessonTimeline>>;
-  progressEvents: Awaited<ReturnType<typeof getStudentProgressEvents>>;
   excludeSundays: boolean;
   error: string | null;
 };
@@ -92,10 +86,7 @@ const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
     averageProgressPerWeek: null,
     lessonsPerWeek: null,
   },
-  minutesByDay: [],
-  cumulativeHours: [],
   lessonTimeline: [],
-  progressEvents: [],
   excludeSundays: true,
   error: null,
 };
@@ -167,20 +158,10 @@ async function loadAttendanceData(
     const results = await Promise.allSettled([
       getStudentAttendanceStats(studentId, startDate, endDate),
       getStudentProgressStats(studentId, startDate, endDate, excludeSundays),
-      getStudentMinutesByDay(studentId, startDate, endDate, excludeSundays),
-      getStudentCumulativeHours(studentId, startDate, endDate),
       getStudentLessonTimeline(studentId, startDate, endDate),
-      getStudentProgressEvents(studentId),
     ]);
 
-    const [
-      attendanceStatsResult,
-      progressStatsResult,
-      minutesByDayResult,
-      cumulativeHoursResult,
-      lessonTimelineResult,
-      progressEventsResult,
-    ] = results;
+    const [attendanceStatsResult, progressStatsResult, lessonTimelineResult] = results;
 
     const errors: string[] = [];
 
@@ -192,30 +173,15 @@ async function loadAttendanceData(
       progressStatsResult.status === "fulfilled"
         ? progressStatsResult.value
         : (errors.push("No se pudieron cargar los promedios de progreso."), ATTENDANCE_DATA_FALLBACK.stats);
-    const minutesByDay =
-      minutesByDayResult.status === "fulfilled"
-        ? minutesByDayResult.value
-        : (errors.push("No se pudieron cargar los minutos diarios."), ATTENDANCE_DATA_FALLBACK.minutesByDay);
-    const cumulativeHours =
-      cumulativeHoursResult.status === "fulfilled"
-        ? cumulativeHoursResult.value
-        : (errors.push("No se pudo cargar el acumulado de horas."), ATTENDANCE_DATA_FALLBACK.cumulativeHours);
     const lessonTimeline =
       lessonTimelineResult.status === "fulfilled"
         ? lessonTimelineResult.value
         : (errors.push("No se pudo cargar la línea de lecciones."), ATTENDANCE_DATA_FALLBACK.lessonTimeline);
-    const progressEvents =
-      progressEventsResult.status === "fulfilled"
-        ? progressEventsResult.value
-        : (errors.push("No se pudieron cargar los eventos de progreso."), ATTENDANCE_DATA_FALLBACK.progressEvents);
 
     return {
       attendanceStats,
       stats,
-      minutesByDay,
-      cumulativeHours,
       lessonTimeline,
-      progressEvents,
       excludeSundays,
       error: errors.length ? errors.join(" ") : null,
     };
@@ -225,10 +191,7 @@ async function loadAttendanceData(
       ...ATTENDANCE_DATA_FALLBACK,
       attendanceStats: { ...ATTENDANCE_DATA_FALLBACK.attendanceStats },
       stats: { ...ATTENDANCE_DATA_FALLBACK.stats },
-      minutesByDay: [...ATTENDANCE_DATA_FALLBACK.minutesByDay],
-      cumulativeHours: [...ATTENDANCE_DATA_FALLBACK.cumulativeHours],
       lessonTimeline: [...ATTENDANCE_DATA_FALLBACK.lessonTimeline],
-      progressEvents: [...ATTENDANCE_DATA_FALLBACK.progressEvents],
       error: "No se pudo cargar la información de asistencia. Intenta nuevamente más tarde.",
     };
   }
@@ -249,10 +212,7 @@ async function AttendancePanelSection({
     <AttendancePanel
       attendanceStats={data.attendanceStats}
       stats={data.stats}
-      minutesByDay={data.minutesByDay}
-      cumulativeHours={data.cumulativeHours}
       lessonTimeline={data.lessonTimeline}
-      progressEvents={data.progressEvents}
       excludeSundays={data.excludeSundays}
       errorMessage={data.error}
       startDate={startDate}

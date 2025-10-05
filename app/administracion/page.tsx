@@ -46,39 +46,13 @@ const tiles = [
   },
 ];
 
-const tileThemes = [
-  {
-    container:
-      "border-[#26A69A]/70 bg-gradient-to-br from-[#009688] via-[#00796B] to-[#005B4F] text-white",
-    badge: "bg-white/20 text-white",
-    description: "text-white/80",
-    arrow: "text-[#CFFAF5]",
-    orb: "bg-[#26A69A]",
-  },
-  {
-    container:
-      "border-[#26A69A]/60 bg-gradient-to-br from-[#26A69A] via-[#009688] to-[#00897B] text-white",
-    badge: "bg-white/20 text-white",
-    description: "text-white/80",
-    arrow: "text-[#E0F2F1]",
-    orb: "bg-[#80CBC4]",
-  },
-  {
-    container: "border-[#009688]/55 bg-[#E0F2F1] text-[#004D40]",
-    badge: "bg-[#009688]/15 text-[#004D40]",
-    description: "text-[#004D40]/80",
-    arrow: "text-[#00796B]",
-    orb: "bg-[#009688]/30",
-  },
-  {
-    container:
-      "border-[#00796B]/65 bg-gradient-to-br from-[#004D40] via-[#00695C] to-[#00796B] text-white",
-    badge: "bg-white/18 text-white",
-    description: "text-white/80",
-    arrow: "text-[#B2DFDB]",
-    orb: "bg-[#009688]/80",
-  },
-];
+const tileTheme = {
+  container: "border-[#009688]/55 bg-[#E0F2F1] text-[#004D40]",
+  badge: "bg-[#009688]/15 text-[#004D40]",
+  description: "text-[#004D40]/80",
+  arrow: "text-[#00796B]",
+  orb: "bg-[#009688]/30",
+};
 
 const actionButtonBaseClass =
   "inline-flex items-center justify-center rounded-full border border-transparent px-5 py-2 text-xs font-semibold uppercase tracking-wide shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
@@ -120,26 +94,25 @@ export default function AdministracionPage() {
           </div>
         </header>
         <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {tiles.map((tile, index) => {
-            const theme = tileThemes[index % tileThemes.length];
+          {tiles.map((tile) => {
             return (
               <Link
                 key={tile.href}
                 href={tile.href}
-                className={`group relative overflow-hidden flex min-h-[200px] flex-col gap-5 rounded-[32px] border-2 p-6 text-left shadow-[0_24px_52px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_rgba(15,23,42,0.16)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${theme.container}`}
+                className={`group relative overflow-hidden flex min-h-[200px] flex-col gap-5 rounded-[32px] border-2 p-6 text-left shadow-[0_24px_52px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_rgba(15,23,42,0.16)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${tileTheme.container}`}
               >
                 <span
                   aria-hidden
-                  className={`pointer-events-none absolute -right-12 top-10 h-32 w-32 rounded-full opacity-50 blur-2xl ${theme.orb}`}
+                  className={`pointer-events-none absolute -right-12 top-10 h-32 w-32 rounded-full opacity-50 blur-2xl ${tileTheme.orb}`}
                 />
                 <div className="relative z-10 flex flex-col gap-4">
-                  <span className={`inline-flex w-fit items-center gap-2 rounded-full px-4 py-1 text-[11px] font-semibold uppercase tracking-wide ${theme.badge}`}>
+                  <span className={`inline-flex w-fit items-center gap-2 rounded-full px-4 py-1 text-[11px] font-semibold uppercase tracking-wide ${tileTheme.badge}`}>
                     {tile.emoji} Abrir
                   </span>
                   <h2 className="text-xl font-black leading-snug">{tile.title}</h2>
-                  <p className={`text-sm leading-relaxed ${theme.description}`}>{tile.description}</p>
+                  <p className={`text-sm leading-relaxed ${tileTheme.description}`}>{tile.description}</p>
                 </div>
-                <span className={`relative z-10 mt-auto inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide ${theme.arrow}`}>
+                <span className={`relative z-10 mt-auto inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide ${tileTheme.arrow}`}>
                   Explorar
                   <span aria-hidden className="transition-transform group-hover:translate-x-1">→</span>
                 </span>

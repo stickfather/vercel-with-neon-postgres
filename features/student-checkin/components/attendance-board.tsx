@@ -146,7 +146,7 @@ export function AttendanceBoard({ attendances }: Props) {
                   {levelAttendances.length} en clase
                 </span>
               </header>
-              <div className="grid max-h-[70vh] grid-cols-[repeat(auto-fill,minmax(40px,1fr))] gap-2 overflow-y-auto pr-1 sm:[grid-template-columns:repeat(auto-fill,minmax(48px,1fr))] lg:[grid-template-columns:repeat(auto-fill,minmax(56px,1fr))]">
+              <div className="grid max-h-[70vh] grid-cols-[repeat(auto-fit,minmax(60px,1fr))] gap-2 overflow-y-auto pr-2 sm:[grid-template-columns:repeat(auto-fit,minmax(68px,1fr))] lg:[grid-template-columns:repeat(auto-fit,minmax(72px,1fr))]">
                 {levelAttendances.map((attendance) => {
                   const accentForStudent = getLevelAccent(attendance.level);
                   const checkInDate = attendance.checkInTime
@@ -168,7 +168,7 @@ export function AttendanceBoard({ attendances }: Props) {
                       type="button"
                       onClick={() => requestCheckout(attendance)}
                       disabled={isLoading}
-                      className="group relative flex min-h-[32px] min-w-[40px] flex-col items-center justify-center gap-0.5 rounded-[14px] border px-1 py-0.5 text-center text-[9px] font-semibold leading-tight shadow-[0_6px_14px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                      className="group relative flex min-h-[46px] min-w-[60px] flex-col items-center justify-center gap-0.5 rounded-[16px] border px-2 py-2 text-center text-[10px] font-semibold leading-tight shadow-[0_6px_14px_rgba(15,23,42,0.12)] transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
                       style={{
                         backgroundColor: accentForStudent.base,
                         borderColor: accentForStudent.border,
@@ -177,11 +177,11 @@ export function AttendanceBoard({ attendances }: Props) {
                       title={bubbleLabel}
                       aria-label={bubbleLabel}
                     >
-                      <span className="w-full break-words text-[9px] font-semibold tracking-tight">
+                      <span className="w-full break-words text-[10px] font-semibold tracking-tight">
                         {firstLine}
                       </span>
                       {secondLine ? (
-                        <span className="w-full break-words text-[9px] font-semibold tracking-tight">
+                        <span className="w-full break-words text-[10px] font-semibold tracking-tight">
                           {secondLine}
                         </span>
                       ) : null}

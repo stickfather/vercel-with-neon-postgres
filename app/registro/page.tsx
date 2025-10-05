@@ -50,7 +50,7 @@ export default async function RegistroPage() {
         <div className="absolute right-4 top-24 h-52 w-52 rotate-[18deg] rounded-[36px] bg-[#ccf6f0] opacity-80" />
         <div className="absolute bottom-0 left-1/2 h-[460px] w-[120%] -translate-x-1/2 rounded-t-[180px] bg-gradient-to-r from-[#ffe7d1] via-[#ffffffef] to-[#c9f5ed]" />
       </div>
-      <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-10 md:px-10 lg:px-14">
+      <main className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-6 py-10 md:px-10 lg:px-14">
         <div className="flex flex-col gap-3 text-center sm:text-left">
           <span className="inline-flex w-fit items-center justify-center rounded-full bg-white/90 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-deep shadow">
             Registro diario
@@ -61,7 +61,7 @@ export default async function RegistroPage() {
           </p>
         </div>
 
-        <div className="grid gap-7 lg:grid-cols-[1.35fr_1fr]">
+        <div className="grid gap-7 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)] xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.1fr)]">
           <CheckInForm
             levels={levels}
             disabled={Boolean(formError)}

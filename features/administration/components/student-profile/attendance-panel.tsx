@@ -1,9 +1,6 @@
 import type {
-  CumulativeHoursEntry,
   LessonTimelineEntry,
-  MinutesByDayEntry,
   StudentAttendanceStats,
-  StudentProgressEvent,
   StudentProgressStats,
 } from "@/features/administration/data/student-profile";
 
@@ -57,72 +54,96 @@ function formatDateInGuayaquil(
 
 function formatNumber(value: number | null, digits = 1): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  const normalizedDigits = Math.min(Math.max(digits, 1), 2);
+  const normalizedDigits = Math.min(Math.max(digits, 0), 2);
   return new Intl.NumberFormat("es-EC", {
     minimumFractionDigits: normalizedDigits,
     maximumFractionDigits: normalizedDigits,
   }).format(value);
 }
 
-function MinutesChart({ data }: { data: MinutesByDayEntry[] }) {
-  if (!data.length) {
-    return (
-      <p className="text-sm text-brand-ink-muted">
-        No hay sesiones registradas en el rango seleccionado.
-      </p>
-    );
+const LEVEL_BASE_VALUES: Record<string, number> = {
+  a1: 1,
+  a2: 2,
+  b1: 3,
+  b2: 4,
+  c1: 5,
+  c2: 6,
+};
+
+function extractProgressValue(
+  lessonId: string | null,
+  lessonLabel: string | null,
+  index: number,
+): number {
+  const candidates = [lessonId, lessonLabel];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const raw = candidate.trim();
+    if (!raw) continue;
+
+    const levelMatch = raw.toLowerCase().match(/^([abc]\d)(?:[-\s]*(\d+))?/);
+    if (levelMatch) {
+      const base = LEVEL_BASE_VALUES[levelMatch[1] as keyof typeof LEVEL_BASE_VALUES];
+      if (base != null) {
+        const unit = levelMatch[2] ? Number(levelMatch[2]) : 0;
+        if (Number.isFinite(unit)) {
+          return base + unit / 100;
+        }
+        return base;
+      }
+    }
+
+    const numericMatch = raw.match(/\d+(?:[.,]\d+)?/);
+    if (numericMatch) {
+      const value = Number(numericMatch[0].replace(",", "."));
+      if (Number.isFinite(value)) {
+        return value;
+      }
+    }
   }
 
-  const maxMinutes = Math.max(...data.map((item) => item.minutes), 1);
-
-  return (
-    <div className="flex items-end gap-1 overflow-x-auto rounded-2xl bg-white/95 p-3">
-      {data.map((item) => {
-        const height = Math.max((item.minutes / maxMinutes) * 120, 4);
-        const label = formatDateInGuayaquil(item.date, { day: "2-digit" });
-        return (
-          <div key={item.date} className="flex flex-col items-center gap-1">
-            <div
-              className="w-8 rounded-t-full bg-brand-teal-soft"
-              style={{ height }}
-              title={`${label}: ${item.minutes} minutos`}
-            />
-            <span className="text-[10px] font-medium uppercase tracking-wide text-brand-ink-muted">
-              {label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
+  return index + 1;
 }
 
-function CumulativeChart({ data }: { data: CumulativeHoursEntry[] }) {
+function ProgressLineChart({ data }: { data: LessonTimelineEntry[] }) {
   if (!data.length) {
     return (
       <p className="text-sm text-brand-ink-muted">
-        No se generaron horas acumuladas en este periodo.
+        No hay registros de progreso en el rango seleccionado.
       </p>
     );
   }
 
-  const maxHours = Math.max(...data.map((item) => item.hours), 1);
-  const width = Math.max(data.length * 40, 240);
-  const height = 160;
-  const points = data
-    .map((item, index) => {
-      const x = (index / Math.max(data.length - 1, 1)) * (width - 40) + 20;
-      const y = height - (item.hours / maxHours) * (height - 40) - 20;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const sorted = [...data].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  const coordinates = sorted.map((entry, index) => {
+    const progress = extractProgressValue(entry.lessonId, entry.lessonLabel, index);
+    return {
+      ...entry,
+      progress,
+      index,
+      dateLabel: formatDateInGuayaquil(entry.date, { day: "2-digit", month: "short" }),
+      lessonSummary: entry.lessonLabel ?? entry.lessonId ?? "Sin lección",
+    };
+  });
+
+  const maxProgress = Math.max(...coordinates.map((point) => point.progress), 1);
+  const width = Math.max(coordinates.length * 80, 360);
+  const height = 220;
+  const plottedPoints = coordinates.map((point) => {
+    const x = (point.index / Math.max(coordinates.length - 1, 1)) * (width - 80) + 40;
+    const y = height - (point.progress / maxProgress) * (height - 80) - 40;
+    return { ...point, x, y };
+  });
+
+  const linePoints = plottedPoints.map((point) => `${point.x},${point.y}`).join(" ");
 
   return (
     <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-48 w-full min-w-[240px]">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full min-w-[360px]">
         <defs>
-          <linearGradient id="hoursGradient" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#00bfa6" stopOpacity={0.35} />
+          <linearGradient id="progressGradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#00bfa6" stopOpacity={0.32} />
             <stop offset="100%" stopColor="#00bfa6" stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -132,122 +153,43 @@ function CumulativeChart({ data }: { data: CumulativeHoursEntry[] }) {
           strokeWidth={3}
           strokeLinecap="round"
           strokeLinejoin="round"
-          points={points}
+          points={linePoints}
         />
-        <polygon
-          points={`${points} ${width - 20},${height - 20} 20,${height - 20}`}
-          fill="url(#hoursGradient)"
-          opacity={0.7}
-        />
-        {data.map((item, index) => {
-          const x = (index / Math.max(data.length - 1, 1)) * (width - 40) + 20;
-          const y = height - (item.hours / maxHours) * (height - 40) - 20;
-          const label = formatDateInGuayaquil(item.date, {
-            day: "2-digit",
-            month: "short",
-          });
-          return (
-            <g key={item.date}>
-              <circle cx={x} cy={y} r={3} fill="#00bfa6">
-                <title>{`${label}: ${item.hours.toFixed(2)} horas`}</title>
-              </circle>
-            </g>
-          );
-        })}
+        {linePoints && (
+          <polygon
+            points={`${linePoints} ${width - 40},${height - 40} 40,${height - 40}`}
+            fill="url(#progressGradient)"
+            opacity={0.7}
+          />
+        )}
+        {plottedPoints.map((point) => (
+          <g key={`${point.date}-${point.index}`}>
+            <circle cx={point.x} cy={point.y} r={4} fill="#00bfa6">
+              <title>{`${point.dateLabel}: ${point.lessonSummary} · ${formatNumber(point.progress, 2)} pts`}</title>
+            </circle>
+          </g>
+        ))}
+        {plottedPoints.map((point) => (
+          <text
+            key={`label-${point.date}-${point.index}`}
+            x={point.x}
+            y={height - 16}
+            textAnchor="middle"
+            fontSize="10"
+            fill="#64748b"
+          >
+            {point.dateLabel}
+          </text>
+        ))}
       </svg>
     </div>
-  );
-}
-
-function LessonTimeline({ data }: { data: LessonTimelineEntry[] }) {
-  if (!data.length) {
-    return <p className="text-sm text-brand-ink-muted">Sin progresión registrada en el periodo.</p>;
-  }
-
-  return (
-    <ol className="flex flex-col gap-3">
-      {data.map((item, index) => {
-        const key = `${item.date}-${item.lessonId ?? item.lessonLabel ?? index}`;
-        const lessonLabel = item.lessonLabel ?? item.lessonId ?? "Sin lección";
-        return (
-          <li
-            key={key}
-            className="flex items-center gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-inner"
-          >
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-              {formatDateInGuayaquil(item.date, { day: "2-digit", month: "short" })}
-            </span>
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold text-brand-deep">{lessonLabel}</span>
-              {item.lessonId && item.lessonLabel && item.lessonId !== item.lessonLabel && (
-                <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-                  {item.lessonId}
-                </span>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-function ProgressEventsList({ data }: { data: StudentProgressEvent[] }) {
-  if (!data.length) {
-    return (
-      <p className="text-sm text-brand-ink-muted">
-        No hay eventos de progreso registrados para este estudiante en el rango seleccionado.
-      </p>
-    );
-  }
-
-  return (
-    <ol className="flex flex-col gap-3">
-      {data.map((event, index) => {
-        const key = `${event.occurredAt}-${event.toLessonLabel ?? event.fromLessonLabel ?? index}`;
-        const changeSummary = (() => {
-          if (event.fromLessonLabel && event.toLessonLabel) {
-            return `De ${event.fromLessonLabel} a ${event.toLessonLabel}`;
-          }
-          if (event.toLessonLabel) return event.toLessonLabel;
-          if (event.fromLessonLabel) return event.fromLessonLabel;
-          return "Actualización registrada";
-        })();
-
-        return (
-          <li
-            key={key}
-            className="flex items-center gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-inner"
-          >
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-              {formatDateInGuayaquil(event.occurredAt, {
-                day: "2-digit",
-                month: "short",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              })}
-            </span>
-            <div className="flex flex-col">
-              {event.description && (
-                <span className="text-sm font-semibold text-brand-deep">{event.description}</span>
-              )}
-              <span className="text-xs text-brand-ink-muted">{changeSummary}</span>
-            </div>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
 type Props = {
   attendanceStats: StudentAttendanceStats;
   stats: StudentProgressStats;
-  minutesByDay: MinutesByDayEntry[];
-  cumulativeHours: CumulativeHoursEntry[];
   lessonTimeline: LessonTimelineEntry[];
-  progressEvents: StudentProgressEvent[];
   startDate: string;
   endDate: string;
   excludeSundays: boolean;
@@ -257,22 +199,13 @@ type Props = {
 export function AttendancePanel({
   attendanceStats,
   stats,
-  minutesByDay,
-  cumulativeHours,
   lessonTimeline,
-  progressEvents,
   startDate,
   endDate,
   excludeSundays,
   errorMessage,
 }: Props) {
   const summaryMetrics = [
-    {
-      key: "totalMinutes",
-      label: "Minutos totales",
-      value: attendanceStats.totalMinutes,
-      digits: 1,
-    },
     {
       key: "totalHours",
       label: "Horas totales",
@@ -286,39 +219,15 @@ export function AttendancePanel({
       digits: 1,
     },
     {
-      key: "avgSessionsPerDay",
-      label: "Sesiones promedio por día",
-      value: attendanceStats.averageSessionsPerDay,
-      digits: 2,
-    },
-    {
-      key: "avgMinutesPerDay",
-      label: "Minutos promedio por día",
-      value: attendanceStats.averageMinutesPerDay,
-      digits: 1,
-    },
-    {
-      key: "avgMinutesPerDayExclSun",
-      label: "Minutos por día (sin domingos)",
-      value: attendanceStats.averageMinutesPerDayExcludingSundays,
-      digits: 1,
-    },
-    {
       key: "lessonChanges",
-      label: "Cambios de lección",
+      label: "Lecciones avanzadas",
       value: attendanceStats.lessonChanges,
-      digits: 1,
+      digits: 0,
     },
     {
       key: "lessonsPerWeek",
       label: "Lecciones por semana",
       value: attendanceStats.lessonsPerWeek ?? stats.lessonsPerWeek,
-      digits: 2,
-    },
-    {
-      key: "averageDaysPerWeek",
-      label: "Días promedio por semana",
-      value: stats.averageDaysPerWeek,
       digits: 2,
     },
     {
@@ -350,13 +259,11 @@ export function AttendancePanel({
           </p>
         )}
         {errorMessage && (
-          <p className="text-xs font-semibold text-red-600">
-            {errorMessage}
-          </p>
+          <p className="text-xs font-semibold text-red-600">{errorMessage}</p>
         )}
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {summaryMetrics.map((metric) => (
           <div
             key={metric.key}
@@ -365,43 +272,21 @@ export function AttendancePanel({
             <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
               {metric.label}
             </span>
-            <span
-              className="text-3xl font-black text-brand-deep"
-              title={metric.tooltip}
-            >
+            <span className="text-3xl font-black text-brand-deep" title={metric.tooltip}>
               {metric.formatted}
             </span>
           </div>
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
-            Minutos por día
-          </h3>
-          <MinutesChart data={minutesByDay} />
-        </div>
-        <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
-            Horas acumuladas
-          </h3>
-          <CumulativeChart data={cumulativeHours} />
-        </div>
-      </div>
-
       <div className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
-          Línea de lecciones
+          Tiempo vs progreso
         </h3>
-        <LessonTimeline data={lessonTimeline} />
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">
-          Eventos de progreso
-        </h3>
-        <ProgressEventsList data={progressEvents} />
+        <ProgressLineChart data={lessonTimeline} />
+        <p className="text-xs text-brand-ink-muted">
+          Cada punto representa la lección alcanzada en la fecha indicada.
+        </p>
       </div>
     </section>
   );
@@ -416,40 +301,17 @@ export function AttendancePanelSkeleton() {
         <span className="h-3 w-56 rounded-full bg-brand-deep-soft/50" />
         <span className="h-3 w-60 rounded-full bg-brand-deep-soft/40" />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 10 }).map((_, index) => (
-          <div
-            key={index}
-            className="flex flex-col gap-2 rounded-[24px] bg-white/95 p-5 shadow-inner"
-          >
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-2 rounded-[24px] bg-white/95 p-5 shadow-inner">
             <span className="h-3 w-32 rounded-full bg-brand-deep-soft/40" />
             <span className="h-6 w-20 rounded-full bg-brand-deep-soft/30" />
           </div>
         ))}
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
-        {Array.from({ length: 2 }).map((_, index) => (
-          <div key={index} className="flex flex-col gap-3">
-            <span className="h-3 w-32 rounded-full bg-brand-deep-soft/40" />
-            <span className="h-40 w-full rounded-3xl bg-brand-deep-soft/30" />
-          </div>
-        ))}
-      </div>
-      <div className="flex flex-col gap-3">
-        <span className="h-3 w-40 rounded-full bg-brand-deep-soft/40" />
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <span key={index} className="h-10 w-full rounded-2xl bg-brand-deep-soft/30" />
-          ))}
-        </div>
-      </div>
       <div className="flex flex-col gap-3">
         <span className="h-3 w-44 rounded-full bg-brand-deep-soft/40" />
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <span key={index} className="h-10 w-full rounded-2xl bg-brand-deep-soft/30" />
-          ))}
-        </div>
+        <span className="h-56 w-full rounded-3xl bg-brand-deep-soft/30" />
       </div>
     </section>
   );
