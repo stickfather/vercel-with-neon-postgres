@@ -46,6 +46,121 @@ export type PayrollMonthStatusRow = {
   paidAt: string | null;
 };
 
+function escapeSqlLiteral(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+let payrollViewsEnsured = false;
+
+async function ensurePayrollViews(sql: SqlClient): Promise<void> {
+  if (payrollViewsEnsured) return;
+
+  const unsafeSql = sql as unknown as {
+    unsafe: (query: string) => Promise<unknown>;
+  };
+
+  const timezoneLiteral = `'${escapeSqlLiteral(TIMEZONE)}'`;
+  const minuteComputation = `GREATEST(\n      0,\n      FLOOR(EXTRACT(epoch FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time) / 60.0)::int\n    )`;
+
+  try {
+    await unsafeSql.unsafe(`
+      CREATE OR REPLACE VIEW public.staff_day_sessions_v AS
+      SELECT
+        sa.staff_id,
+        DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time))) AS work_date,
+        timezone(${timezoneLiteral}, sa.checkin_time) AS checkin_time,
+        timezone(${timezoneLiteral}, sa.checkout_time) AS checkout_time,
+        ${minuteComputation} AS minutes
+      FROM staff_attendance sa
+      WHERE sa.checkin_time IS NOT NULL;
+    `);
+
+    await unsafeSql.unsafe(`
+      CREATE OR REPLACE VIEW public.staff_day_matrix_v AS
+      WITH day_totals AS (
+        SELECT
+          sa.staff_id,
+          DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time))) AS work_date,
+          SUM(${minuteComputation}) AS total_minutes
+        FROM staff_attendance sa
+        WHERE sa.checkin_time IS NOT NULL
+        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time)))
+      )
+      SELECT
+        dt.staff_id,
+        dt.work_date,
+        dt.total_minutes,
+        ROUND((dt.total_minutes::numeric / 60.0), 2) AS total_hours,
+        COALESCE(p.approved, FALSE) AS approved,
+        p.approved_minutes,
+        CASE
+          WHEN p.approved_minutes IS NOT NULL THEN ROUND((p.approved_minutes::numeric / 60.0), 2)
+          ELSE ROUND((dt.total_minutes::numeric / 60.0), 2)
+        END AS approved_hours,
+        p.approved_at,
+        p.approved_by
+      FROM day_totals dt
+      LEFT JOIN payroll_day_approvals p
+        ON p.staff_id = dt.staff_id AND p.work_date = dt.work_date;
+    `);
+
+    await unsafeSql.unsafe(`
+      CREATE OR REPLACE VIEW public.payroll_month_status_v AS
+      WITH day_totals AS (
+        SELECT
+          sa.staff_id,
+          DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time))) AS work_date,
+          SUM(${minuteComputation}) AS total_minutes
+        FROM staff_attendance sa
+        WHERE sa.checkin_time IS NOT NULL
+        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time)))
+      ),
+      approvals AS (
+        SELECT
+          dt.staff_id,
+          dt.work_date,
+          dt.total_minutes,
+          COALESCE(p.approved, FALSE) AS approved,
+          COALESCE(p.approved_minutes, dt.total_minutes) AS approved_minutes,
+          p.approved_at,
+          p.approved_by
+        FROM day_totals dt
+        LEFT JOIN payroll_day_approvals p
+          ON p.staff_id = dt.staff_id AND p.work_date = dt.work_date
+      ),
+      monthly AS (
+        SELECT
+          a.staff_id,
+          DATE_TRUNC('month', a.work_date::timestamp) AS month,
+          COUNT(*) FILTER (WHERE a.approved) AS approved_days,
+          SUM(CASE WHEN a.approved THEN a.approved_minutes ELSE 0 END) AS approved_minutes,
+          MAX(a.approved_at) AS last_approved_at
+        FROM approvals a
+        GROUP BY a.staff_id, DATE_TRUNC('month', a.work_date::timestamp)
+      )
+      SELECT
+        m.staff_id,
+        m.month::date AS month,
+        m.approved_days,
+        ROUND((m.approved_minutes::numeric / 60.0), 2) AS approved_hours,
+        pmp.paid,
+        pmp.amount_paid,
+        pmp.reference,
+        pmp.paid_by,
+        pmp.paid_at,
+        m.last_approved_at
+      FROM monthly m
+      LEFT JOIN payroll_month_payments pmp
+        ON pmp.staff_id = m.staff_id
+       AND pmp.month::date = m.month::date;
+    `);
+  } catch (error) {
+    console.warn("Skipping payroll view refresh due to error:", error);
+  }
+
+  payrollViewsEnsured = true;
+}
+
 function toIsoDateString(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -223,6 +338,7 @@ type StaffDayTableInfo = {
 let staffDayTableCache: StaffDayTableInfo | null = null;
 
 async function resolveStaffDayTable(sql: SqlClient): Promise<StaffDayTableInfo> {
+  await ensurePayrollViews(sql);
   if (staffDayTableCache) return staffDayTableCache;
 
   const usageRows = normalizeRows<SqlRow>(await sql`
@@ -327,6 +443,7 @@ export async function fetchPayrollMatrix({
   month: string;
 }): Promise<PayrollMatrixResponse> {
   const sql = getSqlClient();
+  await ensurePayrollViews(sql);
 
   const viewColumns = await fetchTableColumns(sql, "public", "staff_day_matrix_v");
   const staffNameColumn = findColumn(viewColumns, [
@@ -489,6 +606,7 @@ export async function fetchDaySessions({
   workDate: string;
 }): Promise<DaySession[]> {
   const sql = getSqlClient();
+  await ensurePayrollViews(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
@@ -561,6 +679,7 @@ export async function overrideSessionsAndApprove({
   }[];
 }): Promise<void> {
   const sql = getSqlClient();
+  await ensurePayrollViews(sql);
 
   await sql`BEGIN`;
   try {
@@ -612,6 +731,7 @@ export async function fetchPayrollMonthStatus({
   staffId?: number | null;
 }): Promise<PayrollMonthStatusRow[]> {
   const sql = getSqlClient();
+  await ensurePayrollViews(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
