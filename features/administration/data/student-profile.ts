@@ -28,9 +28,13 @@ export type StudentBasicDetails = {
   isNewStudent: boolean | null;
   isExamApproaching: boolean | null;
   isExamPreparation: boolean | null;
+  isAbsent7d: boolean | null;
   isAbsent7Days: boolean | null;
+  isSlowProgress14d: boolean | null;
   isSlowProgress14Days: boolean | null;
+  instructivoActive: boolean | null;
   hasActiveInstructive: boolean | null;
+  instructivoOverdue: boolean | null;
   hasOverdueInstructive: boolean | null;
   status: string | null;
   lastSeenAt: string | null;
@@ -270,10 +274,14 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     isNewStudent: normalizeFieldValue(row.isNewStudent, "boolean"),
     isExamApproaching: normalizeFieldValue(row.isExamApproaching, "boolean"),
     isExamPreparation: normalizeFieldValue(row.isExamPreparation, "boolean"),
-    isAbsent7Days: normalizeFieldValue(row.isAbsent7Days, "boolean"),
-    isSlowProgress14Days: normalizeFieldValue(row.isSlowProgress14Days, "boolean"),
-    hasActiveInstructive: normalizeFieldValue(row.hasActiveInstructive, "boolean"),
-    hasOverdueInstructive: normalizeFieldValue(row.hasOverdueInstructive, "boolean"),
+    isAbsent7d: normalizeFieldValue(row.isAbsent7d ?? row.isAbsent7Days, "boolean"),
+    isAbsent7Days: normalizeFieldValue(row.isAbsent7Days ?? row.isAbsent7d, "boolean"),
+    isSlowProgress14d: normalizeFieldValue(row.isSlowProgress14d ?? row.isSlowProgress14Days, "boolean"),
+    isSlowProgress14Days: normalizeFieldValue(row.isSlowProgress14Days ?? row.isSlowProgress14d, "boolean"),
+    instructivoActive: normalizeFieldValue(row.instructivoActive ?? row.hasActiveInstructive, "boolean"),
+    hasActiveInstructive: normalizeFieldValue(row.hasActiveInstructive ?? row.instructivoActive, "boolean"),
+    instructivoOverdue: normalizeFieldValue(row.instructivoOverdue ?? row.hasOverdueInstructive, "boolean"),
+    hasOverdueInstructive: normalizeFieldValue(row.hasOverdueInstructive ?? row.instructivoOverdue, "boolean"),
     status: normalizeFieldValue(row.status, "text"),
     lastSeenAt: normalizeFieldValue(row.lastSeenAt, "datetime"),
     lastLessonId: normalizeFieldValue(row.lastLessonId, "text"),
@@ -302,19 +310,24 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
       s.planned_level_min::text              AS "plannedLevelMin",
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
-      NULL::boolean                          AS "isNewStudent",
-      NULL::boolean                          AS "isExamApproaching",
-      NULL::boolean                          AS "isExamPreparation",
-      NULL::boolean                          AS "isAbsent7Days",
-      NULL::boolean                          AS "isSlowProgress14Days",
-      NULL::boolean                          AS "hasActiveInstructive",
-      NULL::boolean                          AS "hasOverdueInstructive",
+      COALESCE(sf.is_new_student, false)     AS "isNewStudent",
+      COALESCE(sf.is_exam_approaching, false) AS "isExamApproaching",
+      COALESCE(sf.is_exam_preparation, false) AS "isExamPreparation",
+      COALESCE(sf.is_absent_7d, false)       AS "isAbsent7d",
+      COALESCE(sf.is_absent_7d, false)       AS "isAbsent7Days",
+      COALESCE(sf.is_slow_progress_14d, false) AS "isSlowProgress14d",
+      COALESCE(sf.is_slow_progress_14d, false) AS "isSlowProgress14Days",
+      COALESCE(sf.instructivo_active, false) AS "instructivoActive",
+      COALESCE(sf.instructivo_active, false) AS "hasActiveInstructive",
+      COALESCE(sf.instructivo_overdue, false) AS "instructivoOverdue",
+      COALESCE(sf.instructivo_overdue, false) AS "hasOverdueInstructive",
       s.last_seen_at                         AS "lastSeenAt",
       s.last_lesson_id                       AS "lastLessonId",
       s.status                               AS "status",
       s.updated_at                           AS "updatedAt",
       s.created_at                           AS "createdAt"
     FROM public.students AS s
+    LEFT JOIN public.student_flags AS sf ON sf.student_id = s.id
     WHERE s.id = ${studentId}::bigint
     LIMIT 1
   `);
@@ -1013,7 +1026,6 @@ export async function getStudentProgressStats(
   const avgDays = row.average_days_per_week ?? row.avg_days_per_week ?? null;
   const avgProgress = row.average_rate_of_progress_per_week ?? row.avg_progress_per_week ?? row.average_progress_per_week ?? null;
   const lessonsPerWeek = row.lessons_per_week ?? row.avg_lessons_per_week ?? row.lessons_per_week_30d ?? null;
-
   return {
     averageSessionLengthMinutes: normalizeNumber(avgSession),
     averageDaysPerWeek: normalizeNumber(avgDays),

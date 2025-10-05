@@ -115,9 +115,13 @@ async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfile
         isNewStudent: managementEntry.isNewStudent,
         isExamApproaching: managementEntry.isExamApproaching,
         isExamPreparation: managementEntry.isExamPreparation,
+        isAbsent7d: managementEntry.isAbsent7Days,
         isAbsent7Days: managementEntry.isAbsent7Days,
+        isSlowProgress14d: managementEntry.isSlowProgress14Days,
         isSlowProgress14Days: managementEntry.isSlowProgress14Days,
+        instructivoActive: managementEntry.hasActiveInstructive,
         hasActiveInstructive: managementEntry.hasActiveInstructive,
+        instructivoOverdue: managementEntry.hasOverdueInstructive,
         hasOverdueInstructive: managementEntry.hasOverdueInstructive,
       };
     }
@@ -220,10 +224,12 @@ async function AttendancePanelSection({
   studentId,
   startDate,
   endDate,
+  contractStart,
 }: {
   studentId: number;
   startDate: string;
   endDate: string;
+  contractStart: string | null;
 }) {
   const data = await loadAttendanceData(studentId, startDate, endDate);
 
@@ -236,6 +242,7 @@ async function AttendancePanelSection({
       errorMessage={data.error}
       startDate={startDate}
       endDate={endDate}
+      contractStart={contractStart}
     />
   );
 }
@@ -351,7 +358,12 @@ export default async function StudentProfilePage({
           </Suspense>
           <div className="grid gap-8 lg:grid-cols-2">
             <Suspense fallback={<AttendancePanelSkeleton />}>
-              <AttendancePanelSection studentId={studentId} startDate={startDate} endDate={endDate} />
+              <AttendancePanelSection
+                studentId={studentId}
+                startDate={startDate}
+                endDate={endDate}
+                contractStart={primaryData.basicDetails?.contractStart ?? null}
+              />
             </Suspense>
             <Suspense fallback={<NotesPanelSkeleton />}>
               <NotesPanel studentId={studentId} notes={primaryData.notes} />
