@@ -75,7 +75,7 @@ function parseScore(value: string): number | null {
 function Modal({ title, description, onClose, children }: ModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
-      <div className="relative w-full max-w-xl rounded-[32px] border border-white/80 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-[32px] border border-white/80 bg-white/95 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
         <button
           type="button"
           onClick={onClose}
@@ -84,8 +84,8 @@ function Modal({ title, description, onClose, children }: ModalProps) {
         >
           ×
         </button>
-        <div className="flex flex-col gap-4 pr-6">
-          <div className="flex flex-col gap-2">
+        <div className="flex max-h-[85vh] flex-col overflow-hidden">
+          <div className="flex flex-col gap-2 px-6 pt-6 pr-12">
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
               Acción requerida
             </span>
@@ -94,7 +94,9 @@ function Modal({ title, description, onClose, children }: ModalProps) {
               <p className="text-sm text-brand-ink-muted">{description}</p>
             ) : null}
           </div>
-          {children}
+          <div className="flex-1 overflow-y-auto px-6 pb-6 pr-12">
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -182,7 +184,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
     startTransition(() => {
       void (async () => {
         try {
-          const response = await fetch(`/api/(administration)/students/${studentId}/exams`, {
+          const response = await fetch(`/api/students/${studentId}/exams`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -233,7 +235,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
       void (async () => {
         try {
           const response = await fetch(
-            `/api/(administration)/students/${studentId}/exams/${editingExam.id}`,
+            `/api/students/${studentId}/exams/${editingExam.id}`,
             {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -283,7 +285,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
     startTransition(() => {
       void (async () => {
         try {
-          const response = await fetch(`/api/(administration)/students/${studentId}/exams/${examId}`, {
+          const response = await fetch(`/api/students/${studentId}/exams/${examId}`, {
             method: "DELETE",
           });
           const payload = await response.json().catch(() => ({}));
@@ -337,7 +339,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
         <button
           type="button"
           onClick={openAddModal}
-          className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+          className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
         >
           Agregar examen
         </button>
@@ -393,7 +395,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
                       <button
                         type="button"
                         onClick={() => openEditModal(exam)}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
+                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                       >
                         Editar
                       </button>
