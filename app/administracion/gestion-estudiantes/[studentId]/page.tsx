@@ -244,7 +244,7 @@ export async function generateMetadata({
 
   try {
     const details = await getStudentBasicDetails(studentId);
-    const name = details?.full_name?.trim();
+    const name = details?.fullName?.trim();
 
     return {
       title: name
@@ -286,7 +286,7 @@ export default async function StudentProfilePage({
     notFound();
   }
   
-  const studentName = primaryData.basicDetails?.full_name?.trim() || "Nombre no disponible";
+  const studentName = primaryData.basicDetails?.fullName?.trim() || "Nombre no disponible";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">

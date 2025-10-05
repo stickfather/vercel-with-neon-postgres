@@ -11,113 +11,181 @@ export type BasicDetailFieldType =
   | "datetime";
 
 export type StudentBasicDetails = {
-  id: number;
-  full_name: string | null;
-  representative_name: string | null;
-  representative_phone: string | null;
-  representative_email: string | null;
-  has_special_needs: boolean | null;
-  contract_start: string | null;
-  contract_end: string | null;
-  frozen_start: string | null;
-  frozen_end: string | null;
-  current_level: string | null;
-  planned_level_min: string | null;
-  planned_level_max: string | null;
-  is_online: boolean | null;
+  studentId: number;
+  fullName: string | null;
+  representativeName: string | null;
+  representativePhone: string | null;
+  representativeEmail: string | null;
+  hasSpecialNeeds: boolean | null;
+  contractStart: string | null;
+  contractEnd: string | null;
+  frozenStart: string | null;
+  frozenEnd: string | null;
+  currentLevel: string | null;
+  plannedLevelMin: string | null;
+  plannedLevelMax: string | null;
+  isOnline: boolean | null;
   status: string | null;
-  last_seen_at: string | null;
-  last_lesson_id: string | null;
-  updated_at: string | null;
-  created_at: string | null;
+  lastSeenAt: string | null;
+  lastLessonId: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
 };
 
 export type StudentBasicDetailFieldConfig = {
-  key: keyof Omit<StudentBasicDetails, "id">;
+  key: keyof Omit<StudentBasicDetails, "studentId">;
+  dbColumn: keyof StudentBasicDetails;
   label: string;
   type: BasicDetailFieldType;
   editable: boolean;
 };
 
 export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldConfig> = [
-  { key: "full_name", label: "Nombre completo", type: "text", editable: true },
   {
-    key: "representative_name",
+    key: "fullName",
+    dbColumn: "fullName",
+    label: "Nombre completo",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "representativeName",
+    dbColumn: "representativeName",
     label: "Nombre del representante",
     type: "text",
     editable: true,
   },
   {
-    key: "representative_phone",
+    key: "representativePhone",
+    dbColumn: "representativePhone",
     label: "Teléfono del representante",
     type: "text",
     editable: true,
   },
   {
-    key: "representative_email",
+    key: "representativeEmail",
+    dbColumn: "representativeEmail",
     label: "Correo del representante",
     type: "text",
     editable: true,
   },
   {
-    key: "has_special_needs",
+    key: "hasSpecialNeeds",
+    dbColumn: "hasSpecialNeeds",
     label: "Necesidades especiales",
     type: "boolean",
     editable: true,
   },
   {
-    key: "contract_start",
+    key: "contractStart",
+    dbColumn: "contractStart",
     label: "Inicio de contrato",
     type: "date",
     editable: true,
   },
   {
-    key: "contract_end",
+    key: "contractEnd",
+    dbColumn: "contractEnd",
     label: "Fin de contrato",
     type: "date",
     editable: true,
   },
   {
-    key: "frozen_start",
+    key: "frozenStart",
+    dbColumn: "frozenStart",
     label: "Inicio de congelamiento",
     type: "date",
     editable: true,
   },
   {
-    key: "frozen_end",
+    key: "frozenEnd",
+    dbColumn: "frozenEnd",
     label: "Fin de congelamiento",
     type: "date",
     editable: true,
   },
-  { key: "current_level", label: "Nivel actual", type: "text", editable: true },
   {
-    key: "planned_level_min",
+    key: "currentLevel",
+    dbColumn: "currentLevel",
+    label: "Nivel actual",
+    type: "text",
+    editable: true,
+  },
+  {
+    key: "plannedLevelMin",
+    dbColumn: "plannedLevelMin",
     label: "Nivel planificado mínimo",
     type: "text",
     editable: true,
   },
   {
-    key: "planned_level_max",
+    key: "plannedLevelMax",
+    dbColumn: "plannedLevelMax",
     label: "Nivel planificado máximo",
     type: "text",
     editable: true,
   },
   {
-    key: "is_online",
+    key: "isOnline",
+    dbColumn: "isOnline",
     label: "Modalidad en línea",
     type: "boolean",
     editable: true,
   },
-  { key: "status", label: "Estado", type: "text", editable: false },
-  { key: "last_lesson_id", label: "Última lección", type: "text", editable: false },
-  { key: "last_seen_at", label: "Última asistencia", type: "datetime", editable: false },
-  { key: "updated_at", label: "Actualizado el", type: "datetime", editable: false },
-  { key: "created_at", label: "Creado el", type: "datetime", editable: false },
+  { key: "status", dbColumn: "status", label: "Estado", type: "text", editable: false },
+  {
+    key: "lastLessonId",
+    dbColumn: "lastLessonId",
+    label: "Última lección",
+    type: "text",
+    editable: false,
+  },
+  {
+    key: "lastSeenAt",
+    dbColumn: "lastSeenAt",
+    label: "Última asistencia",
+    type: "datetime",
+    editable: false,
+  },
+  {
+    key: "updatedAt",
+    dbColumn: "updatedAt",
+    label: "Actualizado el",
+    type: "datetime",
+    editable: false,
+  },
+  {
+    key: "createdAt",
+    dbColumn: "createdAt",
+    label: "Creado el",
+    type: "datetime",
+    editable: false,
+  },
 ];
 
+const STUDENT_BASIC_DETAIL_COLUMN_MAP = {
+  fullName: "full_name",
+  representativeName: "representative_name",
+  representativePhone: "representative_phone",
+  representativeEmail: "representative_email",
+  hasSpecialNeeds: "has_special_needs",
+  contractStart: "contract_start",
+  contractEnd: "contract_end",
+  frozenStart: "frozen_start",
+  frozenEnd: "frozen_end",
+  currentLevel: "current_level",
+  plannedLevelMin: "planned_level_min",
+  plannedLevelMax: "planned_level_max",
+  isOnline: "is_online",
+} as const;
+
+type StudentBasicDetailEditableKey = keyof typeof STUDENT_BASIC_DETAIL_COLUMN_MAP;
+
 export const EDITABLE_STUDENT_BASIC_DETAIL_KEYS: ReadonlyArray<
-  (typeof STUDENT_BASIC_DETAIL_FIELDS)[number]["key"]
-> = STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.editable).map((field) => field.key);
+  StudentBasicDetailEditableKey
+> = STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.editable).map(
+  (field) => field.key as StudentBasicDetailEditableKey,
+);
 
 type NormalizedFieldValue<T extends BasicDetailFieldType> = T extends "boolean"
   ? boolean | null
@@ -179,25 +247,25 @@ function normalizeFieldValue<T extends BasicDetailFieldType>(
 
 function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBasicDetails {
   return {
-    id: Number(row.id ?? fallbackId),
-    full_name: normalizeFieldValue(row.full_name, "text"),
-    representative_name: normalizeFieldValue(row.representative_name, "text"),
-    representative_phone: normalizeFieldValue(row.representative_phone, "text"),
-    representative_email: normalizeFieldValue(row.representative_email, "text"),
-    has_special_needs: normalizeFieldValue(row.has_special_needs, "boolean"),
-    contract_start: normalizeFieldValue(row.contract_start, "date"),
-    contract_end: normalizeFieldValue(row.contract_end, "date"),
-    frozen_start: normalizeFieldValue(row.frozen_start, "date"),
-    frozen_end: normalizeFieldValue(row.frozen_end, "date"),
-    current_level: normalizeFieldValue(row.current_level, "text"),
-    planned_level_min: normalizeFieldValue(row.planned_level_min, "text"),
-    planned_level_max: normalizeFieldValue(row.planned_level_max, "text"),
-    is_online: normalizeFieldValue(row.is_online, "boolean"),
+    studentId: Number(row.studentId ?? fallbackId),
+    fullName: normalizeFieldValue(row.fullName, "text"),
+    representativeName: normalizeFieldValue(row.representativeName, "text"),
+    representativePhone: normalizeFieldValue(row.representativePhone, "text"),
+    representativeEmail: normalizeFieldValue(row.representativeEmail, "text"),
+    hasSpecialNeeds: normalizeFieldValue(row.hasSpecialNeeds, "boolean"),
+    contractStart: normalizeFieldValue(row.contractStart, "date"),
+    contractEnd: normalizeFieldValue(row.contractEnd, "date"),
+    frozenStart: normalizeFieldValue(row.frozenStart, "date"),
+    frozenEnd: normalizeFieldValue(row.frozenEnd, "date"),
+    currentLevel: normalizeFieldValue(row.currentLevel, "text"),
+    plannedLevelMin: normalizeFieldValue(row.plannedLevelMin, "text"),
+    plannedLevelMax: normalizeFieldValue(row.plannedLevelMax, "text"),
+    isOnline: normalizeFieldValue(row.isOnline, "boolean"),
     status: normalizeFieldValue(row.status, "text"),
-    last_seen_at: normalizeFieldValue(row.last_seen_at, "datetime"),
-    last_lesson_id: normalizeFieldValue(row.last_lesson_id, "text"),
-    updated_at: normalizeFieldValue(row.updated_at, "datetime"),
-    created_at: normalizeFieldValue(row.created_at, "datetime"),
+    lastSeenAt: normalizeFieldValue(row.lastSeenAt, "datetime"),
+    lastLessonId: normalizeFieldValue(row.lastLessonId, "text"),
+    updatedAt: normalizeFieldValue(row.updatedAt, "datetime"),
+    createdAt: normalizeFieldValue(row.createdAt, "datetime"),
   };
 }
 
@@ -207,27 +275,27 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
-      id,
-      full_name,
-      representative_name,
-      representative_phone,
-      representative_email,
-      has_special_needs,
-      contract_start,
-      contract_end,
-      frozen_start,
-      frozen_end,
-      current_level,
-      planned_level_min,
-      planned_level_max,
-      is_online,
-      status,
-      last_seen_at,
-      last_lesson_id,
-      updated_at,
-      created_at
-    FROM public.students
-    WHERE id = ${studentId}::bigint
+      s.id                                   AS "studentId",
+      s.full_name                            AS "fullName",
+      s.representative_name                  AS "representativeName",
+      s.representative_phone                 AS "representativePhone",
+      s.representative_email                 AS "representativeEmail",
+      s.has_special_needs                    AS "hasSpecialNeeds",
+      s.contract_start                       AS "contractStart",
+      s.contract_end                         AS "contractEnd",
+      s.frozen_start                         AS "frozenStart",
+      s.frozen_end                           AS "frozenEnd",
+      s.current_level::text                  AS "currentLevel",
+      s.planned_level_min::text              AS "plannedLevelMin",
+      s.planned_level_max::text              AS "plannedLevelMax",
+      COALESCE(s.is_online, false)           AS "isOnline",
+      s.last_seen_at                         AS "lastSeenAt",
+      s.last_lesson_id                       AS "lastLessonId",
+      s.status                               AS "status",
+      s.updated_at                           AS "updatedAt",
+      s.created_at                           AS "createdAt"
+    FROM public.students AS s
+    WHERE s.id = ${studentId}::bigint
     LIMIT 1
   `);
 
@@ -237,8 +305,14 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
 }
 
 export type StudentBasicDetailsEditablePayload = Partial<
-  Pick<StudentBasicDetails, (typeof EDITABLE_STUDENT_BASIC_DETAIL_KEYS)[number]>
+  Pick<StudentBasicDetails, StudentBasicDetailEditableKey>
 >;
+
+const LEVEL_CODE_FIELDS = new Set<StudentBasicDetailEditableKey>([
+  "currentLevel",
+  "plannedLevelMin",
+  "plannedLevelMax",
+]);
 
 export async function updateStudentBasicDetails(
   studentId: number,
@@ -247,44 +321,59 @@ export async function updateStudentBasicDetails(
   noStore();
   const sql = getSqlClient();
 
-  const allowedKeys = new Set<string>(EDITABLE_STUDENT_BASIC_DETAIL_KEYS as string[]);
-  const entries = Object.entries(payload).filter(([, value]) => value !== undefined);
-  const sanitizedEntries = entries.filter(([key]) => allowedKeys.has(key));
+  const allowedKeys = new Set<StudentBasicDetailEditableKey>(
+    EDITABLE_STUDENT_BASIC_DETAIL_KEYS,
+  );
+  const sanitizedEntries: Array<[StudentBasicDetailEditableKey, unknown]> = [];
+
+  for (const [rawKey, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    const key = rawKey as StudentBasicDetailEditableKey;
+    if (!allowedKeys.has(key)) continue;
+    sanitizedEntries.push([key, value]);
+  }
 
   if (!sanitizedEntries.length) {
     throw new Error("No se proporcionaron cambios para actualizar.");
   }
 
-  const setFragments = sanitizedEntries.map(
-    ([key], index) => `"${key}" = $${index + 1}`,
-  );
-  setFragments.push("updated_at = NOW()");
+  const setFragments = sanitizedEntries.map(([key], index) => {
+    const columnName = STUDENT_BASIC_DETAIL_COLUMN_MAP[key];
 
-  const values = sanitizedEntries.map(([, value]) => value ?? null);
+    if (!columnName) {
+      throw new Error(`Campo no permitido: ${key}`);
+    }
+
+    const cast = LEVEL_CODE_FIELDS.has(key) ? "::level_code" : "";
+    return `s.${columnName} = $${index + 1}${cast}`;
+  });
+  setFragments.push("s.updated_at = NOW()");
+
+  const values = sanitizedEntries.map(([, value]) => (value === undefined ? null : value));
   const query = `
-    UPDATE public.students
+    UPDATE public.students AS s
     SET ${setFragments.join(", ")}
-    WHERE id = $${values.length + 1}::bigint
+    WHERE s.id = $${values.length + 1}::bigint
     RETURNING
-      id,
-      full_name,
-      representative_name,
-      representative_phone,
-      representative_email,
-      has_special_needs,
-      contract_start,
-      contract_end,
-      frozen_start,
-      frozen_end,
-      current_level,
-      planned_level_min,
-      planned_level_max,
-      is_online,
-      status,
-      last_seen_at,
-      last_lesson_id,
-      updated_at,
-      created_at
+      s.id                                   AS "studentId",
+      s.full_name                            AS "fullName",
+      s.representative_name                  AS "representativeName",
+      s.representative_phone                 AS "representativePhone",
+      s.representative_email                 AS "representativeEmail",
+      s.has_special_needs                    AS "hasSpecialNeeds",
+      s.contract_start                       AS "contractStart",
+      s.contract_end                         AS "contractEnd",
+      s.frozen_start                         AS "frozenStart",
+      s.frozen_end                           AS "frozenEnd",
+      s.current_level::text                  AS "currentLevel",
+      s.planned_level_min::text              AS "plannedLevelMin",
+      s.planned_level_max::text              AS "plannedLevelMax",
+      COALESCE(s.is_online, false)           AS "isOnline",
+      s.status                               AS "status",
+      s.last_seen_at                         AS "lastSeenAt",
+      s.last_lesson_id                       AS "lastLessonId",
+      s.updated_at                           AS "updatedAt",
+      s.created_at                           AS "createdAt"
   `;
 
   const rows = normalizeRows<SqlRow>(
