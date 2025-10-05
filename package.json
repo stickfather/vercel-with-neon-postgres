@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --test --loader ./scripts/ts-loader.mjs tests/normalizeDateLike.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",

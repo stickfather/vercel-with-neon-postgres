@@ -178,7 +178,7 @@ function toIsoDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function normalizeDateLike(value: unknown): string | null {
+export function normalizeDateLike(value: unknown): string | null {
   if (!value && value !== 0) {
     return null;
   }
@@ -196,6 +196,27 @@ function normalizeDateLike(value: unknown): string | null {
     const directMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
     if (directMatch) {
       return directMatch[1];
+    }
+
+    const dmyMatch = trimmed.match(/^(\d{1,2})([\/.\-])(\d{1,2})\2(\d{4})(?:\s+.*)?$/);
+    if (dmyMatch) {
+      const day = Number(dmyMatch[1]);
+      const month = Number(dmyMatch[3]);
+      const year = Number(dmyMatch[4]);
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 0) {
+        const isoMonth = String(month).padStart(2, "0");
+        const isoDay = String(day).padStart(2, "0");
+        const isoCandidate = `${year}-${isoMonth}-${isoDay}`;
+        const parsedCandidate = new Date(`${isoCandidate}T00:00:00Z`);
+        if (
+          !Number.isNaN(parsedCandidate.getTime()) &&
+          parsedCandidate.getUTCFullYear() === year &&
+          parsedCandidate.getUTCMonth() + 1 === month &&
+          parsedCandidate.getUTCDate() === day
+        ) {
+          return isoCandidate;
+        }
+      }
     }
 
     const parsed = new Date(trimmed);
