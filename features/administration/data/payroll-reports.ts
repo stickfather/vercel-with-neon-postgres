@@ -67,7 +67,7 @@ async function ensurePayrollViews(sql: SqlClient): Promise<void> {
       CREATE OR REPLACE VIEW public.staff_day_sessions_v AS
       SELECT
         sa.staff_id,
-        DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time))) AS work_date,
+        DATE(timezone(${timezoneLiteral}, sa.checkin_time)) AS work_date,
         timezone(${timezoneLiteral}, sa.checkin_time) AS checkin_time,
         timezone(${timezoneLiteral}, sa.checkout_time) AS checkout_time,
         ${minuteComputation} AS minutes
@@ -80,11 +80,11 @@ async function ensurePayrollViews(sql: SqlClient): Promise<void> {
       WITH day_totals AS (
         SELECT
           sa.staff_id,
-          DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time))) AS work_date,
+          DATE(timezone(${timezoneLiteral}, sa.checkin_time)) AS work_date,
           SUM(${minuteComputation}) AS total_minutes
         FROM staff_attendance sa
         WHERE sa.checkin_time IS NOT NULL
-        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time)))
+        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, sa.checkin_time))
       )
       SELECT
         dt.staff_id,
@@ -109,11 +109,11 @@ async function ensurePayrollViews(sql: SqlClient): Promise<void> {
       WITH day_totals AS (
         SELECT
           sa.staff_id,
-          DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time))) AS work_date,
+          DATE(timezone(${timezoneLiteral}, sa.checkin_time)) AS work_date,
           SUM(${minuteComputation}) AS total_minutes
         FROM staff_attendance sa
         WHERE sa.checkin_time IS NOT NULL
-        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, COALESCE(sa.checkout_time, sa.checkin_time)))
+        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, sa.checkin_time))
       ),
       approvals AS (
         SELECT
