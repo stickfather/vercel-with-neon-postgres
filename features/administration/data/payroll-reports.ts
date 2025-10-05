@@ -110,6 +110,20 @@ function toNumber(value: unknown, fractionDigits = 2): number {
   return 0;
 }
 
+function toOptionalNumber(value: unknown, fractionDigits = 2): number | null {
+  if (value == null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Number(value.toFixed(fractionDigits));
+  }
+  if (typeof value === "string" && value.trim().length) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Number(parsed.toFixed(fractionDigits));
+    }
+  }
+  return null;
+}
+
 function toBoolean(value: unknown): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 1;
@@ -161,6 +175,12 @@ function toMinutesFromHours(value: unknown): number | null {
     }
   }
   return null;
+}
+
+function toHoursFromMinutes(value: unknown, fractionDigits = 2): number | null {
+  const minutes = toInteger(value);
+  if (minutes == null) return null;
+  return Number((minutes / 60).toFixed(fractionDigits));
 }
 
 function findColumn(columns: string[], candidates: string[]): string | null {
@@ -315,6 +335,21 @@ export async function fetchPayrollMatrix({
     "full_name",
     "name",
   ]);
+  const totalHoursColumn = findColumn(viewColumns, ["total_hours", "hours"]);
+  const totalMinutesColumn = findColumn(viewColumns, [
+    "total_minutes",
+    "minutes",
+    "total_work_minutes",
+  ]);
+  const approvedHoursColumn = findColumn(viewColumns, [
+    "approved_hours",
+    "hours_approved",
+    "approved_total_hours",
+  ]);
+  const approvedMinutesColumn = findColumn(viewColumns, [
+    "approved_minutes",
+    "approved_total_minutes",
+  ]);
 
   const [rawYear, rawMonth] = month.split("-");
   const year = Number(rawYear);
@@ -337,9 +372,19 @@ export async function fetchPayrollMatrix({
       ? `m.${quoteIdentifier(staffNameColumn)} AS staff_name`
       : null,
     "m.work_date AS work_date",
-    "m.total_hours AS total_hours",
+    totalMinutesColumn
+      ? `m.${quoteIdentifier(totalMinutesColumn)} AS total_minutes`
+      : null,
+    totalHoursColumn
+      ? `m.${quoteIdentifier(totalHoursColumn)} AS total_hours`
+      : null,
     "m.approved AS approved",
-    "m.approved_hours AS approved_hours",
+    approvedMinutesColumn
+      ? `m.${quoteIdentifier(approvedMinutesColumn)} AS approved_minutes`
+      : null,
+    approvedHoursColumn
+      ? `m.${quoteIdentifier(approvedHoursColumn)} AS approved_hours`
+      : null,
   ]
     .filter((value): value is string => Boolean(value))
     .join(",\n      ");
@@ -386,9 +431,27 @@ export async function fetchPayrollMatrix({
       });
     }
 
-    const totalHours = toNumber(row.total_hours ?? 0, 2);
+    const totalHoursDirect = totalHoursColumn
+      ? toOptionalNumber(row.total_hours, 2)
+      : null;
+    const totalMinutes = totalMinutesColumn
+      ? toInteger(row.total_minutes ?? row.minutes ?? null)
+      : null;
+    const totalHours =
+      totalHoursDirect ??
+      toHoursFromMinutes(totalMinutes ?? row.total_minutes ?? row.minutes ?? null) ??
+      0;
     const approved = toBoolean(row.approved);
-    const approvedHours = toNumber(row.approved_hours ?? row.total_hours ?? 0, 2);
+    const approvedHoursDirect = approvedHoursColumn
+      ? toOptionalNumber(row.approved_hours, 2)
+      : null;
+    const approvedMinutes = approvedMinutesColumn
+      ? toInteger(row.approved_minutes ?? null)
+      : null;
+    const approvedHours = approvedHoursDirect
+      ?? (approvedMinutes != null
+        ? Number((Math.max(0, approvedMinutes) / 60).toFixed(2))
+        : totalHours);
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
