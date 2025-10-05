@@ -63,23 +63,77 @@ type StudentFlagKey =
   | "isNewStudent"
   | "isExamApproaching"
   | "isExamPreparation"
-  | "isAbsent7Days"
-  | "isSlowProgress14Days"
-  | "hasActiveInstructive"
-  | "hasOverdueInstructive";
+  | "hasSpecialNeeds"
+  | "isAbsent7d"
+  | "isSlowProgress14d"
+  | "instructivoActive"
+  | "instructivoOverdue";
+
+const FLAG_VALUE_KEYS: Record<StudentFlagKey, Array<keyof StudentBasicDetails>> = {
+  isNewStudent: ["isNewStudent"],
+  isExamApproaching: ["isExamApproaching"],
+  isExamPreparation: ["isExamPreparation"],
+  hasSpecialNeeds: ["hasSpecialNeeds"],
+  isAbsent7d: ["isAbsent7d", "isAbsent7Days"],
+  isSlowProgress14d: ["isSlowProgress14d", "isSlowProgress14Days"],
+  instructivoActive: ["instructivoActive", "hasActiveInstructive"],
+  instructivoOverdue: ["instructivoOverdue", "hasOverdueInstructive"],
+};
 
 const FLAG_DEFINITIONS: ReadonlyArray<{
   key: StudentFlagKey;
   label: string;
   className: string;
+  dotClass: string;
 }> = [
-  { key: "isNewStudent", label: "Nuevo", className: "bg-emerald-100 text-emerald-700" },
-  { key: "isExamApproaching", label: "Examen pronto", className: "bg-amber-100 text-amber-700" },
-  { key: "isExamPreparation", label: "Prep. examen", className: "bg-sky-100 text-sky-700" },
-  { key: "isAbsent7Days", label: "Ausente 7d", className: "bg-rose-100 text-rose-700" },
-  { key: "isSlowProgress14Days", label: "Progreso lento", className: "bg-orange-100 text-orange-700" },
-  { key: "hasActiveInstructive", label: "Instructivo activo", className: "bg-indigo-100 text-indigo-700" },
-  { key: "hasOverdueInstructive", label: "Instructivo vencido", className: "bg-red-100 text-red-700" },
+  {
+    key: "isNewStudent",
+    label: "Nuevo",
+    className: "bg-emerald-100 text-emerald-700",
+    dotClass: "bg-emerald-500",
+  },
+  {
+    key: "isExamApproaching",
+    label: "Examen pronto",
+    className: "bg-amber-100 text-amber-700",
+    dotClass: "bg-amber-500",
+  },
+  {
+    key: "isExamPreparation",
+    label: "Prep. examen",
+    className: "bg-sky-100 text-sky-700",
+    dotClass: "bg-sky-500",
+  },
+  {
+    key: "hasSpecialNeeds",
+    label: "Necesidades especiales",
+    className: "bg-violet-100 text-violet-700",
+    dotClass: "bg-violet-500",
+  },
+  {
+    key: "isAbsent7d",
+    label: "Ausente 7d",
+    className: "bg-rose-100 text-rose-700",
+    dotClass: "bg-rose-500",
+  },
+  {
+    key: "isSlowProgress14d",
+    label: "Progreso lento",
+    className: "bg-orange-100 text-orange-700",
+    dotClass: "bg-orange-500",
+  },
+  {
+    key: "instructivoActive",
+    label: "Instructivo activo",
+    className: "bg-indigo-100 text-indigo-700",
+    dotClass: "bg-indigo-500",
+  },
+  {
+    key: "instructivoOverdue",
+    label: "Instructivo vencido",
+    className: "bg-red-100 text-red-700",
+    dotClass: "bg-red-500",
+  },
 ];
 
 function getInputType(field: StudentBasicDetailFieldConfig) {
@@ -247,15 +301,18 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
 
   const flagBadges = useMemo(() => {
     if (!formState) {
-      return [] as Array<{ key: string; label: string; className: string }>;
+      return [] as Array<{ key: string; label: string; className: string; dotClass: string }>;
     }
 
-    return FLAG_DEFINITIONS.filter((flag) => Boolean(formState[flag.key]))
-      .map((flag) => ({
-        key: flag.key,
-        label: flag.label,
-        className: flag.className,
-      }));
+    return FLAG_DEFINITIONS.filter((flag) => {
+      const candidates = FLAG_VALUE_KEYS[flag.key] ?? [];
+      return candidates.some((candidate) => Boolean((formState as Record<string, unknown>)[candidate]));
+    }).map((flag) => ({
+      key: flag.key,
+      label: flag.label,
+      className: flag.className,
+      dotClass: flag.dotClass,
+    }));
   }, [formState]);
 
   if (!formState) {
@@ -328,10 +385,14 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               isNewStudent: previous.isNewStudent,
               isExamApproaching: previous.isExamApproaching,
               isExamPreparation: previous.isExamPreparation,
-              isAbsent7Days: previous.isAbsent7Days,
-              isSlowProgress14Days: previous.isSlowProgress14Days,
-              hasActiveInstructive: previous.hasActiveInstructive,
-              hasOverdueInstructive: previous.hasOverdueInstructive,
+              isAbsent7d: previous.isAbsent7d ?? previous.isAbsent7Days,
+              isAbsent7Days: previous.isAbsent7Days ?? previous.isAbsent7d,
+              isSlowProgress14d: previous.isSlowProgress14d ?? previous.isSlowProgress14Days,
+              isSlowProgress14Days: previous.isSlowProgress14Days ?? previous.isSlowProgress14d,
+              instructivoActive: previous.instructivoActive ?? previous.hasActiveInstructive,
+              hasActiveInstructive: previous.hasActiveInstructive ?? previous.instructivoActive,
+              instructivoOverdue: previous.instructivoOverdue ?? previous.hasOverdueInstructive,
+              hasOverdueInstructive: previous.hasOverdueInstructive ?? previous.instructivoOverdue,
             };
           });
           setStatusMessage("Cambios guardados correctamente.");
@@ -372,18 +433,18 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
             Estado y banderas
           </span>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {statusBadges.length ? (
               statusBadges.map((badge) => (
                 <span
                   key={badge.key}
-                  className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${badge.className}`}
+                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${badge.className}`}
                 >
                   {badge.label}
                 </span>
               ))
             ) : (
-              <span className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${DEFAULT_STATUS_CLASS}`}>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${DEFAULT_STATUS_CLASS}`}>
                 Estado no disponible
               </span>
             )}
@@ -391,13 +452,17 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               flagBadges.map((badge) => (
                 <span
                   key={`flag-${badge.key}`}
-                  className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${badge.className}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${badge.className}`}
                 >
-                  {badge.label}
+                  <span
+                    aria-hidden="true"
+                    className={`h-2 w-2 rounded-full ${badge.dotClass}`}
+                  />
+                  <span className="leading-tight">{badge.label}</span>
                 </span>
               ))
             ) : (
-              <span className="inline-flex items-center rounded-full bg-brand-ink-muted/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-ink">
+              <span className="inline-flex items-center rounded-full bg-brand-ink-muted/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-ink">
                 Sin banderas activas
               </span>
             )}
