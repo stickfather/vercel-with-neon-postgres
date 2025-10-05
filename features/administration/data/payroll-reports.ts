@@ -85,23 +85,27 @@ async function ensurePayrollViews(sql: SqlClient): Promise<void> {
         FROM staff_attendance sa
         WHERE sa.checkin_time IS NOT NULL
         GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, sa.checkin_time))
+      ),
+      all_days AS (
+        SELECT dt.staff_id, dt.work_date FROM day_totals dt
+        UNION
+        SELECT p.staff_id, p.work_date FROM payroll_day_approvals p
       )
       SELECT
-        dt.staff_id,
-        dt.work_date,
-        dt.total_minutes,
-        ROUND((dt.total_minutes::numeric / 60.0), 2) AS total_hours,
+        ad.staff_id,
+        ad.work_date,
+        COALESCE(dt.total_minutes, p.approved_minutes, 0) AS total_minutes,
+        ROUND((COALESCE(dt.total_minutes, p.approved_minutes, 0)::numeric / 60.0), 2) AS total_hours,
         COALESCE(p.approved, FALSE) AS approved,
         p.approved_minutes,
-        CASE
-          WHEN p.approved_minutes IS NOT NULL THEN ROUND((p.approved_minutes::numeric / 60.0), 2)
-          ELSE ROUND((dt.total_minutes::numeric / 60.0), 2)
-        END AS approved_hours,
+        ROUND((COALESCE(p.approved_minutes, dt.total_minutes, 0)::numeric / 60.0), 2) AS approved_hours,
         p.approved_at,
         p.approved_by
-      FROM day_totals dt
+      FROM all_days ad
+      LEFT JOIN day_totals dt
+        ON dt.staff_id = ad.staff_id AND dt.work_date = ad.work_date
       LEFT JOIN payroll_day_approvals p
-        ON p.staff_id = dt.staff_id AND p.work_date = dt.work_date;
+        ON p.staff_id = ad.staff_id AND p.work_date = ad.work_date;
     `);
 
     await unsafeSql.unsafe(`
@@ -117,16 +121,22 @@ async function ensurePayrollViews(sql: SqlClient): Promise<void> {
       ),
       approvals AS (
         SELECT
-          dt.staff_id,
-          dt.work_date,
-          dt.total_minutes,
+          ad.staff_id,
+          ad.work_date,
+          COALESCE(dt.total_minutes, p.approved_minutes, 0) AS total_minutes,
           COALESCE(p.approved, FALSE) AS approved,
-          COALESCE(p.approved_minutes, dt.total_minutes) AS approved_minutes,
+          COALESCE(p.approved_minutes, dt.total_minutes, 0) AS approved_minutes,
           p.approved_at,
           p.approved_by
-        FROM day_totals dt
+        FROM (
+          SELECT dt.staff_id, dt.work_date FROM day_totals dt
+          UNION
+          SELECT p.staff_id, p.work_date FROM payroll_day_approvals p
+        ) ad
+        LEFT JOIN day_totals dt
+          ON dt.staff_id = ad.staff_id AND dt.work_date = ad.work_date
         LEFT JOIN payroll_day_approvals p
-          ON p.staff_id = dt.staff_id AND p.work_date = dt.work_date
+          ON p.staff_id = ad.staff_id AND p.work_date = ad.work_date
       ),
       monthly AS (
         SELECT
