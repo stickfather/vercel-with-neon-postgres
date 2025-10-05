@@ -56,6 +56,84 @@ function pick<T = unknown>(row: SqlRow, keys: string[]): T | null {
   return null;
 }
 
+function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
+  const id = Number(row["student_id"] ?? row.id ?? row["id"] ?? 0);
+  const fullName = ((row.full_name as string | null) ?? "").trim();
+
+  if (!Number.isFinite(id) || id <= 0 || !fullName.length) {
+    return null;
+  }
+
+  return {
+    id,
+    fullName,
+    level:
+      coerceString(
+        pick(row, ["level", "current_level", "last_level", "student_level"]),
+      ) ?? null,
+    state:
+      coerceString(pick(row, ["state", "status", "student_state"])) ?? null,
+    isNewStudent:
+      coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
+      false,
+    isExamApproaching:
+      coerceBoolean(
+        pick(row, ["is_exam_approaching", "exam_approaching", "upcoming_exam"]),
+      ) ?? false,
+    isExamPreparation:
+      coerceBoolean(
+        pick(row, [
+          "is_exam_preparation",
+          "exam_preparation",
+          "is_exam",
+          "preparation",
+        ]),
+      ) ?? false,
+    hasSpecialNeeds:
+      coerceBoolean(
+        pick(row, [
+          "has_special_needs",
+          "special_needs",
+          "is_special_needs",
+        ]),
+      ) ?? false,
+    isAbsent7Days:
+      coerceBoolean(
+        pick(row, [
+          "is_absent_7d",
+          "absent_7d",
+          "is_absent_seven_days",
+          "absent_7_days",
+        ]),
+      ) ?? false,
+    isSlowProgress14Days:
+      coerceBoolean(
+        pick(row, [
+          "is_slow_progress_14d",
+          "slow_progress_14d",
+          "is_slow_progress",
+          "slow_progress",
+        ]),
+      ) ?? false,
+    hasActiveInstructive:
+      coerceBoolean(
+        pick(row, [
+          "instructivo_active",
+          "has_instructive_active",
+          "active_instructive",
+        ]),
+      ) ?? false,
+    hasOverdueInstructive:
+      coerceBoolean(
+        pick(row, [
+          "instructivo_overdue",
+          "has_instructive_overdue",
+          "overdue_instructive",
+        ]),
+      ) ?? false,
+  };
+}
+
 export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
   const sql = getSqlClient();
 
@@ -66,73 +144,27 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
   `);
 
   return rows
-    .map((row) => ({
-      id: Number(row["student_id"] ?? row.id ?? row["id"] ?? 0),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
-      level:
-        coerceString(
-          pick(row, ["level", "current_level", "last_level", "student_level"]),
-        ) ?? null,
-      state:
-        coerceString(pick(row, ["state", "status", "student_state"])) ?? null,
-      isNewStudent:
-        coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
-        false,
-      isExamApproaching:
-        coerceBoolean(
-          pick(row, ["is_exam_approaching", "exam_approaching", "upcoming_exam"]),
-        ) ?? false,
-      isExamPreparation:
-        coerceBoolean(
-          pick(row, [
-            "is_exam_preparation",
-            "exam_preparation",
-            "is_exam",
-            "preparation",
-          ]),
-        ) ?? false,
-      hasSpecialNeeds:
-        coerceBoolean(
-          pick(row, [
-            "has_special_needs",
-            "special_needs",
-            "is_special_needs",
-          ]),
-        ) ?? false,
-      isAbsent7Days:
-        coerceBoolean(
-          pick(row, [
-            "is_absent_7d",
-            "absent_7d",
-            "is_absent_seven_days",
-            "absent_7_days",
-          ]),
-        ) ?? false,
-      isSlowProgress14Days:
-        coerceBoolean(
-          pick(row, [
-            "is_slow_progress_14d",
-            "slow_progress_14d",
-            "is_slow_progress",
-            "slow_progress",
-          ]),
-        ) ?? false,
-      hasActiveInstructive:
-        coerceBoolean(
-          pick(row, [
-            "instructivo_active",
-            "has_instructive_active",
-            "active_instructive",
-          ]),
-        ) ?? false,
-      hasOverdueInstructive:
-        coerceBoolean(
-          pick(row, [
-            "instructivo_overdue",
-            "has_instructive_overdue",
-            "overdue_instructive",
-          ]),
-        ) ?? false,
-    }))
-    .filter((student) => student.fullName.length > 0 && Number.isFinite(student.id) && student.id > 0);
+    .map(mapStudentManagementRow)
+    .filter((student): student is StudentManagementEntry => Boolean(student));
+}
+
+export async function getStudentManagementEntry(
+  studentId: number,
+): Promise<StudentManagementEntry | null> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.student_management_v
+    WHERE student_id = ${studentId}::bigint
+      OR id = ${studentId}::bigint
+    ORDER BY full_name ASC
+    LIMIT 1
+  `);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return mapStudentManagementRow(rows[0]);
 }

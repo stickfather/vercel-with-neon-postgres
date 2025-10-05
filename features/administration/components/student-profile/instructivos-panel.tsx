@@ -19,7 +19,8 @@ type ActiveRequest = "create" | "edit" | "delete" | null;
 
 type AddFormState = {
   title: string;
-  content: string;
+  dueDate: string;
+  completed: boolean;
   note: string;
 };
 
@@ -32,7 +33,8 @@ type ModalProps = {
 
 const INITIAL_ADD_FORM: AddFormState = {
   title: "",
-  content: "",
+  dueDate: "",
+  completed: false,
   note: "",
 };
 
@@ -49,17 +51,17 @@ function formatDate(value: string | null): string {
 
 function Modal({ title, description, onClose, children }: ModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
-      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-[32px] border border-white/80 bg-white/95 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep-soft text-lg font-bold text-brand-deep transition hover:bg-brand-deep-soft/80"
-          aria-label="Cerrar ventana"
-        >
-          ×
-        </button>
-        <div className="flex max-h-[85vh] flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
+      <div className="mx-auto flex min-h-full w-full max-w-xl flex-col">
+        <div className="relative flex max-h-[90vh] flex-1 flex-col overflow-hidden rounded-[32px] border border-white/80 bg-white/95 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep-soft text-lg font-bold text-brand-deep transition hover:bg-brand-deep-soft/80"
+            aria-label="Cerrar ventana"
+          >
+            ×
+          </button>
           <div className="flex flex-col gap-2 px-6 pt-6 pr-12">
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
               Acción requerida
@@ -96,9 +98,14 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
 
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
-      const aDate = a.createdAt ?? "";
-      const bDate = b.createdAt ?? "";
-      return bDate.localeCompare(aDate);
+      const aDue = a.dueDate ?? "";
+      const bDue = b.dueDate ?? "";
+      if (aDue && bDue) return aDue.localeCompare(bDue);
+      if (aDue) return -1;
+      if (bDue) return 1;
+      const aCreated = a.createdAt ?? "";
+      const bCreated = b.createdAt ?? "";
+      return bCreated.localeCompare(aCreated);
     });
   }, [items]);
 
@@ -127,7 +134,8 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
     setEditingItem(item);
     setEditForm({
       title: item.title,
-      content: item.content,
+      dueDate: item.dueDate ?? "",
+      completed: Boolean(item.completed),
       note: item.note ?? "",
     });
   };
@@ -141,8 +149,8 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
       return;
     }
 
-    if (!addForm.content.trim()) {
-      setError("Debes ingresar las instrucciones o contenido.");
+    if (!addForm.note.trim()) {
+      setError("Debes ingresar la descripción o nota del instructivo.");
       return;
     }
 
@@ -158,7 +166,8 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               title: addForm.title.trim(),
-              content: addForm.content.trim(),
+              dueDate: addForm.dueDate.trim() || null,
+              completed: addForm.completed,
               note: addForm.note.trim() || null,
             }),
           });
@@ -193,8 +202,8 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
       return;
     }
 
-    if (!editForm.content.trim()) {
-      setError("Debes ingresar las instrucciones o contenido.");
+    if (!editForm.note.trim()) {
+      setError("Debes ingresar la descripción o nota del instructivo.");
       return;
     }
 
@@ -212,9 +221,9 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 title: editForm.title.trim(),
-                content: editForm.content.trim(),
+                dueDate: editForm.dueDate.trim() || null,
+                completed: editForm.completed,
                 note: editForm.note.trim() || null,
-                createdBy: editingItem.createdBy ?? null,
               }),
             },
           );
@@ -287,7 +296,7 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
     <section className="flex flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <header className="flex flex-col gap-1 text-left">
         <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
-          Panel 5
+          Panel 4
         </span>
         <h2 className="text-2xl font-bold text-brand-deep">Instructivos</h2>
         <p className="text-sm text-brand-ink-muted">
@@ -320,17 +329,18 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
         <table className="min-w-full table-auto divide-y divide-brand-ink-muted/15 text-left text-sm text-brand-ink">
           <thead className="bg-brand-teal-soft/40 text-xs uppercase tracking-wide text-brand-ink">
             <tr>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Fecha</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Creado</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Fecha límite</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Título</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Resumen</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Creado por</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Estado</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Nota</th>
               <th className="px-4 py-3 text-right font-semibold text-brand-deep">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {sortedItems.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
+                <td colSpan={6} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
                   No se han registrado instructivos todavía. Usa el botón “Agregar instructivo” para crear uno nuevo.
                 </td>
               </tr>
@@ -341,20 +351,33 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
                     {formatDate(item.createdAt)}
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
-                    {item.title}
+                    {formatDate(item.dueDate)}
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
-                    <p className="line-clamp-3 text-sm leading-relaxed">
-                      {item.content}
-                    </p>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold text-brand-deep">{item.title}</span>
+                      <span className="text-xs text-brand-ink-muted">
+                        Última actualización: {formatDate(item.updatedAt ?? item.createdAt)}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <span
+                      className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${
+                        item.completed
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {item.completed ? "Completado" : "Pendiente"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 align-top text-brand-ink">
                     {item.note ? (
-                      <p className="mt-2 text-xs text-brand-ink-muted">
-                        Nota: {item.note}
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3 align-top text-brand-ink">
-                    {item.createdBy ?? "—"}
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.note}</p>
+                    ) : (
+                      <span className="text-sm text-brand-ink-muted">Sin nota registrada</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 align-top">
                     <div className="flex justify-end gap-2">
@@ -390,7 +413,7 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
         >
           <form className="flex flex-col gap-4" onSubmit={handleCreate}>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Title
+              Título
               <input
                 type="text"
                 value={addForm.title}
@@ -402,28 +425,38 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Content / Instructions
-              <textarea
-                value={addForm.content}
+              Fecha límite (opcional)
+              <input
+                type="date"
+                value={addForm.dueDate}
                 onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, content: event.target.value }))
+                  setAddForm((previous) => ({ ...previous, dueDate: event.target.value }))
                 }
-                rows={4}
-                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                placeholder="Describe los pasos o instrucciones"
-                required
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-2xl bg-white/95 p-4 text-left text-sm font-semibold text-brand-deep shadow-inner">
+              <span>Marcar como completado</span>
+              <input
+                type="checkbox"
+                checked={addForm.completed}
+                onChange={(event) =>
+                  setAddForm((previous) => ({ ...previous, completed: event.target.checked }))
+                }
+                className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Note (opcional)
+              Nota
               <textarea
                 value={addForm.note}
                 onChange={(event) =>
                   setAddForm((previous) => ({ ...previous, note: event.target.value }))
                 }
-                rows={3}
+                rows={4}
                 className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
                 placeholder="Añade contexto o recordatorios"
+                required
               />
             </label>
             <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
@@ -454,7 +487,7 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
         >
           <form className="flex flex-col gap-4" onSubmit={handleUpdate}>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Title
+              Título
               <input
                 type="text"
                 value={editForm.title}
@@ -466,26 +499,37 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Content / Instructions
-              <textarea
-                value={editForm.content}
+              Fecha límite (opcional)
+              <input
+                type="date"
+                value={editForm.dueDate}
                 onChange={(event) =>
-                  setEditForm((previous) => ({ ...previous, content: event.target.value }))
+                  setEditForm((previous) => ({ ...previous, dueDate: event.target.value }))
                 }
-                rows={4}
-                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                required
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-2xl bg-white/95 p-4 text-left text-sm font-semibold text-brand-deep shadow-inner">
+              <span>Marcar como completado</span>
+              <input
+                type="checkbox"
+                checked={editForm.completed}
+                onChange={(event) =>
+                  setEditForm((previous) => ({ ...previous, completed: event.target.checked }))
+                }
+                className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
               />
             </label>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Note (opcional)
+              Nota
               <textarea
                 value={editForm.note}
                 onChange={(event) =>
                   setEditForm((previous) => ({ ...previous, note: event.target.value }))
                 }
-                rows={3}
+                rows={4}
                 className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                required
               />
             </label>
             <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">

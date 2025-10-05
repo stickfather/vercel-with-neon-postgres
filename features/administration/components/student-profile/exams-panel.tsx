@@ -74,17 +74,17 @@ function parseScore(value: string): number | null {
 
 function Modal({ title, description, onClose, children }: ModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
-      <div className="relative flex w-full max-w-xl flex-col overflow-hidden rounded-[32px] border border-white/80 bg-white/95 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep-soft text-lg font-bold text-brand-deep transition hover:bg-brand-deep-soft/80"
-          aria-label="Cerrar ventana"
-        >
-          ×
-        </button>
-        <div className="flex max-h-[85vh] flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
+      <div className="mx-auto flex min-h-full w-full max-w-xl flex-col">
+        <div className="relative flex max-h-[90vh] flex-1 flex-col overflow-hidden rounded-[32px] border border-white/80 bg-white/95 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-deep-soft text-lg font-bold text-brand-deep transition hover:bg-brand-deep-soft/80"
+            aria-label="Cerrar ventana"
+          >
+            ×
+          </button>
           <div className="flex flex-col gap-2 px-6 pt-6 pr-12">
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
               Acción requerida
@@ -316,7 +316,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
     <section className="flex flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <header className="flex flex-col gap-1 text-left">
         <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
-          Panel 4
+          Panel 3
         </span>
         <h2 className="text-2xl font-bold text-brand-deep">Exámenes</h2>
         <p className="text-sm text-brand-ink-muted">

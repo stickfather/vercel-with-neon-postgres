@@ -31,7 +31,6 @@ export async function POST(
     }
     const payload = body as Record<string, unknown>;
     const title = typeof payload.title === "string" ? (payload.title as string).trim() : "";
-    const content = typeof payload.content === "string" ? (payload.content as string).trim() : "";
 
     if (!title) {
       return NextResponse.json(
@@ -40,24 +39,24 @@ export async function POST(
       );
     }
 
-    if (!content) {
-      return NextResponse.json(
-        { error: "Debes ingresar las instrucciones o contenido." },
-        { status: 400 },
-      );
-    }
-
-    const note = typeof payload.note === "string" ? (payload.note as string).trim() || null : null;
-    const createdBy =
-      typeof payload.createdBy === "string" && (payload.createdBy as string).trim().length
-        ? (payload.createdBy as string).trim()
+    const dueDate =
+      typeof payload.dueDate === "string" && (payload.dueDate as string).trim().length
+        ? (payload.dueDate as string).trim()
         : null;
+    const completedRaw = payload.completed;
+    const completed =
+      typeof completedRaw === "boolean"
+        ? completedRaw
+        : typeof completedRaw === "string"
+          ? ["true", "1", "yes", "y", "si", "sí"].includes(completedRaw.trim().toLowerCase())
+          : false;
+    const note = typeof payload.note === "string" ? (payload.note as string).trim() || null : null;
 
     const instructivo = await createStudentInstructivo(studentId, {
       title,
-      content,
+      dueDate,
+      completed,
       note,
-      createdBy,
     });
 
     revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);

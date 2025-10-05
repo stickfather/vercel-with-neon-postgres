@@ -38,6 +38,7 @@ import {
   getStudentLessonTimeline,
   getStudentAttendanceStats,
 } from "@/features/administration/data/student-profile";
+import { getStudentManagementEntry } from "@/features/administration/data/students";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,24 @@ async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfile
 
   if (!basicDetails) {
     return PRIMARY_DATA_FALLBACK;
+  }
+
+  try {
+    const managementEntry = await getStudentManagementEntry(studentId);
+    if (managementEntry && basicDetails) {
+      basicDetails = {
+        ...basicDetails,
+        isNewStudent: managementEntry.isNewStudent,
+        isExamApproaching: managementEntry.isExamApproaching,
+        isExamPreparation: managementEntry.isExamPreparation,
+        isAbsent7Days: managementEntry.isAbsent7Days,
+        isSlowProgress14Days: managementEntry.isSlowProgress14Days,
+        hasActiveInstructive: managementEntry.hasActiveInstructive,
+        hasOverdueInstructive: managementEntry.hasOverdueInstructive,
+      };
+    }
+  } catch (error) {
+    console.error("Failed to load student management flags", error);
   }
 
   const [paymentScheduleResult, notesResult, examsResult, instructivosResult] =
@@ -324,18 +343,20 @@ export default async function StudentProfilePage({
           <Suspense fallback={<PaymentSchedulePanelSkeleton />}>
             <PaymentSchedulePanel studentId={studentId} entries={primaryData.paymentSchedule} />
           </Suspense>
-          <Suspense fallback={<NotesPanelSkeleton />}>
-            <NotesPanel studentId={studentId} notes={primaryData.notes} />
-          </Suspense>
           <Suspense fallback={<ExamsPanelSkeleton />}>
             <ExamsPanel studentId={studentId} exams={primaryData.exams} />
           </Suspense>
           <Suspense fallback={<InstructivosPanelSkeleton />}>
             <InstructivosPanel studentId={studentId} instructivos={primaryData.instructivos} />
           </Suspense>
-          <Suspense fallback={<AttendancePanelSkeleton />}>
-            <AttendancePanelSection studentId={studentId} startDate={startDate} endDate={endDate} />
-          </Suspense>
+          <div className="grid gap-8 lg:grid-cols-2">
+            <Suspense fallback={<AttendancePanelSkeleton />}>
+              <AttendancePanelSection studentId={studentId} startDate={startDate} endDate={endDate} />
+            </Suspense>
+            <Suspense fallback={<NotesPanelSkeleton />}>
+              <NotesPanel studentId={studentId} notes={primaryData.notes} />
+            </Suspense>
+          </div>
         </div>
       </main>
     </div>

@@ -16,7 +16,6 @@ export type StudentBasicDetails = {
   representativeName: string | null;
   representativePhone: string | null;
   representativeEmail: string | null;
-  hasSpecialNeeds: boolean | null;
   contractStart: string | null;
   contractEnd: string | null;
   frozenStart: string | null;
@@ -24,7 +23,15 @@ export type StudentBasicDetails = {
   currentLevel: string | null;
   plannedLevelMin: string | null;
   plannedLevelMax: string | null;
+  hasSpecialNeeds: boolean | null;
   isOnline: boolean | null;
+  isNewStudent: boolean | null;
+  isExamApproaching: boolean | null;
+  isExamPreparation: boolean | null;
+  isAbsent7Days: boolean | null;
+  isSlowProgress14Days: boolean | null;
+  hasActiveInstructive: boolean | null;
+  hasOverdueInstructive: boolean | null;
   status: string | null;
   lastSeenAt: string | null;
   lastLessonId: string | null;
@@ -67,13 +74,6 @@ export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldC
     dbColumn: "representativeEmail",
     label: "Correo del representante",
     type: "text",
-    editable: true,
-  },
-  {
-    key: "hasSpecialNeeds",
-    dbColumn: "hasSpecialNeeds",
-    label: "Necesidades especiales",
-    type: "boolean",
     editable: true,
   },
   {
@@ -126,13 +126,19 @@ export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldC
     editable: true,
   },
   {
+    key: "hasSpecialNeeds",
+    dbColumn: "hasSpecialNeeds",
+    label: "Necesidades especiales",
+    type: "boolean",
+    editable: true,
+  },
+  {
     key: "isOnline",
     dbColumn: "isOnline",
     label: "Modalidad en línea",
     type: "boolean",
     editable: true,
   },
-  { key: "status", dbColumn: "status", label: "Estado", type: "text", editable: false },
   {
     key: "lastLessonId",
     dbColumn: "lastLessonId",
@@ -252,7 +258,6 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     representativeName: normalizeFieldValue(row.representativeName, "text"),
     representativePhone: normalizeFieldValue(row.representativePhone, "text"),
     representativeEmail: normalizeFieldValue(row.representativeEmail, "text"),
-    hasSpecialNeeds: normalizeFieldValue(row.hasSpecialNeeds, "boolean"),
     contractStart: normalizeFieldValue(row.contractStart, "date"),
     contractEnd: normalizeFieldValue(row.contractEnd, "date"),
     frozenStart: normalizeFieldValue(row.frozenStart, "date"),
@@ -260,7 +265,15 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     currentLevel: normalizeFieldValue(row.currentLevel, "text"),
     plannedLevelMin: normalizeFieldValue(row.plannedLevelMin, "text"),
     plannedLevelMax: normalizeFieldValue(row.plannedLevelMax, "text"),
+    hasSpecialNeeds: normalizeFieldValue(row.hasSpecialNeeds, "boolean"),
     isOnline: normalizeFieldValue(row.isOnline, "boolean"),
+    isNewStudent: normalizeFieldValue(row.isNewStudent, "boolean"),
+    isExamApproaching: normalizeFieldValue(row.isExamApproaching, "boolean"),
+    isExamPreparation: normalizeFieldValue(row.isExamPreparation, "boolean"),
+    isAbsent7Days: normalizeFieldValue(row.isAbsent7Days, "boolean"),
+    isSlowProgress14Days: normalizeFieldValue(row.isSlowProgress14Days, "boolean"),
+    hasActiveInstructive: normalizeFieldValue(row.hasActiveInstructive, "boolean"),
+    hasOverdueInstructive: normalizeFieldValue(row.hasOverdueInstructive, "boolean"),
     status: normalizeFieldValue(row.status, "text"),
     lastSeenAt: normalizeFieldValue(row.lastSeenAt, "datetime"),
     lastLessonId: normalizeFieldValue(row.lastLessonId, "text"),
@@ -289,6 +302,13 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
       s.planned_level_min::text              AS "plannedLevelMin",
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
+      NULL::boolean                          AS "isNewStudent",
+      NULL::boolean                          AS "isExamApproaching",
+      NULL::boolean                          AS "isExamPreparation",
+      NULL::boolean                          AS "isAbsent7Days",
+      NULL::boolean                          AS "isSlowProgress14Days",
+      NULL::boolean                          AS "hasActiveInstructive",
+      NULL::boolean                          AS "hasOverdueInstructive",
       s.last_seen_at                         AS "lastSeenAt",
       s.last_lesson_id                       AS "lastLessonId",
       s.status                               AS "status",
@@ -369,6 +389,13 @@ export async function updateStudentBasicDetails(
       s.planned_level_min::text              AS "plannedLevelMin",
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
+      NULL::boolean                          AS "isNewStudent",
+      NULL::boolean                          AS "isExamApproaching",
+      NULL::boolean                          AS "isExamPreparation",
+      NULL::boolean                          AS "isAbsent7Days",
+      NULL::boolean                          AS "isSlowProgress14Days",
+      NULL::boolean                          AS "hasActiveInstructive",
+      NULL::boolean                          AS "hasOverdueInstructive",
       s.status                               AS "status",
       s.last_seen_at                         AS "lastSeenAt",
       s.last_lesson_id                       AS "lastLessonId",
@@ -753,9 +780,10 @@ export type StudentInstructivo = {
   id: number;
   studentId: number;
   title: string;
-  content: string;
+  dueDate: string | null;
+  completed: boolean;
   note: string | null;
-  createdBy: string | null;
+  updatedAt: string | null;
   createdAt: string | null;
 };
 
@@ -767,9 +795,10 @@ function mapInstructivoRow(
     id: Number(row.id),
     studentId: Number(row.student_id ?? fallbackStudentId),
     title: normalizeFieldValue(row.title, "text") ?? "",
-    content: normalizeFieldValue(row.content, "text") ?? "",
+    dueDate: normalizeFieldValue(row.due_date, "date"),
+    completed: normalizeFieldValue(row.completed, "boolean") ?? false,
     note: normalizeFieldValue(row.note, "text"),
-    createdBy: normalizeFieldValue(row.created_by, "text"),
+    updatedAt: normalizeFieldValue(row.updated_at, "datetime"),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
   };
 }
@@ -781,7 +810,7 @@ export async function listStudentInstructivos(
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, student_id, title, content, note, created_by, created_at
+    SELECT id, student_id, title, due_date, completed, note, updated_at, created_at
     FROM public.student_instructivos
     WHERE student_id = ${studentId}::bigint
     ORDER BY created_at DESC NULLS LAST, id DESC
@@ -794,24 +823,24 @@ export async function createStudentInstructivo(
   studentId: number,
   data: {
     title: string;
-    content: string;
+    dueDate?: string | null;
+    completed?: boolean;
     note?: string | null;
-    createdBy?: string | null;
   },
 ): Promise<StudentInstructivo> {
   noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.student_instructivos (student_id, title, content, note, created_by)
+    INSERT INTO public.student_instructivos (student_id, title, due_date, completed, note)
     VALUES (
       ${studentId}::bigint,
       ${data.title},
-      ${data.content},
-      ${data.note ?? null},
-      ${data.createdBy ?? null}
+      ${data.dueDate ?? null},
+      ${data.completed ?? false},
+      ${data.note ?? null}
     )
-    RETURNING id, student_id, title, content, note, created_by, created_at
+    RETURNING id, student_id, title, due_date, completed, note, updated_at, created_at
   `);
 
   if (!rows.length) {
@@ -825,9 +854,9 @@ export async function updateStudentInstructivo(
   instructivoId: number,
   data: {
     title: string;
-    content: string;
+    dueDate: string | null;
+    completed: boolean;
     note: string | null;
-    createdBy: string | null;
   },
 ): Promise<StudentInstructivo> {
   noStore();
@@ -836,11 +865,12 @@ export async function updateStudentInstructivo(
   const rows = normalizeRows<SqlRow>(await sql`
     UPDATE public.student_instructivos
     SET title = ${data.title},
-      content = ${data.content},
+      due_date = ${data.dueDate},
+      completed = ${data.completed},
       note = ${data.note},
-      created_by = ${data.createdBy}
+      updated_at = NOW()
     WHERE id = ${instructivoId}::bigint
-    RETURNING id, student_id, title, content, note, created_by, created_at
+    RETURNING id, student_id, title, due_date, completed, note, updated_at, created_at
   `);
 
   if (!rows.length) {
@@ -858,7 +888,7 @@ export async function deleteStudentInstructivo(
   const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.student_instructivos
     WHERE id = ${instructivoId}::bigint
-    RETURNING id, student_id, title, content, note, created_by, created_at
+    RETURNING id, student_id, title, due_date, completed, note, updated_at, created_at
   `);
 
   if (!rows.length) {
