@@ -66,8 +66,10 @@ function FlagIndicator({ active, label }: { active: boolean; label: string }) {
 function StudentManagementTable({ students }: Props) {
   const [stateFilters, setStateFilters] = useState<string[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const totalStudents = students.length;
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
   const stateTotals = useMemo(() => {
     const counts = new Map<string, number>();
@@ -105,9 +107,12 @@ function StudentManagementTable({ students }: Props) {
       const matchesState =
         stateFilters.length === 0 || stateFilters.includes(stateKey);
       const matchesFlags = flagFilters.every((flag) => Boolean(student[flag]));
-      return matchesState && matchesFlags;
+      const matchesSearch =
+        !normalizedSearchTerm.length ||
+        student.fullName.toLowerCase().includes(normalizedSearchTerm);
+      return matchesState && matchesFlags && matchesSearch;
     });
-  }, [students, stateFilters, flagFilters]);
+  }, [students, stateFilters, flagFilters, normalizedSearchTerm]);
 
   const toggleStateFilter = (key: string) => {
     setStateFilters((previous) =>
@@ -131,6 +136,7 @@ function StudentManagementTable({ students }: Props) {
   };
 
   const hasActiveFilters = stateFilters.length > 0 || flagFilters.length > 0;
+  const hasSearch = normalizedSearchTerm.length > 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -146,6 +152,31 @@ function StudentManagementTable({ students }: Props) {
       />
 
       <div className="overflow-hidden rounded-[32px] border border-white/70 bg-white/95 shadow-[0_24px_58px_rgba(15,23,42,0.12)]">
+        <div className="flex flex-col gap-3 border-b border-brand-ink-muted/10 bg-white/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <label className="flex w-full flex-col gap-1 text-sm font-semibold text-brand-deep sm:max-w-sm">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+              Buscar estudiante
+            </span>
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Escribe un nombre para filtrar"
+              className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            {hasSearch && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              >
+                Limpiar búsqueda
+              </button>
+            )}
+          </div>
+        </div>
         <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left">
           <thead className="bg-white text-[11px] uppercase tracking-wide text-brand-ink">
             <tr>
@@ -214,8 +245,8 @@ function StudentManagementTable({ students }: Props) {
             {!filteredStudents.length && (
               <tr>
                 <td colSpan={FLAG_COLUMNS.length + 3} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
-                  {hasActiveFilters
-                    ? "No encontramos estudiantes que coincidan con los filtros seleccionados."
+                  {hasActiveFilters || hasSearch
+                    ? "No encontramos estudiantes que coincidan con los filtros o búsqueda seleccionados."
                     : "No encontramos estudiantes en la vista de gestión. Revisa la configuración de la base de datos."}
                 </td>
               </tr>

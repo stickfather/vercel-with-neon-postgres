@@ -75,6 +75,10 @@ body {
   background-color: rgba(0, 191, 166, 0.15);
 }
 
+.bg-brand-teal {
+  background-color: var(--app-teal);
+}
+
 .border-brand-teal {
   border-color: var(--app-teal);
 }

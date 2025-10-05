@@ -48,6 +48,29 @@ const STATUS_STYLE_MAP: Record<string, { label: string; className: string }> = {
 
 const DEFAULT_STATUS_CLASS = "bg-brand-deep-soft text-brand-deep";
 
+type StudentFlagKey =
+  | "isNewStudent"
+  | "isExamApproaching"
+  | "isExamPreparation"
+  | "isAbsent7Days"
+  | "isSlowProgress14Days"
+  | "hasActiveInstructive"
+  | "hasOverdueInstructive";
+
+const FLAG_DEFINITIONS: ReadonlyArray<{
+  key: StudentFlagKey;
+  label: string;
+  className: string;
+}> = [
+  { key: "isNewStudent", label: "Nuevo", className: "bg-emerald-100 text-emerald-700" },
+  { key: "isExamApproaching", label: "Examen pronto", className: "bg-amber-100 text-amber-700" },
+  { key: "isExamPreparation", label: "Prep. examen", className: "bg-sky-100 text-sky-700" },
+  { key: "isAbsent7Days", label: "Ausente 7d", className: "bg-rose-100 text-rose-700" },
+  { key: "isSlowProgress14Days", label: "Progreso lento", className: "bg-orange-100 text-orange-700" },
+  { key: "hasActiveInstructive", label: "Instructivo activo", className: "bg-indigo-100 text-indigo-700" },
+  { key: "hasOverdueInstructive", label: "Instructivo vencido", className: "bg-red-100 text-red-700" },
+];
+
 function getInputType(field: StudentBasicDetailFieldConfig) {
   switch (field.type) {
     case "date":
@@ -141,20 +164,38 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
   );
 
   const orderedFields = useMemo(() => {
-    const onlineField = STUDENT_BASIC_DETAIL_FIELDS.find((field) => field.key === "isOnline") ?? null;
-    const withoutOnline = STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.key !== "isOnline");
-    const result: StudentBasicDetailFieldConfig[] = [];
+    const preferredOrder: Array<StudentBasicDetailFieldConfig["key"]> = [
+      "fullName",
+      "representativeName",
+      "representativePhone",
+      "representativeEmail",
+      "contractStart",
+      "contractEnd",
+      "frozenStart",
+      "frozenEnd",
+      "currentLevel",
+      "plannedLevelMin",
+      "plannedLevelMax",
+      "hasSpecialNeeds",
+      "isOnline",
+    ];
 
-    for (const field of withoutOnline) {
-      result.push(field);
-      if (field.key === "hasSpecialNeeds" && onlineField) {
-        result.push(onlineField);
+    const fieldMap = new Map(
+      STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.key !== "status").map((field) => [field.key, field]),
+    );
+
+    const result: StudentBasicDetailFieldConfig[] = [];
+    for (const key of preferredOrder) {
+      const field = fieldMap.get(key);
+      if (field) {
+        result.push(field);
+        fieldMap.delete(key);
       }
     }
 
-    if (onlineField && !result.includes(onlineField)) {
-      result.push(onlineField);
-    }
+    fieldMap.forEach((field) => {
+      result.push(field);
+    });
 
     return result;
   }, []);
@@ -192,6 +233,19 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
 
     return entries;
   }, [formState?.status]);
+
+  const flagBadges = useMemo(() => {
+    if (!formState) {
+      return [] as Array<{ key: string; label: string; className: string }>;
+    }
+
+    return FLAG_DEFINITIONS.filter((flag) => Boolean(formState[flag.key]))
+      .map((flag) => ({
+        key: flag.key,
+        label: flag.label,
+        className: flag.className,
+      }));
+  }, [formState]);
 
   if (!formState) {
     return (
@@ -253,7 +307,22 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             throw new Error(data?.error ?? "No se pudo guardar la información.");
           }
 
-          setFormState(data as StudentBasicDetails);
+          setFormState((previous) => {
+            const nextData = data as StudentBasicDetails;
+            if (!previous) {
+              return nextData;
+            }
+            return {
+              ...nextData,
+              isNewStudent: previous.isNewStudent,
+              isExamApproaching: previous.isExamApproaching,
+              isExamPreparation: previous.isExamPreparation,
+              isAbsent7Days: previous.isAbsent7Days,
+              isSlowProgress14Days: previous.isSlowProgress14Days,
+              hasActiveInstructive: previous.hasActiveInstructive,
+              hasOverdueInstructive: previous.hasOverdueInstructive,
+            };
+          });
           setStatusMessage("Cambios guardados correctamente.");
           router.refresh();
         } catch (err) {
@@ -292,7 +361,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
             Estado y banderas
           </span>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {statusBadges.length ? (
               statusBadges.map((badge) => (
                 <span
@@ -305,6 +374,20 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             ) : (
               <span className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${DEFAULT_STATUS_CLASS}`}>
                 Estado no disponible
+              </span>
+            )}
+            {flagBadges.length ? (
+              flagBadges.map((badge) => (
+                <span
+                  key={`flag-${badge.key}`}
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${badge.className}`}
+                >
+                  {badge.label}
+                </span>
+              ))
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-brand-ink-muted/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-ink">
+                Sin banderas activas
               </span>
             )}
           </div>

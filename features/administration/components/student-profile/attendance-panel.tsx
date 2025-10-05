@@ -127,41 +127,81 @@ function ProgressLineChart({ data }: { data: LessonTimelineEntry[] }) {
     };
   });
 
-  const maxProgress = Math.max(...coordinates.map((point) => point.progress), 1);
+  const progressValues = coordinates.map((point) => point.progress);
+  const minProgress = Math.min(...progressValues, 0);
+  const maxProgress = Math.max(...progressValues, 1);
+  const range = Math.max(maxProgress - minProgress, 1);
+  const padding = 40;
   const width = Math.max(coordinates.length * 80, 360);
   const height = 220;
+  const chartWidth = width - padding * 2;
+  const chartHeight = height - padding * 2;
   const plottedPoints = coordinates.map((point) => {
-    const x = (point.index / Math.max(coordinates.length - 1, 1)) * (width - 80) + 40;
-    const y = height - (point.progress / maxProgress) * (height - 80) - 40;
+    const x =
+      (point.index / Math.max(coordinates.length - 1, 1)) * chartWidth + padding;
+    const y =
+      height - padding - ((point.progress - minProgress) / range) * chartHeight;
     return { ...point, x, y };
   });
 
   const linePoints = plottedPoints.map((point) => `${point.x},${point.y}`).join(" ");
+  const yTicks = Array.from({ length: 4 }).map((_, index) => {
+    const value = minProgress + (range * index) / 3;
+    const y = height - padding - ((value - minProgress) / range) * chartHeight;
+    return { value, y };
+  });
 
   return (
     <div className="overflow-x-auto">
       <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full min-w-[360px]">
-        <defs>
-          <linearGradient id="progressGradient" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#00bfa6" stopOpacity={0.32} />
-            <stop offset="100%" stopColor="#00bfa6" stopOpacity={0} />
-          </linearGradient>
-        </defs>
+        <line
+          x1={padding}
+          y1={height - padding}
+          x2={width - padding}
+          y2={height - padding}
+          stroke="#d4d4f5"
+          strokeWidth={1}
+          strokeDasharray="4 6"
+        />
+        <line
+          x1={padding}
+          y1={padding}
+          x2={padding}
+          y2={height - padding}
+          stroke="#d4d4f5"
+          strokeWidth={1}
+          strokeDasharray="4 6"
+        />
+        {yTicks.map((tick, index) => (
+          <g key={`tick-${index}`}>
+            <line
+              x1={padding}
+              y1={tick.y}
+              x2={width - padding}
+              y2={tick.y}
+              stroke="#edf2f7"
+              strokeWidth={index === 0 ? 0 : 1}
+              strokeDasharray="4 6"
+            />
+            <text
+              x={padding - 8}
+              y={tick.y + 4}
+              textAnchor="end"
+              fontSize="10"
+              fill="#94a3b8"
+            >
+              {formatNumber(tick.value, 2)}
+            </text>
+          </g>
+        ))}
         <polyline
           fill="none"
           stroke="#00bfa6"
-          strokeWidth={3}
+          strokeWidth={2.5}
           strokeLinecap="round"
           strokeLinejoin="round"
           points={linePoints}
         />
-        {linePoints && (
-          <polygon
-            points={`${linePoints} ${width - 40},${height - 40} 40,${height - 40}`}
-            fill="url(#progressGradient)"
-            opacity={0.7}
-          />
-        )}
         {plottedPoints.map((point) => (
           <g key={`${point.date}-${point.index}`}>
             <circle cx={point.x} cy={point.y} r={4} fill="#00bfa6">
@@ -173,7 +213,7 @@ function ProgressLineChart({ data }: { data: LessonTimelineEntry[] }) {
           <text
             key={`label-${point.date}-${point.index}`}
             x={point.x}
-            y={height - 16}
+            y={height - padding + 18}
             textAnchor="middle"
             fontSize="10"
             fill="#64748b"
