@@ -44,12 +44,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-function ensureDatabaseUrl() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL environment variable is not configured.");
-  }
-}
-
 function formatDateISO(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -109,7 +103,6 @@ const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
 async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfileData> {
   noStore();
   try {
-    ensureDatabaseUrl();
     const [basicDetails, paymentSchedule, notes, exams, instructivos] = await Promise.all([
       getStudentBasicDetails(studentId),
       listStudentPaymentSchedule(studentId),
@@ -138,7 +131,6 @@ async function loadAttendanceData(
 ): Promise<AttendanceData> {
   noStore();
   try {
-    ensureDatabaseUrl();
     const excludeSundays = true;
     const results = await Promise.allSettled([
       getStudentAttendanceStats(studentId, startDate, endDate),
@@ -251,7 +243,6 @@ export async function generateMetadata({
   }
 
   try {
-    ensureDatabaseUrl();
     const details = await getStudentBasicDetails(studentId);
     const name = details?.full_name?.trim();
 
