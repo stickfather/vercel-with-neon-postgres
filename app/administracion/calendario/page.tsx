@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { AdminPlaceholder } from "@/features/administration/components/admin-placeholder";
+import { Suspense } from "react";
+
+import { AdminCalendarDashboard } from "@/features/administration/components/calendar/admin-calendar";
 
 export const metadata: Metadata = {
   title: "Calendario · Inglés Rápido Manta",
@@ -7,13 +9,8 @@ export const metadata: Metadata = {
 
 export default function CalendarioPage() {
   return (
-    <AdminPlaceholder
-      title="Calendario"
-      description="Organiza clases especiales, evaluaciones externas y actividades culturales. Próximamente podrás sincronizar este calendario con tus herramientas favoritas."
-      actions={[
-        { href: "/administracion", label: "Volver al panel" },
-        { href: "/", label: "Ir a la bienvenida", variant: "primary" },
-      ]}
-    />
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Cargando calendario…</div>}>
+      <AdminCalendarDashboard />
+    </Suspense>
   );
 }
