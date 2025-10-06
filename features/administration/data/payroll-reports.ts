@@ -507,10 +507,18 @@ export async function fetchPayrollMatrix({
     throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
   }
 
-  const monthStart = new Date(Date.UTC(year, monthIndex, 1));
-  const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0));
+  const paddedMonth = String(monthIndex + 1).padStart(2, "0");
+  const monthStartString = `${year}-${paddedMonth}-01`;
+  const nextMonthIndex = monthIndex + 1;
+  const nextMonthYear = nextMonthIndex > 11 ? year + 1 : year;
+  const nextMonthNumber = nextMonthIndex > 11 ? 1 : nextMonthIndex + 1;
+  const nextMonthPadded = String(nextMonthNumber).padStart(2, "0");
+  const monthEndExclusiveString = `${nextMonthYear}-${nextMonthPadded}-01`;
 
-  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+  const monthStart = new Date(`${monthStartString}T00:00:00Z`);
+  const monthEndInclusive = new Date(
+    Date.UTC(nextMonthYear, nextMonthNumber - 1, 0),
+  );
 
   const selectColumns = [
     "m.staff_id AS staff_id",
@@ -539,7 +547,8 @@ export async function fetchPayrollMatrix({
     SELECT
       ${selectColumns}
     FROM public.staff_day_matrix_v m
-    WHERE to_char(m.work_date::date, 'YYYY-MM') = $1
+    WHERE m.work_date::date >= $1::date
+      AND m.work_date::date < $2::date
     ORDER BY m.staff_id, m.work_date
   `;
 
@@ -548,10 +557,10 @@ export async function fetchPayrollMatrix({
   };
 
   const rows = normalizeRows<SqlRow>(
-    await unsafeSql.unsafe(query, [monthKey]),
+    await unsafeSql.unsafe(query, [monthStartString, monthEndExclusiveString]),
   );
 
-  const days = enumerateDays(monthStart, monthEnd);
+  const days = enumerateDays(monthStart, monthEndInclusive);
 
   const grouped = new Map<
     number,
