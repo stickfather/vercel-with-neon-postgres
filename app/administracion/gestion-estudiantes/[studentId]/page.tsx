@@ -25,26 +25,20 @@ import {
   InstructivosPanelSkeleton,
 } from "@/features/administration/components/student-profile/instructivos-panel";
 import {
-  AttendancePanel,
-  AttendancePanelSkeleton,
-} from "@/features/administration/components/student-profile/attendance-panel";
+  CoachPanel,
+  CoachPanelSkeleton,
+} from "@/features/administration/components/student-profile/coach-panel";
 import {
   getStudentBasicDetails,
   listStudentPaymentSchedule,
   listStudentNotes,
   listStudentExams,
   listStudentInstructivos,
-  getStudentProgressStats,
-  getStudentLessonTimeline,
-  getStudentAttendanceStats,
+  getStudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
 import { getStudentManagementEntry } from "@/features/administration/data/students";
 
 export const dynamic = "force-dynamic";
-
-function formatDateISO(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 
 type PrimaryProfileData = {
   basicDetails: Awaited<ReturnType<typeof getStudentBasicDetails>>;
@@ -54,11 +48,8 @@ type PrimaryProfileData = {
   instructivos: Awaited<ReturnType<typeof listStudentInstructivos>>;
 };
 
-type AttendanceData = {
-  attendanceStats: Awaited<ReturnType<typeof getStudentAttendanceStats>>;
-  stats: Awaited<ReturnType<typeof getStudentProgressStats>>;
-  lessonTimeline: Awaited<ReturnType<typeof getStudentLessonTimeline>>;
-  excludeSundays: boolean;
+type CoachPanelData = {
+  summary: Awaited<ReturnType<typeof getStudentCoachPanelSummary>>;
   error: string | null;
 };
 
@@ -70,25 +61,8 @@ const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
   instructivos: [],
 };
 
-const ATTENDANCE_DATA_FALLBACK: AttendanceData = {
-  attendanceStats: {
-    totalMinutes: null,
-    totalHours: null,
-    averageSessionMinutes: null,
-    averageSessionsPerDay: null,
-    averageMinutesPerDay: null,
-    averageMinutesPerDayExcludingSundays: null,
-    lessonChanges: null,
-    lessonsPerWeek: null,
-  },
-  stats: {
-    averageSessionLengthMinutes: null,
-    averageDaysPerWeek: null,
-    averageProgressPerWeek: null,
-    lessonsPerWeek: null,
-  },
-  lessonTimeline: [],
-  excludeSundays: true,
+const COACH_PANEL_FALLBACK: CoachPanelData = {
+  summary: null,
   error: null,
 };
 
@@ -170,81 +144,27 @@ async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfile
   };
 }
 
-async function loadAttendanceData(
-  studentId: number,
-  startDate: string,
-  endDate: string,
-): Promise<AttendanceData> {
+async function loadCoachPanelData(studentId: number): Promise<CoachPanelData> {
   noStore();
   try {
-    const excludeSundays = true;
-    const results = await Promise.allSettled([
-      getStudentAttendanceStats(studentId, startDate, endDate),
-      getStudentProgressStats(studentId, startDate, endDate, excludeSundays),
-      getStudentLessonTimeline(studentId, startDate, endDate),
-    ]);
-
-    const [attendanceStatsResult, progressStatsResult, lessonTimelineResult] = results;
-
-    const errors: string[] = [];
-
-    const attendanceStats =
-      attendanceStatsResult.status === "fulfilled"
-        ? attendanceStatsResult.value
-        : (errors.push("No se pudo cargar el resumen de asistencia."), ATTENDANCE_DATA_FALLBACK.attendanceStats);
-    const stats =
-      progressStatsResult.status === "fulfilled"
-        ? progressStatsResult.value
-        : (errors.push("No se pudieron cargar los promedios de progreso."), ATTENDANCE_DATA_FALLBACK.stats);
-    const lessonTimeline =
-      lessonTimelineResult.status === "fulfilled"
-        ? lessonTimelineResult.value
-        : (errors.push("No se pudo cargar la línea de lecciones."), ATTENDANCE_DATA_FALLBACK.lessonTimeline);
-
+    const summary = await getStudentCoachPanelSummary(studentId);
     return {
-      attendanceStats,
-      stats,
-      lessonTimeline,
-      excludeSundays,
-      error: errors.length ? errors.join(" ") : null,
+      summary,
+      error: null,
     };
   } catch (error) {
-    console.error("Failed to load student attendance data", error);
+    console.error("Failed to load student coach panel data", error);
     return {
-      ...ATTENDANCE_DATA_FALLBACK,
-      attendanceStats: { ...ATTENDANCE_DATA_FALLBACK.attendanceStats },
-      stats: { ...ATTENDANCE_DATA_FALLBACK.stats },
-      lessonTimeline: [...ATTENDANCE_DATA_FALLBACK.lessonTimeline],
-      error: "No se pudo cargar la información de asistencia. Intenta nuevamente más tarde.",
+      ...COACH_PANEL_FALLBACK,
+      error: "No se pudo cargar la información del panel del coach. Intenta nuevamente más tarde.",
     };
   }
 }
 
-async function AttendancePanelSection({
-  studentId,
-  startDate,
-  endDate,
-  contractStart,
-}: {
-  studentId: number;
-  startDate: string;
-  endDate: string;
-  contractStart: string | null;
-}) {
-  const data = await loadAttendanceData(studentId, startDate, endDate);
+async function CoachPanelSection({ studentId }: { studentId: number }) {
+  const data = await loadCoachPanelData(studentId);
 
-  return (
-    <AttendancePanel
-      attendanceStats={data.attendanceStats}
-      stats={data.stats}
-      lessonTimeline={data.lessonTimeline}
-      excludeSundays={data.excludeSundays}
-      errorMessage={data.error}
-      startDate={startDate}
-      endDate={endDate}
-      contractStart={contractStart}
-    />
-  );
+  return <CoachPanel data={data.summary} errorMessage={data.error} />;
 }
 
 export async function generateMetadata({
@@ -290,12 +210,6 @@ export default async function StudentProfilePage({
       </div>
     );
   }
-
-  const today = new Date();
-  const startRange = new Date(today);
-  startRange.setDate(startRange.getDate() - 29);
-  const startDate = formatDateISO(startRange);
-  const endDate = formatDateISO(today);
 
   const primaryData = await loadPrimaryProfileData(studentId);
   
@@ -357,13 +271,8 @@ export default async function StudentProfilePage({
             <InstructivosPanel studentId={studentId} instructivos={primaryData.instructivos} />
           </Suspense>
           <div className="grid gap-8 lg:grid-cols-2">
-            <Suspense fallback={<AttendancePanelSkeleton />}>
-              <AttendancePanelSection
-                studentId={studentId}
-                startDate={startDate}
-                endDate={endDate}
-                contractStart={primaryData.basicDetails?.contractStart ?? null}
-              />
+            <Suspense fallback={<CoachPanelSkeleton />}>
+              <CoachPanelSection studentId={studentId} />
             </Suspense>
             <Suspense fallback={<NotesPanelSkeleton />}>
               <NotesPanel studentId={studentId} notes={primaryData.notes} />

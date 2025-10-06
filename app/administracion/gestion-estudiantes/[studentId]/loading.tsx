@@ -6,7 +6,7 @@ import {
 } from "@/features/administration/components/student-profile/payment-schedule-panel";
 import { NotesPanelSkeleton } from "@/features/administration/components/student-profile/notes-panel";
 import { ExamsPanelSkeleton } from "@/features/administration/components/student-profile/exams-panel";
-import { AttendancePanelSkeleton } from "@/features/administration/components/student-profile/attendance-panel";
+import { CoachPanelSkeleton } from "@/features/administration/components/student-profile/coach-panel";
 
 export default function Loading() {
   return (
@@ -35,7 +35,7 @@ export default function Loading() {
           <PaymentSchedulePanelSkeleton />
           <NotesPanelSkeleton />
           <ExamsPanelSkeleton />
-          <AttendancePanelSkeleton />
+          <CoachPanelSkeleton />
         </div>
       </main>
     </div>
