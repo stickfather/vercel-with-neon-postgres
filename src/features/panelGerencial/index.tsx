@@ -8,8 +8,8 @@ import OverviewPanel from "./tabs/Overview/Overview";
 import ProgressPanel from "./tabs/Progress/Progress";
 import EngagementPanel from "./tabs/Engagement/Engagement";
 import RiskPanel from "./tabs/Risk/Risk";
-import OpsPlaceholder from "./tabs/Ops/Placeholder";
-import ExamsPlaceholder from "./tabs/Exams/Placeholder";
+import OpsPanel from "./tabs/Ops/Ops";
+import ExamsPanel from "./tabs/Exams/Exams";
 
 export const revalidate = 60;
 
@@ -118,9 +118,17 @@ function renderActiveTab(
         </Suspense>
       );
     case "ops":
-      return <OpsPlaceholder />;
+      return (
+        <Suspense fallback={<FullPanelSkeleton chartCount={4} />}>
+          <OpsPanel />
+        </Suspense>
+      );
     case "exams":
-      return <ExamsPlaceholder />;
+      return (
+        <Suspense fallback={<FullPanelSkeleton chartCount={2} />}>
+          <ExamsPanel />
+        </Suspense>
+      );
     default:
       return <ErrorState retryHref="/panel-gerencial/overview" />;
   }
