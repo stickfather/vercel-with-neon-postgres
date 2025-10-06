@@ -18,53 +18,72 @@ type ExamsData = {
   latest: LatestExamKpis | null;
 };
 
-async function fetchFromLatestView(
-  sql: Awaited<ReturnType<typeof createPanelGerencialClient>>,
-  viewName: "analytics.v_kpi_exam_pass_latest" | "analytics.v_exam_kpis",
-) {
-  const rows = (await sql`
-    WITH
-      pass_trend AS (
-        SELECT month, pass_rate
-        FROM analytics.v_kpi_exam_pass_trend
-        ORDER BY month
-      ),
-      latest AS (
-        SELECT pass_rate_pct, avg_score, sample_size
-        FROM ${sql.unsafe(viewName)}
-        LIMIT 1
-      )
-    SELECT
-      COALESCE((SELECT json_agg(pt ORDER BY month) FROM pass_trend pt), '[]'::json) AS pass_trend,
-      (SELECT row_to_json(l) FROM latest l) AS latest
-    FROM (SELECT 1) AS _;
-  `) as Array<{
-    pass_trend: PassTrendRow[] | null;
-    latest: LatestExamKpis | null;
-  }>;
+type LatestViewName = "analytics.v_kpi_exam_pass_latest" | "analytics.v_exam_kpis";
 
-  const row = rows[0];
-  return {
-    available: true,
-    passTrend: row?.pass_trend ?? [],
-    latest: row?.latest ?? null,
-  } satisfies ExamsData;
+async function readPassTrend(
+  sql: Awaited<ReturnType<typeof createPanelGerencialClient>>,
+): Promise<PassTrendRow[]> {
+  const rows = (await sql`
+    SELECT month, pass_rate
+    FROM analytics.v_kpi_exam_pass_trend
+    ORDER BY month;
+  `) as PassTrendRow[];
+  return rows ?? [];
+}
+
+async function readLatest(
+  sql: Awaited<ReturnType<typeof createPanelGerencialClient>>,
+  viewName: LatestViewName,
+): Promise<LatestExamKpis | null> {
+  const rows = (await sql`
+    SELECT pass_rate_pct, avg_score, sample_size
+    FROM ${sql.unsafe(viewName)}
+    LIMIT 1;
+  `) as LatestExamKpis[];
+  return rows?.[0] ?? null;
 }
 
 async function fetchExamsData(): Promise<ExamsData> {
   const sql = await createPanelGerencialClient();
 
+  let passTrendRows: PassTrendRow[] = [];
+  let hasPassTrendView = false;
   try {
-    return await fetchFromLatestView(sql, "analytics.v_kpi_exam_pass_latest");
+    passTrendRows = await readPassTrend(sql);
+    hasPassTrendView = true;
+  } catch (error) {
+    console.warn("No se pudo leer analytics.v_kpi_exam_pass_trend", error);
+  }
+
+  let latest: LatestExamKpis | null = null;
+  let hasLatestView = false;
+  try {
+    latest = await readLatest(sql, "analytics.v_kpi_exam_pass_latest");
+    hasLatestView = latest !== null;
   } catch (primaryError) {
-    console.warn("Fallo al leer analytics.v_kpi_exam_pass_latest, intentando con analytics.v_exam_kpis", primaryError);
+    console.warn(
+      "Fallo al leer analytics.v_kpi_exam_pass_latest, intentando con analytics.v_exam_kpis",
+      primaryError,
+    );
     try {
-      return await fetchFromLatestView(sql, "analytics.v_exam_kpis");
+      latest = await readLatest(sql, "analytics.v_exam_kpis");
+      hasLatestView = latest !== null;
     } catch (fallbackError) {
       console.warn("Vistas de exámenes no disponibles", fallbackError);
-      return { available: false, passTrend: [], latest: null };
     }
   }
+
+  const available = hasPassTrendView || hasLatestView;
+
+  if (!available) {
+    return { available: false, passTrend: [], latest: null };
+  }
+
+  return {
+    available,
+    passTrend: passTrendRows,
+    latest,
+  } satisfies ExamsData;
 }
 
 const getExamsData = cache(fetchExamsData);

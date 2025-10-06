@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import FilterRail from "./FilterRail";
 import Tabs, { TabSlug, isValidTabSlug } from "./Tabs";
@@ -58,11 +59,19 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
     <div className="relative flex min-h-screen flex-col bg-gradient-to-br from-[#f8fbff] via-white to-[#f1fffb]">
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,_#d8f4ff_0%,_transparent_55%)]" aria-hidden="true" />
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-6 py-10 md:px-10 lg:px-14">
-        <header className="flex flex-col gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
-            Informes de gestión
-          </span>
-          <h1 className="text-3xl font-black text-brand-deep sm:text-[40px]">Paneles analíticos de la escuela</h1>
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
+              Informes de gestión
+            </span>
+            <h1 className="text-3xl font-black text-brand-deep sm:text-[40px]">Paneles analíticos de la escuela</h1>
+          </div>
+          <Link
+            href="/administracion"
+            className="inline-flex items-center justify-center rounded-full bg-brand-deep px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-deep/90"
+          >
+            Volver a Administración
+          </Link>
         </header>
 
         <Tabs activeTab={activeTab} />

@@ -14,9 +14,8 @@ export async function createPanelGerencialClient(): Promise<QueryFunction> {
   }
 
   const sql = neon(connectionString);
-  await sql.unsafe(
-    `SET search_path TO ${SEARCH_PATH}; SET TIME ZONE '${TIME_ZONE}';`,
-  );
+  await sql.unsafe(`SET search_path TO ${SEARCH_PATH};`);
+  await sql.unsafe(`SET TIME ZONE '${TIME_ZONE}';`);
   return sql as SqlClient;
 }
 

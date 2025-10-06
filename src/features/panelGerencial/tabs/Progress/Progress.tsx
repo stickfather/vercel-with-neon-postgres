@@ -50,6 +50,11 @@ export default async function ProgressPanel({ selectedLevel }: ProgressProps) {
 
     return (
       <div className="flex flex-col gap-6">
+        <header className="flex flex-col gap-1">
+          <h2 className="text-2xl font-bold text-brand-deep">Progreso &amp; aprendizaje</h2>
+          <p className="text-sm text-brand-ink-muted">Trayectoria de LEI, pronósticos y finalizaciones.</p>
+        </header>
+
         <HistogramSection
           distribution={data.leiDistribution}
           quartiles={data.leiQuartiles}

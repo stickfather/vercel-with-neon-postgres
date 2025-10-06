@@ -104,6 +104,11 @@ export default async function OverviewPanel() {
 
     return (
       <div className="flex flex-col gap-6">
+        <header className="flex flex-col gap-1">
+          <h2 className="text-2xl font-bold text-brand-deep">Resumen general</h2>
+          <p className="text-sm text-brand-ink-muted">Indicadores clave de ritmo y actividad.</p>
+        </header>
+
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {cards ? (
             [
