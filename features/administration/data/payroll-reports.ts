@@ -311,14 +311,28 @@ async function applyStaffDayApproval(
       : null;
 
   await sql`
-    SELECT public.approve_staff_day(
+    INSERT INTO payroll_day_approvals (
+      staff_id,
+      work_date,
+      approved,
+      approved_by,
+      approved_at,
+      approved_minutes
+    )
+    VALUES (
       ${staffId}::bigint,
       ${workDate}::date,
       TRUE,
-      ${roundedMinutes}::integer,
-      NULL::bigint,
-      NULL::text
+      ${null}::varchar,
+      NOW(),
+      ${roundedMinutes}::integer
     )
+    ON CONFLICT (staff_id, work_date) DO UPDATE
+    SET
+      approved = EXCLUDED.approved,
+      approved_by = EXCLUDED.approved_by,
+      approved_at = EXCLUDED.approved_at,
+      approved_minutes = EXCLUDED.approved_minutes
   `;
 }
 

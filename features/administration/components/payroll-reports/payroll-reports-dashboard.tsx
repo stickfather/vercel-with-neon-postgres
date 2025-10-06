@@ -30,14 +30,14 @@ type SelectedCell = {
   approved: MatrixCell["approved"];
 };
 
-const STAFF_COLUMN_WIDTH = 124;
-const PAID_COLUMN_WIDTH = 100;
-const PAID_DATE_COLUMN_WIDTH = 176;
-const APPROVED_AMOUNT_COLUMN_WIDTH = 156;
+const STAFF_COLUMN_WIDTH = 110;
+const APPROVED_AMOUNT_COLUMN_WIDTH = 112;
+const PAID_COLUMN_WIDTH = 84;
+const PAID_DATE_COLUMN_WIDTH = 140;
 const TRAILING_COLUMNS_WIDTH =
-  PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH + APPROVED_AMOUNT_COLUMN_WIDTH;
+  APPROVED_AMOUNT_COLUMN_WIDTH + PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
 const MIN_CELL_WIDTH = 32;
-const PREFERRED_CELL_WIDTH = 72;
+const PREFERRED_CELL_WIDTH = 68;
 const GRID_PADDING = 16;
 
 type MonthSummaryRow = {
@@ -991,9 +991,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                           {matrixDays.map((day) => (
                             <col key={`col-${day}`} style={{ width: `${effectiveCellWidth}px` }} />
                           ))}
+                          <col style={{ width: `${APPROVED_AMOUNT_COLUMN_WIDTH}px` }} />
                           <col style={{ width: `${PAID_COLUMN_WIDTH}px` }} />
                           <col style={{ width: `${PAID_DATE_COLUMN_WIDTH}px` }} />
-                          <col style={{ width: `${APPROVED_AMOUNT_COLUMN_WIDTH}px` }} />
                         </colgroup>
                         <thead>
                           <tr className="bg-brand-deep-soft/40 text-brand-ink">
@@ -1015,14 +1015,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 </div>
                               </th>
                             ))}
+                            <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
+                              Monto aprobado
+                            </th>
                             <th className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
                               Pagado
                             </th>
                             <th className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
                               Fecha de pago
-                            </th>
-                            <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
-                              Monto aprobado
                             </th>
                           </tr>
                         </thead>
@@ -1041,7 +1041,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
                                   <div className="flex flex-col gap-0.5 whitespace-nowrap">
                                     <span
-                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[116px] truncate`}
+                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[96px] truncate`}
                                       title={staffName}
                                     >
                                       {staffName}
@@ -1069,6 +1069,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     </button>
                                   </td>
                                 ))}
+                                <td className="px-2 py-1 text-right font-semibold text-brand-deep">
+                                  {toCurrency(monthSummary?.approvedAmount ?? null)}
+                                </td>
                                 <td className="px-2 py-1 text-center">
                                   <button
                                     type="button"
@@ -1114,9 +1117,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       <span className="text-[10px] text-brand-ink-muted">—</span>
                                     )}
                                   </div>
-                                </td>
-                                <td className="px-3 py-1 text-right font-semibold text-brand-deep">
-                                  {toCurrency(monthSummary?.approvedAmount ?? null)}
                                 </td>
                               </tr>
                             );
