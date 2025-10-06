@@ -511,7 +511,7 @@ export async function updatePayrollMonthStatus({
   const alias = "p";
 
   const updates: string[] = [`${quoteIdentifier(table.paidColumn)} = $3::boolean`];
-  const params: Array<number | string | null> = [staffId, normalizedMonth, paid];
+  const params: Array<number | string | boolean | null> = [staffId, normalizedMonth, paid];
 
   if (table.paidAtColumn) {
     updates.push(`${quoteIdentifier(table.paidAtColumn)} = $4::timestamptz`);

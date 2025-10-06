@@ -62,10 +62,16 @@ export async function POST(request: Request) {
     : [];
 
   const sanitizedAdditions = Array.isArray(additions)
-    ? additions.map((entry) => ({
-        checkinTime: typeof entry.checkinTime === "string" ? entry.checkinTime : null,
-        checkoutTime: typeof entry.checkoutTime === "string" ? entry.checkoutTime : null,
-      }))
+    ? additions
+        .map((entry) => ({
+          checkinTime: typeof entry.checkinTime === "string" ? entry.checkinTime : null,
+          checkoutTime: typeof entry.checkoutTime === "string" ? entry.checkoutTime : null,
+        }))
+        .filter(
+          (entry): entry is { checkinTime: string; checkoutTime: string } =>
+            typeof entry.checkinTime === "string" &&
+            typeof entry.checkoutTime === "string",
+        )
     : [];
 
   const sanitizedDeletions = Array.isArray(deletions)
@@ -79,7 +85,7 @@ export async function POST(request: Request) {
 
   if (
     !sanitizedOverrides.length &&
-    !sanitizedAdditions.some((entry) => entry.checkinTime && entry.checkoutTime) &&
+    !sanitizedAdditions.length &&
     !sanitizedDeletions.length
   ) {
     return NextResponse.json(
