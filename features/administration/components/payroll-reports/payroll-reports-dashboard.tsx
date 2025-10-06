@@ -30,10 +30,10 @@ type SelectedCell = {
   approved: MatrixCell["approved"];
 };
 
-const STAFF_COLUMN_WIDTH = 110;
-const APPROVED_AMOUNT_COLUMN_WIDTH = 112;
-const PAID_COLUMN_WIDTH = 84;
-const PAID_DATE_COLUMN_WIDTH = 140;
+const STAFF_COLUMN_WIDTH = 94;
+const APPROVED_AMOUNT_COLUMN_WIDTH = 96;
+const PAID_COLUMN_WIDTH = 72;
+const PAID_DATE_COLUMN_WIDTH = 124;
 const TRAILING_COLUMNS_WIDTH =
   APPROVED_AMOUNT_COLUMN_WIDTH + PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
 const MIN_CELL_WIDTH = 32;
@@ -1041,7 +1041,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
                                   <div className="flex flex-col gap-0.5 whitespace-nowrap">
                                     <span
-                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[96px] truncate`}
+                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[84px] truncate`}
                                       title={staffName}
                                     >
                                       {staffName}
@@ -1081,7 +1081,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       });
                                     }}
                                     disabled={isStatusSaving}
-                                    className={`inline-flex min-w-[56px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                    className={`inline-flex min-w-[52px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
                                       paidValue
                                         ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
                                         : "border-orange-400 bg-orange-100 text-orange-900 hover:bg-orange-200"
@@ -1103,7 +1103,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                         });
                                       }}
                                       disabled={isStatusSaving}
-                                      className="w-full max-w-[128px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="w-full max-w-[112px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
                                     />
                                     {isStatusSaving ? (
                                       <span className="text-[10px] text-brand-ink-muted">Guardando…</span>

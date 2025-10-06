@@ -520,35 +520,27 @@ export async function fetchPayrollMatrix({
       });
     }
 
-    const totalHoursDirect = toOptionalNumber(
-      readRowValue(row, ["total_hours", "hours"]),
-      2,
-    );
-    const totalMinutes = toInteger(
+    const totalMinutesRaw = toInteger(
       readRowValue(row, ["total_minutes", "minutes", "total_work_minutes"]),
     );
-    const totalHours =
-      totalHoursDirect ?? toHoursFromMinutes(totalMinutes) ?? 0;
+    const totalMinutes =
+      totalMinutesRaw != null ? Math.max(0, totalMinutesRaw) : 0;
     const approved = toBoolean(readRowValue(row, ["approved", "is_approved"]));
-    const approvedHoursDirect = toOptionalNumber(
-      readRowValue(row, [
-        "approved_hours",
-        "hours_approved",
-        "approved_total_hours",
-      ]),
-      2,
-    );
-    const approvedMinutes = toInteger(
+    const approvedMinutesRaw = toInteger(
       readRowValue(row, ["approved_minutes", "approved_total_minutes"]),
     );
-    const approvedHours = approvedHoursDirect
-      ?? (approvedMinutes != null
-        ? Number((Math.max(0, approvedMinutes) / 60).toFixed(2))
-        : totalHours);
+    const approvedMinutes =
+      approvedMinutesRaw != null ? Math.max(0, approvedMinutesRaw) : null;
+    const minutesForDisplay = approved
+      ? approvedMinutes ?? totalMinutes
+      : totalMinutes;
+    const hoursForDisplay = Number(
+      ((minutesForDisplay ?? totalMinutes) / 60).toFixed(2),
+    );
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
-      hours: approved ? approvedHours : totalHours,
+      hours: hoursForDisplay,
       approved,
     });
   }
