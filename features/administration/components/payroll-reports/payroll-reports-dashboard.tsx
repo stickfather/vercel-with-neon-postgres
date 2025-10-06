@@ -34,20 +34,30 @@ const TRAILING_COLUMNS_WIDTH = PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
 const MIN_CELL_WIDTH = 24;
 const GRID_PADDING = 32;
 
-function getMonthRange(month: string): { from: string; to: string } {
+function getMonthRange(month: string): { from: string; to: string; endExclusive: string } {
   const [yearString, monthString] = month.split("-");
   const year = Number(yearString);
-  const monthIndex = Number(monthString) - 1;
-  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) {
+  const monthNumber = Number(monthString);
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthNumber) || monthNumber < 1 || monthNumber > 12) {
     throw new Error("Mes inválido");
   }
-  const start = new Date(Date.UTC(year, monthIndex, 1));
-  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+
+  const monthStart = `${year}-${String(monthNumber).padStart(2, "0")}-01`;
+  const nextMonthNumber = monthNumber === 12 ? 1 : monthNumber + 1;
+  const nextMonthYear = monthNumber === 12 ? year + 1 : year;
+  const nextMonthStart = `${nextMonthYear}-${String(nextMonthNumber).padStart(2, "0")}-01`;
+
+  const startDate = new Date(`${monthStart}T00:00:00Z`);
+  const nextMonthDate = new Date(`${nextMonthStart}T00:00:00Z`);
+  const displayEndDate = new Date(nextMonthDate.getTime() - 24 * 60 * 60 * 1000);
+
   const format = (date: Date) =>
     `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
       date.getUTCDate(),
     ).padStart(2, "0")}`;
-  return { from: format(start), to: format(end) };
+
+  return { from: monthStart, to: format(displayEndDate), endExclusive: nextMonthStart };
 }
 
 function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
@@ -153,18 +163,33 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [],
   );
 
-  const { from, to } = useMemo(() => getMonthRange(selectedMonth), [selectedMonth]);
+  const { from, to } = useMemo(() => {
+    try {
+      return getMonthRange(selectedMonth);
+    } catch (error) {
+      console.error("Mes inválido seleccionado", error);
+      return { from: selectedMonth, to: selectedMonth, endExclusive: selectedMonth };
+    }
+  }, [selectedMonth]);
 
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
+      const noStoreInit: RequestInit & { next: { revalidate: number } } = {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-store" },
+        next: { revalidate: 0 },
+      };
+
       const [matrixResponse, monthStatusResponse] = await Promise.all([
         fetch(
           `/api/payroll/reports/matrix?month=${encodeURIComponent(selectedMonth)}`,
+          noStoreInit,
         ),
         fetch(
           `/api/payroll/reports/month-status?month=${encodeURIComponent(selectedMonth)}`,
+          noStoreInit,
         ),
       ]);
 
@@ -237,6 +262,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       try {
         const response = await fetch(
           `/api/payroll/reports/day-sessions?staffId=${staffId}&date=${workDate}`,
+          {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-store" },
+            next: { revalidate: 0 },
+          } satisfies RequestInit & { next: { revalidate: number } },
         );
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));

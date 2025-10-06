@@ -46,129 +46,54 @@ export type PayrollMonthStatusRow = {
   paidAt: string | null;
 };
 
-function escapeSqlLiteral(value: string): string {
-  return value.replace(/'/g, "''");
-}
+function resolveMonthWindow(monthParam: string): {
+  monthKey: string;
+  monthStartDate: Date;
+  monthEndInclusiveDate: Date;
+  monthStart: string;
+  monthEndExclusive: string;
+} {
+  const raw = monthParam.trim();
+  const match = raw.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);
 
-let payrollViewsEnsured = false;
-
-async function ensurePayrollViews(sql: SqlClient): Promise<void> {
-  if (payrollViewsEnsured) return;
-
-  const unsafeSql = sql as unknown as {
-    unsafe: (query: string) => Promise<unknown>;
-  };
-
-  const timezoneLiteral = `'${escapeSqlLiteral(TIMEZONE)}'`;
-  const minuteComputation = `GREATEST(\n      0,\n      FLOOR(EXTRACT(epoch FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time) / 60.0)::int\n    )`;
-
-  try {
-    await unsafeSql.unsafe(`
-      CREATE OR REPLACE VIEW public.staff_day_sessions_v AS
-      SELECT
-        sa.staff_id,
-        DATE(timezone(${timezoneLiteral}, sa.checkin_time)) AS work_date,
-        timezone(${timezoneLiteral}, sa.checkin_time) AS checkin_time,
-        timezone(${timezoneLiteral}, sa.checkout_time) AS checkout_time,
-        ${minuteComputation} AS minutes
-      FROM staff_attendance sa
-      WHERE sa.checkin_time IS NOT NULL;
-    `);
-
-    await unsafeSql.unsafe(`
-      CREATE OR REPLACE VIEW public.staff_day_matrix_v AS
-      WITH day_totals AS (
-        SELECT
-          sa.staff_id,
-          DATE(timezone(${timezoneLiteral}, sa.checkin_time)) AS work_date,
-          SUM(${minuteComputation}) AS total_minutes
-        FROM staff_attendance sa
-        WHERE sa.checkin_time IS NOT NULL
-        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, sa.checkin_time))
-      ),
-      all_days AS (
-        SELECT dt.staff_id, dt.work_date FROM day_totals dt
-        UNION
-        SELECT p.staff_id, p.work_date FROM payroll_day_approvals p
-      )
-      SELECT
-        ad.staff_id,
-        ad.work_date,
-        COALESCE(dt.total_minutes, p.approved_minutes, 0) AS total_minutes,
-        ROUND((COALESCE(dt.total_minutes, p.approved_minutes, 0)::numeric / 60.0), 2) AS total_hours,
-        COALESCE(p.approved, FALSE) AS approved,
-        p.approved_minutes,
-        ROUND((COALESCE(p.approved_minutes, dt.total_minutes, 0)::numeric / 60.0), 2) AS approved_hours,
-        p.approved_at,
-        p.approved_by
-      FROM all_days ad
-      LEFT JOIN day_totals dt
-        ON dt.staff_id = ad.staff_id AND dt.work_date = ad.work_date
-      LEFT JOIN payroll_day_approvals p
-        ON p.staff_id = ad.staff_id AND p.work_date = ad.work_date;
-    `);
-
-    await unsafeSql.unsafe(`
-      CREATE OR REPLACE VIEW public.payroll_month_status_v AS
-      WITH day_totals AS (
-        SELECT
-          sa.staff_id,
-          DATE(timezone(${timezoneLiteral}, sa.checkin_time)) AS work_date,
-          SUM(${minuteComputation}) AS total_minutes
-        FROM staff_attendance sa
-        WHERE sa.checkin_time IS NOT NULL
-        GROUP BY sa.staff_id, DATE(timezone(${timezoneLiteral}, sa.checkin_time))
-      ),
-      approvals AS (
-        SELECT
-          ad.staff_id,
-          ad.work_date,
-          COALESCE(dt.total_minutes, p.approved_minutes, 0) AS total_minutes,
-          COALESCE(p.approved, FALSE) AS approved,
-          COALESCE(p.approved_minutes, dt.total_minutes, 0) AS approved_minutes,
-          p.approved_at,
-          p.approved_by
-        FROM (
-          SELECT dt.staff_id, dt.work_date FROM day_totals dt
-          UNION
-          SELECT p.staff_id, p.work_date FROM payroll_day_approvals p
-        ) ad
-        LEFT JOIN day_totals dt
-          ON dt.staff_id = ad.staff_id AND dt.work_date = ad.work_date
-        LEFT JOIN payroll_day_approvals p
-          ON p.staff_id = ad.staff_id AND p.work_date = ad.work_date
-      ),
-      monthly AS (
-        SELECT
-          a.staff_id,
-          DATE_TRUNC('month', a.work_date::timestamp) AS month,
-          COUNT(*) FILTER (WHERE a.approved) AS approved_days,
-          SUM(CASE WHEN a.approved THEN a.approved_minutes ELSE 0 END) AS approved_minutes,
-          MAX(a.approved_at) AS last_approved_at
-        FROM approvals a
-        GROUP BY a.staff_id, DATE_TRUNC('month', a.work_date::timestamp)
-      )
-      SELECT
-        m.staff_id,
-        m.month::date AS month,
-        m.approved_days,
-        ROUND((m.approved_minutes::numeric / 60.0), 2) AS approved_hours,
-        pmp.paid,
-        pmp.amount_paid,
-        pmp.reference,
-        pmp.paid_by,
-        pmp.paid_at,
-        m.last_approved_at
-      FROM monthly m
-      LEFT JOIN payroll_month_payments pmp
-        ON pmp.staff_id = m.staff_id
-       AND pmp.month::date = m.month::date;
-    `);
-  } catch (error) {
-    console.warn("Skipping payroll view refresh due to error:", error);
+  if (!match) {
+    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
   }
 
-  payrollViewsEnsured = true;
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthNumber) || monthNumber < 1 || monthNumber > 12) {
+    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
+  }
+
+  const paddedMonth = String(monthNumber).padStart(2, "0");
+  const monthKey = `${year}-${paddedMonth}`;
+  const monthStartString = `${monthKey}-01`;
+
+  const nextMonthNumber = monthNumber === 12 ? 1 : monthNumber + 1;
+  const nextMonthYear = monthNumber === 12 ? year + 1 : year;
+  const monthEndExclusiveString = `${nextMonthYear}-${String(nextMonthNumber).padStart(2, "0")}-01`;
+
+  const monthStartDate = new Date(`${monthStartString}T00:00:00Z`);
+  const monthEndExclusiveDate = new Date(`${monthEndExclusiveString}T00:00:00Z`);
+  const monthEndInclusiveDate = new Date(monthEndExclusiveDate.getTime() - 24 * 60 * 60 * 1000);
+
+  if (
+    Number.isNaN(monthStartDate.getTime()) ||
+    Number.isNaN(monthEndExclusiveDate.getTime()) ||
+    Number.isNaN(monthEndInclusiveDate.getTime())
+  ) {
+    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
+  }
+
+  return {
+    monthKey,
+    monthStartDate,
+    monthEndInclusiveDate,
+    monthStart: monthStartString,
+    monthEndExclusive: monthEndExclusiveString,
+  };
 }
 
 function toIsoDateString(date: Date): string {
@@ -331,9 +256,29 @@ function toHoursFromMinutes(value: unknown, fractionDigits = 2): number | null {
 
 function findColumn(columns: string[], candidates: string[]): string | null {
   for (const candidate of candidates) {
-    if (columns.includes(candidate)) return candidate;
+    const candidateLower = candidate.toLowerCase();
+    for (const column of columns) {
+      if (column === candidate) return column;
+      if (column.toLowerCase() === candidateLower) return column;
+    }
   }
   return null;
+}
+
+function readRowValue(row: SqlRow, candidates: string[]): unknown {
+  const entries = Object.entries(row);
+  for (const candidate of candidates) {
+    if (candidate in row) {
+      return row[candidate as keyof typeof row];
+    }
+    const lowerCandidate = candidate.toLowerCase();
+    for (const [key, value] of entries) {
+      if (key.toLowerCase() === lowerCandidate) {
+        return value;
+      }
+    }
+  }
+  return undefined;
 }
 
 async function fetchTableColumns(
@@ -369,7 +314,6 @@ type StaffDayTableInfo = {
 let staffDayTableCache: StaffDayTableInfo | null = null;
 
 async function resolveStaffDayTable(sql: SqlClient): Promise<StaffDayTableInfo> {
-  await ensurePayrollViews(sql);
   if (staffDayTableCache) return staffDayTableCache;
 
   const usageRows = normalizeRows<SqlRow>(await sql`
@@ -474,87 +418,24 @@ export async function fetchPayrollMatrix({
   month: string;
 }): Promise<PayrollMatrixResponse> {
   const sql = getSqlClient();
-  await ensurePayrollViews(sql);
 
-  const viewColumns = await fetchTableColumns(sql, "public", "staff_day_matrix_v");
-  const staffNameColumn = findColumn(viewColumns, [
-    "staff_name",
-    "staff_full_name",
-    "full_name",
-    "name",
-  ]);
-  const totalHoursColumn = findColumn(viewColumns, ["total_hours", "hours"]);
-  const totalMinutesColumn = findColumn(viewColumns, [
-    "total_minutes",
-    "minutes",
-    "total_work_minutes",
-  ]);
-  const approvedHoursColumn = findColumn(viewColumns, [
-    "approved_hours",
-    "hours_approved",
-    "approved_total_hours",
-  ]);
-  const approvedMinutesColumn = findColumn(viewColumns, [
-    "approved_minutes",
-    "approved_total_minutes",
-  ]);
+  const {
+    monthKey,
+    monthStartDate,
+    monthEndInclusiveDate,
+    monthStart,
+    monthEndExclusive,
+  } = resolveMonthWindow(month);
 
-  const [rawYear, rawMonth] = month.split("-");
-  const year = Number(rawYear);
-  const monthIndex = Number(rawMonth) - 1;
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.staff_day_matrix_v
+    WHERE work_date >= ${monthStart}::date
+      AND work_date < ${monthEndExclusive}::date
+    ORDER BY staff_id, work_date
+  `);
 
-  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) {
-    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
-  }
-
-  const monthStart = new Date(Date.UTC(year, monthIndex, 1));
-  const nextMonthStart = new Date(Date.UTC(year, monthIndex + 1, 1));
-  const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0));
-
-  const monthStartIso = toIsoDateString(monthStart);
-  const nextMonthIso = toIsoDateString(nextMonthStart);
-
-  const selectColumns = [
-    "m.staff_id AS staff_id",
-    staffNameColumn
-      ? `m.${quoteIdentifier(staffNameColumn)} AS staff_name`
-      : null,
-    "m.work_date AS work_date",
-    totalMinutesColumn
-      ? `m.${quoteIdentifier(totalMinutesColumn)} AS total_minutes`
-      : null,
-    totalHoursColumn
-      ? `m.${quoteIdentifier(totalHoursColumn)} AS total_hours`
-      : null,
-    "m.approved AS approved",
-    approvedMinutesColumn
-      ? `m.${quoteIdentifier(approvedMinutesColumn)} AS approved_minutes`
-      : null,
-    approvedHoursColumn
-      ? `m.${quoteIdentifier(approvedHoursColumn)} AS approved_hours`
-      : null,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join(",\n      ");
-
-  const query = `
-    SELECT
-      ${selectColumns}
-    FROM public.staff_day_matrix_v m
-    WHERE m.work_date >= $1::date
-      AND m.work_date < $2::date
-    ORDER BY m.staff_id, m.work_date
-  `;
-
-  const unsafeSql = sql as unknown as {
-    unsafe: (text: string, params?: unknown[]) => Promise<unknown>;
-  };
-
-  const rows = normalizeRows<SqlRow>(
-    await unsafeSql.unsafe(query, [monthStartIso, nextMonthIso]),
-  );
-
-  const days = enumerateDays(monthStart, monthEnd);
+  const days = enumerateDays(monthStartDate, monthEndInclusiveDate);
 
   const grouped = new Map<
     number,
@@ -566,36 +447,52 @@ export async function fetchPayrollMatrix({
   >();
 
   for (const row of rows) {
-    const staffId = Number(row.staff_id);
+    const staffId = Number(
+      readRowValue(row, ["staff_id", "staffid", "staff"]),
+    );
     if (!Number.isFinite(staffId)) continue;
-    const workDate = normalizeDateLike(row.work_date);
-    if (!workDate) continue;
+    const workDate = normalizeDateLike(
+      readRowValue(row, ["work_date", "workday", "date"]),
+    );
+    if (!workDate || workDate.slice(0, 7) !== monthKey) continue;
 
     if (!grouped.has(staffId)) {
       grouped.set(staffId, {
         staffId,
-        staffName: coerceString(row.staff_name) ?? undefined,
+        staffName:
+          coerceString(
+            readRowValue(row, [
+              "staff_name",
+              "staff_full_name",
+              "full_name",
+              "name",
+            ]),
+          ) ?? undefined,
         cells: new Map(),
       });
     }
 
-    const totalHoursDirect = totalHoursColumn
-      ? toOptionalNumber(row.total_hours, 2)
-      : null;
-    const totalMinutes = totalMinutesColumn
-      ? toInteger(row.total_minutes ?? row.minutes ?? null)
-      : null;
+    const totalHoursDirect = toOptionalNumber(
+      readRowValue(row, ["total_hours", "hours"]),
+      2,
+    );
+    const totalMinutes = toInteger(
+      readRowValue(row, ["total_minutes", "minutes", "total_work_minutes"]),
+    );
     const totalHours =
-      totalHoursDirect ??
-      toHoursFromMinutes(totalMinutes ?? row.total_minutes ?? row.minutes ?? null) ??
-      0;
-    const approved = toBoolean(row.approved);
-    const approvedHoursDirect = approvedHoursColumn
-      ? toOptionalNumber(row.approved_hours, 2)
-      : null;
-    const approvedMinutes = approvedMinutesColumn
-      ? toInteger(row.approved_minutes ?? null)
-      : null;
+      totalHoursDirect ?? toHoursFromMinutes(totalMinutes) ?? 0;
+    const approved = toBoolean(readRowValue(row, ["approved", "is_approved"]));
+    const approvedHoursDirect = toOptionalNumber(
+      readRowValue(row, [
+        "approved_hours",
+        "hours_approved",
+        "approved_total_hours",
+      ]),
+      2,
+    );
+    const approvedMinutes = toInteger(
+      readRowValue(row, ["approved_minutes", "approved_total_minutes"]),
+    );
     const approvedHours = approvedHoursDirect
       ?? (approvedMinutes != null
         ? Number((Math.max(0, approvedMinutes) / 60).toFixed(2))
@@ -637,7 +534,6 @@ export async function fetchDaySessions({
   workDate: string;
 }): Promise<DaySession[]> {
   const sql = getSqlClient();
-  await ensurePayrollViews(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
@@ -710,7 +606,6 @@ export async function overrideSessionsAndApprove({
   }[];
 }): Promise<void> {
   const sql = getSqlClient();
-  await ensurePayrollViews(sql);
 
   await sql`BEGIN`;
   try {
@@ -762,12 +657,12 @@ export async function fetchPayrollMonthStatus({
   staffId?: number | null;
 }): Promise<PayrollMonthStatusRow[]> {
   const sql = getSqlClient();
-  await ensurePayrollViews(sql);
+  const { monthKey, monthStart, monthEndExclusive } = resolveMonthWindow(month);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       v.staff_id AS staff_id,
-      to_char(v.month, 'YYYY-MM') AS month_key,
+      v.month AS month,
       v.approved_days AS approved_days,
       v.approved_hours AS approved_hours,
       v.amount_paid AS amount_paid,
@@ -777,14 +672,15 @@ export async function fetchPayrollMonthStatus({
       v.paid_by AS paid_by,
       v.paid_at AT TIME ZONE ${TIMEZONE} AS paid_at
     FROM public.payroll_month_status_v v
-    WHERE to_char(v.month, 'YYYY-MM') = ${month}
+    WHERE v.month >= ${monthStart}::date
+      AND v.month < ${monthEndExclusive}::date
       AND (${staffId ?? null}::bigint IS NULL OR v.staff_id = ${staffId ?? null}::bigint)
     ORDER BY v.staff_id
   `);
 
   return rows.map((row) => ({
     staffId: Number(row.staff_id),
-    month: coerceString(row.month_key) ?? month,
+    month: coerceString(row.month) ?? monthKey,
     approvedDays: Number(row.approved_days ?? 0),
     approvedHours: toNumber(row.approved_hours ?? 0, 2),
     amountPaid: toNumber(row.amount_paid ?? 0, 2),
