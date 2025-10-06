@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { overrideSessionsAndApprove } from "@/features/administration/data/payroll-reports";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 type OverridePayload = {
   sessionId?: number;
   checkinTime?: string;
@@ -32,7 +36,7 @@ export async function POST(request: Request) {
         error:
           "Debes indicar 'staffId', 'workDate' y la lista de 'overrides'.",
       },
-      { status: 400 },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -52,7 +56,7 @@ export async function POST(request: Request) {
   if (!sanitizedOverrides.length) {
     return NextResponse.json(
       { error: "Debes enviar al menos una sesión válida para editar." },
-      { status: 400 },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -62,13 +66,16 @@ export async function POST(request: Request) {
       workDate,
       overrides: sanitizedOverrides,
     });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error al modificar y aprobar el día", error);
     const message =
       error instanceof Error
         ? error.message
         : "No pudimos modificar y aprobar el día.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
