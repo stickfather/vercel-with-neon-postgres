@@ -21,7 +21,7 @@ const tiles = [
     emoji: "🎓",
   },
   {
-    href: "/administracion/panel-gerencial",
+    href: "/panel-gerencial",
     title: "Paneles gerenciales",
     description: "Analiza métricas clave para tomar decisiones estratégicas en minutos.",
     emoji: "🚀",
