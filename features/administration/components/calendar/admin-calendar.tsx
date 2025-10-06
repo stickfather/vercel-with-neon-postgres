@@ -1194,11 +1194,20 @@ export function AdminCalendarDashboard() {
   const [studentFilterSelection, setStudentFilterSelection] =
     useState<StudentSuggestion | null>(null);
 
-  const view = parseViewParam(searchParams.get("view"));
-  const typeFilter = parseTypeParam(searchParams.get("tipo"));
-  const statusFilter = parseStatusParam(searchParams.get("estado"));
-  const studentIdFilter = parseStudentIdParam(searchParams.get("estudiante"));
-  const startDate = parseStartParam(searchParams.get("start"), view);
+  const viewParam = searchParams.get("view");
+  const typeParam = searchParams.get("tipo");
+  const statusParam = searchParams.get("estado");
+  const studentParam = searchParams.get("estudiante");
+  const startParam = searchParams.get("start");
+
+  const view = parseViewParam(viewParam);
+  const typeFilter = parseTypeParam(typeParam);
+  const statusFilter = parseStatusParam(statusParam);
+  const studentIdFilter = parseStudentIdParam(studentParam);
+  const startDate = useMemo(
+    () => parseStartParam(startParam, view),
+    [startParam, view],
+  );
 
   const range = useMemo(() => getRange(view, startDate), [view, startDate]);
 
