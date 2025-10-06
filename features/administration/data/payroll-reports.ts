@@ -508,11 +508,9 @@ export async function fetchPayrollMatrix({
   }
 
   const monthStart = new Date(Date.UTC(year, monthIndex, 1));
-  const nextMonthStart = new Date(Date.UTC(year, monthIndex + 1, 1));
   const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0));
 
-  const monthStartIso = toIsoDateString(monthStart);
-  const nextMonthIso = toIsoDateString(nextMonthStart);
+  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
 
   const selectColumns = [
     "m.staff_id AS staff_id",
@@ -541,8 +539,7 @@ export async function fetchPayrollMatrix({
     SELECT
       ${selectColumns}
     FROM public.staff_day_matrix_v m
-    WHERE m.work_date >= $1::date
-      AND m.work_date < $2::date
+    WHERE to_char(m.work_date::date, 'YYYY-MM') = $1
     ORDER BY m.staff_id, m.work_date
   `;
 
@@ -551,7 +548,7 @@ export async function fetchPayrollMatrix({
   };
 
   const rows = normalizeRows<SqlRow>(
-    await unsafeSql.unsafe(query, [monthStartIso, nextMonthIso]),
+    await unsafeSql.unsafe(query, [monthKey]),
   );
 
   const days = enumerateDays(monthStart, monthEnd);
