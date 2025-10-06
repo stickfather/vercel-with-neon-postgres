@@ -256,9 +256,29 @@ function toHoursFromMinutes(value: unknown, fractionDigits = 2): number | null {
 
 function findColumn(columns: string[], candidates: string[]): string | null {
   for (const candidate of candidates) {
-    if (columns.includes(candidate)) return candidate;
+    const candidateLower = candidate.toLowerCase();
+    for (const column of columns) {
+      if (column === candidate) return column;
+      if (column.toLowerCase() === candidateLower) return column;
+    }
   }
   return null;
+}
+
+function readRowValue(row: SqlRow, candidates: string[]): unknown {
+  const entries = Object.entries(row);
+  for (const candidate of candidates) {
+    if (candidate in row) {
+      return row[candidate as keyof typeof row];
+    }
+    const lowerCandidate = candidate.toLowerCase();
+    for (const [key, value] of entries) {
+      if (key.toLowerCase() === lowerCandidate) {
+        return value;
+      }
+    }
+  }
+  return undefined;
 }
 
 async function fetchTableColumns(
@@ -399,29 +419,6 @@ export async function fetchPayrollMatrix({
 }): Promise<PayrollMatrixResponse> {
   const sql = getSqlClient();
 
-  const viewColumns = await fetchTableColumns(sql, "public", "staff_day_matrix_v");
-  const staffNameColumn = findColumn(viewColumns, [
-    "staff_name",
-    "staff_full_name",
-    "full_name",
-    "name",
-  ]);
-  const totalHoursColumn = findColumn(viewColumns, ["total_hours", "hours"]);
-  const totalMinutesColumn = findColumn(viewColumns, [
-    "total_minutes",
-    "minutes",
-    "total_work_minutes",
-  ]);
-  const approvedHoursColumn = findColumn(viewColumns, [
-    "approved_hours",
-    "hours_approved",
-    "approved_total_hours",
-  ]);
-  const approvedMinutesColumn = findColumn(viewColumns, [
-    "approved_minutes",
-    "approved_total_minutes",
-  ]);
-
   const {
     monthKey,
     monthStartDate,
@@ -430,45 +427,13 @@ export async function fetchPayrollMatrix({
     monthEndExclusive,
   } = resolveMonthWindow(month);
 
-  const selectColumns = [
-    "m.staff_id AS staff_id",
-    staffNameColumn
-      ? `m.${quoteIdentifier(staffNameColumn)} AS staff_name`
-      : null,
-    "m.work_date AS work_date",
-    totalMinutesColumn
-      ? `m.${quoteIdentifier(totalMinutesColumn)} AS total_minutes`
-      : null,
-    totalHoursColumn
-      ? `m.${quoteIdentifier(totalHoursColumn)} AS total_hours`
-      : null,
-    "m.approved AS approved",
-    approvedMinutesColumn
-      ? `m.${quoteIdentifier(approvedMinutesColumn)} AS approved_minutes`
-      : null,
-    approvedHoursColumn
-      ? `m.${quoteIdentifier(approvedHoursColumn)} AS approved_hours`
-      : null,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join(",\n      ");
-
-  const query = `
-    SELECT
-      ${selectColumns}
-    FROM public.staff_day_matrix_v m
-    WHERE DATE(m.work_date) >= $1::date
-      AND DATE(m.work_date) < $2::date
-    ORDER BY m.staff_id, m.work_date
-  `;
-
-  const unsafeSql = sql as unknown as {
-    unsafe: (text: string, params?: unknown[]) => Promise<unknown>;
-  };
-
-  const rows = normalizeRows<SqlRow>(
-    await unsafeSql.unsafe(query, [monthStart, monthEndExclusive]),
-  );
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.staff_day_matrix_v
+    WHERE work_date >= ${monthStart}::date
+      AND work_date < ${monthEndExclusive}::date
+    ORDER BY staff_id, work_date
+  `);
 
   const days = enumerateDays(monthStartDate, monthEndInclusiveDate);
 
@@ -482,36 +447,52 @@ export async function fetchPayrollMatrix({
   >();
 
   for (const row of rows) {
-    const staffId = Number(row.staff_id);
+    const staffId = Number(
+      readRowValue(row, ["staff_id", "staffid", "staff"]),
+    );
     if (!Number.isFinite(staffId)) continue;
-    const workDate = normalizeDateLike(row.work_date);
+    const workDate = normalizeDateLike(
+      readRowValue(row, ["work_date", "workday", "date"]),
+    );
     if (!workDate || workDate.slice(0, 7) !== monthKey) continue;
 
     if (!grouped.has(staffId)) {
       grouped.set(staffId, {
         staffId,
-        staffName: coerceString(row.staff_name) ?? undefined,
+        staffName:
+          coerceString(
+            readRowValue(row, [
+              "staff_name",
+              "staff_full_name",
+              "full_name",
+              "name",
+            ]),
+          ) ?? undefined,
         cells: new Map(),
       });
     }
 
-    const totalHoursDirect = totalHoursColumn
-      ? toOptionalNumber(row.total_hours, 2)
-      : null;
-    const totalMinutes = totalMinutesColumn
-      ? toInteger(row.total_minutes ?? row.minutes ?? null)
-      : null;
+    const totalHoursDirect = toOptionalNumber(
+      readRowValue(row, ["total_hours", "hours"]),
+      2,
+    );
+    const totalMinutes = toInteger(
+      readRowValue(row, ["total_minutes", "minutes", "total_work_minutes"]),
+    );
     const totalHours =
-      totalHoursDirect ??
-      toHoursFromMinutes(totalMinutes ?? row.total_minutes ?? row.minutes ?? null) ??
-      0;
-    const approved = toBoolean(row.approved);
-    const approvedHoursDirect = approvedHoursColumn
-      ? toOptionalNumber(row.approved_hours, 2)
-      : null;
-    const approvedMinutes = approvedMinutesColumn
-      ? toInteger(row.approved_minutes ?? null)
-      : null;
+      totalHoursDirect ?? toHoursFromMinutes(totalMinutes) ?? 0;
+    const approved = toBoolean(readRowValue(row, ["approved", "is_approved"]));
+    const approvedHoursDirect = toOptionalNumber(
+      readRowValue(row, [
+        "approved_hours",
+        "hours_approved",
+        "approved_total_hours",
+      ]),
+      2,
+    );
+    const approvedMinutes = toInteger(
+      readRowValue(row, ["approved_minutes", "approved_total_minutes"]),
+    );
     const approvedHours = approvedHoursDirect
       ?? (approvedMinutes != null
         ? Number((Math.max(0, approvedMinutes) / 60).toFixed(2))
