@@ -30,13 +30,13 @@ type SelectedCell = {
   approved: MatrixCell["approved"];
 };
 
-const STAFF_COLUMN_WIDTH = 220;
-const PAID_COLUMN_WIDTH = 120;
-const PAID_DATE_COLUMN_WIDTH = 180;
+const STAFF_COLUMN_WIDTH = 168;
+const PAID_COLUMN_WIDTH = 132;
+const PAID_DATE_COLUMN_WIDTH = 188;
 const TRAILING_COLUMNS_WIDTH = PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
 const MIN_CELL_WIDTH = 32;
 const PREFERRED_CELL_WIDTH = 72;
-const GRID_PADDING = 24;
+const GRID_PADDING = 16;
 
 function createNoStoreInit(): RequestInit & { next: { revalidate: number } } {
   return {
@@ -240,7 +240,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
     async function loadStaffDirectory() {
       try {
-        const response = await fetch("/api/staff/staff-members");
+        const response = await fetch("/api/staff-members", createNoStoreInit());
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
           const message = (body as { error?: string }).error ?? "No pudimos cargar el personal.";
@@ -750,7 +750,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         <div className="absolute bottom-0 left-1/2 h-[420px] w-[120%] -translate-x-1/2 rounded-t-[180px] bg-gradient-to-r from-[#ffeede] via-white to-[#c9f5ed]" />
       </div>
 
-      <main className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
+      <main className="relative mx-auto flex w-full max-w-[2000px] flex-1 flex-col gap-10 px-4 py-12 sm:px-6 md:px-10 lg:px-12">
         <header className="flex flex-col gap-5 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
             Control de nómina
@@ -880,7 +880,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               <tr key={row.staffId} className="odd:bg-white even:bg-brand-deep-soft/20">
                                 <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
                                   <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                                    <span className={compactCellText ? "text-[11px]" : "text-sm"}>{staffName}</span>
+                                    <span
+                                      className={`${compactCellText ? "text-[11px]" : "text-sm"} max-w-[150px] truncate`}
+                                      title={staffName}
+                                    >
+                                      {staffName}
+                                    </span>
                                     <span className="text-[9px] font-medium text-brand-ink-muted">
                                       ID: {row.staffId}
                                     </span>
