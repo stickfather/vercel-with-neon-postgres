@@ -944,6 +944,24 @@ function normalizeString(value: unknown): string | null {
   return null;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error("Database request timed out"));
+    }, ms);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
+
 function isIsoSunday(date: string): boolean {
   if (!date) return false;
   const normalized = date.includes("T") ? date : `${date}T00:00:00Z`;
@@ -954,6 +972,98 @@ function isIsoSunday(date: string): boolean {
   const weekday = new Date(parsed).getUTCDay();
   const isoDay = weekday === 0 ? 7 : weekday;
   return isoDay === 7;
+}
+
+export type StudentCoachPanelSummary = {
+  studentId: number;
+  fullName: string | null;
+  levelCode: string | null;
+  lessonSeq: number | null;
+  minutes30d: number | null;
+  daysActive30d: number | null;
+  avgSessionMinutes30d: number | null;
+  daysSinceLast: number | null;
+  lessonsGained30d: number | null;
+  lei30d: number | null;
+  leiRatio: number | null;
+  lessonsRemaining: number | null;
+  forecastMonthsToFinish: number | null;
+  onPace: boolean | null;
+  repeatsAtLast: number | null;
+  stallFlag: boolean | null;
+  targetLph: number | null;
+};
+
+export async function getStudentCoachPanelSummary(
+  studentId: number,
+): Promise<StudentCoachPanelSummary | null> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(
+    await withTimeout(
+      sql`
+        WITH p AS (
+          SELECT * FROM analytics.v_student_coaching_panel WHERE student_id = ${studentId}::bigint
+        ),
+        s AS (
+          SELECT id, full_name FROM public.students WHERE id = ${studentId}::bigint
+        ),
+        b AS (
+          SELECT target_lph FROM analytics.v_target_lph
+        )
+        SELECT
+          s.id            AS student_id,
+          s.full_name,
+          p.level_code,
+          p.lesson_seq,
+          p.minutes_30d,
+          p.days_active_30d,
+          p.avg_session_minutes_30d,
+          p.days_since_last,
+          p.lessons_gained_30d,
+          p.lei_30d,
+          p.lei_ratio,
+          p.lessons_remaining,
+          p.forecast_months_to_finish,
+          p.on_pace,
+          p.repeats_at_last,
+          p.stall_flag,
+          (SELECT target_lph FROM b) AS target_lph
+        FROM p
+        LEFT JOIN s ON s.id = p.student_id
+      `,
+      5000,
+    ),
+  );
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const row = rows[0];
+
+  const studentIdValue = normalizeInteger(row.student_id) ?? studentId;
+
+  return {
+    studentId: studentIdValue,
+    fullName: normalizeString(row.full_name),
+    levelCode: normalizeString(row.level_code),
+    lessonSeq: normalizeInteger(row.lesson_seq),
+    minutes30d: normalizeNumber(row.minutes_30d),
+    daysActive30d: normalizeInteger(row.days_active_30d),
+    avgSessionMinutes30d: normalizeNumber(row.avg_session_minutes_30d),
+    daysSinceLast: normalizeInteger(row.days_since_last),
+    lessonsGained30d: normalizeInteger(row.lessons_gained_30d),
+    lei30d: normalizeNumber(row.lei_30d),
+    leiRatio: normalizeNumber(row.lei_ratio),
+    lessonsRemaining: normalizeInteger(row.lessons_remaining),
+    forecastMonthsToFinish: normalizeNumber(row.forecast_months_to_finish),
+    onPace: normalizeFieldValue(row.on_pace, "boolean"),
+    repeatsAtLast: normalizeInteger(row.repeats_at_last),
+    stallFlag: normalizeFieldValue(row.stall_flag, "boolean"),
+    targetLph: normalizeNumber(row.target_lph),
+  };
 }
 
 export type StudentProgressStats = {
