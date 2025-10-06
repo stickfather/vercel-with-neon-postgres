@@ -30,7 +30,7 @@ type SelectedCell = {
   approved: MatrixCell["approved"];
 };
 
-const STAFF_COLUMN_WIDTH = 168;
+const STAFF_COLUMN_WIDTH = 148;
 const PAID_COLUMN_WIDTH = 132;
 const PAID_DATE_COLUMN_WIDTH = 188;
 const TRAILING_COLUMNS_WIDTH = PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
@@ -881,7 +881,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
                                   <div className="flex flex-col gap-0.5 whitespace-nowrap">
                                     <span
-                                      className={`${compactCellText ? "text-[11px]" : "text-sm"} max-w-[150px] truncate`}
+                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[132px] truncate`}
                                       title={staffName}
                                     >
                                       {staffName}
