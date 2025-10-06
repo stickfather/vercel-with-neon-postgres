@@ -50,6 +50,52 @@ function escapeSqlLiteral(value: string): string {
   return value.replace(/'/g, "''");
 }
 
+function resolveMonthWindow(monthParam: string): {
+  monthKey: string;
+  monthStartDate: Date;
+  monthEndInclusiveDate: Date;
+} {
+  const raw = monthParam.trim();
+  const match = raw.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);
+
+  if (!match) {
+    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
+  }
+
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthNumber) || monthNumber < 1 || monthNumber > 12) {
+    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
+  }
+
+  const paddedMonth = String(monthNumber).padStart(2, "0");
+  const monthKey = `${year}-${paddedMonth}`;
+  const monthStartString = `${monthKey}-01`;
+
+  const nextMonthNumber = monthNumber === 12 ? 1 : monthNumber + 1;
+  const nextMonthYear = monthNumber === 12 ? year + 1 : year;
+  const monthEndExclusiveString = `${nextMonthYear}-${String(nextMonthNumber).padStart(2, "0")}-01`;
+
+  const monthStartDate = new Date(`${monthStartString}T00:00:00Z`);
+  const monthEndExclusiveDate = new Date(`${monthEndExclusiveString}T00:00:00Z`);
+  const monthEndInclusiveDate = new Date(monthEndExclusiveDate.getTime() - 24 * 60 * 60 * 1000);
+
+  if (
+    Number.isNaN(monthStartDate.getTime()) ||
+    Number.isNaN(monthEndExclusiveDate.getTime()) ||
+    Number.isNaN(monthEndInclusiveDate.getTime())
+  ) {
+    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
+  }
+
+  return {
+    monthKey,
+    monthStartDate,
+    monthEndInclusiveDate,
+  };
+}
+
 let payrollViewsEnsured = false;
 
 async function ensurePayrollViews(sql: SqlClient): Promise<void> {
@@ -499,26 +545,7 @@ export async function fetchPayrollMatrix({
     "approved_total_minutes",
   ]);
 
-  const [rawYear, rawMonth] = month.split("-");
-  const year = Number(rawYear);
-  const monthIndex = Number(rawMonth) - 1;
-
-  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) {
-    throw new Error("Debes indicar el mes en formato 'YYYY-MM'.");
-  }
-
-  const paddedMonth = String(monthIndex + 1).padStart(2, "0");
-  const monthStartString = `${year}-${paddedMonth}-01`;
-  const nextMonthIndex = monthIndex + 1;
-  const nextMonthYear = nextMonthIndex > 11 ? year + 1 : year;
-  const nextMonthNumber = nextMonthIndex > 11 ? 1 : nextMonthIndex + 1;
-  const nextMonthPadded = String(nextMonthNumber).padStart(2, "0");
-  const monthEndExclusiveString = `${nextMonthYear}-${nextMonthPadded}-01`;
-
-  const monthStart = new Date(`${monthStartString}T00:00:00Z`);
-  const monthEndInclusive = new Date(
-    Date.UTC(nextMonthYear, nextMonthNumber - 1, 0),
-  );
+  const { monthKey, monthStartDate, monthEndInclusiveDate } = resolveMonthWindow(month);
 
   const selectColumns = [
     "m.staff_id AS staff_id",
@@ -547,8 +574,7 @@ export async function fetchPayrollMatrix({
     SELECT
       ${selectColumns}
     FROM public.staff_day_matrix_v m
-    WHERE m.work_date::date >= $1::date
-      AND m.work_date::date < $2::date
+    WHERE to_char(m.work_date, 'YYYY-MM') = $1
     ORDER BY m.staff_id, m.work_date
   `;
 
@@ -557,10 +583,10 @@ export async function fetchPayrollMatrix({
   };
 
   const rows = normalizeRows<SqlRow>(
-    await unsafeSql.unsafe(query, [monthStartString, monthEndExclusiveString]),
+    await unsafeSql.unsafe(query, [monthKey]),
   );
 
-  const days = enumerateDays(monthStart, monthEndInclusive);
+  const days = enumerateDays(monthStartDate, monthEndInclusiveDate);
 
   const grouped = new Map<
     number,
@@ -575,7 +601,7 @@ export async function fetchPayrollMatrix({
     const staffId = Number(row.staff_id);
     if (!Number.isFinite(staffId)) continue;
     const workDate = normalizeDateLike(row.work_date);
-    if (!workDate) continue;
+    if (!workDate || workDate.slice(0, 7) !== monthKey) continue;
 
     if (!grouped.has(staffId)) {
       grouped.set(staffId, {
