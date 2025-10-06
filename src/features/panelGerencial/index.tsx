@@ -6,8 +6,8 @@ import { CardsSkeleton, ChartsSkeleton, FullPanelSkeleton } from "./Skeleton";
 import ErrorState from "./ErrorState";
 import OverviewPanel from "./tabs/Overview/Overview";
 import ProgressPanel from "./tabs/Progress/Progress";
-import EngagementPlaceholder from "./tabs/Engagement/Placeholder";
-import RiskPlaceholder from "./tabs/Risk/Placeholder";
+import EngagementPanel from "./tabs/Engagement/Engagement";
+import RiskPanel from "./tabs/Risk/Risk";
 import OpsPlaceholder from "./tabs/Ops/Placeholder";
 import ExamsPlaceholder from "./tabs/Exams/Placeholder";
 
@@ -15,6 +15,12 @@ export const revalidate = 60;
 
 function getSelectedLevel(searchParams: Record<string, string | string[] | undefined>) {
   const value = searchParams.level;
+  if (Array.isArray(value)) return value[0];
+  return value ?? null;
+}
+
+function getSelectedBand(searchParams: Record<string, string | string[] | undefined>) {
+  const value = searchParams.band;
   if (Array.isArray(value)) return value[0];
   return value ?? null;
 }
@@ -41,8 +47,12 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
 
   const activeTab = tabParam as TabSlug;
   const selectedLevel = getSelectedLevel(resolvedSearchParams);
+  const selectedBand = getSelectedBand(resolvedSearchParams);
 
-  const content = renderActiveTab(activeTab, selectedLevel);
+  const content = renderActiveTab(activeTab, {
+    selectedLevel,
+    selectedBand,
+  });
 
   return (
     <div className="relative flex min-h-screen flex-col bg-gradient-to-br from-[#f8fbff] via-white to-[#f1fffb]">
@@ -68,7 +78,10 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
   );
 }
 
-function renderActiveTab(activeTab: TabSlug, selectedLevel: string | null | undefined) {
+function renderActiveTab(
+  activeTab: TabSlug,
+  filters: { selectedLevel: string | null; selectedBand: string | null },
+) {
   switch (activeTab) {
     case "overview":
       return (
@@ -86,13 +99,24 @@ function renderActiveTab(activeTab: TabSlug, selectedLevel: string | null | unde
     case "progress":
       return (
         <Suspense fallback={<FullPanelSkeleton chartCount={5} />}>
-          <ProgressPanel selectedLevel={selectedLevel ?? undefined} />
+          <ProgressPanel selectedLevel={filters.selectedLevel ?? undefined} />
         </Suspense>
       );
     case "engagement":
-      return <EngagementPlaceholder />;
+      return (
+        <Suspense fallback={<FullPanelSkeleton chartCount={5} />}>
+          <EngagementPanel />
+        </Suspense>
+      );
     case "risk":
-      return <RiskPlaceholder />;
+      return (
+        <Suspense fallback={<FullPanelSkeleton chartCount={2} />}>
+          <RiskPanel
+            selectedLevel={filters.selectedLevel ?? undefined}
+            selectedBand={filters.selectedBand ?? undefined}
+          />
+        </Suspense>
+      );
     case "ops":
       return <OpsPlaceholder />;
     case "exams":
