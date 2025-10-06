@@ -11,6 +11,11 @@ type OverridePayload = {
   checkoutTime?: string;
 };
 
+type AdditionPayload = {
+  checkinTime?: string;
+  checkoutTime?: string;
+};
+
 export async function POST(request: Request) {
   let payload: unknown;
 
@@ -24,38 +29,61 @@ export async function POST(request: Request) {
     );
   }
 
-  const { staffId, workDate, overrides } = (payload ?? {}) as {
+  const { staffId, workDate, overrides, additions, deletions } = (payload ?? {}) as {
     staffId?: number;
     workDate?: string;
     overrides?: OverridePayload[];
+    additions?: AdditionPayload[];
+    deletions?: (number | string | null | undefined)[];
   };
 
-  if (!Number.isFinite(staffId) || !workDate || !Array.isArray(overrides)) {
+  if (!Number.isFinite(staffId) || !workDate) {
     return NextResponse.json(
       {
-        error:
-          "Debes indicar 'staffId', 'workDate' y la lista de 'overrides'.",
+        error: "Debes indicar 'staffId' y 'workDate'.",
       },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
 
-  const sanitizedOverrides = overrides
-    .map((entry) => ({
-      sessionId: Number(entry.sessionId),
-      checkinTime: entry.checkinTime ?? null,
-      checkoutTime: entry.checkoutTime ?? null,
-    }))
-    .filter(
-      (entry): entry is { sessionId: number; checkinTime: string; checkoutTime: string } =>
-        Number.isFinite(entry.sessionId) && entry.sessionId > 0 &&
-        typeof entry.checkinTime === "string" &&
-        typeof entry.checkoutTime === "string",
-    );
+  const sanitizedOverrides = Array.isArray(overrides)
+    ? overrides
+        .map((entry) => ({
+          sessionId: Number(entry.sessionId),
+          checkinTime: typeof entry.checkinTime === "string" ? entry.checkinTime : null,
+          checkoutTime: typeof entry.checkoutTime === "string" ? entry.checkoutTime : null,
+        }))
+        .filter(
+          (entry): entry is { sessionId: number; checkinTime: string; checkoutTime: string } =>
+            Number.isFinite(entry.sessionId) && entry.sessionId > 0 &&
+            typeof entry.checkinTime === "string" &&
+            typeof entry.checkoutTime === "string",
+        )
+    : [];
 
-  if (!sanitizedOverrides.length) {
+  const sanitizedAdditions = Array.isArray(additions)
+    ? additions.map((entry) => ({
+        checkinTime: typeof entry.checkinTime === "string" ? entry.checkinTime : null,
+        checkoutTime: typeof entry.checkoutTime === "string" ? entry.checkoutTime : null,
+      }))
+    : [];
+
+  const sanitizedDeletions = Array.isArray(deletions)
+    ? deletions
+        .map((value) => {
+          const parsed = Number(value);
+          return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+        })
+        .filter((value): value is number => value != null)
+    : [];
+
+  if (
+    !sanitizedOverrides.length &&
+    !sanitizedAdditions.some((entry) => entry.checkinTime && entry.checkoutTime) &&
+    !sanitizedDeletions.length
+  ) {
     return NextResponse.json(
-      { error: "Debes enviar al menos una sesión válida para editar." },
+      { error: "Debes enviar al menos una modificación válida." },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -65,6 +93,8 @@ export async function POST(request: Request) {
       staffId: Number(staffId),
       workDate,
       overrides: sanitizedOverrides,
+      additions: sanitizedAdditions,
+      deletions: sanitizedDeletions,
     });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

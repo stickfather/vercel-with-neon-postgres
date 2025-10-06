@@ -412,6 +412,130 @@ async function applyStaffDayApproval(
   await client.unsafe(query, params);
 }
 
+type PayrollMonthStatusTableInfo = {
+  schema: string;
+  name: string;
+  staffIdColumn: string;
+  monthColumn: string;
+  paidColumn: string;
+  paidAtColumn: string | null;
+};
+
+let payrollMonthStatusTableCache: PayrollMonthStatusTableInfo | null = null;
+
+async function resolvePayrollMonthStatusTable(
+  sql: SqlClient,
+): Promise<PayrollMonthStatusTableInfo> {
+  if (payrollMonthStatusTableCache) return payrollMonthStatusTableCache;
+
+  const usageRows = normalizeRows<SqlRow>(await sql`
+    SELECT table_schema, table_name
+    FROM information_schema.view_table_usage
+    WHERE view_schema = 'public'
+      AND view_name = 'payroll_month_status_v'
+  `);
+
+  for (const row of usageRows) {
+    const schema = coerceString(row.table_schema) ?? "public";
+    const tableName = coerceString(row.table_name);
+    if (!tableName) continue;
+
+    const columns = await fetchTableColumns(sql, schema, tableName);
+    const staffIdColumn = findColumn(columns, ["staff_id"]);
+    const monthColumn = findColumn(columns, ["month", "period"]);
+    const paidColumn = findColumn(columns, ["paid", "is_paid"]);
+    const paidAtColumn = findColumn(columns, ["paid_at", "payment_date"]);
+
+    if (staffIdColumn && monthColumn && paidColumn) {
+      payrollMonthStatusTableCache = {
+        schema,
+        name: tableName,
+        staffIdColumn,
+        monthColumn,
+        paidColumn,
+        paidAtColumn: paidAtColumn ?? null,
+      };
+      return payrollMonthStatusTableCache;
+    }
+  }
+
+  throw new Error(
+    "No se pudo identificar la tabla base para actualizar el estado mensual de nómina.",
+  );
+}
+
+function normalizeMonthInput(month: string): string {
+  const normalized = normalizeDateLike(month);
+  if (normalized) return normalized;
+
+  const trimmed = month.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{1,2})$/);
+  if (match) {
+    const year = Number(match[1]);
+    const monthNumber = Number(match[2]);
+    if (Number.isFinite(year) && Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+      return `${year}-${String(monthNumber).padStart(2, "0")}-01`;
+    }
+  }
+
+  throw new Error("El mes indicado no es válido.");
+}
+
+function toIsoStartOfDay(dateString: string | null): string | null {
+  if (!dateString) return null;
+  const normalized = normalizeDateLike(dateString);
+  if (!normalized) return null;
+  const parsed = new Date(`${normalized}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+export async function updatePayrollMonthStatus({
+  staffId,
+  month,
+  paid,
+  paidAt,
+}: {
+  staffId: number;
+  month: string;
+  paid: boolean;
+  paidAt: string | null;
+}): Promise<void> {
+  const sql = getSqlClient();
+  const table = await resolvePayrollMonthStatusTable(sql);
+
+  const normalizedMonth = normalizeMonthInput(month);
+  const paidAtIso = paid ? toIsoStartOfDay(paidAt) : null;
+
+  const tableRef = `${quoteIdentifier(table.schema)}.${quoteIdentifier(table.name)}`;
+  const alias = "p";
+
+  const updates: string[] = [`${quoteIdentifier(table.paidColumn)} = $3::boolean`];
+  const params: Array<number | string | null> = [staffId, normalizedMonth, paid];
+
+  if (table.paidAtColumn) {
+    updates.push(`${quoteIdentifier(table.paidAtColumn)} = $4::timestamptz`);
+    params.push(paidAtIso);
+  }
+
+  const query = `
+    UPDATE ${tableRef} AS ${alias}
+    SET ${updates.join(", ")}
+    WHERE ${alias}.${quoteIdentifier(table.staffIdColumn)} = $1::bigint
+      AND ${alias}.${quoteIdentifier(table.monthColumn)} = $2::date
+  `;
+
+  const client = sql as unknown as {
+    unsafe: (query: string, params?: unknown[]) => Promise<{ rowCount?: number }>;
+  };
+
+  const result = await client.unsafe(query, params);
+
+  if (!result || ("rowCount" in result && (result as { rowCount?: number }).rowCount === 0)) {
+    throw new Error("No se pudo actualizar el estado mensual de nómina.");
+  }
+}
+
 export async function fetchPayrollMatrix({
   month,
 }: {
@@ -592,28 +716,75 @@ function ensureIsoString(value: string | null | undefined): string | null {
   return parsed.toISOString();
 }
 
+async function allocateStaffAttendanceIds(
+  sql: SqlClient,
+  count: number,
+): Promise<number[]> {
+  if (count <= 0) return [];
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT COALESCE(MAX(id), 0) + 1 AS next_id
+    FROM staff_attendance
+  `);
+
+  let nextId = Number(rows[0]?.next_id ?? 1);
+  if (!Number.isFinite(nextId) || nextId <= 0) {
+    nextId = 1;
+  }
+
+  const identifiers: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    identifiers.push(nextId + index);
+  }
+
+  return identifiers;
+}
+
 export async function overrideSessionsAndApprove({
   staffId,
   workDate,
-  overrides,
+  overrides = [],
+  additions = [],
+  deletions = [],
 }: {
   staffId: number;
   workDate: string;
-  overrides: {
+  overrides?: {
     sessionId: number;
     checkinTime: string;
     checkoutTime: string;
   }[];
+  additions?: {
+    checkinTime: string;
+    checkoutTime: string;
+  }[];
+  deletions?: number[];
 }): Promise<void> {
   const sql = getSqlClient();
 
   await sql`BEGIN`;
   try {
+    const sanitizedDeletions = deletions.filter((value) =>
+      Number.isFinite(value),
+    );
+    for (const sessionId of sanitizedDeletions) {
+      await sql`
+        DELETE FROM staff_attendance
+        WHERE id = ${Number(sessionId)}::bigint
+          AND staff_id = ${staffId}::bigint
+      `;
+    }
+
     for (const override of overrides) {
       const checkinIso = ensureIsoString(override.checkinTime);
       const checkoutIso = ensureIsoString(override.checkoutTime);
       if (!checkinIso || !checkoutIso) {
         throw new Error("Las horas de entrada y salida deben ser válidas.");
+      }
+      if (new Date(checkoutIso).getTime() <= new Date(checkinIso).getTime()) {
+        throw new Error(
+          "La hora de salida debe ser posterior a la hora de entrada.",
+        );
       }
 
       await sql`
@@ -623,6 +794,44 @@ export async function overrideSessionsAndApprove({
         WHERE id = ${override.sessionId}::bigint
           AND staff_id = ${staffId}::bigint
       `;
+    }
+
+    const sanitizedAdditions = additions.map((entry) => ({
+      checkinTime: ensureIsoString(entry.checkinTime),
+      checkoutTime: ensureIsoString(entry.checkoutTime),
+    }));
+
+    const validAdditions = sanitizedAdditions.filter(
+      (entry): entry is { checkinTime: string; checkoutTime: string } =>
+        Boolean(entry.checkinTime) && Boolean(entry.checkoutTime),
+    );
+
+    if (validAdditions.length !== sanitizedAdditions.length) {
+      throw new Error("Las nuevas sesiones deben tener horas válidas.");
+    }
+
+    if (validAdditions.length) {
+      const identifiers = await allocateStaffAttendanceIds(sql, validAdditions.length);
+
+      for (const [index, addition] of validAdditions.entries()) {
+        if (
+          new Date(addition.checkoutTime).getTime()
+          <= new Date(addition.checkinTime).getTime()
+        ) {
+          throw new Error(
+            "La hora de salida debe ser posterior a la hora de entrada.",
+          );
+        }
+        await sql`
+          INSERT INTO staff_attendance (id, staff_id, checkin_time, checkout_time)
+          VALUES (
+            ${identifiers[index]}::bigint,
+            ${staffId}::bigint,
+            ${addition.checkinTime}::timestamptz,
+            ${addition.checkoutTime}::timestamptz
+          )
+        `;
+      }
     }
 
     const recalculatedRows = normalizeRows<SqlRow>(await sql`

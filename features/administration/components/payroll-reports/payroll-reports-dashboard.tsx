@@ -12,11 +12,14 @@ import type {
 type MatrixResponse = PayrollMatrixResponse;
 
 type EditableSession = {
+  sessionKey: string;
   sessionId: number | null;
   checkinTime: string | null;
   checkoutTime: string | null;
   originalCheckinTime: string | null;
   originalCheckoutTime: string | null;
+  markedForDeletion: boolean;
+  isNew: boolean;
 };
 
 type SelectedCell = {
@@ -28,11 +31,20 @@ type SelectedCell = {
 };
 
 const STAFF_COLUMN_WIDTH = 220;
-const PAID_COLUMN_WIDTH = 88;
-const PAID_DATE_COLUMN_WIDTH = 160;
+const PAID_COLUMN_WIDTH = 120;
+const PAID_DATE_COLUMN_WIDTH = 180;
 const TRAILING_COLUMNS_WIDTH = PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
-const MIN_CELL_WIDTH = 24;
-const GRID_PADDING = 32;
+const MIN_CELL_WIDTH = 32;
+const PREFERRED_CELL_WIDTH = 72;
+const GRID_PADDING = 24;
+
+function createNoStoreInit(): RequestInit & { next: { revalidate: number } } {
+  return {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-store" },
+    next: { revalidate: 0 },
+  };
+}
 
 function getMonthRange(month: string): { from: string; to: string; endExclusive: string } {
   const [yearString, monthString] = month.split("-");
@@ -85,14 +97,64 @@ function fromLocalInputValue(value: string): string | null {
   return date.toISOString();
 }
 
+function toDateInputValue(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function fromDateInputValue(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function generateSessionKey(prefix: string): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    try {
+      return `${prefix}-${crypto.randomUUID()}`;
+    } catch (error) {
+      // Ignore failures and fallback to Math.random
+    }
+  }
+  return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+}
+
 function buildSessionEdits(sessions: DaySession[]): EditableSession[] {
-  return sessions.map((session) => ({
+  return sessions.map((session, index) => ({
+    sessionKey:
+      session.sessionId != null
+        ? `existing-${session.sessionId}`
+        : generateSessionKey(`session-${index}`),
     sessionId: session.sessionId,
     checkinTime: session.checkinTime,
     checkoutTime: session.checkoutTime,
     originalCheckinTime: session.checkinTime,
     originalCheckoutTime: session.checkoutTime,
+    markedForDeletion: false,
+    isNew: false,
   }));
+}
+
+function createEmptySessionEdit(): EditableSession {
+  return {
+    sessionKey: generateSessionKey("new-session"),
+    sessionId: null,
+    checkinTime: null,
+    checkoutTime: null,
+    originalCheckinTime: null,
+    originalCheckoutTime: null,
+    markedForDeletion: false,
+    isNew: true,
+  };
 }
 
 type Props = {
@@ -112,6 +174,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [sessionEdits, setSessionEdits] = useState<EditableSession[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [staffNames, setStaffNames] = useState<Record<number, string>>({});
+  const [monthStatusSaving, setMonthStatusSaving] = useState<Record<number, boolean>>({});
+  const [monthStatusErrors, setMonthStatusErrors] = useState<Record<number, string | null>>({});
 
   const matrixContainerRef = useRef<HTMLDivElement | null>(null);
   const [cellWidth, setCellWidth] = useState<number>(48);
@@ -163,6 +229,54 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [],
   );
 
+  const resolveStaffName = useCallback(
+    (row: { staffId: number; staffName?: string | null }) =>
+      row.staffName ?? staffNames[row.staffId] ?? `Personal #${row.staffId}`,
+    [staffNames],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStaffDirectory() {
+      try {
+        const response = await fetch("/api/staff/staff-members");
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          const message = (body as { error?: string }).error ?? "No pudimos cargar el personal.";
+          throw new Error(message);
+        }
+        const staff = (await response.json()) as { id: number; fullName: string }[];
+        if (cancelled) return;
+        const map: Record<number, string> = {};
+        for (const entry of staff) {
+          if (typeof entry.id === "number" && entry.id > 0 && typeof entry.fullName === "string") {
+            map[entry.id] = entry.fullName;
+          }
+        }
+        setStaffNames(map);
+      } catch (error) {
+        console.error("No se pudieron cargar los nombres del personal", error);
+      }
+    }
+
+    void loadStaffDirectory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCell) return;
+    const resolvedName = staffNames[selectedCell.staffId];
+    if (!resolvedName || resolvedName === selectedCell.staffName) return;
+    setSelectedCell((previous) => {
+      if (!previous || previous.staffId !== selectedCell.staffId) return previous;
+      return { ...previous, staffName: resolvedName };
+    });
+  }, [selectedCell, staffNames]);
+
   const { from, to } = useMemo(() => {
     try {
       return getMonthRange(selectedMonth);
@@ -172,45 +286,59 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     }
   }, [selectedMonth]);
 
+  const fetchMatrixData = useCallback(async (): Promise<MatrixResponse> => {
+    const response = await fetch(
+      `/api/payroll/reports/matrix?month=${encodeURIComponent(selectedMonth)}`,
+      createNoStoreInit(),
+    );
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message =
+        (body as { error?: string } | null)?.error ?? "Error al obtener la matriz.";
+      throw new Error(message);
+    }
+    const matrix = (body as MatrixResponse | null) ?? { days: [], rows: [] };
+    return {
+      ...matrix,
+      rows: Array.isArray(matrix.rows)
+        ? [...matrix.rows].sort((a, b) => a.staffId - b.staffId)
+        : [],
+    };
+  }, [selectedMonth]);
+
+  const fetchMonthStatusData = useCallback(
+    async (staffId?: number): Promise<PayrollMonthStatusRow[]> => {
+      const staffQuery =
+        staffId != null ? `&staffId=${encodeURIComponent(String(staffId))}` : "";
+      const response = await fetch(
+        `/api/payroll/reports/month-status?month=${encodeURIComponent(selectedMonth)}${staffQuery}`,
+        createNoStoreInit(),
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          (body as { error?: string } | null)?.error ?? "Error al obtener el estado del mes.";
+        throw new Error(message);
+      }
+
+      const rows = (body as { rows?: PayrollMonthStatusRow[] } | null)?.rows ?? [];
+      return [...rows].sort((a, b) => a.staffId - b.staffId);
+    },
+    [selectedMonth],
+  );
+
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setMonthStatusErrors({});
+    setMonthStatusSaving({});
     try {
-      const noStoreInit: RequestInit & { next: { revalidate: number } } = {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-store" },
-        next: { revalidate: 0 },
-      };
-
-      const [matrixResponse, monthStatusResponse] = await Promise.all([
-        fetch(
-          `/api/payroll/reports/matrix?month=${encodeURIComponent(selectedMonth)}`,
-          noStoreInit,
-        ),
-        fetch(
-          `/api/payroll/reports/month-status?month=${encodeURIComponent(selectedMonth)}`,
-          noStoreInit,
-        ),
+      const [matrixJson, monthStatusList] = await Promise.all([
+        fetchMatrixData(),
+        fetchMonthStatusData(),
       ]);
-
-      if (!matrixResponse.ok) {
-        const body = await matrixResponse.json().catch(() => ({}));
-        throw new Error((body as { error?: string }).error ?? "Error al obtener la matriz.");
-      }
-      if (!monthStatusResponse.ok) {
-        const body = await monthStatusResponse.json().catch(() => ({}));
-        throw new Error(
-          (body as { error?: string }).error ?? "Error al obtener el estado del mes.",
-        );
-      }
-
-      const matrixJson = (await matrixResponse.json()) as MatrixResponse;
-      const monthStatusJson = (await monthStatusResponse.json()) as {
-        rows?: PayrollMonthStatusRow[];
-      };
-
       setMatrixData(matrixJson);
-      setMonthStatusRows(monthStatusJson.rows ?? []);
+      setMonthStatusRows(monthStatusList);
     } catch (err) {
       console.error("No se pudo refrescar la información de nómina", err);
       const message = err instanceof Error ? err.message : "No pudimos cargar la información.";
@@ -218,7 +346,79 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedMonth]);
+  }, [fetchMatrixData, fetchMonthStatusData]);
+
+  const refreshMatrixOnly = useCallback(async () => {
+    const matrixJson = await fetchMatrixData();
+    setMatrixData(matrixJson);
+  }, [fetchMatrixData]);
+
+  const refreshMonthStatusForStaff = useCallback(
+    async (staffId: number) => {
+      const rows = await fetchMonthStatusData(staffId);
+      setMonthStatusRows((previous) => {
+        const withoutStaff = previous.filter((row) => row.staffId !== staffId);
+        const merged = [...withoutStaff, ...rows];
+        merged.sort((a, b) => a.staffId - b.staffId);
+        return merged;
+      });
+    },
+    [fetchMonthStatusData],
+  );
+
+  const updateMonthStatus = useCallback(
+    async (
+      staffId: number,
+      currentRow: PayrollMonthStatusRow | undefined,
+      updates: { paid?: boolean; paidAt?: string | null },
+    ) => {
+      const monthValue = currentRow?.month ?? `${selectedMonth}-01`;
+      const nextPaid = updates.paid ?? currentRow?.paid ?? false;
+      const currentPaidAtInput = currentRow?.paidAt ? toDateInputValue(currentRow.paidAt) : null;
+      const nextPaidAtInput =
+        updates.paidAt !== undefined ? updates.paidAt : currentPaidAtInput;
+
+      setMonthStatusSaving((previous) => ({ ...previous, [staffId]: true }));
+      setMonthStatusErrors((previous) => ({ ...previous, [staffId]: null }));
+
+      try {
+        const response = await fetch("/api/payroll/reports/month-status", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            staffId,
+            month: monthValue,
+            paid: nextPaid,
+            paidAt: nextPaid ? nextPaidAtInput : null,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            (body as { error?: string }).error
+              ?? "No pudimos actualizar el estado del mes.",
+          );
+        }
+
+        await refreshMonthStatusForStaff(staffId);
+        setMonthStatusErrors((previous) => ({ ...previous, [staffId]: null }));
+      } catch (error) {
+        console.error("No se pudo actualizar el estado mensual", error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "No pudimos actualizar el estado del mes.";
+        setMonthStatusErrors((previous) => ({ ...previous, [staffId]: message }));
+      } finally {
+        setMonthStatusSaving((previous) => {
+          const next = { ...previous };
+          delete next[staffId];
+          return next;
+        });
+      }
+    },
+    [refreshMonthStatusForStaff, selectedMonth],
+  );
 
   useEffect(() => {
     void refreshData();
@@ -228,7 +428,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     (row: MatrixRow, cell: MatrixCell) => {
       setSelectedCell({
         staffId: row.staffId,
-        staffName: row.staffName ?? `Personal #${row.staffId}`,
+        staffName: resolveStaffName(row),
         workDate: cell.date,
         hours: cell.hours,
         approved: cell.approved,
@@ -238,7 +438,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setSessionEdits([]);
       setActionError(null);
     },
-    [],
+    [resolveStaffName],
   );
 
   const closeModal = useCallback(() => {
@@ -262,11 +462,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       try {
         const response = await fetch(
           `/api/payroll/reports/day-sessions?staffId=${staffId}&date=${workDate}`,
-          {
-            cache: "no-store",
-            headers: { "Cache-Control": "no-store" },
-            next: { revalidate: 0 },
-          } satisfies RequestInit & { next: { revalidate: number } },
+          createNoStoreInit(),
         );
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
@@ -295,28 +491,51 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     };
   }, [selectedCell]);
 
-  const onSessionChange = useCallback((index: number, field: "checkinTime" | "checkoutTime", value: string) => {
+  const onSessionChange = useCallback(
+    (sessionKey: string, field: "checkinTime" | "checkoutTime", value: string) => {
+      setSessionEdits((previous) =>
+        previous.map((session) => {
+          if (session.sessionKey !== sessionKey) return session;
+          const isoValue = fromLocalInputValue(value);
+          return {
+            ...session,
+            [field]: isoValue,
+            markedForDeletion: false,
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  const addNewSession = useCallback(() => {
+    setSessionEdits((previous) => [...previous, createEmptySessionEdit()]);
+  }, []);
+
+  const toggleSessionDeletion = useCallback((sessionKey: string) => {
     setSessionEdits((previous) =>
-      previous.map((session, idx) => {
-        if (idx !== index) return session;
-        const isoValue = fromLocalInputValue(value);
-        return { ...session, [field]: isoValue };
+      previous.flatMap((session) => {
+        if (session.sessionKey !== sessionKey) return [session];
+        if (session.sessionId == null) {
+          return [];
+        }
+        return [{ ...session, markedForDeletion: !session.markedForDeletion }];
       }),
     );
   }, []);
 
-  const hasOverrides = useMemo(
+  const hasSessionChanges = useMemo(
     () =>
-      sessionEdits.some(
-        (session) =>
-          session.checkinTime !== session.originalCheckinTime ||
-          session.checkoutTime !== session.originalCheckoutTime,
-      ),
-    [sessionEdits],
-  );
-
-  const editableSessions = useMemo(
-    () => sessionEdits.filter((session) => session.sessionId != null),
+      sessionEdits.some((session) => {
+        if (session.markedForDeletion) return true;
+        if (session.isNew) {
+          return !session.markedForDeletion;
+        }
+        return (
+          session.checkinTime !== session.originalCheckinTime
+          || session.checkoutTime !== session.originalCheckoutTime
+        );
+      }),
     [sessionEdits],
   );
 
@@ -325,7 +544,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     const available =
       containerWidth - STAFF_COLUMN_WIDTH - TRAILING_COLUMNS_WIDTH - GRID_PADDING;
     const computed = available > 0 ? Math.floor(available / daysCount) : MIN_CELL_WIDTH;
-    setCellWidth(Math.max(MIN_CELL_WIDTH, computed));
+    const desired = Math.min(PREFERRED_CELL_WIDTH, computed);
+    setCellWidth(Math.max(MIN_CELL_WIDTH, desired));
   }, []);
 
   const handleApprove = useCallback(async () => {
@@ -345,7 +565,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!response.ok) {
         throw new Error((body as { error?: string }).error ?? "No pudimos aprobar el día.");
       }
-      await refreshData();
+      await refreshMatrixOnly();
+      await refreshMonthStatusForStaff(selectedCell.staffId);
       closeModal();
     } catch (err) {
       console.error("No se pudo aprobar el día", err);
@@ -354,31 +575,73 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setActionLoading(false);
     }
-  }, [closeModal, refreshData, selectedCell]);
+  }, [closeModal, refreshMatrixOnly, refreshMonthStatusForStaff, selectedCell]);
 
   const handleOverrideAndApprove = useCallback(async () => {
-    if (!selectedCell || !hasOverrides || !editableSessions.length) return;
+    if (!selectedCell) return;
+    if (!hasSessionChanges) {
+      setActionError("No hay cambios para aplicar.");
+      return;
+    }
     setActionLoading(true);
     setActionError(null);
     try {
-      const overrides = editableSessions
-        .map((session) => {
-          if (!session.sessionId || !session.checkinTime || !session.checkoutTime) {
-            return null;
-          }
-          return {
-            sessionId: session.sessionId,
-            checkinTime: session.checkinTime,
-            checkoutTime: session.checkoutTime,
-          };
-        })
+      const updates = sessionEdits
         .filter(
-          (session): session is { sessionId: number; checkinTime: string; checkoutTime: string } =>
-            Boolean(session),
-        );
+          (session) =>
+            !session.isNew
+            && !session.markedForDeletion
+            && session.sessionId != null
+            && session.checkinTime
+            && session.checkoutTime
+            && (
+              session.checkinTime !== session.originalCheckinTime
+              || session.checkoutTime !== session.originalCheckoutTime
+            ),
+        )
+        .map((session) => ({
+          sessionId: session.sessionId as number,
+          checkinTime: session.checkinTime as string,
+          checkoutTime: session.checkoutTime as string,
+        }));
 
-      if (!overrides.length) {
-        throw new Error("No hay sesiones válidas para actualizar.");
+      const additions = sessionEdits
+        .filter((session) => session.isNew && !session.markedForDeletion)
+        .map((session) => ({
+          checkinTime: session.checkinTime,
+          checkoutTime: session.checkoutTime,
+        }));
+
+      const deletions = sessionEdits
+        .filter(
+          (session) =>
+            !session.isNew && session.markedForDeletion && session.sessionId != null,
+        )
+        .map((session) => session.sessionId as number);
+
+      const pendingAddition = additions.find(
+        (session) => !session.checkinTime || !session.checkoutTime,
+      );
+      if (pendingAddition) {
+        throw new Error("Debes completar las horas de las nuevas sesiones.");
+      }
+
+      const normalizedAdditions = additions.map((session) => ({
+        checkinTime: session.checkinTime as string,
+        checkoutTime: session.checkoutTime as string,
+      }));
+
+      const invalidRange = [...updates, ...normalizedAdditions].find(
+        (session) =>
+          new Date(session.checkoutTime).getTime()
+            <= new Date(session.checkinTime).getTime(),
+      );
+      if (invalidRange) {
+        throw new Error("La hora de salida debe ser posterior a la hora de entrada.");
+      }
+
+      if (!updates.length && !normalizedAdditions.length && !deletions.length) {
+        throw new Error("No hay cambios válidos para aplicar.");
       }
 
       const response = await fetch("/api/payroll/reports/override-and-approve", {
@@ -387,7 +650,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         body: JSON.stringify({
           staffId: selectedCell.staffId,
           workDate: selectedCell.workDate,
-          overrides,
+          overrides: updates,
+          additions: normalizedAdditions,
+          deletions,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -396,7 +661,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           (body as { error?: string }).error ?? "No pudimos sobrescribir y aprobar el día.",
         );
       }
-      await refreshData();
+      await refreshMatrixOnly();
+      await refreshMonthStatusForStaff(selectedCell.staffId);
       closeModal();
     } catch (err) {
       console.error("No se pudo sobrescribir y aprobar el día", err);
@@ -406,7 +672,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setActionLoading(false);
     }
-  }, [closeModal, editableSessions, hasOverrides, refreshData, selectedCell]);
+  }, [
+    closeModal,
+    hasSessionChanges,
+    refreshMatrixOnly,
+    refreshMonthStatusForStaff,
+    selectedCell,
+    sessionEdits,
+  ]);
 
   useEffect(() => {
     const element = matrixContainerRef.current;
@@ -448,7 +721,25 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
-  const compactCellText = effectiveCellWidth <= 28;
+  const cellVariant = useMemo(() => {
+    if (effectiveCellWidth >= 64) return "relaxed" as const;
+    if (effectiveCellWidth >= 52) return "comfortable" as const;
+    if (effectiveCellWidth >= 44) return "compact" as const;
+    return "tight" as const;
+  }, [effectiveCellWidth]);
+  const cellVisual = useMemo(() => {
+    switch (cellVariant) {
+      case "relaxed":
+        return { height: "h-12", padding: "px-3 py-2", font: "text-sm" } as const;
+      case "comfortable":
+        return { height: "h-11", padding: "px-2.5 py-1.5", font: "text-[13px]" } as const;
+      case "compact":
+        return { height: "h-10", padding: "px-2 py-1.5", font: "text-xs" } as const;
+      default:
+        return { height: "h-9", padding: "px-1.5 py-1", font: "text-[11px]" } as const;
+    }
+  }, [cellVariant]);
+  const compactCellText = cellVariant === "tight";
   const staffCount = matrixData?.rows.length ?? 0;
 
   return (
@@ -579,20 +870,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         <tbody>
                           {matrixData.rows.map((row) => {
                             const monthStatus = monthStatusByStaff.get(row.staffId);
-                            const paidLabel = monthStatus?.paid ? "Sí" : "No";
-                            const paidAtIso = monthStatus?.paidAt ?? null;
-                            const paidAtText =
-                              paidAtIso && !Number.isNaN(Date.parse(paidAtIso))
-                                ? paidDateFormatter.format(new Date(paidAtIso))
-                                : "—";
+                            const staffName = resolveStaffName(row);
+                            const paidValue = monthStatus?.paid ?? false;
+                            const paidAtValue = toDateInputValue(monthStatus?.paidAt ?? null);
+                            const isStatusSaving = Boolean(monthStatusSaving[row.staffId]);
+                            const statusError = monthStatusErrors[row.staffId] ?? null;
 
                             return (
                               <tr key={row.staffId} className="odd:bg-white even:bg-brand-deep-soft/20">
                                 <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
                                   <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                                    <span className={compactCellText ? "text-[10px]" : "text-xs"}>
-                                      {row.staffName ?? `Personal #${row.staffId}`}
-                                    </span>
+                                    <span className={compactCellText ? "text-[11px]" : "text-sm"}>{staffName}</span>
                                     <span className="text-[9px] font-medium text-brand-ink-muted">
                                       ID: {row.staffId}
                                     </span>
@@ -603,11 +891,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     <button
                                       type="button"
                                       onClick={() => openModal(row, cell)}
-                                      className={`inline-flex h-8 w-full items-center justify-center rounded-md border px-1 py-0.5 font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                      className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
                                         cell.approved
-                                          ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
-                                          : "border-orange-500 bg-orange-500/85 text-white hover:bg-orange-500"
-                                      } ${compactCellText ? "text-[9px]" : "text-[10px]"}`}
+                                          ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
+                                          : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500"
+                                      } ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
                                       style={{ minWidth: `${effectiveCellWidth}px` }}
                                     >
                                       <span className="whitespace-nowrap">
@@ -616,11 +904,51 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     </button>
                                   </td>
                                 ))}
-                                <td className="px-2 py-1 text-center font-semibold text-brand-deep">
-                                  {paidLabel}
+                                <td className="px-2 py-1 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void updateMonthStatus(row.staffId, monthStatus, {
+                                        paid: !paidValue,
+                                      });
+                                    }}
+                                    disabled={isStatusSaving}
+                                    className={`inline-flex min-w-[60px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                      paidValue
+                                        ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
+                                        : "border-orange-400 bg-orange-100 text-orange-900 hover:bg-orange-200"
+                                    } ${isStatusSaving ? "opacity-60" : ""}`}
+                                  >
+                                    {paidValue ? "Sí" : "No"}
+                                  </button>
                                 </td>
                                 <td className="px-2 py-1 text-center text-brand-ink-muted">
-                                  {paidAtText}
+                                  <div className="flex flex-col items-center gap-1">
+                                    <input
+                                      type="date"
+                                      value={paidAtValue}
+                                      onChange={(event) => {
+                                        const normalized = fromDateInputValue(event.target.value);
+                                        void updateMonthStatus(row.staffId, monthStatus, {
+                                          paid: paidValue,
+                                          paidAt: normalized,
+                                        });
+                                      }}
+                                      disabled={isStatusSaving}
+                                      className="w-full max-w-[140px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                    />
+                                    {isStatusSaving ? (
+                                      <span className="text-[10px] text-brand-ink-muted">Guardando…</span>
+                                    ) : statusError ? (
+                                      <span className="text-[10px] font-medium text-brand-orange">{statusError}</span>
+                                    ) : paidAtValue ? (
+                                      <span className="text-[10px] text-brand-ink-muted">
+                                        {paidDateFormatter.format(new Date(`${paidAtValue}T00:00:00`))}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-brand-ink-muted">—</span>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -672,50 +1000,102 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 <div className="rounded-3xl border border-brand-orange/70 bg-brand-orange/10 px-5 py-4 text-sm font-medium text-brand-ink">
                   {sessionsError}
                 </div>
-              ) : !sessionEdits.length ? (
-                <div className="rounded-3xl border border-brand-ink-muted/20 bg-brand-deep-soft/40 px-5 py-4 text-sm text-brand-ink-muted">
-                  No hay sesiones registradas para este día.
-                </div>
               ) : (
                 <div className="space-y-4">
-                  {sessionEdits.map((session, index) => (
-                    <div key={session.sessionId ?? index} className="rounded-3xl border border-brand-ink-muted/15 bg-white px-5 py-4 shadow-inner">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-brand-deep">
-                          Sesión #{index + 1}
-                        </span>
-                        {session.sessionId == null ? (
-                          <span className="text-xs font-medium uppercase tracking-wide text-brand-orange">
-                            Sin identificador
-                          </span>
-                        ) : null}
+                  {sessionEdits.length ? (
+                    sessionEdits.map((session, index) => (
+                      <div
+                        key={session.sessionKey}
+                        className={`rounded-3xl border px-5 py-4 shadow-inner ${
+                          session.markedForDeletion
+                            ? "border-brand-orange/60 bg-brand-orange/10"
+                            : "border-brand-ink-muted/15 bg-white"
+                        }`}
+                      >
+                        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-2 text-brand-deep">
+                            <span className="text-sm font-semibold">
+                              {session.sessionId != null
+                                ? `Sesión ID ${session.sessionId}`
+                                : `Nueva sesión ${index + 1}`}
+                            </span>
+                            {session.isNew ? (
+                              <span className="inline-flex items-center rounded-full bg-brand-teal-soft/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-deep">
+                                Nueva
+                              </span>
+                            ) : null}
+                            {session.markedForDeletion ? (
+                              <span className="inline-flex items-center rounded-full bg-brand-orange/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-orange">
+                                Marcada para eliminar
+                              </span>
+                            ) : null}
+                            {session.sessionId == null && !session.isNew ? (
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-brand-orange">
+                                Sin identificador
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleSessionDeletion(session.sessionKey)}
+                              className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                            >
+                              {session.sessionId == null
+                                ? "Quitar"
+                                : session.markedForDeletion
+                                  ? "Restaurar"
+                                  : "Eliminar"}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+                              Entrada
+                            </span>
+                            <input
+                              type="datetime-local"
+                              value={toLocalInputValue(session.checkinTime)}
+                              onChange={(event) =>
+                                onSessionChange(session.sessionKey, "checkinTime", event.target.value)
+                              }
+                              disabled={session.markedForDeletion || actionLoading}
+                              className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+                              Salida
+                            </span>
+                            <input
+                              type="datetime-local"
+                              value={toLocalInputValue(session.checkoutTime)}
+                              onChange={(event) =>
+                                onSessionChange(session.sessionKey, "checkoutTime", event.target.value)
+                              }
+                              disabled={session.markedForDeletion || actionLoading}
+                              className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                          </label>
+                        </div>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <label className="flex flex-col gap-1 text-sm text-brand-deep">
-                          <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                            Entrada
-                          </span>
-                          <input
-                            type="datetime-local"
-                            value={toLocalInputValue(session.checkinTime)}
-                            onChange={(event) => onSessionChange(index, "checkinTime", event.target.value)}
-                            className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1 text-sm text-brand-deep">
-                          <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                            Salida
-                          </span>
-                          <input
-                            type="datetime-local"
-                            value={toLocalInputValue(session.checkoutTime)}
-                            onChange={(event) => onSessionChange(index, "checkoutTime", event.target.value)}
-                            className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                          />
-                        </label>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-3xl border border-brand-ink-muted/20 bg-brand-deep-soft/40 px-5 py-4 text-sm text-brand-ink-muted">
+                      No hay sesiones registradas para este día.
                     </div>
-                  ))}
+                  )}
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={addNewSession}
+                      disabled={sessionsLoading || actionLoading}
+                      className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Agregar sesión
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -745,7 +1125,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               <button
                 type="button"
                 onClick={handleOverrideAndApprove}
-                disabled={actionLoading || !hasOverrides || !editableSessions.length}
+                disabled={actionLoading || !hasSessionChanges}
                 className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-orange px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-brand-orange/90 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-brand-orange disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {actionLoading ? "Procesando…" : "Sobrescribir y aprobar"}
