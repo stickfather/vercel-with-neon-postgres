@@ -305,8 +305,10 @@ type StaffDayTableInfo = {
   staffIdColumn: string;
   workDateColumn: string;
   approvedColumn: string;
-  approvedMinutesColumn: string;
+  approvedMinutesColumn: string | null;
+  approvedHoursColumn: string | null;
   totalMinutesColumn: string | null;
+  totalHoursColumn: string | null;
   approvedAtColumn: string | null;
   approvedByColumn: string | null;
 };
@@ -332,19 +334,30 @@ async function resolveStaffDayTable(sql: SqlClient): Promise<StaffDayTableInfo> 
     const staffIdColumn = findColumn(columns, ["staff_id"]);
     const workDateColumn = findColumn(columns, ["work_date", "workday", "date"]);
     const approvedColumn = findColumn(columns, ["approved", "is_approved"]);
-    const approvedMinutesColumn = findColumn(columns, [
-      "approved_minutes",
-      "approved_total_minutes",
-    ]);
-    const totalMinutesColumn = findColumn(columns, [
-      "total_minutes",
-      "minutes",
-      "total_work_minutes",
-    ]);
+    const approvedMinutesColumn =
+      findColumn(columns, ["approved_minutes", "approved_total_minutes"])
+      ?? null;
+    const approvedHoursColumn =
+      findColumn(columns, [
+        "approved_hours",
+        "approved_total_hours",
+        "hours_approved",
+      ]) ?? null;
+    const totalMinutesColumn =
+      findColumn(columns, ["total_minutes", "minutes", "total_work_minutes"])
+      ?? null;
+    const totalHoursColumn =
+      findColumn(columns, ["total_hours", "hours", "total_work_hours"])
+      ?? null;
     const approvedAtColumn = findColumn(columns, ["approved_at"]);
     const approvedByColumn = findColumn(columns, ["approved_by", "approved_by_user"]);
 
-    if (staffIdColumn && workDateColumn && approvedColumn && approvedMinutesColumn) {
+    if (
+      staffIdColumn
+      && workDateColumn
+      && approvedColumn
+      && (approvedMinutesColumn || approvedHoursColumn)
+    ) {
       staffDayTableCache = {
         schema,
         name: tableName,
@@ -352,7 +365,9 @@ async function resolveStaffDayTable(sql: SqlClient): Promise<StaffDayTableInfo> 
         workDateColumn,
         approvedColumn,
         approvedMinutesColumn,
-        totalMinutesColumn: totalMinutesColumn ?? null,
+        approvedHoursColumn,
+        totalMinutesColumn,
+        totalHoursColumn,
         approvedAtColumn: approvedAtColumn ?? null,
         approvedByColumn: approvedByColumn ?? null,
       };
@@ -375,21 +390,70 @@ async function applyStaffDayApproval(
   const alias = "t";
   const params: Array<number | string> = [staffId, workDate];
 
-  let approvedMinutesExpression: string;
-  if (approvedMinutes != null && Number.isFinite(approvedMinutes)) {
-    const rounded = Math.max(0, Math.round(approvedMinutes));
-    params.push(rounded);
-    approvedMinutesExpression = `$${params.length}`;
-  } else if (table.totalMinutesColumn) {
-    approvedMinutesExpression = `COALESCE(${alias}.${quoteIdentifier(table.approvedMinutesColumn)}, ${alias}.${quoteIdentifier(table.totalMinutesColumn)})`;
-  } else {
-    approvedMinutesExpression = `${alias}.${quoteIdentifier(table.approvedMinutesColumn)}`;
-  }
-
   const updates: string[] = [
     `${quoteIdentifier(table.approvedColumn)} = TRUE`,
-    `${quoteIdentifier(table.approvedMinutesColumn)} = ${approvedMinutesExpression}`,
   ];
+
+  const roundedMinutes =
+    approvedMinutes != null && Number.isFinite(approvedMinutes)
+      ? Math.max(0, Math.round(approvedMinutes))
+      : null;
+
+  const totalMinutesColumnRef =
+    table.totalMinutesColumn
+      ? `${alias}.${quoteIdentifier(table.totalMinutesColumn)}`
+      : null;
+  const totalHoursColumnRef =
+    table.totalHoursColumn
+      ? `${alias}.${quoteIdentifier(table.totalHoursColumn)}`
+      : null;
+
+  if (table.approvedMinutesColumn) {
+    const approvedMinutesColumnRef = `${alias}.${quoteIdentifier(table.approvedMinutesColumn)}`;
+    let expression: string | null = null;
+    if (roundedMinutes != null) {
+      params.push(roundedMinutes);
+      expression = `$${params.length}`;
+    } else if (totalMinutesColumnRef) {
+      expression = `COALESCE(${approvedMinutesColumnRef}, ${totalMinutesColumnRef})`;
+    } else if (totalHoursColumnRef) {
+      expression = `COALESCE(${approvedMinutesColumnRef}, ROUND(${totalHoursColumnRef} * 60))`;
+    }
+
+    if (expression) {
+      updates.push(
+        `${quoteIdentifier(table.approvedMinutesColumn)} = ${expression}`,
+      );
+    }
+  }
+
+  if (table.approvedHoursColumn) {
+    const approvedHoursColumnRef = `${alias}.${quoteIdentifier(table.approvedHoursColumn)}`;
+    const approvedMinutesColumnRef = table.approvedMinutesColumn
+      ? `${alias}.${quoteIdentifier(table.approvedMinutesColumn)}`
+      : null;
+    let expression: string | null = null;
+    if (roundedMinutes != null) {
+      const roundedHours = Number((roundedMinutes / 60).toFixed(2));
+      params.push(roundedHours);
+      expression = `$${params.length}`;
+    } else if (totalHoursColumnRef) {
+      expression = `COALESCE(${approvedHoursColumnRef}, ${totalHoursColumnRef})`;
+    } else if (totalMinutesColumnRef || approvedMinutesColumnRef) {
+      const minutesSource = totalMinutesColumnRef
+        ? `COALESCE(${approvedMinutesColumnRef ?? "NULL"}, ${totalMinutesColumnRef})`
+        : approvedMinutesColumnRef;
+      if (minutesSource) {
+        expression = `COALESCE(${approvedHoursColumnRef}, ROUND((${minutesSource})::numeric / 60.0, 2))`;
+      }
+    }
+
+    if (expression) {
+      updates.push(
+        `${quoteIdentifier(table.approvedHoursColumn)} = ${expression}`,
+      );
+    }
+  }
 
   if (table.approvedAtColumn) {
     updates.push(`${quoteIdentifier(table.approvedAtColumn)} = NOW()`);
