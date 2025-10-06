@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { approveStaffDayAction } from "@/app/actions/approve-staff-day";
 import type {
   DaySession,
   MatrixCell,
@@ -31,10 +30,10 @@ type SelectedCell = {
   approved: MatrixCell["approved"];
 };
 
-const STAFF_COLUMN_WIDTH = 148;
-const PAID_COLUMN_WIDTH = 132;
-const PAID_DATE_COLUMN_WIDTH = 188;
-const APPROVED_AMOUNT_COLUMN_WIDTH = 168;
+const STAFF_COLUMN_WIDTH = 124;
+const PAID_COLUMN_WIDTH = 100;
+const PAID_DATE_COLUMN_WIDTH = 176;
+const APPROVED_AMOUNT_COLUMN_WIDTH = 156;
 const TRAILING_COLUMNS_WIDTH =
   PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH + APPROVED_AMOUNT_COLUMN_WIDTH;
 const MIN_CELL_WIDTH = 32;
@@ -692,13 +691,18 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setActionLoading(true);
     setActionError(null);
     try {
-      await approveStaffDayAction({
-        staffId: selectedCell.staffId,
-        workDate: selectedCell.workDate,
-        approved: true,
-        minutesOverride: null,
-        approvedBy: null,
+      const response = await fetch("/api/payroll/reports/approve-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          staffId: selectedCell.staffId,
+          workDate: selectedCell.workDate,
+        }),
       });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((body as { error?: string }).error ?? "No pudimos aprobar el día.");
+      }
       await refreshMatrixOnly();
       await refreshMonthStatusForStaff(selectedCell.staffId);
       await refreshMonthSummary();
@@ -980,7 +984,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Aprobado
                       </span>
                     </div>
-                    <div className="overflow-hidden rounded-2xl border border-brand-ink-muted/10">
+                    <div className="overflow-x-auto overflow-y-hidden rounded-2xl border border-brand-ink-muted/10">
                       <table className="w-full table-fixed border-collapse text-[10px] leading-tight text-brand-deep">
                         <colgroup>
                           <col style={{ width: `${STAFF_COLUMN_WIDTH}px` }} />
@@ -1037,7 +1041,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
                                   <div className="flex flex-col gap-0.5 whitespace-nowrap">
                                     <span
-                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[132px] truncate`}
+                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[116px] truncate`}
                                       title={staffName}
                                     >
                                       {staffName}
@@ -1074,7 +1078,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       });
                                     }}
                                     disabled={isStatusSaving}
-                                    className={`inline-flex min-w-[60px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                    className={`inline-flex min-w-[56px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
                                       paidValue
                                         ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
                                         : "border-orange-400 bg-orange-100 text-orange-900 hover:bg-orange-200"
@@ -1096,7 +1100,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                         });
                                       }}
                                       disabled={isStatusSaving}
-                                      className="w-full max-w-[140px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="w-full max-w-[128px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
                                     />
                                     {isStatusSaving ? (
                                       <span className="text-[10px] text-brand-ink-muted">Guardando…</span>
