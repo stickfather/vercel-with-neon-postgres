@@ -299,181 +299,41 @@ async function fetchTableColumns(
     .map((name) => name);
 }
 
-type StaffDayTableInfo = {
-  schema: string;
-  name: string;
-  staffIdColumn: string;
-  workDateColumn: string;
-  approvedColumn: string;
-  approvedMinutesColumn: string | null;
-  approvedHoursColumn: string | null;
-  totalMinutesColumn: string | null;
-  totalHoursColumn: string | null;
-  approvedAtColumn: string | null;
-  approvedByColumn: string | null;
-};
-
-let staffDayTableCache: StaffDayTableInfo | null = null;
-
-async function resolveStaffDayTable(sql: SqlClient): Promise<StaffDayTableInfo> {
-  if (staffDayTableCache) return staffDayTableCache;
-
-  const usageRows = normalizeRows<SqlRow>(await sql`
-    SELECT table_schema, table_name
-    FROM information_schema.view_table_usage
-    WHERE view_schema = 'public'
-      AND view_name = 'staff_day_matrix_v'
-  `);
-
-  for (const row of usageRows) {
-    const schema = coerceString(row.table_schema) ?? "public";
-    const tableName = coerceString(row.table_name);
-    if (!tableName) continue;
-
-    const columns = await fetchTableColumns(sql, schema, tableName);
-    const staffIdColumn = findColumn(columns, ["staff_id"]);
-    const workDateColumn = findColumn(columns, ["work_date", "workday", "date"]);
-    const approvedColumn = findColumn(columns, ["approved", "is_approved"]);
-    const approvedMinutesColumn =
-      findColumn(columns, ["approved_minutes", "approved_total_minutes"])
-      ?? null;
-    const approvedHoursColumn =
-      findColumn(columns, [
-        "approved_hours",
-        "approved_total_hours",
-        "hours_approved",
-      ]) ?? null;
-    const totalMinutesColumn =
-      findColumn(columns, ["total_minutes", "minutes", "total_work_minutes"])
-      ?? null;
-    const totalHoursColumn =
-      findColumn(columns, ["total_hours", "hours", "total_work_hours"])
-      ?? null;
-    const approvedAtColumn = findColumn(columns, ["approved_at"]);
-    const approvedByColumn = findColumn(columns, ["approved_by", "approved_by_user"]);
-
-    if (
-      staffIdColumn
-      && workDateColumn
-      && approvedColumn
-      && (approvedMinutesColumn || approvedHoursColumn)
-    ) {
-      staffDayTableCache = {
-        schema,
-        name: tableName,
-        staffIdColumn,
-        workDateColumn,
-        approvedColumn,
-        approvedMinutesColumn,
-        approvedHoursColumn,
-        totalMinutesColumn,
-        totalHoursColumn,
-        approvedAtColumn: approvedAtColumn ?? null,
-        approvedByColumn: approvedByColumn ?? null,
-      };
-      return staffDayTableCache;
-    }
-  }
-
-  throw new Error(
-    "No se pudo identificar la tabla base para las aprobaciones de asistencia del personal.",
-  );
-}
-
 async function applyStaffDayApproval(
   sql: SqlClient,
   staffId: number,
   workDate: string,
   approvedMinutes: number | null,
 ): Promise<void> {
-  const table = await resolveStaffDayTable(sql);
-  const alias = "t";
-  const params: Array<number | string> = [staffId, workDate];
-
-  const updates: string[] = [
-    `${quoteIdentifier(table.approvedColumn)} = TRUE`,
-  ];
-
   const roundedMinutes =
     approvedMinutes != null && Number.isFinite(approvedMinutes)
       ? Math.max(0, Math.round(approvedMinutes))
       : null;
 
-  const totalMinutesColumnRef =
-    table.totalMinutesColumn
-      ? `${alias}.${quoteIdentifier(table.totalMinutesColumn)}`
-      : null;
-  const totalHoursColumnRef =
-    table.totalHoursColumn
-      ? `${alias}.${quoteIdentifier(table.totalHoursColumn)}`
-      : null;
-
-  if (table.approvedMinutesColumn) {
-    const approvedMinutesColumnRef = `${alias}.${quoteIdentifier(table.approvedMinutesColumn)}`;
-    let expression: string | null = null;
-    if (roundedMinutes != null) {
-      params.push(roundedMinutes);
-      expression = `$${params.length}`;
-    } else if (totalMinutesColumnRef) {
-      expression = `COALESCE(${approvedMinutesColumnRef}, ${totalMinutesColumnRef})`;
-    } else if (totalHoursColumnRef) {
-      expression = `COALESCE(${approvedMinutesColumnRef}, ROUND(${totalHoursColumnRef} * 60))`;
-    }
-
-    if (expression) {
-      updates.push(
-        `${quoteIdentifier(table.approvedMinutesColumn)} = ${expression}`,
-      );
-    }
-  }
-
-  if (table.approvedHoursColumn) {
-    const approvedHoursColumnRef = `${alias}.${quoteIdentifier(table.approvedHoursColumn)}`;
-    const approvedMinutesColumnRef = table.approvedMinutesColumn
-      ? `${alias}.${quoteIdentifier(table.approvedMinutesColumn)}`
-      : null;
-    let expression: string | null = null;
-    if (roundedMinutes != null) {
-      const roundedHours = Number((roundedMinutes / 60).toFixed(2));
-      params.push(roundedHours);
-      expression = `$${params.length}`;
-    } else if (totalHoursColumnRef) {
-      expression = `COALESCE(${approvedHoursColumnRef}, ${totalHoursColumnRef})`;
-    } else if (totalMinutesColumnRef || approvedMinutesColumnRef) {
-      const minutesSource = totalMinutesColumnRef
-        ? `COALESCE(${approvedMinutesColumnRef ?? "NULL"}, ${totalMinutesColumnRef})`
-        : approvedMinutesColumnRef;
-      if (minutesSource) {
-        expression = `COALESCE(${approvedHoursColumnRef}, ROUND((${minutesSource})::numeric / 60.0, 2))`;
-      }
-    }
-
-    if (expression) {
-      updates.push(
-        `${quoteIdentifier(table.approvedHoursColumn)} = ${expression}`,
-      );
-    }
-  }
-
-  if (table.approvedAtColumn) {
-    updates.push(`${quoteIdentifier(table.approvedAtColumn)} = NOW()`);
-  }
-  if (table.approvedByColumn) {
-    updates.push(`${quoteIdentifier(table.approvedByColumn)} = current_user`);
-  }
-
-  const tableRef = `${quoteIdentifier(table.schema)}.${quoteIdentifier(table.name)}`;
-  const query = `
-    UPDATE ${tableRef} AS ${alias}
-    SET ${updates.join(", ")}
-    WHERE ${alias}.${quoteIdentifier(table.staffIdColumn)} = $1::bigint
-      AND ${alias}.${quoteIdentifier(table.workDateColumn)} = $2::date
+  await sql`
+    INSERT INTO payroll_day_approvals (
+      staff_id,
+      work_date,
+      approved,
+      approved_by,
+      approved_at,
+      approved_minutes
+    )
+    VALUES (
+      ${staffId}::bigint,
+      ${workDate}::date,
+      TRUE,
+      ${null}::varchar,
+      NOW(),
+      ${roundedMinutes}::integer
+    )
+    ON CONFLICT (staff_id, work_date) DO UPDATE
+    SET
+      approved = EXCLUDED.approved,
+      approved_by = EXCLUDED.approved_by,
+      approved_at = EXCLUDED.approved_at,
+      approved_minutes = EXCLUDED.approved_minutes
   `;
-
-  const client = sql as unknown as {
-    unsafe: (query: string, params?: unknown[]) => Promise<unknown>;
-  };
-  await client.unsafe(query, params);
 }
 
 type PayrollMonthStatusTableInfo = {
@@ -660,35 +520,27 @@ export async function fetchPayrollMatrix({
       });
     }
 
-    const totalHoursDirect = toOptionalNumber(
-      readRowValue(row, ["total_hours", "hours"]),
-      2,
-    );
-    const totalMinutes = toInteger(
+    const totalMinutesRaw = toInteger(
       readRowValue(row, ["total_minutes", "minutes", "total_work_minutes"]),
     );
-    const totalHours =
-      totalHoursDirect ?? toHoursFromMinutes(totalMinutes) ?? 0;
+    const totalMinutes =
+      totalMinutesRaw != null ? Math.max(0, totalMinutesRaw) : 0;
     const approved = toBoolean(readRowValue(row, ["approved", "is_approved"]));
-    const approvedHoursDirect = toOptionalNumber(
-      readRowValue(row, [
-        "approved_hours",
-        "hours_approved",
-        "approved_total_hours",
-      ]),
-      2,
-    );
-    const approvedMinutes = toInteger(
+    const approvedMinutesRaw = toInteger(
       readRowValue(row, ["approved_minutes", "approved_total_minutes"]),
     );
-    const approvedHours = approvedHoursDirect
-      ?? (approvedMinutes != null
-        ? Number((Math.max(0, approvedMinutes) / 60).toFixed(2))
-        : totalHours);
+    const approvedMinutes =
+      approvedMinutesRaw != null ? Math.max(0, approvedMinutesRaw) : null;
+    const minutesForDisplay = approved
+      ? approvedMinutes ?? totalMinutes
+      : totalMinutes;
+    const hoursForDisplay = Number(
+      ((minutesForDisplay ?? totalMinutes) / 60).toFixed(2),
+    );
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
-      hours: approved ? approvedHours : totalHours,
+      hours: hoursForDisplay,
       approved,
     });
   }

@@ -30,13 +30,60 @@ type SelectedCell = {
   approved: MatrixCell["approved"];
 };
 
-const STAFF_COLUMN_WIDTH = 148;
-const PAID_COLUMN_WIDTH = 132;
-const PAID_DATE_COLUMN_WIDTH = 188;
-const TRAILING_COLUMNS_WIDTH = PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
+const STAFF_COLUMN_WIDTH = 94;
+const APPROVED_AMOUNT_COLUMN_WIDTH = 96;
+const PAID_COLUMN_WIDTH = 72;
+const PAID_DATE_COLUMN_WIDTH = 124;
+const TRAILING_COLUMNS_WIDTH =
+  APPROVED_AMOUNT_COLUMN_WIDTH + PAID_COLUMN_WIDTH + PAID_DATE_COLUMN_WIDTH;
 const MIN_CELL_WIDTH = 32;
-const PREFERRED_CELL_WIDTH = 72;
+const PREFERRED_CELL_WIDTH = 68;
 const GRID_PADDING = 16;
+
+type MonthSummaryRow = {
+  staffId: number;
+  staffName: string | null;
+  month: string;
+  approvedAmount: number | null;
+  paid: boolean | null;
+  amountPaid: number | null;
+  paidAt: string | null;
+  reference: string | null;
+};
+
+type RawMonthSummaryRow = {
+  staff_id?: number;
+  staffId?: number;
+  staff_name?: string | null;
+  staffName?: string | null;
+  month?: string;
+  approved_amount?: string | number | null;
+  approvedAmount?: string | number | null;
+  paid?: boolean | null;
+  amount_paid?: string | number | null;
+  amountPaid?: string | number | null;
+  paid_at?: string | null;
+  paidAt?: string | null;
+  reference?: string | null;
+};
+
+const currencyFormatter = new Intl.NumberFormat("es-EC", {
+  style: "currency",
+  currency: "USD",
+});
+
+function toCurrency(value: string | number | null | undefined): string {
+  if (value == null) return "—";
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(numeric)) return "—";
+  return currencyFormatter.format(numeric);
+}
+
+function toNumeric(value: unknown): number | null {
+  if (value == null) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
 
 function createNoStoreInit(): RequestInit & { next: { revalidate: number } } {
   return {
@@ -165,6 +212,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [selectedMonth, setSelectedMonth] = useState(initialMonth);
   const [matrixData, setMatrixData] = useState<MatrixResponse | null>(null);
   const [monthStatusRows, setMonthStatusRows] = useState<PayrollMonthStatusRow[]>([]);
+  const [monthSummaryRows, setMonthSummaryRows] = useState<MonthSummaryRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -178,6 +226,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
   const [monthStatusSaving, setMonthStatusSaving] = useState<Record<number, boolean>>({});
   const [monthStatusErrors, setMonthStatusErrors] = useState<Record<number, string | null>>({});
+
+  const summaryStaffNames = useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const row of monthSummaryRows) {
+      if (row.staffName) {
+        map[row.staffId] = row.staffName;
+      }
+    }
+    return map;
+  }, [monthSummaryRows]);
 
   const matrixContainerRef = useRef<HTMLDivElement | null>(null);
   const [cellWidth, setCellWidth] = useState<number>(48);
@@ -231,8 +289,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const resolveStaffName = useCallback(
     (row: { staffId: number; staffName?: string | null }) =>
-      row.staffName ?? staffNames[row.staffId] ?? `Personal #${row.staffId}`,
-    [staffNames],
+      row.staffName
+      ?? summaryStaffNames[row.staffId]
+      ?? staffNames[row.staffId]
+      ?? `Personal #${row.staffId}`,
+    [staffNames, summaryStaffNames],
   );
 
   useEffect(() => {
@@ -327,18 +388,90 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [selectedMonth],
   );
 
+  const fetchMonthSummaryData = useCallback(async (): Promise<MonthSummaryRow[]> => {
+    const response = await fetch(
+      `/api/payroll/reports/month-summary?month=${encodeURIComponent(selectedMonth)}`,
+      createNoStoreInit(),
+    );
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const message =
+        (body as { error?: string } | null)?.error
+        ?? "Error al obtener el resumen mensual.";
+      throw new Error(message);
+    }
+
+    const rows = (body as { rows?: RawMonthSummaryRow[] } | null)?.rows ?? [];
+
+    return rows
+      .map((row) => {
+        const staffIdRaw = row.staff_id ?? row.staffId;
+        const staffId = Number(staffIdRaw);
+        if (!Number.isFinite(staffId) || staffId <= 0) {
+          return null;
+        }
+
+        const staffNameValue =
+          typeof row.staff_name === "string"
+            ? row.staff_name
+            : typeof row.staffName === "string"
+              ? row.staffName
+              : null;
+
+        const monthValue =
+          typeof row.month === "string" && row.month.length
+            ? row.month
+            : `${selectedMonth}-01`;
+
+        const approvedAmountValue = row.approved_amount ?? row.approvedAmount ?? null;
+        const amountPaidValue = row.amount_paid ?? row.amountPaid ?? null;
+        const paidAtValue = row.paid_at ?? row.paidAt ?? null;
+
+        const referenceValue =
+          typeof row.reference === "string" && row.reference.trim().length
+            ? row.reference.trim()
+            : null;
+
+        const paidValue =
+          typeof row.paid === "boolean"
+            ? row.paid
+            : row.paid != null
+              ? Boolean(row.paid)
+              : null;
+
+        return {
+          staffId,
+          staffName: staffNameValue,
+          month: monthValue,
+          approvedAmount: toNumeric(approvedAmountValue),
+          paid: paidValue,
+          amountPaid: toNumeric(amountPaidValue),
+          paidAt:
+            typeof paidAtValue === "string" && paidAtValue.trim().length > 0
+              ? paidAtValue
+              : null,
+          reference: referenceValue,
+        } satisfies MonthSummaryRow;
+      })
+      .filter((row): row is MonthSummaryRow => row != null)
+      .sort((a, b) => a.staffId - b.staffId);
+  }, [selectedMonth]);
+
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setMonthStatusErrors({});
     setMonthStatusSaving({});
     try {
-      const [matrixJson, monthStatusList] = await Promise.all([
+      const [matrixJson, monthStatusList, monthSummaryList] = await Promise.all([
         fetchMatrixData(),
         fetchMonthStatusData(),
+        fetchMonthSummaryData(),
       ]);
       setMatrixData(matrixJson);
       setMonthStatusRows(monthStatusList);
+      setMonthSummaryRows(monthSummaryList);
     } catch (err) {
       console.error("No se pudo refrescar la información de nómina", err);
       const message = err instanceof Error ? err.message : "No pudimos cargar la información.";
@@ -346,7 +479,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [fetchMatrixData, fetchMonthStatusData]);
+  }, [fetchMatrixData, fetchMonthStatusData, fetchMonthSummaryData]);
 
   const refreshMatrixOnly = useCallback(async () => {
     const matrixJson = await fetchMatrixData();
@@ -365,6 +498,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     },
     [fetchMonthStatusData],
   );
+
+  const refreshMonthSummary = useCallback(async () => {
+    const rows = await fetchMonthSummaryData();
+    setMonthSummaryRows(rows);
+  }, [fetchMonthSummaryData]);
 
   const updateMonthStatus = useCallback(
     async (
@@ -567,6 +705,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       }
       await refreshMatrixOnly();
       await refreshMonthStatusForStaff(selectedCell.staffId);
+      await refreshMonthSummary();
       closeModal();
     } catch (err) {
       console.error("No se pudo aprobar el día", err);
@@ -575,7 +714,13 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setActionLoading(false);
     }
-  }, [closeModal, refreshMatrixOnly, refreshMonthStatusForStaff, selectedCell]);
+  }, [
+    closeModal,
+    refreshMatrixOnly,
+    refreshMonthStatusForStaff,
+    refreshMonthSummary,
+    selectedCell,
+  ]);
 
   const handleOverrideAndApprove = useCallback(async () => {
     if (!selectedCell) return;
@@ -663,6 +808,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       }
       await refreshMatrixOnly();
       await refreshMonthStatusForStaff(selectedCell.staffId);
+      await refreshMonthSummary();
       closeModal();
     } catch (err) {
       console.error("No se pudo sobrescribir y aprobar el día", err);
@@ -677,6 +823,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     hasSessionChanges,
     refreshMatrixOnly,
     refreshMonthStatusForStaff,
+    refreshMonthSummary,
     selectedCell,
     sessionEdits,
   ]);
@@ -718,6 +865,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     }
     return map;
   }, [monthStatusRows]);
+
+  const monthSummaryByStaff = useMemo(() => {
+    const map = new Map<number, MonthSummaryRow>();
+    for (const row of monthSummaryRows) {
+      map.set(row.staffId, row);
+    }
+    return map;
+  }, [monthSummaryRows]);
 
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
@@ -829,13 +984,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Aprobado
                       </span>
                     </div>
-                    <div className="overflow-hidden rounded-2xl border border-brand-ink-muted/10">
+                    <div className="overflow-x-auto overflow-y-hidden rounded-2xl border border-brand-ink-muted/10">
                       <table className="w-full table-fixed border-collapse text-[10px] leading-tight text-brand-deep">
                         <colgroup>
                           <col style={{ width: `${STAFF_COLUMN_WIDTH}px` }} />
                           {matrixDays.map((day) => (
                             <col key={`col-${day}`} style={{ width: `${effectiveCellWidth}px` }} />
                           ))}
+                          <col style={{ width: `${APPROVED_AMOUNT_COLUMN_WIDTH}px` }} />
                           <col style={{ width: `${PAID_COLUMN_WIDTH}px` }} />
                           <col style={{ width: `${PAID_DATE_COLUMN_WIDTH}px` }} />
                         </colgroup>
@@ -859,6 +1015,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 </div>
                               </th>
                             ))}
+                            <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
+                              Monto aprobado
+                            </th>
                             <th className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
                               Pagado
                             </th>
@@ -870,6 +1029,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         <tbody>
                           {matrixData.rows.map((row) => {
                             const monthStatus = monthStatusByStaff.get(row.staffId);
+                            const monthSummary = monthSummaryByStaff.get(row.staffId);
                             const staffName = resolveStaffName(row);
                             const paidValue = monthStatus?.paid ?? false;
                             const paidAtValue = toDateInputValue(monthStatus?.paidAt ?? null);
@@ -881,7 +1041,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 <th className="px-3 py-2 text-left text-[11px] font-semibold text-brand-deep">
                                   <div className="flex flex-col gap-0.5 whitespace-nowrap">
                                     <span
-                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[132px] truncate`}
+                                      className={`${compactCellText ? "text-[12px]" : "text-[14px]"} max-w-[84px] truncate`}
                                       title={staffName}
                                     >
                                       {staffName}
@@ -909,6 +1069,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     </button>
                                   </td>
                                 ))}
+                                <td className="px-2 py-1 text-right font-semibold text-brand-deep">
+                                  {toCurrency(monthSummary?.approvedAmount ?? null)}
+                                </td>
                                 <td className="px-2 py-1 text-center">
                                   <button
                                     type="button"
@@ -918,7 +1081,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       });
                                     }}
                                     disabled={isStatusSaving}
-                                    className={`inline-flex min-w-[60px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                    className={`inline-flex min-w-[52px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
                                       paidValue
                                         ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
                                         : "border-orange-400 bg-orange-100 text-orange-900 hover:bg-orange-200"
@@ -940,7 +1103,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                         });
                                       }}
                                       disabled={isStatusSaving}
-                                      className="w-full max-w-[140px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="w-full max-w-[112px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
                                     />
                                     {isStatusSaving ? (
                                       <span className="text-[10px] text-brand-ink-muted">Guardando…</span>
