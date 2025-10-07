@@ -1,3 +1,5 @@
+"use client";
+
 import type { StudentCoachPanelSummary } from "@/features/administration/data/student-profile";
 
 type CoachPanelProps = {
