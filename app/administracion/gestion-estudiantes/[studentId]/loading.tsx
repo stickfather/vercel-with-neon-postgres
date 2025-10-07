@@ -1,12 +1,4 @@
-import {
-  BasicDetailsPanelSkeleton,
-} from "@/features/administration/components/student-profile/basic-details-panel";
-import {
-  PaymentSchedulePanelSkeleton,
-} from "@/features/administration/components/student-profile/payment-schedule-panel";
-import { NotesPanelSkeleton } from "@/features/administration/components/student-profile/notes-panel";
-import { ExamsPanelSkeleton } from "@/features/administration/components/student-profile/exams-panel";
-import { CoachPanelSkeleton } from "@/features/administration/components/student-profile/coach-panel";
+import { BasicDetailsPanelSkeleton } from "@/features/administration/components/student-profile/basic-details-panel";
 
 export default function Loading() {
   return (
@@ -18,24 +10,43 @@ export default function Loading() {
       </div>
 
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
-        <header className="flex animate-pulse flex-col gap-4 rounded-[32px] border border-white/70 bg-white/92 px-7 py-8 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
-          <span className="h-6 w-32 rounded-full bg-brand-deep-soft/60" />
-          <div className="flex flex-col gap-3 text-brand-deep">
-            <span className="h-8 w-64 rounded-full bg-brand-deep-soft/80" />
-            <span className="h-4 w-80 max-w-full rounded-full bg-brand-deep-soft/50" />
+        <header className="flex animate-pulse flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 px-7 py-8 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-brand-ink-muted">
+            <div className="flex flex-col gap-1">
+              <span className="h-4 w-40 rounded-full bg-brand-deep-soft/50" />
+              <span className="h-4 w-48 rounded-full bg-brand-deep-soft/40" />
+            </div>
+            <span className="h-8 w-56 rounded-full bg-white/70" />
           </div>
-          <div className="flex flex-wrap gap-3 pt-2">
-            <span className="h-8 w-48 rounded-full bg-white/80" />
-            <span className="h-8 w-48 rounded-full bg-white/80" />
+          <span className="h-8 w-40 rounded-full bg-brand-deep-soft" />
+          <div className="flex flex-col gap-6 text-brand-deep lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+              <span className="h-24 w-24 rounded-full bg-brand-deep-soft/80" />
+              <div className="flex flex-col gap-3">
+                <span className="h-10 w-64 rounded-full bg-brand-deep-soft/80" />
+                <span className="h-9 w-40 rounded-full bg-white/70" />
+                <div className="flex flex-wrap gap-3">
+                  <span className="h-4 w-32 rounded-full bg-brand-deep-soft/40" />
+                  <span className="h-4 w-24 rounded-full bg-brand-deep-soft/30" />
+                </div>
+                <span className="h-4 w-72 max-w-full rounded-full bg-brand-deep-soft/40" />
+              </div>
+            </div>
           </div>
         </header>
 
-        <div className="flex flex-col gap-8 pb-10">
+        <div className="flex flex-col gap-6 pb-10">
+          <div className="-mx-2 overflow-x-hidden pb-2">
+            <div className="mx-2 flex min-w-full items-center gap-2 border-b border-brand-ink-muted/10">
+              <span className="h-10 w-32 rounded-t-2xl bg-brand-teal-soft/60" />
+              <span className="h-10 w-32 rounded-t-2xl bg-white/70" />
+              <span className="h-10 w-40 rounded-t-2xl bg-white/70" />
+              <span className="h-10 w-32 rounded-t-2xl bg-white/70" />
+              <span className="h-10 w-32 rounded-t-2xl bg-white/70" />
+              <span className="h-10 w-24 rounded-t-2xl bg-white/70" />
+            </div>
+          </div>
           <BasicDetailsPanelSkeleton />
-          <PaymentSchedulePanelSkeleton />
-          <NotesPanelSkeleton />
-          <ExamsPanelSkeleton />
-          <CoachPanelSkeleton />
         </div>
       </main>
     </div>

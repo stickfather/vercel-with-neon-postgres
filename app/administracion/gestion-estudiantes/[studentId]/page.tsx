@@ -2,32 +2,10 @@ import { unstable_noStore as noStore } from "next/cache";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Suspense } from "react";
 
-import {
-  BasicDetailsPanel,
-  BasicDetailsPanelSkeleton,
-} from "@/features/administration/components/student-profile/basic-details-panel";
-import {
-  PaymentSchedulePanel,
-  PaymentSchedulePanelSkeleton,
-} from "@/features/administration/components/student-profile/payment-schedule-panel";
-import {
-  NotesPanel,
-  NotesPanelSkeleton,
-} from "@/features/administration/components/student-profile/notes-panel";
-import {
-  ExamsPanel,
-  ExamsPanelSkeleton,
-} from "@/features/administration/components/student-profile/exams-panel";
-import {
-  InstructivosPanel,
-  InstructivosPanelSkeleton,
-} from "@/features/administration/components/student-profile/instructivos-panel";
-import {
-  CoachPanel,
-  CoachPanelSkeleton,
-} from "@/features/administration/components/student-profile/coach-panel";
+import { StudentAvatar } from "@/components/student/StudentAvatar";
+import { StudentPhotoUploader } from "@/components/student/StudentPhotoUploader";
+import { StudentProfileTabs } from "@/features/administration/components/student-profile/StudentProfileTabs";
 import {
   getStudentBasicDetails,
   listStudentPaymentSchedule,
@@ -161,12 +139,6 @@ async function loadCoachPanelData(studentId: number): Promise<CoachPanelData> {
   }
 }
 
-async function CoachPanelSection({ studentId }: { studentId: number }) {
-  const data = await loadCoachPanelData(studentId);
-
-  return <CoachPanel data={data.summary} errorMessage={data.error} />;
-}
-
 export async function generateMetadata({
   params,
 }: {
@@ -211,14 +183,37 @@ export default async function StudentProfilePage({
     );
   }
 
-  const primaryData = await loadPrimaryProfileData(studentId);
-  
+  const [primaryData, coachPanelData] = await Promise.all([
+    loadPrimaryProfileData(studentId),
+    loadCoachPanelData(studentId),
+  ]);
+
   // If student doesn't exist, show not-found page
   if (!primaryData.basicDetails) {
     notFound();
   }
-  
-  const studentName = primaryData.basicDetails?.fullName?.trim() || "Nombre no disponible";
+
+  const basicDetails = primaryData.basicDetails!;
+  const studentName = basicDetails?.fullName?.trim() || "Nombre no disponible";
+  const metadataItems: string[] = [];
+
+  const statusLabel = basicDetails.status?.trim();
+  if (statusLabel) {
+    metadataItems.push(`Estado: ${statusLabel}`);
+  }
+
+  const currentLevel = basicDetails.currentLevel?.trim();
+  if (currentLevel) {
+    metadataItems.push(`Nivel actual: ${currentLevel}`);
+  }
+
+  if (basicDetails.isOnline != null) {
+    metadataItems.push(
+      basicDetails.isOnline ? "Modalidad: En línea" : "Modalidad: Presencial",
+    );
+  }
+
+  metadataItems.push(`ID ${studentId}`);
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
@@ -229,7 +224,7 @@ export default async function StudentProfilePage({
       </div>
 
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-6 py-12 md:px-10 lg:px-14">
-        <header className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 text-left shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
+        <header className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 text-left shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-brand-ink-muted">
             <div className="flex flex-col gap-1">
               <Link href="/administracion" className="text-brand-teal hover:underline">
@@ -249,35 +244,49 @@ export default async function StudentProfilePage({
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
             Perfil académico
           </span>
-          <div className="flex flex-col gap-2 text-brand-deep">
-            <h1 className="text-3xl font-black sm:text-4xl">{studentName}</h1>
-            <p className="max-w-3xl text-sm text-brand-ink-muted sm:text-base">
-              Consulta la información integral del estudiante, desde datos personales hasta progreso académico en tiempo real.
-            </p>
+          <div className="flex flex-col gap-6 text-brand-deep lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+              <StudentAvatar
+                name={studentName}
+                photoUrl={basicDetails.photoUrl}
+                updatedAt={basicDetails.photoUpdatedAt}
+              />
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-3xl font-black sm:text-4xl">{studentName}</h1>
+                  <StudentPhotoUploader studentId={studentId} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-brand-ink-muted">
+                  {metadataItems.map((item, index) => (
+                    <span key={`${item}-${index}`} className="inline-flex items-center gap-2">
+                      {item}
+                      {index < metadataItems.length - 1 ? (
+                        <span aria-hidden="true" className="text-brand-ink-muted/60">
+                          ·
+                        </span>
+                      ) : null}
+                    </span>
+                  ))}
+                </div>
+                <p className="max-w-2xl text-sm text-brand-ink-muted sm:text-base">
+                  Consulta la información integral del estudiante, desde datos personales hasta progreso académico en tiempo real.
+                </p>
+              </div>
+            </div>
           </div>
         </header>
 
         <div className="flex flex-col gap-8 pb-10">
-          <Suspense fallback={<BasicDetailsPanelSkeleton />}>
-            <BasicDetailsPanel studentId={studentId} details={primaryData.basicDetails} />
-          </Suspense>
-          <Suspense fallback={<PaymentSchedulePanelSkeleton />}>
-            <PaymentSchedulePanel studentId={studentId} entries={primaryData.paymentSchedule} />
-          </Suspense>
-          <Suspense fallback={<ExamsPanelSkeleton />}>
-            <ExamsPanel studentId={studentId} exams={primaryData.exams} />
-          </Suspense>
-          <Suspense fallback={<InstructivosPanelSkeleton />}>
-            <InstructivosPanel studentId={studentId} instructivos={primaryData.instructivos} />
-          </Suspense>
-          <div className="grid gap-8 lg:grid-cols-2">
-            <Suspense fallback={<CoachPanelSkeleton />}>
-              <CoachPanelSection studentId={studentId} />
-            </Suspense>
-            <Suspense fallback={<NotesPanelSkeleton />}>
-              <NotesPanel studentId={studentId} notes={primaryData.notes} />
-            </Suspense>
-          </div>
+          <StudentProfileTabs
+            studentId={studentId}
+            basicDetails={basicDetails}
+            paymentSchedule={primaryData.paymentSchedule}
+            exams={primaryData.exams}
+            instructivos={primaryData.instructivos}
+            notes={primaryData.notes}
+            coachSummary={coachPanelData.summary}
+            coachError={coachPanelData.error}
+          />
         </div>
       </main>
     </div>

@@ -13,6 +13,8 @@ export type BasicDetailFieldType =
 export type StudentBasicDetails = {
   studentId: number;
   fullName: string | null;
+  photoUrl: string | null;
+  photoUpdatedAt: string | null;
   representativeName: string | null;
   representativePhone: string | null;
   representativeEmail: string | null;
@@ -259,6 +261,10 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
   return {
     studentId: Number(row.studentId ?? fallbackId),
     fullName: normalizeFieldValue(row.fullName, "text"),
+    photoUrl: typeof row.photoUrl === "string" && row.photoUrl.length
+      ? row.photoUrl
+      : null,
+    photoUpdatedAt: normalizeFieldValue(row.photoUpdatedAt, "datetime"),
     representativeName: normalizeFieldValue(row.representativeName, "text"),
     representativePhone: normalizeFieldValue(row.representativePhone, "text"),
     representativeEmail: normalizeFieldValue(row.representativeEmail, "text"),
@@ -298,6 +304,8 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
     SELECT
       s.id                                   AS "studentId",
       s.full_name                            AS "fullName",
+      s.photo_url                            AS "photoUrl",
+      s.photo_updated_at                     AS "photoUpdatedAt",
       s.representative_name                  AS "representativeName",
       s.representative_phone                 AS "representativePhone",
       s.representative_email                 AS "representativeEmail",
