@@ -32,8 +32,8 @@ export function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   return [];
 }
 
-export async function closeExpiredSessions(sql = getSqlClient()) {
-  await sql`
+export async function closeExpiredSessions(sql = getSqlClient()): Promise<number> {
+  const rows = normalizeRows<SqlRow>(await sql`
     WITH vencidos AS (
       SELECT
         sa.id,
@@ -48,16 +48,26 @@ export async function closeExpiredSessions(sql = getSqlClient()) {
           ${TIMEZONE},
           date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
         )
+    ),
+    actualizados AS (
+      UPDATE student_attendance AS sa
+      SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
+      FROM vencidos
+      WHERE sa.id = vencidos.id
+      RETURNING sa.id
     )
-    UPDATE student_attendance AS sa
-    SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-    FROM vencidos
-    WHERE sa.id = vencidos.id
-  `;
+    SELECT COUNT(*)::int AS total_cerrados
+    FROM actualizados
+  `);
+
+  const count = Number(rows[0]?.total_cerrados ?? 0);
+  return Number.isFinite(count) ? count : 0;
 }
 
-export async function closeExpiredStaffSessions(sql = getSqlClient()) {
-  await sql`
+export async function closeExpiredStaffSessions(
+  sql = getSqlClient(),
+): Promise<number> {
+  const rows = normalizeRows<SqlRow>(await sql`
     WITH vencidos AS (
       SELECT
         sa.id,
@@ -72,12 +82,20 @@ export async function closeExpiredStaffSessions(sql = getSqlClient()) {
           ${TIMEZONE},
           date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
         )
+    ),
+    actualizados AS (
+      UPDATE staff_attendance AS sa
+      SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
+      FROM vencidos
+      WHERE sa.id = vencidos.id
+      RETURNING sa.id
     )
-    UPDATE staff_attendance AS sa
-    SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-    FROM vencidos
-    WHERE sa.id = vencidos.id
-  `;
+    SELECT COUNT(*)::int AS total_cerrados
+    FROM actualizados
+  `);
+
+  const count = Number(rows[0]?.total_cerrados ?? 0);
+  return Number.isFinite(count) ? count : 0;
 }
 
 function isPermissionDeniedError(error: unknown): boolean {

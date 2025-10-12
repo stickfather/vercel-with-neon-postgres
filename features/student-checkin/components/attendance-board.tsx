@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActiveAttendance } from "@/features/student-checkin/data/queries";
 import { getLevelAccent } from "../lib/level-colors";
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -34,12 +35,24 @@ export function AttendanceBoard({ attendances }: Props) {
   const [pendingCheckout, setPendingCheckout] = useState<ActiveAttendance | null>(
     null,
   );
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
+    null,
+  );
+  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const formatter = useMemo(() => {
     return new Intl.DateTimeFormat("es-EC", {
       hour: "2-digit",
       minute: "2-digit",
     });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+    };
   }, []);
 
   const groupedAttendances = useMemo(() => {
@@ -83,9 +96,19 @@ export function AttendanceBoard({ attendances }: Props) {
         throw new Error(payload?.error ?? "No se pudo registrar la salida.");
       }
 
-      const encodedName = encodeURIComponent(attendance.fullName.trim());
       setPendingCheckout(null);
-      router.push(`/?saludo=1&nombre=${encodedName}`);
+      setToast({
+        tone: "success",
+        message: `${attendance.fullName.trim()} salió de clase. ¡Gracias!`,
+      });
+
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      redirectTimeoutRef.current = setTimeout(() => {
+        router.push("/");
+      }, 550);
     } catch (err) {
       console.error(err);
       setError(
@@ -118,6 +141,13 @@ export function AttendanceBoard({ attendances }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {toast ? (
+        <EphemeralToast
+          message={toast.message}
+          tone={toast.tone}
+          onDismiss={() => setToast(null)}
+        />
+      ) : null}
       {error && !pendingCheckout && (
         <div className="rounded-3xl border border-brand-orange bg-white/82 px-5 py-3 text-sm font-medium text-brand-ink">
           {error}

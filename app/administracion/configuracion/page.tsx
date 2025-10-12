@@ -1,11 +1,15 @@
 import { listStaffMembers } from "@/features/staff/data/queries";
-import { StaffSettingsPanel } from "@/features/staff/components/staff-settings-panel";
+import { getSecurityPinStatuses } from "@/features/security/data/pins";
+import { hasValidPinSession } from "@/lib/security/pin-session";
+import { ConfigurationDashboard } from "@/features/administration/components/configuration/ConfigurationDashboard";
 
 export const revalidate = 0;
 
 export default async function ConfiguracionPage() {
   let staffMembers = [] as Awaited<ReturnType<typeof listStaffMembers>>;
+  let pinStatuses = [] as Awaited<ReturnType<typeof getSecurityPinStatuses>>;
   let loadError: string | null = null;
+  let managementUnlocked = false;
 
   try {
     staffMembers = await listStaffMembers();
@@ -14,6 +18,18 @@ export default async function ConfiguracionPage() {
     loadError =
       "No pudimos obtener la lista de personal. Intenta nuevamente o revisa la conexión con la base de datos.";
   }
+
+  try {
+    pinStatuses = await getSecurityPinStatuses();
+  } catch (error) {
+    console.error("No se pudieron obtener los PIN de seguridad", error);
+    pinStatuses = [
+      { scope: "staff", isSet: false, updatedAt: null },
+      { scope: "management", isSet: false, updatedAt: null },
+    ];
+  }
+
+  managementUnlocked = hasValidPinSession("management");
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white">
@@ -33,7 +49,12 @@ export default async function ConfiguracionPage() {
           </p>
         </header>
 
-        <StaffSettingsPanel initialStaff={staffMembers} initialError={loadError} />
+        <ConfigurationDashboard
+          initialStaff={staffMembers}
+          staffError={loadError}
+          pinStatuses={pinStatuses}
+          hasManagementSession={managementUnlocked}
+        />
       </main>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -8,11 +9,16 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
-import type { LevelLessons, StudentName } from "@/features/student-checkin/data/queries";
+import type {
+  LevelLessons,
+  StudentLastLesson,
+  StudentName,
+} from "@/features/student-checkin/data/queries";
 import {
   getLessonColorScale,
   getLevelAccent,
 } from "@/features/student-checkin/lib/level-colors";
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
@@ -25,9 +31,13 @@ type Props = {
 };
 
 type StatusState = {
-  type: "error" | "success";
   message: string;
 } | null;
+
+type ToastState = {
+  type: "success" | "error";
+  message: string;
+};
 
 type FetchState = "idle" | "loading" | "error";
 
@@ -47,15 +57,61 @@ export function CheckInForm({
   const [selectedLevel, setSelectedLevel] = useState("");
   const [selectedLesson, setSelectedLesson] = useState<string>("");
   const [status, setStatus] = useState<StatusState>(
-    initialError ? { type: "error", message: initialError } : null,
+    initialError ? { message: initialError } : null,
   );
   const [isPending, startTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSteps, setShowSteps] = useState(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [isLoadingLastLesson, setIsLoadingLastLesson] = useState(false);
+  const [lastLessonError, setLastLessonError] = useState<string | null>(null);
+  const [suggestedLesson, setSuggestedLesson] = useState<StudentLastLesson | null>(null);
+  const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
+  const lastLessonAbortRef = useRef<AbortController | null>(null);
 
   const isFormDisabled = disabled || Boolean(initialError);
+
+  const applySuggestedLesson = useCallback(
+    (suggestion: StudentLastLesson | null) => {
+      if (!suggestion || isFormDisabled) {
+        return;
+      }
+
+      const normalizedLevel = suggestion.level.trim().toLowerCase();
+      const levelEntry = levels.find(
+        (entry) => entry.level.trim().toLowerCase() === normalizedLevel,
+      );
+
+      if (!levelEntry) {
+        setSuggestedLesson(null);
+        setLastLessonError(
+          "La lección sugerida ya no está disponible. Selecciónala manualmente.",
+        );
+        return;
+      }
+
+      const lessonEntry = levelEntry.lessons.find(
+        (lesson) => lesson.id === suggestion.lessonId,
+      );
+
+      setStatus(null);
+      setSelectedLevel(levelEntry.level);
+
+      if (lessonEntry) {
+        setSelectedLesson(String(lessonEntry.id));
+        setLastLessonError(null);
+      } else {
+        setSuggestedLesson(null);
+        setLastLessonError(
+          "La lección sugerida ya no está disponible. Selecciónala manualmente.",
+        );
+      }
+    },
+    [isFormDisabled, levels],
+  );
 
   useEffect(() => {
     return () => {
@@ -63,6 +119,10 @@ export function CheckInForm({
         clearTimeout(fetchTimeoutRef.current);
       }
       fetchAbortRef.current?.abort();
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+      lastLessonAbortRef.current?.abort();
     };
   }, []);
 
@@ -131,6 +191,79 @@ export function CheckInForm({
 
   useEffect(() => {
     if (!selectedStudent) {
+      setSuggestedLesson(null);
+      setIsLoadingLastLesson(false);
+      setLastLessonError(null);
+      lastLessonAbortRef.current?.abort();
+      return;
+    }
+
+    const cached = lastLessonCache.current.get(selectedStudent.id);
+    if (cached !== undefined) {
+      setSuggestedLesson(cached);
+      setIsLoadingLastLesson(false);
+      setLastLessonError(null);
+      if (cached) {
+        applySuggestedLesson(cached);
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    lastLessonAbortRef.current?.abort();
+    lastLessonAbortRef.current = controller;
+
+    setIsLoadingLastLesson(true);
+    setLastLessonError(null);
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/students/${selectedStudent.id}/last-lesson`,
+          {
+            signal: controller.signal,
+            cache: "no-store",
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("No se pudo obtener la última lección registrada.");
+        }
+
+        const payload = (await response.json()) as {
+          lastLesson?: StudentLastLesson | null;
+        };
+
+        if (controller.signal.aborted) return;
+
+        const lesson = payload?.lastLesson ?? null;
+        lastLessonCache.current.set(selectedStudent.id, lesson);
+        setSuggestedLesson(lesson);
+        if (lesson) {
+          applySuggestedLesson(lesson);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("No se pudo recuperar la última lección", error);
+        setSuggestedLesson(null);
+        setLastLessonError(
+          "No logramos sugerir tu última lección. Selecciónala manualmente.",
+        );
+        lastLessonCache.current.set(selectedStudent.id, null);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingLastLesson(false);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [selectedStudent?.id, applySuggestedLesson]);
+
+  useEffect(() => {
+    if (!selectedStudent) {
       return;
     }
 
@@ -180,13 +313,15 @@ export function CheckInForm({
     setSuggestions([]);
     setIsSuggestionsOpen(false);
     setStatus(null);
+    setSuggestedLesson(null);
+    setLastLessonError(null);
+    lastLessonAbortRef.current?.abort();
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isFormDisabled) {
       setStatus({
-        type: "error",
         message:
           initialError ??
           "El registro no está disponible en este momento. Consulta con un asesor.",
@@ -198,22 +333,27 @@ export function CheckInForm({
 
     const trimmedName = studentQuery.trim();
     if (!trimmedName) {
-      setStatus({ type: "error", message: "Ingresa tu nombre tal como aparece en la lista." });
+      setStatus({
+        message: "Ingresa tu nombre tal como aparece en la lista.",
+      });
       return;
     }
     if (!selectedStudent) {
       setStatus({
-        type: "error",
         message: "Selecciona tu nombre exactamente como aparece en la lista.",
       });
       return;
     }
     if (!selectedLevel) {
-      setStatus({ type: "error", message: "Selecciona tu nivel antes de continuar." });
+      setStatus({
+        message: "Selecciona tu nivel antes de continuar.",
+      });
       return;
     }
     if (!selectedLesson) {
-      setStatus({ type: "error", message: "Elige la lección correspondiente a tu nivel." });
+      setStatus({
+        message: "Elige la lección correspondiente a tu nivel.",
+      });
       return;
     }
 
@@ -237,19 +377,23 @@ export function CheckInForm({
         throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
       }
 
-      setStatus({
+      setToast({
         type: "success",
         message: "¡Asistencia confirmada, buen trabajo!",
       });
 
-      startTransition(() => {
-        const targetName = encodeURIComponent(selectedStudent.fullName.trim());
-        router.push(`/?saludo=1&nombre=${targetName}`);
-      });
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      redirectTimeoutRef.current = setTimeout(() => {
+        startTransition(() => {
+          router.push("/");
+        });
+      }, 550);
     } catch (error) {
       console.error(error);
       setStatus({
-        type: "error",
         message:
           error instanceof Error
             ? error.message
@@ -268,6 +412,13 @@ export function CheckInForm({
       className="flex flex-col gap-8 rounded-[36px] border border-white/70 bg-white/95 px-10 py-12 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur"
       onSubmit={handleSubmit}
     >
+      {toast ? (
+        <EphemeralToast
+          message={toast.message}
+          tone={toast.type}
+          onDismiss={() => setToast(null)}
+        />
+      ) : null}
       <header className="flex flex-col gap-3">
         <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-deep-soft">
           Registro de asistencia
@@ -452,6 +603,21 @@ export function CheckInForm({
 
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Lección</span>
+          <div className="min-h-[20px] text-[10px] font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+            {isFormDisabled ? null : isLoadingLastLesson ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/75 px-3 py-1">
+                Cargando tu última lección…
+              </span>
+            ) : suggestedLesson ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-brand-teal-soft px-3 py-1 text-brand-teal">
+                Última vez: {suggestedLesson.lessonName}
+              </span>
+            ) : lastLessonError ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/75 px-3 py-1 text-brand-orange">
+                {lastLessonError}
+              </span>
+            ) : null}
+          </div>
           {selectedLevel && canChooseProgression ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               {sortedLessons.map((lesson, index) => {
@@ -468,25 +634,35 @@ export function CheckInForm({
                     key={lesson.id}
                     type="button"
                     onClick={() => setSelectedLesson(lesson.id.toString())}
-                    className={`flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-5 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    className={`group relative flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-5 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                       isActive
-                        ? "border-transparent"
+                        ? "border-brand-teal bg-white text-brand-deep shadow-[0_20px_40px_rgba(15,23,42,0.2)] ring-4 ring-brand-teal/35 ring-offset-2 ring-offset-white"
                         : "border-[rgba(30,27,50,0.12)]"
                     } ${isWideLabel ? "sm:col-span-2 lg:col-span-2" : ""}`}
                     style={{
-                      background: lessonScale.background,
+                      background: isActive
+                        ? "linear-gradient(140deg, rgba(0,191,166,0.15) 0%, rgba(255,255,255,0.95) 65%)"
+                        : lessonScale.background,
                       borderColor: isActive ? accent.primary : lessonScale.border,
                       boxShadow: isActive
-                        ? "0 14px 34px rgba(15,23,42,0.18)"
+                        ? "0 22px 44px rgba(15,23,42,0.22)"
                         : "0 6px 18px rgba(15,23,42,0.1)",
-                      color: lessonScale.text,
+                      color: isActive ? accent.primary : lessonScale.text,
                     }}
                     aria-pressed={isActive}
                     disabled={
                       isFormDisabled || !sortedLessons.length || !canChooseProgression
                     }
                   >
-                    <span className="text-sm font-semibold leading-snug text-brand-deep sm:text-base">
+                    {isActive ? (
+                      <span
+                        aria-hidden
+                        className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-teal text-white shadow-md"
+                      >
+                        ✓
+                      </span>
+                    ) : null}
+                    <span className="text-sm font-semibold leading-snug sm:text-base">
                       {lessonLabel}
                     </span>
                   </button>
@@ -514,32 +690,13 @@ export function CheckInForm({
 
       {status && (
         <div
-          className={`flex items-center gap-3 rounded-3xl border px-5 py-4 text-sm font-medium ${
-            status.type === "success"
-              ? "border-brand-teal bg-white/85 text-brand-ink"
-              : "border-brand-orange bg-white/80 text-brand-ink"
-          }`}
-          role="status"
-          aria-live="polite"
+          className="flex items-center gap-3 rounded-3xl border border-brand-orange bg-white/82 px-5 py-4 text-sm font-medium text-brand-ink"
+          role="alert"
+          aria-live="assertive"
         >
-          {status.type === "success" ? (
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-teal text-white shadow-md animate-checkmark">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                className="h-5 w-5"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4 10-10" />
-              </svg>
-            </span>
-          ) : (
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-orange/90 text-white shadow-md">
-              !
-            </span>
-          )}
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-orange/90 text-white shadow-md">
+            !
+          </span>
           <span>{status.message}</span>
         </div>
       )}
