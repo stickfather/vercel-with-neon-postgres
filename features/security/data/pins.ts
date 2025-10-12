@@ -41,6 +41,11 @@ async function ensurePinsTable() {
     ALTER TABLE security_pins
     ADD COLUMN IF NOT EXISTS pin_hash text
   `;
+
+  await sql`
+    ALTER TABLE security_pins
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now()
+  `;
 }
 
 function parseStatusRow(scope: PinScope, row?: SqlRow): PinStatus {
