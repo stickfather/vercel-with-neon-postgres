@@ -1,4 +1,6 @@
 import {
+  closeExpiredSessions,
+  closeExpiredStaffSessions,
   getSqlClient,
   normalizeRows,
   SqlRow,
@@ -105,66 +107,11 @@ export async function runScheduledAutoCheckout({
   }
 
   try {
-    const result = await sql.begin(async (trx) => {
-      const studentsRows = normalizeRows<SqlRow>(await trx`
-        WITH vencidos AS (
-          SELECT
-            sa.id,
-          sa.checkin_time,
-          timezone(
-            ${TIMEZONE},
-            date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
-          ) AS checkout_programado
-        FROM student_attendance sa
-        WHERE sa.checkout_time IS NULL
-          AND timezone(${TIMEZONE}, now()) >= timezone(
-            ${TIMEZONE},
-            date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
-          )
-      ),
-      actualizados AS (
-        UPDATE student_attendance AS sa
-        SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-        FROM vencidos
-        WHERE sa.id = vencidos.id
-        RETURNING sa.id
-      )
-      SELECT COUNT(*)::int AS total_cerrados
-      FROM actualizados
-    `);
-
-    const staffRows = normalizeRows<SqlRow>(await trx`
-      WITH vencidos AS (
-        SELECT
-          sa.id,
-          sa.checkin_time,
-          timezone(
-            ${TIMEZONE},
-            date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
-          ) AS checkout_programado
-        FROM staff_attendance sa
-        WHERE sa.checkout_time IS NULL
-          AND timezone(${TIMEZONE}, now()) >= timezone(
-            ${TIMEZONE},
-            date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
-          )
-      ),
-      actualizados AS (
-        UPDATE staff_attendance AS sa
-        SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-        FROM vencidos
-        WHERE sa.id = vencidos.id
-        RETURNING sa.id
-      )
-      SELECT COUNT(*)::int AS total_cerrados
-      FROM actualizados
-    `);
-
-    const studentsClosed = parseCount(studentsRows[0], "total_cerrados");
-    const staffClosed = parseCount(staffRows[0], "total_cerrados");
+    const studentsClosed = await closeExpiredSessions(sql);
+    const staffClosed = await closeExpiredStaffSessions(sql);
     const attempts = existing ? parseCount(existing, "run_attempts") + 1 : 1;
 
-    const upsertRows = normalizeRows<SqlRow>(await trx`
+    const upsertRows = normalizeRows<SqlRow>(await sql`
       INSERT INTO auto_checkout_runs (
         run_date,
         executed_at,
@@ -194,18 +141,11 @@ export async function runScheduledAutoCheckout({
       RETURNING run_date, executed_at, students_closed, staff_closed, status, message, run_attempts
     `);
 
-    return {
-      record: upsertRows[0],
-      studentsClosed,
-      staffClosed,
-    };
-  });
-
-    const mapped = mapRecord(result.record);
+    const mapped = mapRecord(upsertRows[0]);
     return {
       ...mapped,
-      studentsClosed: result.studentsClosed,
-      staffClosed: result.staffClosed,
+      studentsClosed,
+      staffClosed,
       status: "success",
       alreadyRan: false,
     };
