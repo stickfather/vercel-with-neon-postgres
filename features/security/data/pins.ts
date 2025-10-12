@@ -27,6 +27,8 @@ const PIN_HASH_CANDIDATE_KEYS = [
   "pin",
 ] as const;
 
+const PIN_SCOPE_CANDIDATE_KEYS = ["scope"] as const;
+
 const PIN_UPDATED_AT_CANDIDATE_KEYS = [
   "updated_at",
   "updatedAt",
@@ -134,6 +136,24 @@ async function ensurePinsTable(): Promise<PinTableMetadata> {
   return metadata;
 }
 
+function readScopeValue(row: SqlRow | undefined, scopeColumn: string): string {
+  if (!row) {
+    return "";
+  }
+
+  const value = row[scopeColumn];
+  if (typeof value === "string") {
+    return value.trim().toLowerCase();
+  }
+  if (value instanceof Date) {
+    return value.toISOString().toLowerCase();
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim().toLowerCase();
+}
+
 function parseStatusRow(scope: PinScope, row?: SqlRow): PinStatus {
   let updatedAt: string | null = null;
   for (const key of PIN_UPDATED_AT_CANDIDATE_KEYS) {
@@ -160,43 +180,55 @@ function parseStatusRow(scope: PinScope, row?: SqlRow): PinStatus {
 }
 
 export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
-  await ensurePinsTable();
+  const metadata = await ensurePinsTable();
   const sql = getSqlClient();
+  const scopeColumn =
+    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
     FROM security_pins
-    WHERE scope IN ('staff', 'management')
   `);
 
   const byScope = new Map<string, SqlRow>();
   rows.forEach((row) => {
-    const scopeValue = String(row.scope ?? "").toLowerCase();
-    byScope.set(scopeValue, row);
+    const scopeValue = readScopeValue(row, scopeColumn);
+    if (scopeValue) {
+      byScope.set(scopeValue, row);
+    }
   });
 
-  return ["staff", "management"].map((scope) =>
-    parseStatusRow(scope as PinScope, byScope.get(scope)),
-  );
+  return ["staff", "management"].map((scope) => {
+    const normalized = normalizeScope(scope as PinScope);
+    return parseStatusRow(scope as PinScope, byScope.get(normalized));
+  });
 }
 
 export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
-  await ensurePinsTable();
-  const sql = getSqlClient();
+  const metadata = await ensurePinsTable();
   const normalizedScope = normalizeScope(scope);
+
+  const sql = getSqlClient();
+  const scopeColumn =
+    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
     FROM security_pins
-    WHERE scope = ${normalizedScope}
-    LIMIT 1
   `);
 
   if (!rows.length) {
     return false;
   }
 
-  const row = (rows[0] ?? {}) as SqlRow;
+  const row = rows.find(
+    (candidate) => readScopeValue(candidate, scopeColumn) === normalizedScope,
+  );
+
+  if (!row) {
+    return false;
+  }
+
   for (const key of PIN_HASH_CANDIDATE_KEYS) {
     const value = row[key];
     if (typeof value === "string" && value.trim().length > 0) {
@@ -239,19 +271,23 @@ export async function verifySecurityPin(
   scope: PinScope,
   pin: string,
 ): Promise<boolean> {
-  await ensurePinsTable();
-  const sql = getSqlClient();
+  const metadata = await ensurePinsTable();
   const normalizedScope = normalizeScope(scope);
+
+  const sql = getSqlClient();
+  const scopeColumn =
+    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
     FROM security_pins
-    WHERE scope = ${normalizedScope}
-    LIMIT 1
   `);
 
-  if (!rows.length) return false;
-  const row = rows[0] ?? {};
+  const row = rows.find(
+    (candidate) => readScopeValue(candidate, scopeColumn) === normalizedScope,
+  );
+
+  if (!row) return false;
   const hashKey = PIN_HASH_CANDIDATE_KEYS.find((key) => {
     const value = row[key];
     return typeof value === "string" && value.trim().length > 0;
@@ -278,6 +314,9 @@ export async function updateSecurityPin(scope: PinScope, pin: string): Promise<P
   const normalizedPin = sanitizePin(pin);
   const hashed = await hashPin(normalizedPin);
 
+  const scopeColumn =
+    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
+  const quotedScopeColumn = quoteIdentifier(scopeColumn);
   const hashColumn =
     findColumn(metadata, PIN_HASH_CANDIDATE_KEYS) ?? "pin_hash";
   const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
@@ -294,7 +333,7 @@ export async function updateSecurityPin(scope: PinScope, pin: string): Promise<P
     updateAssignments.push(`${quotedUpdatedAtColumn} = now()`);
   }
 
-  const columns = ["scope", quotedHashColumn];
+  const columns = [quotedScopeColumn, quotedHashColumn];
   if (quotedUpdatedAtColumn) {
     columns.push(quotedUpdatedAtColumn);
   }
@@ -307,7 +346,7 @@ export async function updateSecurityPin(scope: PinScope, pin: string): Promise<P
   const query = `
     INSERT INTO security_pins (${columns.join(", ")})
     VALUES (${values.join(", ")})
-    ON CONFLICT (scope)
+    ON CONFLICT (${quotedScopeColumn})
     DO UPDATE SET ${updateAssignments.join(", ")}
     RETURNING *
   `;
