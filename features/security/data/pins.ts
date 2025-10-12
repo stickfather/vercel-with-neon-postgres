@@ -67,13 +67,27 @@ export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
   const normalizedScope = normalizeScope(scope);
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT pin_hash
+    SELECT *
     FROM security_pins
     WHERE scope = ${normalizedScope}
     LIMIT 1
   `);
 
-  return Boolean(rows[0]?.pin_hash);
+  if (!rows.length) {
+    return false;
+  }
+
+  const row = (rows[0] ?? {}) as SqlRow;
+  const candidateKeys = ["pin_hash", "pinHash", "pinhash"] as const;
+
+  for (const key of candidateKeys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function hashPin(pin: string): Promise<string> {
