@@ -27,7 +27,58 @@ const PIN_HASH_CANDIDATE_KEYS = [
   "pin",
 ] as const;
 
-async function ensurePinsTable() {
+const PIN_UPDATED_AT_CANDIDATE_KEYS = [
+  "updated_at",
+  "updatedAt",
+  "updatedat",
+] as const;
+
+type PinTableMetadata = {
+  columnNames: Map<string, string>;
+};
+
+function normalizeColumnKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function findColumn(
+  metadata: PinTableMetadata,
+  candidates: readonly string[],
+): string | undefined {
+  for (const candidate of candidates) {
+    const normalized = normalizeColumnKey(candidate);
+    const actual = metadata.columnNames.get(normalized);
+    if (actual) {
+      return actual;
+    }
+  }
+  return undefined;
+}
+
+async function loadPinTableMetadata(sql = getSqlClient()): Promise<PinTableMetadata> {
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'security_pins'
+      AND table_schema = ANY (current_schemas(false))
+  `);
+
+  const columnNames = new Map<string, string>();
+  rows.forEach((row) => {
+    const rawName = row.column_name;
+    if (typeof rawName === "string" && rawName.trim().length > 0) {
+      columnNames.set(normalizeColumnKey(rawName), rawName);
+    }
+  });
+
+  return { columnNames };
+}
+
+async function ensurePinsTable(): Promise<PinTableMetadata> {
   const sql = getSqlClient();
   await sql`
     CREATE TABLE IF NOT EXISTS security_pins (
@@ -37,19 +88,52 @@ async function ensurePinsTable() {
     )
   `;
 
-  await sql`
-    ALTER TABLE security_pins
-    ADD COLUMN IF NOT EXISTS pin_hash text
-  `;
+  let metadata = await loadPinTableMetadata(sql);
 
-  await sql`
-    ALTER TABLE security_pins
-    ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now()
-  `;
+  if (!findColumn(metadata, PIN_HASH_CANDIDATE_KEYS)) {
+    try {
+      await sql`
+        ALTER TABLE security_pins
+        ADD COLUMN IF NOT EXISTS pin_hash text
+      `;
+    } catch (error) {
+      console.warn("No se pudo agregar la columna pin_hash a security_pins:", error);
+    }
+    metadata = await loadPinTableMetadata(sql);
+  }
+
+  if (!findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS)) {
+    try {
+      await sql`
+        ALTER TABLE security_pins
+        ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now()
+      `;
+    } catch (error) {
+      console.warn(
+        "No se pudo agregar la columna updated_at a security_pins:",
+        error,
+      );
+    }
+    metadata = await loadPinTableMetadata(sql);
+  }
+
+  return metadata;
 }
 
 function parseStatusRow(scope: PinScope, row?: SqlRow): PinStatus {
-  const updatedAt = row?.updated_at ?? row?.updatedAt ?? null;
+  let updatedAt: string | null = null;
+  for (const key of PIN_UPDATED_AT_CANDIDATE_KEYS) {
+    if (!row) break;
+    const value = row[key];
+    if (value instanceof Date) {
+      updatedAt = value.toISOString();
+      break;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      updatedAt = value;
+      break;
+    }
+  }
   const hasPin = PIN_HASH_CANDIDATE_KEYS.some((key) => {
     const value = row?.[key];
     return typeof value === "string" && value.trim().length > 0;
@@ -66,7 +150,7 @@ export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT scope, pin_hash, updated_at
+    SELECT *
     FROM security_pins
     WHERE scope IN ('staff', 'management')
   `);
@@ -174,19 +258,39 @@ export async function verifySecurityPin(
 }
 
 export async function updateSecurityPin(scope: PinScope, pin: string): Promise<PinStatus> {
-  await ensurePinsTable();
+  const metadata = await ensurePinsTable();
   const sql = getSqlClient();
   const normalizedScope = normalizeScope(scope);
   const normalizedPin = sanitizePin(pin);
   const hashed = await hashPin(normalizedPin);
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO security_pins (scope, pin_hash, updated_at)
-    VALUES (${normalizedScope}, ${hashed}, now())
+  const hashColumn =
+    findColumn(metadata, PIN_HASH_CANDIDATE_KEYS) ?? "pin_hash";
+  const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
+
+  const insertColumns = ["scope", quoteIdentifier(hashColumn)];
+  const valuePlaceholders = ["$1", "$2"];
+  const updateAssignments = [
+    `${quoteIdentifier(hashColumn)} = EXCLUDED.${quoteIdentifier(hashColumn)}`,
+  ];
+
+  if (updatedAtColumn) {
+    insertColumns.push(quoteIdentifier(updatedAtColumn));
+    valuePlaceholders.push("now()");
+    updateAssignments.push(`${quoteIdentifier(updatedAtColumn)} = now()`);
+  }
+
+  const query = `
+    INSERT INTO security_pins (${insertColumns.join(", ")})
+    VALUES (${valuePlaceholders.join(", ")})
     ON CONFLICT (scope)
-    DO UPDATE SET pin_hash = EXCLUDED.pin_hash, updated_at = now()
-    RETURNING scope, pin_hash, updated_at
-  `);
+    DO UPDATE SET ${updateAssignments.join(", ")}
+    RETURNING *
+  `;
+
+  const rows = normalizeRows<SqlRow>(
+    await sql(query, [normalizedScope, hashed]),
+  );
 
   return parseStatusRow(scope, rows[0]);
 }
