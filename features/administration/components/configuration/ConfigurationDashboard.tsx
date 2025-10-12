@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { StaffMemberRecord } from "@/features/staff/data/queries";
 import { StaffSettingsPanel } from "@/features/staff/components/staff-settings-panel";
@@ -80,6 +80,12 @@ export function ConfigurationDashboard({
     () => findStatus(statuses, "management"),
     [statuses],
   );
+
+  useEffect(() => {
+    if (!managementStatus.isSet && !managementUnlocked) {
+      setManagementUnlocked(true);
+    }
+  }, [managementStatus.isSet, managementUnlocked]);
 
   const handleFormChange = (scope: PinScope, field: keyof PinFormState, value: string) => {
     setForms((previous) => ({

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { hasValidPinSession, type PinScope } from "@/lib/security/pin-session";
+import { isSecurityPinEnabled } from "@/features/security/data/pins";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
 
 type PinGateProps = {
@@ -18,6 +19,11 @@ export async function PinGate({
   ctaLabel,
   children,
 }: PinGateProps) {
+  const pinEnabled = await isSecurityPinEnabled(scope);
+  if (!pinEnabled) {
+    return <>{children}</>;
+  }
+
   const allowed = await hasValidPinSession(scope);
 
   if (allowed) {
