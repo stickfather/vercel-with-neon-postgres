@@ -4,11 +4,7 @@ import { createHmac, randomBytes } from "crypto";
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
 async function resolveCookies(): Promise<CookieStore> {
-  const store = cookies();
-  if (typeof (store as PromiseLike<CookieStore>).then === "function") {
-    return store as Promise<CookieStore>;
-  }
-  return store as CookieStore;
+  return (await cookies()) as CookieStore;
 }
 
 function readCookie(
