@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffDirectoryEntry } from "@/features/staff/data/queries";
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
-type StatusState = { type: "error" | "success"; message: string } | null;
+type StatusState = { message: string } | null;
+
+type ToastState = { message: string; tone: "success" | "error" };
 
 type Props = {
   staffMembers: StaffDirectoryEntry[];
@@ -23,10 +26,20 @@ export function StaffCheckInForm({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [status, setStatus] = useState<StatusState>(
-    initialError ? { type: "error", message: initialError } : null,
+    initialError ? { message: initialError } : null,
   );
   const [isPending, startTransition] = useTransition();
   const [showHelp, setShowHelp] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -53,7 +66,6 @@ export function StaffCheckInForm({
 
     if (!selectedStaffId) {
       setStatus({
-        type: "error",
         message: "Selecciona a un miembro del personal antes de continuar.",
       });
       return;
@@ -77,25 +89,28 @@ export function StaffCheckInForm({
         throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
       }
 
-      setStatus({
-        type: "success",
-        message: "¡Registro de personal confirmado!",
-      });
-
       const selectedMember = staffMembers.find((member) => member.id === selectedStaffId);
+      const successMessage = selectedMember
+        ? `${selectedMember.fullName.trim()} ya está registrado.`
+        : "¡Registro del personal confirmado!";
 
-      startTransition(() => {
-        if (selectedMember) {
-          const encoded = encodeURIComponent(selectedMember.fullName.trim());
-          router.push(`/?saludo=1&nombre=${encoded}`);
-          return;
-        }
-        router.push("/");
+      setToast({
+        tone: "success",
+        message: successMessage,
       });
+
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      redirectTimeoutRef.current = setTimeout(() => {
+        startTransition(() => {
+          router.push("/");
+        });
+      }, 550);
     } catch (error) {
       console.error(error);
       setStatus({
-        type: "error",
         message:
           error instanceof Error
             ? error.message
@@ -111,6 +126,13 @@ export function StaffCheckInForm({
       className="registro-card relative flex flex-col gap-8 rounded-[48px] border-2 border-[#ffcaa1] bg-white px-10 py-12 shadow-[0_28px_64px_rgba(15,23,42,0.14)]"
       onSubmit={handleSubmit}
     >
+      {toast ? (
+        <EphemeralToast
+          message={toast.message}
+          tone={toast.tone}
+          onDismiss={() => setToast(null)}
+        />
+      ) : null}
       <div className="pointer-events-none absolute -top-8 left-12 hidden h-16 w-16 rotate-6 rounded-[26px] bg-[#ffe8d2]/70 blur-2xl md:block" />
       <div className="pointer-events-none absolute -bottom-10 right-20 hidden h-24 w-24 -rotate-6 rounded-[30px] bg-[#5fd5c8]/45 blur-2xl lg:block" />
       <header className="flex flex-col gap-1 text-left">
@@ -185,13 +207,7 @@ export function StaffCheckInForm({
       </div>
 
       {status && (
-        <div
-          className={`rounded-3xl border px-5 py-3 text-sm font-medium ${
-            status.type === "success"
-              ? "border-brand-teal bg-[#e1f7f3] text-brand-deep"
-              : "border-brand-orange bg-white/75 text-brand-ink"
-          }`}
-        >
+        <div className="rounded-3xl border border-brand-orange bg-white/80 px-5 py-3 text-sm font-medium text-brand-ink">
           {status.message}
         </div>
       )}

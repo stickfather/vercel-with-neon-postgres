@@ -31,6 +31,14 @@ export type ActiveAttendance = {
   checkInTime: string;
 };
 
+export type StudentLastLesson = {
+  lessonId: number;
+  lessonName: string;
+  level: string;
+  sequence: number | null;
+  attendedAt: string;
+};
+
 export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
 
@@ -229,4 +237,51 @@ export async function registerCheckOut(attendanceId: number): Promise<void> {
   if (!updatedRows.length) {
     throw new Error("La asistencia ya estaba cerrada o no existe.");
   }
+}
+
+export async function getStudentLastLesson(
+  studentId: number,
+): Promise<StudentLastLesson | null> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      sa.lesson_id,
+      sa.checkin_time,
+      COALESCE(sa.checkout_time, sa.checkin_time) AS attended_at,
+      l.lesson,
+      l.level,
+      l.seq
+    FROM student_attendance sa
+    LEFT JOIN lessons l ON l.id = sa.lesson_id
+    WHERE sa.student_id = ${studentId}
+      AND sa.lesson_id IS NOT NULL
+    ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
+    LIMIT 1
+  `);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  const record = rows[0];
+  const lessonId = Number(record.lesson_id);
+  if (!Number.isFinite(lessonId)) {
+    return null;
+  }
+
+  const lessonName = ((record.lesson as string | null) ?? "").trim();
+  const level = ((record.level as string | null) ?? "").trim();
+
+  if (!lessonName || !level) {
+    return null;
+  }
+
+  return {
+    lessonId,
+    lessonName,
+    level,
+    sequence: record.seq == null ? null : Number(record.seq),
+    attendedAt: String(record.attended_at ?? record.checkin_time ?? new Date().toISOString()),
+  };
 }
