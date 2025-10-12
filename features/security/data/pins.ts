@@ -268,28 +268,38 @@ export async function updateSecurityPin(scope: PinScope, pin: string): Promise<P
     findColumn(metadata, PIN_HASH_CANDIDATE_KEYS) ?? "pin_hash";
   const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
 
-  const insertColumns = ["scope", quoteIdentifier(hashColumn)];
-  const valuePlaceholders = ["$1", "$2"];
+  const quotedHashColumn = quoteIdentifier(hashColumn);
+  const quotedUpdatedAtColumn = updatedAtColumn
+    ? quoteIdentifier(updatedAtColumn)
+    : null;
   const updateAssignments = [
-    `${quoteIdentifier(hashColumn)} = EXCLUDED.${quoteIdentifier(hashColumn)}`,
+    `${quotedHashColumn} = EXCLUDED.${quotedHashColumn}`,
   ];
 
-  if (updatedAtColumn) {
-    insertColumns.push(quoteIdentifier(updatedAtColumn));
-    valuePlaceholders.push("now()");
-    updateAssignments.push(`${quoteIdentifier(updatedAtColumn)} = now()`);
+  if (quotedUpdatedAtColumn) {
+    updateAssignments.push(`${quotedUpdatedAtColumn} = now()`);
+  }
+
+  const columns = ["scope", quotedHashColumn];
+  if (quotedUpdatedAtColumn) {
+    columns.push(quotedUpdatedAtColumn);
+  }
+
+  const values = ["$1", "$2"];
+  if (quotedUpdatedAtColumn) {
+    values.push("now()");
   }
 
   const query = `
-    INSERT INTO security_pins (${insertColumns.join(", ")})
-    VALUES (${valuePlaceholders.join(", ")})
+    INSERT INTO security_pins (${columns.join(", ")})
+    VALUES (${values.join(", ")})
     ON CONFLICT (scope)
     DO UPDATE SET ${updateAssignments.join(", ")}
     RETURNING *
   `;
 
   const rows = normalizeRows<SqlRow>(
-    await sql(query, [normalizedScope, hashed]),
+    await sql.unsafe(query, [normalizedScope, hashed]),
   );
 
   return parseStatusRow(scope, rows[0]);
