@@ -29,7 +29,7 @@ export default async function ConfiguracionPage() {
     ];
   }
 
-  managementUnlocked = hasValidPinSession("management");
+  managementUnlocked = await hasValidPinSession("management");
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white">

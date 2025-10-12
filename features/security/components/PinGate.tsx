@@ -18,7 +18,7 @@ export async function PinGate({
   ctaLabel,
   children,
 }: PinGateProps) {
-  const allowed = hasValidPinSession(scope);
+  const allowed = await hasValidPinSession(scope);
 
   if (allowed) {
     return <>{children}</>;

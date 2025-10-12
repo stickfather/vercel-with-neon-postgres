@@ -1,6 +1,54 @@
 import { cookies } from "next/headers";
 import { createHmac, randomBytes } from "crypto";
 
+type CookieStore = Awaited<ReturnType<typeof cookies>>;
+
+async function resolveCookies(): Promise<CookieStore> {
+  const store = cookies();
+  if (typeof (store as PromiseLike<CookieStore>).then === "function") {
+    return store as Promise<CookieStore>;
+  }
+  return store as CookieStore;
+}
+
+function readCookie(
+  store: CookieStore,
+  name: string,
+): ReturnType<Exclude<CookieStore["get"], undefined>> | undefined {
+  const getter = (store as { get?: CookieStore["get"] }).get;
+  if (typeof getter === "function") {
+    return getter.call(store, name) as ReturnType<
+      Exclude<CookieStore["get"], undefined>
+    >;
+  }
+  return undefined;
+}
+
+function deleteCookie(store: CookieStore, name: string) {
+  if (typeof (store as { delete?: (name: string) => void }).delete === "function") {
+    (store as { delete: (name: string) => void }).delete(name);
+  }
+}
+
+function setCookie(
+  store: CookieStore,
+  name: string,
+  value: string,
+  options: {
+    httpOnly: boolean;
+    sameSite: "lax" | "strict" | "none";
+    secure: boolean;
+    expires: Date;
+    path: string;
+  },
+) {
+  if (typeof (store as { set?: CookieStore["set"] }).set === "function") {
+    (store as { set: CookieStore["set"] }).set(name, value, options);
+    return;
+  }
+  throw new Error("No se puede establecer la cookie de sesión del PIN en este contexto.");
+}
+
 export type PinScope = "staff" | "management";
 
 const COOKIE_NAMES: Record<PinScope, string> = {
@@ -59,29 +107,34 @@ function decodeSession(value: string): {
   }
 }
 
-export function hasValidPinSession(scope: PinScope): boolean {
+export async function hasValidPinSession(scope: PinScope): Promise<boolean> {
   const cookieName = COOKIE_NAMES[scope];
-  const stored = cookies().get(cookieName);
+  const store = await resolveCookies();
+  const stored = readCookie(store, cookieName);
   if (!stored?.value) return false;
   const decoded = decodeSession(stored.value);
   if (!decoded.valid || decoded.scope !== scope) {
-    cookies().delete(cookieName);
+    deleteCookie(store, cookieName);
     return false;
   }
   if (!decoded.expiresAt || decoded.expiresAt.getTime() <= Date.now()) {
-    cookies().delete(cookieName);
+    deleteCookie(store, cookieName);
     return false;
   }
   return true;
 }
 
-export function setPinSession(scope: PinScope, ttlMinutes = SESSION_TTL_MINUTES) {
+export async function setPinSession(
+  scope: PinScope,
+  ttlMinutes = SESSION_TTL_MINUTES,
+) {
   const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
   const value = encodeSession(scope, expiresAt);
   const secure = process.env.NODE_ENV === "production";
   const cookieName = COOKIE_NAMES[scope];
 
-  cookies().set(cookieName, value, {
+  const store = await resolveCookies();
+  setCookie(store, cookieName, value, {
     httpOnly: true,
     sameSite: "lax",
     secure,
@@ -90,7 +143,8 @@ export function setPinSession(scope: PinScope, ttlMinutes = SESSION_TTL_MINUTES)
   });
 }
 
-export function clearPinSession(scope: PinScope) {
+export async function clearPinSession(scope: PinScope) {
   const cookieName = COOKIE_NAMES[scope];
-  cookies().delete(cookieName);
+  const store = await resolveCookies();
+  deleteCookie(store, cookieName);
 }

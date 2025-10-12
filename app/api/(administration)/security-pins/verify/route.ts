@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "PIN incorrecto." }, { status: 401 });
   }
 
-  setPinSession(scope);
+  await setPinSession(scope);
 
   return NextResponse.json({ ok: true });
 }

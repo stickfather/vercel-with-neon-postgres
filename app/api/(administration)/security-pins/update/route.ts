@@ -75,9 +75,9 @@ export async function POST(request: Request) {
 
   try {
     const status = await updateSecurityPin(scope, pin);
-    setPinSession(scope);
+    await setPinSession(scope);
     if (scope === "staff" && managerPin) {
-      setPinSession("management");
+      await setPinSession("management");
     }
     return NextResponse.json({ ok: true, status });
   } catch (error) {
