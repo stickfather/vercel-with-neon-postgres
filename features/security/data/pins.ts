@@ -37,6 +37,20 @@ type PinTableMetadata = {
   columnNames: Map<string, string>;
 };
 
+type UnsafeQueryRunner = (
+  query: string,
+  params?: unknown[],
+) => Promise<unknown>;
+
+function runUnsafeQuery(
+  sql: ReturnType<typeof getSqlClient>,
+  query: string,
+  params: unknown[],
+): Promise<unknown> {
+  const unsafe = sql.unsafe as unknown as UnsafeQueryRunner;
+  return unsafe(query, params);
+}
+
 function normalizeColumnKey(name: string): string {
   return name.trim().toLowerCase();
 }
@@ -299,7 +313,7 @@ export async function updateSecurityPin(scope: PinScope, pin: string): Promise<P
   `;
 
   const rows = normalizeRows<SqlRow>(
-    await sql.unsafe(query, [normalizedScope, hashed]),
+    await runUnsafeQuery(sql, query, [normalizedScope, hashed]),
   );
 
   return parseStatusRow(scope, rows[0]);
