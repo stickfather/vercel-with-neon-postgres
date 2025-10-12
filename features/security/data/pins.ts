@@ -61,6 +61,21 @@ export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
   );
 }
 
+export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
+  await ensurePinsTable();
+  const sql = getSqlClient();
+  const normalizedScope = normalizeScope(scope);
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT pin_hash
+    FROM security_pins
+    WHERE scope = ${normalizedScope}
+    LIMIT 1
+  `);
+
+  return Boolean(rows[0]?.pin_hash);
+}
+
 async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const derived = (await scrypt(pin, salt, 64)) as Buffer;
