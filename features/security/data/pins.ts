@@ -20,6 +20,13 @@ function normalizeScope(scope: PinScope): string {
   return scope === "management" ? "management" : "staff";
 }
 
+const PIN_HASH_CANDIDATE_KEYS = [
+  "pin_hash",
+  "pinHash",
+  "pinhash",
+  "pin",
+] as const;
+
 async function ensurePinsTable() {
   const sql = getSqlClient();
   await sql`
@@ -29,13 +36,22 @@ async function ensurePinsTable() {
       updated_at timestamptz DEFAULT now()
     )
   `;
+
+  await sql`
+    ALTER TABLE security_pins
+    ADD COLUMN IF NOT EXISTS pin_hash text
+  `;
 }
 
 function parseStatusRow(scope: PinScope, row?: SqlRow): PinStatus {
   const updatedAt = row?.updated_at ?? row?.updatedAt ?? null;
+  const hasPin = PIN_HASH_CANDIDATE_KEYS.some((key) => {
+    const value = row?.[key];
+    return typeof value === "string" && value.trim().length > 0;
+  });
   return {
     scope,
-    isSet: Boolean(row?.pin_hash ?? row?.pinHash),
+    isSet: hasPin,
     updatedAt: updatedAt ? String(updatedAt) : null,
   };
 }
@@ -78,9 +94,7 @@ export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
   }
 
   const row = (rows[0] ?? {}) as SqlRow;
-  const candidateKeys = ["pin_hash", "pinHash", "pinhash"] as const;
-
-  for (const key of candidateKeys) {
+  for (const key of PIN_HASH_CANDIDATE_KEYS) {
     const value = row[key];
     if (typeof value === "string" && value.trim().length > 0) {
       return true;
@@ -118,21 +132,33 @@ function sanitizePin(pin: string): string {
   return trimmed;
 }
 
-export async function verifySecurityPin(scope: PinScope, pin: string): Promise<boolean> {
+export async function verifySecurityPin(
+  scope: PinScope,
+  pin: string,
+): Promise<boolean> {
   await ensurePinsTable();
   const sql = getSqlClient();
   const normalizedScope = normalizeScope(scope);
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT pin_hash
+    SELECT *
     FROM security_pins
     WHERE scope = ${normalizedScope}
     LIMIT 1
   `);
 
   if (!rows.length) return false;
-  const hash = rows[0].pin_hash as string | null;
-  if (!hash) return false;
+  const row = rows[0] ?? {};
+  const hashKey = PIN_HASH_CANDIDATE_KEYS.find((key) => {
+    const value = row[key];
+    return typeof value === "string" && value.trim().length > 0;
+  });
+
+  if (!hashKey) {
+    return false;
+  }
+
+  const hash = row[hashKey] as string;
 
   try {
     return await verifyHash(pin, hash);
