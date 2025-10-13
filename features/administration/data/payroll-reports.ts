@@ -1,3 +1,5 @@
+import { unstable_noStore as noStore } from "next/cache";
+
 import {
   getSqlClient,
   normalizeRows,
@@ -425,6 +427,25 @@ function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
+function buildDateExpression(column: string | null): string | null {
+  if (!column) {
+    return null;
+  }
+
+  const normalized = column.toLowerCase();
+  const qualified = `s.${quoteIdentifier(column)}`;
+
+  if (normalized.includes("date") && !normalized.includes("time")) {
+    return `DATE(${qualified})`;
+  }
+
+  if (normalized.includes("local")) {
+    return `DATE(${qualified})`;
+  }
+
+  return `DATE(timezone('${TIMEZONE}', ${qualified}))`;
+}
+
 function toHoursFromMinutes(value: unknown, fractionDigits = 2): number | null {
   const minutes = toInteger(value);
   if (minutes == null) return null;
@@ -579,6 +600,7 @@ export async function fetchPayrollMatrix({
 }: {
   month: string;
 }): Promise<PayrollMatrixResponse> {
+  noStore();
   const sql = getSqlClient();
 
   const {
@@ -600,7 +622,7 @@ export async function fetchPayrollMatrix({
       m.total_hours
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-    WHERE m.work_date BETWEEN ${monthStart}::date AND ${monthEnd}::date
+    WHERE DATE(m.work_date) BETWEEN ${monthStart}::date AND ${monthEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
 
@@ -621,7 +643,14 @@ export async function fetchPayrollMatrix({
     );
     if (!Number.isFinite(staffId)) continue;
     const workDate = resolveWorkDateValue(
-      readRowValue(row, ["work_date", "workday", "date"]),
+      readRowValue(row, [
+        "work_date",
+        "work_date_local",
+        "local_work_date",
+        "workday",
+        "work_day",
+        "date",
+      ]),
     );
     if (!workDate || workDate.slice(0, 7) !== monthKey) continue;
 
@@ -642,7 +671,12 @@ export async function fetchPayrollMatrix({
     }
 
     const horasMostrar = toOptionalNumber(
-      readRowValue(row, ["horas_mostrar", "hours_display", "hours"]),
+      readRowValue(row, [
+        "horas_mostrar",
+        "hours_display",
+        "hours",
+        "horas",
+      ]),
       2,
     );
     const approved = toBoolean(readRowValue(row, ["approved", "is_approved"]));
@@ -705,6 +739,7 @@ export async function fetchDaySessions({
   staffId: number;
   workDate: string;
 }): Promise<DaySession[]> {
+  noStore();
   const sql = getSqlClient();
 
   const columns = await fetchTableColumns(
@@ -715,22 +750,42 @@ export async function fetchDaySessions({
 
   const staffColumn =
     findColumn(columns, ["staff_id", "staffid", "staff"]) ?? "staff_id";
-  const workDateColumn =
-    findColumn(columns, ["work_date", "workday", "date"]) ?? "work_date";
+  const workDateColumn = findColumn(columns, [
+    "work_date_local",
+    "local_work_date",
+    "work_date",
+    "workday",
+    "work_day",
+    "date",
+  ]);
+
+  if (!workDateColumn) {
+    throw new Error(
+      "La vista de sesiones no expone una columna de fecha de trabajo compatible.",
+    );
+  }
+
   const checkinColumn = findColumn(columns, [
     "checkin_local",
+    "local_checkin",
+    "check_in_local",
     "checkin_time",
+    "check_in_time",
     "checkin",
     "start_time",
   ]);
   const checkoutColumn = findColumn(columns, [
     "checkout_local",
+    "local_checkout",
+    "check_out_local",
     "checkout_time",
+    "check_out_time",
     "checkout",
     "end_time",
   ]);
   const sessionColumn = findColumn(columns, [
     "session_id",
+    "session_record_id",
     "attendance_id",
     "id",
   ]);
@@ -754,15 +809,33 @@ export async function fetchDaySessions({
     )
     .map((column) => `s.${quoteIdentifier(column)}`);
 
-  // Build the WHERE clause to filter by work_date
-  // We try to use the work_date column directly, but if the view computes it in UTC,
-  // we may need to also check via timezone-converted checkin_time
-  // The safest approach is to check if work_date matches OR if the checkin falls on that local date
+  const dateExpressions = new Set<string>();
+  const workDateExpression = buildDateExpression(workDateColumn);
+  if (workDateExpression) {
+    dateExpressions.add(`${workDateExpression} = $2::date`);
+  }
+
+  const checkinExpression = buildDateExpression(checkinColumn ?? null);
+  if (checkinExpression) {
+    dateExpressions.add(`${checkinExpression} = $2::date`);
+  }
+
+  const checkoutExpression = buildDateExpression(checkoutColumn ?? null);
+  if (checkoutExpression) {
+    dateExpressions.add(`${checkoutExpression} = $2::date`);
+  }
+
+  if (!dateExpressions.size) {
+    throw new Error(
+      "No se pudieron determinar columnas de fecha válidas para filtrar las sesiones.",
+    );
+  }
+
   const query = `
     SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_local_v s
     WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND s.${quoteIdentifier(workDateColumn)} = $2::date
+      AND (${Array.from(dateExpressions).join(" OR ")})
     ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
   `;
 
@@ -776,13 +849,34 @@ export async function fetchDaySessions({
     // Use readRowValue for flexible column name matching to support various database schemas
     // This handles case-insensitive matching and column name variations
     const sessionId = Number(
-      readRowValue(row, ["session_id", "attendance_id", "id"]) ?? NaN,
+      readRowValue(row, [
+        "session_id",
+        "session_record_id",
+        "attendance_id",
+        "id",
+      ]) ?? NaN,
     );
     const checkinTime = coerceString(
-      readRowValue(row, ["checkin_local", "checkin_time", "checkin", "start_time"]),
+      readRowValue(row, [
+        "checkin_local",
+        "local_checkin",
+        "check_in_local",
+        "checkin_time",
+        "check_in_time",
+        "checkin",
+        "start_time",
+      ]),
     );
     const checkoutTime = coerceString(
-      readRowValue(row, ["checkout_local", "checkout_time", "checkout", "end_time"]),
+      readRowValue(row, [
+        "checkout_local",
+        "local_checkout",
+        "check_out_local",
+        "checkout_time",
+        "check_out_time",
+        "checkout",
+        "end_time",
+      ]),
     );
 
     const minutesValue =
@@ -792,11 +886,18 @@ export async function fetchDaySessions({
           "total_minutes",
           "duration_minutes",
           "session_minutes",
+          "minutes_logged",
         ]),
       ) ?? null;
 
     const hoursDirect = toOptionalNumber(
-      readRowValue(row, ["total_hours", "hours", "horas_mostrar"]),
+      readRowValue(row, [
+        "total_hours",
+        "hours",
+        "horas_mostrar",
+        "hours_display",
+        "horas",
+      ]),
       2,
     );
 
@@ -1280,6 +1381,7 @@ export async function fetchPayrollMonthStatus({
   month: string;
   staffId?: number | null;
 }): Promise<PayrollMonthStatusRow[]> {
+  noStore();
   const sql = getSqlClient();
   const { monthKey, monthStart } = resolveMonthWindow(month);
 

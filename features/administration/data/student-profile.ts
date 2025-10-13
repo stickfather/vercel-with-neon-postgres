@@ -1118,47 +1118,297 @@ function extractString(source: JsonRecord, keys: string[]): string | null {
   return null;
 }
 
-function mapLessonPlanSnapshot(payload: JsonRecord): StudentLessonPlanSnapshot | null {
+function extractStringFromCollection(
+  records: JsonRecord[],
+  keys: string[],
+): string | null {
+  for (const record of records) {
+    const value = extractString(record, keys);
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function extractNumberFromCollection(
+  records: JsonRecord[],
+  keys: string[],
+): number | null {
+  for (const record of records) {
+    const value = extractNumber(record, keys);
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function sortLessonPlanRecords(records: JsonRecord[]): JsonRecord[] {
+  return records
+    .slice()
+    .sort((a, b) => {
+      const indexA = extractNumber(a, [
+        "current_lesson_index",
+        "lesson_index",
+        "lesson_seq",
+        "sequence",
+        "position",
+        "order_index",
+      ]);
+      const indexB = extractNumber(b, [
+        "current_lesson_index",
+        "lesson_index",
+        "lesson_seq",
+        "sequence",
+        "position",
+        "order_index",
+      ]);
+      if (indexA != null && indexB != null) {
+        return indexA - indexB;
+      }
+      if (indexA != null) {
+        return -1;
+      }
+      if (indexB != null) {
+        return 1;
+      }
+
+      const orderA = extractNumber(a, ["lesson_order", "sort_order"]);
+      const orderB = extractNumber(b, ["lesson_order", "sort_order"]);
+      if (orderA != null && orderB != null) {
+        return orderA - orderB;
+      }
+      if (orderA != null) {
+        return -1;
+      }
+      if (orderB != null) {
+        return 1;
+      }
+      return 0;
+    });
+}
+
+function countCompletedLessons(records: JsonRecord[]): number {
+  let count = 0;
+
+  for (const record of records) {
+    const completedFlag = extractBoolean(record, [
+      "is_completed",
+      "completed",
+      "completed_flag",
+      "is_done",
+    ]);
+    if (completedFlag === true) {
+      count += 1;
+      continue;
+    }
+
+    const status = extractString(record, [
+      "status",
+      "lesson_status",
+      "progress_status",
+    ]);
+    if (status) {
+      const normalized = status.toLowerCase();
+      if (
+        normalized.includes("complet") ||
+        normalized.includes("termin") ||
+        normalized.includes("aprob") ||
+        normalized.includes("finaliz") ||
+        normalized.includes("done")
+      ) {
+        count += 1;
+        continue;
+      }
+    }
+
+    const completedAt = extractString(record, [
+      "completed_at",
+      "finished_at",
+      "approved_at",
+      "terminado_en",
+    ]);
+    if (completedAt) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function findActiveLessonRecord(
+  records: JsonRecord[],
+  currentLessonIndex: number | null,
+): JsonRecord | null {
+  for (const record of records) {
+    const isCurrent = extractBoolean(record, [
+      "is_current",
+      "current_flag",
+      "is_active",
+      "active_flag",
+    ]);
+    if (isCurrent) {
+      return record;
+    }
+  }
+
+  if (currentLessonIndex != null) {
+    for (const record of records) {
+      const lessonIndex = extractNumber(record, [
+        "current_lesson_index",
+        "lesson_index",
+        "lesson_seq",
+        "sequence",
+        "position",
+      ]);
+      if (lessonIndex != null && Math.trunc(lessonIndex) === currentLessonIndex) {
+        return record;
+      }
+    }
+  }
+
+  for (const record of records) {
+    const status = extractString(record, [
+      "status",
+      "lesson_status",
+      "progress_status",
+    ]);
+    if (!status) {
+      continue;
+    }
+    const normalized = status.toLowerCase();
+    if (
+      normalized.includes("current") ||
+      normalized.includes("actual") ||
+      normalized.includes("curso") ||
+      normalized.includes("en curso") ||
+      normalized.includes("activa")
+    ) {
+      return record;
+    }
+  }
+
+  return null;
+}
+
+function mapLessonPlanSnapshot(
+  payload: JsonRecord | JsonRecord[] | null | undefined,
+): StudentLessonPlanSnapshot | null {
   if (!payload) {
     return null;
   }
 
-  const plannedLevelMin = extractString(payload, [
+  const records = (Array.isArray(payload) ? payload : [payload]).filter(
+    (record): record is JsonRecord => Boolean(record),
+  );
+
+  if (!records.length) {
+    return null;
+  }
+
+  const sortedRecords = sortLessonPlanRecords(records);
+
+  const plannedLevelMin = extractStringFromCollection(sortedRecords, [
     "planned_level_min",
     "planned_min_level",
     "level_min",
+    "start_level",
+    "level_start",
   ]);
-  const plannedLevelMax = extractString(payload, [
+  const plannedLevelMax = extractStringFromCollection(sortedRecords, [
     "planned_level_max",
     "planned_max_level",
     "level_max",
+    "target_level",
+    "goal_level",
   ]);
-  const currentLevelCode = extractString(payload, [
-    "current_level_code",
-    "current_level",
+
+  let lessonsTotal = extractNumberFromCollection(sortedRecords, [
+    "lessons_total",
+    "total_lessons",
+    "plan_length",
+    "lesson_count",
   ]);
-  const currentLessonLabel = extractString(payload, [
-    "current_lesson_label",
-    "current_lesson_name",
-    "current_lesson",
+  if (lessonsTotal == null && sortedRecords.length) {
+    lessonsTotal = sortedRecords.length;
+  }
+
+  let lessonsCompleted = extractNumberFromCollection(sortedRecords, [
+    "lessons_completed",
+    "completed_lessons",
+    "lessons_done",
   ]);
-  const currentLessonIndex = extractNumber(payload, [
+  if (lessonsCompleted == null) {
+    const completedCount = countCompletedLessons(sortedRecords);
+    if (completedCount > 0 || lessonsTotal != null) {
+      lessonsCompleted = completedCount;
+    }
+  }
+
+  let lessonsRemaining = extractNumberFromCollection(sortedRecords, [
+    "lessons_remaining",
+    "remaining_lessons",
+    "lessons_left",
+  ]);
+  if (
+    lessonsRemaining == null &&
+    lessonsTotal != null &&
+    lessonsCompleted != null
+  ) {
+    lessonsRemaining = Math.max(lessonsTotal - lessonsCompleted, 0);
+  }
+
+  let currentLessonIndex = extractNumberFromCollection(sortedRecords, [
     "current_lesson_index",
     "current_seq",
     "current_position",
+    "lesson_index",
+    "lesson_seq",
   ]);
-  const lessonsCompleted = extractNumber(payload, [
-    "lessons_completed",
-    "completed_lessons",
-  ]);
-  const lessonsRemaining = extractNumber(payload, [
-    "lessons_remaining",
-    "remaining_lessons",
-  ]);
-  const lessonsTotal = extractNumber(payload, [
-    "lessons_total",
-    "total_lessons",
-  ]);
+  if (currentLessonIndex == null && lessonsCompleted != null) {
+    const tentativeIndex = lessonsCompleted + 1;
+    if (lessonsTotal == null || tentativeIndex <= lessonsTotal + 1) {
+      currentLessonIndex = tentativeIndex;
+    }
+  }
+
+  const activeRecord = findActiveLessonRecord(
+    sortedRecords,
+    currentLessonIndex != null ? Math.trunc(currentLessonIndex) : null,
+  );
+
+  const currentLessonLabel =
+    extractStringFromCollection(sortedRecords, [
+      "current_lesson_label",
+      "current_lesson_name",
+      "current_lesson",
+    ]) ??
+    (activeRecord
+      ? extractString(activeRecord, [
+          "lesson_name",
+          "lesson_label",
+          "name",
+          "title",
+        ])
+      : null);
+
+  const currentLevelCode =
+    extractStringFromCollection(sortedRecords, [
+      "current_level_code",
+      "current_level",
+    ]) ??
+    (activeRecord
+      ? extractString(activeRecord, [
+          "level_code",
+          "lesson_level",
+          "level",
+        ])
+      : extractStringFromCollection(sortedRecords, [
+          "level_code",
+          "lesson_level",
+          "level",
+        ]));
 
   if (
     plannedLevelMin == null &&
@@ -1221,85 +1471,116 @@ export async function getStudentCoachPanelSummary(
   noStore();
   const sql = getSqlClient();
 
-  const [summaryRawRows, dailyRawRows] = await Promise.all([
+  const [
+    studentRawRows,
+    panelRawRows,
+    riskRawRows,
+    planRawRows,
+    dailyRawRows,
+    configRawRows,
+  ] = await Promise.all([
     withTimeout(
       sql`
-          WITH panel AS (
-            SELECT student_id, to_jsonb(p) AS payload
-            FROM analytics.v_student_coaching_panel_enhanced AS p
-            WHERE p.student_id = ${studentId}::bigint
-          ),
-          risk AS (
-            SELECT student_id, to_jsonb(r) AS payload
-            FROM analytics.v_at_risk_students AS r
-            WHERE r.student_id = ${studentId}::bigint
-          ),
-          plan AS (
-            SELECT student_id, to_jsonb(lp) AS payload
-            FROM analytics.v_student_lesson_plan AS lp
-            WHERE lp.student_id = ${studentId}::bigint
-          ),
-          config AS (
-            SELECT to_jsonb(pc) AS payload
-            FROM analytics.progress_config AS pc
-            ORDER BY pc.updated_at DESC NULLS LAST
-            LIMIT 1
-          )
-          SELECT
-            s.id AS student_id,
-            s.full_name,
-            panel.payload   AS panel_payload,
-            risk.payload    AS risk_payload,
-            plan.payload    AS plan_payload,
-            config.payload  AS config_payload
-          FROM public.students AS s
-          LEFT JOIN panel  ON panel.student_id = s.id
-          LEFT JOIN risk   ON risk.student_id = s.id
-          LEFT JOIN plan   ON plan.student_id = s.id
-          LEFT JOIN config ON TRUE
-          WHERE s.id = ${studentId}::bigint
-          LIMIT 1
-        `,
+        SELECT id AS student_id, full_name
+        FROM public.students
+        WHERE id = ${studentId}::bigint
+        LIMIT 1
+      `,
       5000,
     ),
     withTimeout(
       sql`
-        SELECT to_jsonb(d) AS payload
-        FROM analytics.v_student_daily_minutes_30d AS d
-        WHERE d.student_id = ${studentId}::bigint
+        SELECT *
+        FROM analytics.v_student_coaching_panel_enhanced
+        WHERE student_id = ${studentId}::bigint
+        LIMIT 1
+      `,
+      5000,
+    ),
+    withTimeout(
+      sql`
+        SELECT *
+        FROM analytics.v_at_risk_students
+        WHERE student_id = ${studentId}::bigint
+        LIMIT 1
+      `,
+      5000,
+    ),
+    withTimeout(
+      sql`
+        SELECT *
+        FROM analytics.v_student_lesson_plan
+        WHERE student_id = ${studentId}::bigint
+      `,
+      5000,
+    ),
+    withTimeout(
+      sql`
+        SELECT *
+        FROM analytics.v_student_daily_minutes_30d
+        WHERE student_id = ${studentId}::bigint
+      `,
+      5000,
+    ),
+    withTimeout(
+      sql`
+        SELECT *
+        FROM analytics.progress_config
+        ORDER BY updated_at DESC NULLS LAST
+        LIMIT 1
       `,
       5000,
     ),
   ]);
 
-  const summaryRows = normalizeRows<SqlRow>(summaryRawRows);
-  const dailyRows = normalizeRows<SqlRow>(dailyRawRows);
-
-  if (!summaryRows.length) {
+  const studentRows = normalizeRows<SqlRow>(studentRawRows);
+  if (!studentRows.length) {
     return null;
   }
 
-  const summaryRow = summaryRows[0];
-  const panelPayload = toJsonRecord(summaryRow.panel_payload ?? null);
-  const riskPayload = toJsonRecord(summaryRow.risk_payload ?? null);
-  const planPayload = toJsonRecord(summaryRow.plan_payload ?? null);
-  const configPayload = toJsonRecord(summaryRow.config_payload ?? null);
+  const panelRows = normalizeRows<SqlRow>(panelRawRows);
+  const riskRows = normalizeRows<SqlRow>(riskRawRows);
+  const planRows = normalizeRows<SqlRow>(planRawRows);
+  const dailyRows = normalizeRows<SqlRow>(dailyRawRows);
+  const configRows = normalizeRows<SqlRow>(configRawRows);
 
-  const studentIdValue = normalizeInteger(summaryRow.student_id) ?? studentId;
+  const studentRow = studentRows[0];
+  const panelPayload = toJsonRecord(panelRows[0] ?? null);
+  const riskPayload = toJsonRecord(riskRows[0] ?? null);
+  const configPayload = toJsonRecord(configRows[0] ?? null);
+  const planRecords = planRows
+    .map((row) => toJsonRecord(row))
+    .filter((row): row is JsonRecord => Boolean(row));
+  const lessonPlanSnapshot = mapLessonPlanSnapshot(planRecords);
+
+  const studentIdValue =
+    normalizeInteger(extractNumber(panelPayload, ["student_id"])) ??
+    normalizeInteger(studentRow.student_id) ??
+    studentId;
 
   const minutes30d = extractNumber(panelPayload, [
     "minutes_30d",
     "total_minutes_30d",
   ]);
   const hours30d =
-    extractNumber(panelPayload, ["hours_30d", "total_hours_30d"]) ??
+    extractNumber(panelPayload, [
+      "hours_30d",
+      "total_hours_30d",
+      "study_hours_30d",
+      "hours_last_30d",
+    ]) ??
     (minutes30d != null ? minutes30d / 60 : null);
   const daysActive30d = extractNumber(panelPayload, [
     "days_active_30d",
     "active_days_30d",
   ]);
   const weeklyActiveDays =
-    extractNumber(panelPayload, ["weekly_active_days", "days_active_per_week"]) ??
+    extractNumber(panelPayload, [
+      "weekly_active_days",
+      "days_active_per_week",
+      "avg_active_days_per_week",
+      "weekly_days_active",
+    ]) ??
     (daysActive30d != null ? daysActive30d / 4.345 : null);
 
   const leiTrendDelta = extractNumber(panelPayload, [
@@ -1321,15 +1602,38 @@ export async function getStudentCoachPanelSummary(
   }
 
   const dailyStudyEntries = dailyRows
-    .map((row) => mapDailyStudy(toJsonRecord(row.payload)))
+    .map((row) => mapDailyStudy(toJsonRecord(row)))
     .filter((entry): entry is DailyStudyEntry => Boolean(entry))
-    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+    .sort((a, b) => {
+      const aTime = Date.parse(a.date);
+      const bTime = Date.parse(b.date);
+      if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
+        return a.date.localeCompare(b.date);
+      }
+      if (Number.isNaN(aTime)) {
+        return -1;
+      }
+      if (Number.isNaN(bTime)) {
+        return 1;
+      }
+      return aTime - bTime;
+    });
 
   return {
     studentId: studentIdValue,
-    fullName: normalizeString(summaryRow.full_name),
-    levelCode: extractString(panelPayload, ["level_code", "current_level_code"]),
-    lessonSeq: extractNumber(panelPayload, ["lesson_seq", "current_lesson_seq"]),
+    fullName:
+      normalizeString(panelPayload?.full_name) ??
+      normalizeString(studentRow.full_name),
+    levelCode:
+      extractString(panelPayload, ["level_code", "current_level_code"]) ??
+      lessonPlanSnapshot?.currentLevelCode ??
+      null,
+    lessonSeq:
+      extractNumber(panelPayload, [
+        "lesson_seq",
+        "current_lesson_seq",
+        "current_lesson_index",
+      ]) ?? lessonPlanSnapshot?.currentLessonIndex ?? null,
     onPace: extractBoolean(panelPayload, ["on_pace"]),
     lei30d: extractNumber(panelPayload, ["lei_30d"]),
     leiTrendDelta: computedLeiTrend,
@@ -1340,30 +1644,58 @@ export async function getStudentCoachPanelSummary(
       "avg_session_minutes_30d",
       "average_session_minutes_30d",
     ]),
-    lessonsGained30d: extractNumber(panelPayload, ["lessons_gained_30d"]),
+    lessonsGained30d: extractNumber(panelPayload, [
+      "lessons_gained_30d",
+      "lessons_progress_30d",
+      "lessons_last_30d",
+    ]),
     lessonsRemaining:
       extractNumber(panelPayload, ["lessons_remaining"]) ??
-      extractNumber(planPayload, ["lessons_remaining"]),
+      lessonPlanSnapshot?.lessonsRemaining ??
+      null,
     forecastMonthsToFinish: extractNumber(panelPayload, [
       "forecast_months_to_finish",
       "months_to_finish",
     ]),
-    targetLph: extractNumber(panelPayload, ["target_lph"]),
+    targetLph:
+      extractNumber(panelPayload, ["target_lph", "target_lei", "lei_target"]) ??
+      extractNumber(configPayload, ["target_lph", "target_lei"]),
     lastSessionDaysAgo: extractNumber(panelPayload, [
       "days_since_last",
       "days_since_last_session",
+      "days_last_seen",
+      "days_since_last_activity",
     ]),
-    repeatsAtLast: extractNumber(panelPayload, ["repeats_at_last"]),
+    repeatsAtLast: extractNumber(panelPayload, [
+      "repeats_at_last",
+      "repeat_count_last",
+    ]),
     riskStall:
-      extractBoolean(riskPayload, ["stall_flag", "is_stalled"]) ??
-      extractBoolean(panelPayload, ["stall_flag"]),
+      extractBoolean(riskPayload, [
+        "stall_flag",
+        "is_stalled",
+        "stalling",
+        "stalling_flag",
+      ]) ??
+      extractBoolean(panelPayload, [
+        "stall_flag",
+        "is_stalled",
+        "stalling",
+        "stalling_flag",
+      ]),
     riskInactive14d: extractBoolean(riskPayload, [
       "inactive_14d",
       "inactive_14_days",
       "inactive_flag",
+    ]) ?? extractBoolean(panelPayload, [
+      "inactive_14d",
+      "inactive_14_days",
+      "inactive_flag",
     ]),
-    riskAtRisk: extractBoolean(riskPayload, ["at_risk", "is_at_risk"]),
-    lessonPlan: mapLessonPlanSnapshot(planPayload),
+    riskAtRisk:
+      extractBoolean(riskPayload, ["at_risk", "is_at_risk"]) ??
+      extractBoolean(panelPayload, ["at_risk", "is_at_risk"]),
+    lessonPlan: lessonPlanSnapshot,
     dailyStudy: dailyStudyEntries,
     sessionDurationTargets: {
       shortMinutes: extractNumber(configPayload, [
