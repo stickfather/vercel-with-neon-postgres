@@ -715,7 +715,7 @@ export async function fetchDaySessions({
     FROM public.staff_day_sessions_local_v
     WHERE staff_id = ${staffId}::bigint
       AND work_date = ${normalizedWorkDate}::date
-    ORDER BY checkin_local NULLS LAST, checkout_local NULLS LAST
+    ORDER BY checkin_time NULLS LAST, checkout_time NULLS LAST
   `);
 
   return rows.map((row) => {

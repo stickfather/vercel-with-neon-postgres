@@ -193,12 +193,18 @@ export async function updateSecurityPins({
   }
 
   await sql`
-    UPDATE security_pins
+    INSERT INTO security_pins (id, staff_pin_hash, manager_pin_hash, updated_at)
+    VALUES (
+      ${PIN_ROW_ID},
+      ${staffHash},
+      ${managerHash},
+      now()
+    )
+    ON CONFLICT (id) DO UPDATE
     SET
-      staff_pin_hash = COALESCE(${staffHash}, staff_pin_hash),
-      manager_pin_hash = COALESCE(${managerHash}, manager_pin_hash),
+      staff_pin_hash = COALESCE(EXCLUDED.staff_pin_hash, security_pins.staff_pin_hash),
+      manager_pin_hash = COALESCE(EXCLUDED.manager_pin_hash, security_pins.manager_pin_hash),
       updated_at = now()
-    WHERE id = ${PIN_ROW_ID}
   `;
 }
 
