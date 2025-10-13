@@ -8,18 +8,25 @@ import type {
   PayrollMonthStatusRow,
   PayrollMatrixResponse,
 } from "@/features/administration/data/payroll-reports";
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import { PinPrompt } from "@/features/security/components/PinPrompt";
 
 type MatrixResponse = PayrollMatrixResponse;
 
-type EditableSession = {
+type SessionRow = {
   sessionKey: string;
   sessionId: number | null;
+  staffId: number;
+  workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
-  originalCheckinTime: string | null;
-  originalCheckoutTime: string | null;
-  markedForDeletion: boolean;
   isNew: boolean;
+  isEditing: boolean;
+  draftCheckin: string;
+  draftCheckout: string;
+  validationError: string | null;
+  feedback: string | null;
+  pendingAction: null | "edit" | "create" | "delete";
 };
 
 type SelectedCell = {
@@ -39,6 +46,13 @@ const TRAILING_COLUMNS_WIDTH =
 const MIN_CELL_WIDTH = 32;
 const PREFERRED_CELL_WIDTH = 68;
 const GRID_PADDING = 16;
+const PAYROLL_TIMEZONE = "America/Guayaquil";
+const rowDayFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PAYROLL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 type MonthSummaryRow = {
   staffId: number;
@@ -175,33 +189,122 @@ function generateSessionKey(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 }
 
-function buildSessionEdits(sessions: DaySession[]): EditableSession[] {
+function buildSessionRows(sessions: DaySession[]): SessionRow[] {
   return sessions.map((session, index) => ({
     sessionKey:
       session.sessionId != null
         ? `existing-${session.sessionId}`
         : generateSessionKey(`session-${index}`),
     sessionId: session.sessionId,
+    staffId: session.staffId,
+    workDate: session.workDate,
     checkinTime: session.checkinTime,
     checkoutTime: session.checkoutTime,
-    originalCheckinTime: session.checkinTime,
-    originalCheckoutTime: session.checkoutTime,
-    markedForDeletion: false,
     isNew: false,
+    isEditing: false,
+    draftCheckin: toLocalInputValue(session.checkinTime),
+    draftCheckout: toLocalInputValue(session.checkoutTime),
+    validationError: null,
+    feedback: null,
+    pendingAction: null,
   }));
 }
 
-function createEmptySessionEdit(): EditableSession {
+function createEmptySessionRow(staffId: number, workDate: string): SessionRow {
   return {
     sessionKey: generateSessionKey("new-session"),
     sessionId: null,
+    staffId,
+    workDate,
     checkinTime: null,
     checkoutTime: null,
-    originalCheckinTime: null,
-    originalCheckoutTime: null,
-    markedForDeletion: false,
     isNew: true,
+    isEditing: true,
+    draftCheckin: "",
+    draftCheckout: "",
+    validationError: null,
+    feedback: null,
+    pendingAction: null,
   };
+}
+
+function getActiveRowTimes(row: SessionRow): {
+  checkinIso: string | null;
+  checkoutIso: string | null;
+} {
+  if (row.isEditing) {
+    return {
+      checkinIso: fromLocalInputValue(row.draftCheckin),
+      checkoutIso: fromLocalInputValue(row.draftCheckout),
+    };
+  }
+  return { checkinIso: row.checkinTime, checkoutIso: row.checkoutTime };
+}
+
+function computeRowMinutes(row: SessionRow): number | null {
+  const { checkinIso, checkoutIso } = getActiveRowTimes(row);
+  if (!checkinIso || !checkoutIso) return null;
+  const start = new Date(checkinIso).getTime();
+  const end = new Date(checkoutIso).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return null;
+  }
+  return Math.round((end - start) / 60000);
+}
+
+function sortSessionRows(rows: SessionRow[]): SessionRow[] {
+  return [...rows].sort((a, b) => {
+    const aTimes = getActiveRowTimes(a);
+    const bTimes = getActiveRowTimes(b);
+    if (!aTimes.checkinIso && !bTimes.checkinIso) return 0;
+    if (!aTimes.checkinIso) return 1;
+    if (!bTimes.checkinIso) return -1;
+    return new Date(aTimes.checkinIso).getTime() - new Date(bTimes.checkinIso).getTime();
+  });
+}
+
+function validateRowDraft(
+  row: SessionRow,
+  rows: SessionRow[],
+  workDate: string,
+): string | null {
+  const { checkinIso, checkoutIso } = getActiveRowTimes(row);
+  if (!checkinIso || !checkoutIso) {
+    return "Completa las horas de entrada y salida.";
+  }
+
+  const checkinDate = new Date(checkinIso);
+  const checkoutDate = new Date(checkoutIso);
+  if (Number.isNaN(checkinDate.getTime()) || Number.isNaN(checkoutDate.getTime())) {
+    return "Ingresa horas válidas.";
+  }
+  if (checkoutDate.getTime() <= checkinDate.getTime()) {
+    return "La salida debe ser posterior a la entrada.";
+  }
+
+  const checkinDay = rowDayFormatter.format(checkinDate);
+  const checkoutDay = rowDayFormatter.format(checkoutDate);
+  if (checkinDay !== workDate || checkoutDay !== workDate) {
+    return "La sesión debe corresponder al día seleccionado.";
+  }
+
+  for (const candidate of rows) {
+    if (candidate.sessionKey === row.sessionKey) continue;
+    const { checkinIso: otherStart, checkoutIso: otherEnd } = getActiveRowTimes(candidate);
+    if (!otherStart || !otherEnd) continue;
+    const startMs = checkinDate.getTime();
+    const endMs = checkoutDate.getTime();
+    const otherStartMs = new Date(otherStart).getTime();
+    const otherEndMs = new Date(otherEnd).getTime();
+    if (!Number.isFinite(otherStartMs) || !Number.isFinite(otherEndMs)) {
+      continue;
+    }
+    if (endMs > otherStartMs && startMs < otherEndMs) {
+      return "Los horarios se superponen con otra sesión.";
+    }
+  }
+
+  return null;
 }
 
 type Props = {
@@ -219,9 +322,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
-  const [sessionEdits, setSessionEdits] = useState<EditableSession[]>([]);
+  const [sessionRows, setSessionRows] = useState<SessionRow[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
+    null,
+  );
+  const [pinSessionActive, setPinSessionActive] = useState(true);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
+  const sessionRowsRef = useRef<SessionRow[]>([]);
 
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
   const [monthStatusSaving, setMonthStatusSaving] = useState<Record<number, boolean>>({});
@@ -573,8 +683,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       });
       setSessionsLoading(true);
       setSessionsError(null);
-      setSessionEdits([]);
+      setSessionRows([]);
       setActionError(null);
+      setPinSessionActive(true);
     },
     [resolveStaffName],
   );
@@ -582,11 +693,13 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const closeModal = useCallback(() => {
     setSelectedCell(null);
     setSessionsLoading(false);
-    setSessionEdits([]);
+    setSessionRows([]);
     setSessionsError(null);
     setActionError(null);
     setActionLoading(false);
-  }, []);
+    setPinModalOpen(false);
+    resolvePinRequest(false);
+  }, [resolvePinRequest]);
 
   useEffect(() => {
     if (!selectedCell) return;
@@ -608,7 +721,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         }
         const data = (await response.json()) as { sessions?: DaySession[] };
         if (!cancelled) {
-          setSessionEdits(buildSessionEdits(data.sessions ?? []));
+          setSessionRows(sortSessionRows(buildSessionRows(data.sessions ?? [])));
         }
       } catch (err) {
         console.error("No se pudieron cargar las sesiones del día", err);
@@ -629,53 +742,292 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     };
   }, [selectedCell]);
 
-  const onSessionChange = useCallback(
-    (sessionKey: string, field: "checkinTime" | "checkoutTime", value: string) => {
-      setSessionEdits((previous) =>
-        previous.map((session) => {
-          if (session.sessionKey !== sessionKey) return session;
-          const isoValue = fromLocalInputValue(value);
+  const handleDraftChange = useCallback(
+    (sessionKey: string, field: "checkin" | "checkout", value: string) => {
+      setSessionRows((previous) => {
+        const updated = previous.map((row) => {
+          if (row.sessionKey !== sessionKey) return row;
           return {
-            ...session,
-            [field]: isoValue,
-            markedForDeletion: false,
+            ...row,
+            draftCheckin: field === "checkin" ? value : row.draftCheckin,
+            draftCheckout: field === "checkout" ? value : row.draftCheckout,
+            feedback: null,
           };
-        }),
-      );
+        });
+
+        return updated.map((row) => {
+          if (row.sessionKey !== sessionKey) return row;
+          return {
+            ...row,
+            validationError: validateRowDraft(row, updated, row.workDate),
+          };
+        });
+      });
     },
     [],
   );
 
-  const addNewSession = useCallback(() => {
-    setSessionEdits((previous) => [...previous, createEmptySessionEdit()]);
-  }, []);
+  const addBlankSession = useCallback(async () => {
+    if (!selectedCell) return;
+    const allowed = await ensureManagementAccess();
+    if (!allowed) {
+      return;
+    }
+    setSessionRows((previous) =>
+      sortSessionRows([
+        ...previous,
+        createEmptySessionRow(selectedCell.staffId, selectedCell.workDate),
+      ]),
+    );
+  }, [ensureManagementAccess, selectedCell]);
 
-  const toggleSessionDeletion = useCallback((sessionKey: string) => {
-    setSessionEdits((previous) =>
-      previous.flatMap((session) => {
-        if (session.sessionKey !== sessionKey) return [session];
-        if (session.sessionId == null) {
-          return [];
+  const enableRowEditing = useCallback(
+    async (sessionKey: string) => {
+      const allowed = await ensureManagementAccess();
+      if (!allowed) return;
+      setSessionRows((previous) => {
+        const updated = previous.map((row) => {
+          if (row.sessionKey !== sessionKey) return row;
+          const draftCheckin = toLocalInputValue(row.checkinTime);
+          const draftCheckout = toLocalInputValue(row.checkoutTime);
+          const candidate = {
+            ...row,
+            isEditing: true,
+            draftCheckin,
+            draftCheckout,
+            feedback: null,
+          };
+          return {
+            ...candidate,
+            validationError: validateRowDraft(candidate, previous, row.workDate),
+          };
+        });
+        return sortSessionRows(updated);
+      });
+    },
+    [ensureManagementAccess],
+  );
+
+  const saveRowChanges = useCallback(
+    async (sessionKey: string) => {
+      if (!selectedCell) return;
+      const rows = sessionRowsRef.current;
+      const target = rows.find((row) => row.sessionKey === sessionKey);
+      if (!target) return;
+
+      const validation = validateRowDraft(target, rows, target.workDate);
+      if (validation) {
+        setSessionRows((previous) =>
+          previous.map((row) =>
+            row.sessionKey === sessionKey
+              ? { ...row, validationError: validation }
+              : row,
+          ),
+        );
+        return;
+      }
+
+      const { checkinIso, checkoutIso } = getActiveRowTimes(target);
+      if (!checkinIso || !checkoutIso) {
+        return;
+      }
+
+      setSessionRows((previous) =>
+        previous.map((row) =>
+          row.sessionKey === sessionKey
+            ? {
+                ...row,
+                pendingAction: row.isNew ? "create" : "edit",
+                feedback: null,
+              }
+            : row,
+        ),
+      );
+
+      try {
+        const endpoint = target.isNew
+          ? "/api/payroll/reports/day-sessions"
+          : `/api/payroll/reports/day-sessions/${target.sessionId}`;
+        const method = target.isNew ? "POST" : "PATCH";
+        const response = await performProtectedFetch(endpoint, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            staffId: selectedCell.staffId,
+            workDate: selectedCell.workDate,
+            checkinTime: checkinIso,
+            checkoutTime: checkoutIso,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = (payload as { error?: string }).error ?? "No se pudo guardar la sesión.";
+          throw new Error(message);
         }
-        return [{ ...session, markedForDeletion: !session.markedForDeletion }];
+
+        const saved = (payload as { session?: DaySession }).session;
+        if (!saved) {
+          throw new Error("No se recibió la sesión actualizada.");
+        }
+
+        setSessionRows((previous) =>
+          sortSessionRows(
+            previous.map((row) =>
+              row.sessionKey === sessionKey
+                ? {
+                    ...row,
+                    sessionId: saved.sessionId,
+                    staffId: saved.staffId,
+                    workDate: saved.workDate,
+                    checkinTime: saved.checkinTime,
+                    checkoutTime: saved.checkoutTime,
+                    draftCheckin: toLocalInputValue(saved.checkinTime),
+                    draftCheckout: toLocalInputValue(saved.checkoutTime),
+                    isNew: false,
+                    isEditing: false,
+                    validationError: null,
+                    feedback: null,
+                    pendingAction: null,
+                  }
+                : row,
+            ),
+          ),
+        );
+        await refreshMatrixOnly();
+        await refreshMonthStatusForStaff(selectedCell.staffId);
+        await refreshMonthSummary();
+        setToast({ message: "Cambios guardados", tone: "success" });
+      } catch (error) {
+        console.error("No se pudo guardar la sesión", error);
+        const message =
+          error instanceof Error ? error.message : "No se pudo guardar la sesión.";
+        setSessionRows((previous) =>
+          previous.map((row) =>
+            row.sessionKey === sessionKey
+              ? { ...row, feedback: message, pendingAction: null }
+              : row,
+          ),
+        );
+        setToast({ message: "No se pudo guardar", tone: "error" });
+      }
+    },
+    [
+      performProtectedFetch,
+      refreshMatrixOnly,
+      refreshMonthStatusForStaff,
+      refreshMonthSummary,
+      selectedCell,
+    ],
+  );
+
+  const handleEditClick = useCallback(
+    async (sessionKey: string) => {
+      const rows = sessionRowsRef.current;
+      const target = rows.find((row) => row.sessionKey === sessionKey);
+      if (!target || target.pendingAction) {
+        return;
+      }
+      if (!target.isEditing) {
+        await enableRowEditing(sessionKey);
+        return;
+      }
+      await saveRowChanges(sessionKey);
+    },
+    [enableRowEditing, saveRowChanges],
+  );
+
+  const handleDeleteClick = useCallback(
+    async (sessionKey: string) => {
+      const rows = sessionRowsRef.current;
+      const target = rows.find((row) => row.sessionKey === sessionKey);
+      if (!target || target.pendingAction) {
+        return;
+      }
+
+      const confirmed = window.confirm("¿Eliminar esta sesión? Esta acción no se puede deshacer.");
+      if (!confirmed) {
+        return;
+      }
+
+      const allowed = await ensureManagementAccess();
+      if (!allowed) return;
+
+      if (target.sessionId == null) {
+        setSessionRows((previous) => previous.filter((row) => row.sessionKey !== sessionKey));
+        setToast({ message: "Cambios guardados", tone: "success" });
+        return;
+      }
+
+      setSessionRows((previous) =>
+        previous.map((row) =>
+          row.sessionKey === sessionKey
+            ? { ...row, pendingAction: "delete", feedback: null }
+            : row,
+        ),
+      );
+
+      try {
+        const response = await performProtectedFetch(
+          `/api/payroll/reports/day-sessions/${target.sessionId}`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              staffId: target.staffId,
+              workDate: target.workDate,
+            }),
+          },
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = (payload as { error?: string }).error ?? "No se pudo eliminar la sesión.";
+          throw new Error(message);
+        }
+
+        setSessionRows((previous) => previous.filter((row) => row.sessionKey !== sessionKey));
+        await refreshMatrixOnly();
+        await refreshMonthStatusForStaff(target.staffId);
+        await refreshMonthSummary();
+        setToast({ message: "Cambios guardados", tone: "success" });
+      } catch (error) {
+        console.error("No se pudo eliminar la sesión", error);
+        const message =
+          error instanceof Error ? error.message : "No se pudo eliminar la sesión.";
+        setSessionRows((previous) =>
+          previous.map((row) =>
+            row.sessionKey === sessionKey
+              ? { ...row, feedback: message, pendingAction: null }
+              : row,
+          ),
+        );
+        setToast({ message: "No se pudo guardar", tone: "error" });
+      }
+    },
+    [
+      ensureManagementAccess,
+      performProtectedFetch,
+      refreshMatrixOnly,
+      refreshMonthStatusForStaff,
+      refreshMonthSummary,
+    ],
+  );
+
+  const cancelRowEditing = useCallback((sessionKey: string) => {
+    setSessionRows((previous) =>
+      previous.map((row) => {
+        if (row.sessionKey !== sessionKey) return row;
+        return {
+          ...row,
+          isEditing: false,
+          draftCheckin: toLocalInputValue(row.checkinTime),
+          draftCheckout: toLocalInputValue(row.checkoutTime),
+          validationError: null,
+          feedback: null,
+          pendingAction: null,
+        };
       }),
     );
   }, []);
-
-  const hasSessionChanges = useMemo(
-    () =>
-      sessionEdits.some((session) => {
-        if (session.markedForDeletion) return true;
-        if (session.isNew) {
-          return !session.markedForDeletion;
-        }
-        return (
-          session.checkinTime !== session.originalCheckinTime
-          || session.checkoutTime !== session.originalCheckoutTime
-        );
-      }),
-    [sessionEdits],
-  );
 
   const recalculateCellWidth = useCallback((containerWidth: number, daysCount: number) => {
     if (!daysCount) return;
@@ -691,7 +1043,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setActionLoading(true);
     setActionError(null);
     try {
-      const response = await fetch("/api/payroll/reports/approve-day", {
+      const response = await performProtectedFetch("/api/payroll/reports/approve-day", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -706,126 +1058,23 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       await refreshMatrixOnly();
       await refreshMonthStatusForStaff(selectedCell.staffId);
       await refreshMonthSummary();
+      setToast({ message: "Cambios guardados", tone: "success" });
       closeModal();
     } catch (err) {
       console.error("No se pudo aprobar el día", err);
       const message = err instanceof Error ? err.message : "No pudimos aprobar el día.";
       setActionError(message);
+      setToast({ message: "No se pudo guardar", tone: "error" });
     } finally {
       setActionLoading(false);
     }
   }, [
     closeModal,
+    performProtectedFetch,
     refreshMatrixOnly,
     refreshMonthStatusForStaff,
     refreshMonthSummary,
     selectedCell,
-  ]);
-
-  const handleOverrideAndApprove = useCallback(async () => {
-    if (!selectedCell) return;
-    if (!hasSessionChanges) {
-      setActionError("No hay cambios para aplicar.");
-      return;
-    }
-    setActionLoading(true);
-    setActionError(null);
-    try {
-      const updates = sessionEdits
-        .filter(
-          (session) =>
-            !session.isNew
-            && !session.markedForDeletion
-            && session.sessionId != null
-            && session.checkinTime
-            && session.checkoutTime
-            && (
-              session.checkinTime !== session.originalCheckinTime
-              || session.checkoutTime !== session.originalCheckoutTime
-            ),
-        )
-        .map((session) => ({
-          sessionId: session.sessionId as number,
-          checkinTime: session.checkinTime as string,
-          checkoutTime: session.checkoutTime as string,
-        }));
-
-      const additions = sessionEdits
-        .filter((session) => session.isNew && !session.markedForDeletion)
-        .map((session) => ({
-          checkinTime: session.checkinTime,
-          checkoutTime: session.checkoutTime,
-        }));
-
-      const deletions = sessionEdits
-        .filter(
-          (session) =>
-            !session.isNew && session.markedForDeletion && session.sessionId != null,
-        )
-        .map((session) => session.sessionId as number);
-
-      const pendingAddition = additions.find(
-        (session) => !session.checkinTime || !session.checkoutTime,
-      );
-      if (pendingAddition) {
-        throw new Error("Debes completar las horas de las nuevas sesiones.");
-      }
-
-      const normalizedAdditions = additions.map((session) => ({
-        checkinTime: session.checkinTime as string,
-        checkoutTime: session.checkoutTime as string,
-      }));
-
-      const invalidRange = [...updates, ...normalizedAdditions].find(
-        (session) =>
-          new Date(session.checkoutTime).getTime()
-            <= new Date(session.checkinTime).getTime(),
-      );
-      if (invalidRange) {
-        throw new Error("La hora de salida debe ser posterior a la hora de entrada.");
-      }
-
-      if (!updates.length && !normalizedAdditions.length && !deletions.length) {
-        throw new Error("No hay cambios válidos para aplicar.");
-      }
-
-      const response = await fetch("/api/payroll/reports/override-and-approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          staffId: selectedCell.staffId,
-          workDate: selectedCell.workDate,
-          overrides: updates,
-          additions: normalizedAdditions,
-          deletions,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          (body as { error?: string }).error ?? "No pudimos sobrescribir y aprobar el día.",
-        );
-      }
-      await refreshMatrixOnly();
-      await refreshMonthStatusForStaff(selectedCell.staffId);
-      await refreshMonthSummary();
-      closeModal();
-    } catch (err) {
-      console.error("No se pudo sobrescribir y aprobar el día", err);
-      const message =
-        err instanceof Error ? err.message : "No pudimos sobrescribir y aprobar el día.";
-      setActionError(message);
-    } finally {
-      setActionLoading(false);
-    }
-  }, [
-    closeModal,
-    hasSessionChanges,
-    refreshMatrixOnly,
-    refreshMonthStatusForStaff,
-    refreshMonthSummary,
-    selectedCell,
-    sessionEdits,
   ]);
 
   useEffect(() => {
@@ -874,6 +1123,66 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     return map;
   }, [monthSummaryRows]);
 
+  useEffect(() => {
+    sessionRowsRef.current = sessionRows;
+  }, [sessionRows]);
+
+  const resolvePinRequest = useCallback((granted: boolean) => {
+    const resolver = pinRequestRef.current;
+    pinRequestRef.current = null;
+    if (resolver) {
+      resolver(granted);
+    }
+  }, []);
+
+  const waitForPin = useCallback((): Promise<boolean> => {
+    return new Promise((resolve) => {
+      pinRequestRef.current = resolve;
+      setPinModalOpen(true);
+    });
+  }, []);
+
+  const ensureManagementAccess = useCallback(async (): Promise<boolean> => {
+    if (pinSessionActive) {
+      return true;
+    }
+    return waitForPin();
+  }, [pinSessionActive, waitForPin]);
+
+  const handleUnauthorized = useCallback(async (): Promise<boolean> => {
+    setPinSessionActive(false);
+    return waitForPin();
+  }, [waitForPin]);
+
+  const performProtectedFetch = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const allowed = await ensureManagementAccess();
+      if (!allowed) {
+        throw new Error("PIN de gerencia requerido.");
+      }
+
+      let response = await fetch(input, init);
+      if (response.status === 401) {
+        const granted = await handleUnauthorized();
+        if (!granted) {
+          throw new Error("PIN de gerencia requerido.");
+        }
+        response = await fetch(input, init);
+        if (response.status === 401) {
+          setPinSessionActive(false);
+          throw new Error("PIN de gerencia requerido.");
+        }
+      }
+
+      if (response.ok) {
+        setPinSessionActive(true);
+      }
+
+      return response;
+    },
+    [ensureManagementAccess, handleUnauthorized],
+  );
+
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
   const cellVariant = useMemo(() => {
@@ -897,6 +1206,32 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const compactCellText = cellVariant === "tight";
   const staffCount = matrixData?.rows.length ?? 0;
 
+  const totalMinutes = useMemo(
+    () =>
+      sessionRows.reduce((accumulator, row) => {
+        const minutes = computeRowMinutes(row);
+        return minutes != null ? accumulator + minutes : accumulator;
+      }, 0),
+    [sessionRows],
+  );
+
+  const totalHours = useMemo(() => Number((totalMinutes / 60).toFixed(2)), [totalMinutes]);
+
+  useEffect(() => {
+    if (!selectedCell || sessionsLoading) return;
+    setSelectedCell((previous) => {
+      if (!previous) return previous;
+      if (Math.abs(previous.hours - totalHours) < 0.01) {
+        return previous;
+      }
+      return { ...previous, hours: totalHours };
+    });
+  }, [selectedCell, sessionsLoading, totalHours]);
+
+  const displayHours = sessionsLoading
+    ? selectedCell?.hours ?? totalHours
+    : totalHours;
+
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
       <div className="pointer-events-none absolute inset-0 -z-10">
@@ -906,6 +1241,13 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       </div>
 
       <main className="relative mx-auto flex w-full max-w-[2000px] flex-1 flex-col gap-10 px-4 py-12 sm:px-6 md:px-10 lg:px-12">
+        {toast ? (
+          <EphemeralToast
+            message={toast.message}
+            tone={toast.tone}
+            onDismiss={() => setToast(null)}
+          />
+        ) : null}
         <header className="flex flex-col gap-5 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
             Control de nómina
@@ -937,6 +1279,31 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             </button>
           </div>
         </header>
+
+        <section className="rounded-[24px] border border-brand-ink-muted/15 bg-white/95 px-6 py-5 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">Responsabilidades de PIN</h2>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-teal-soft/15 px-4 py-3">
+              <h3 className="text-base font-semibold text-brand-deep">PIN del personal</h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-brand-ink">
+                <li>Permite acceder a Administración para consultas y tareas no sensibles.</li>
+                <li>No autoriza aprobar días de nómina ni modificar sesiones.</li>
+                <li>No puede administrar la seguridad ni actualizar los PIN.</li>
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-orange/10 px-4 py-3">
+              <h3 className="text-base font-semibold text-brand-deep">PIN de gerencia</h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-brand-ink">
+                <li>Aprueba días de nómina y gestiona sesiones (editar, agregar, eliminar).</li>
+                <li>Actualiza los PIN desde “Contraseñas y seguridad”.</li>
+                <li>No muestra PIN en texto plano ni evita el registro de auditoría.</li>
+              </ul>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-brand-ink-muted">
+            Toda verificación se realiza en el servidor, con sesiones temporales por tipo de PIN y sin almacenar códigos en texto plano.
+          </p>
+        </section>
 
         {error ? (
           <div className="rounded-[32px] border border-brand-orange bg-white/85 px-6 py-5 text-sm font-medium text-brand-ink">
@@ -1155,7 +1522,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </p>
               </div>
               <div className="rounded-[24px] border border-brand-ink-muted/10 bg-brand-deep-soft/30 px-5 py-4 text-sm text-brand-deep">
-                Horas registradas: {hoursFormatter.format(selectedCell.hours)} h
+                Horas registradas: {hoursFormatter.format(displayHours)} h
               </div>
             </div>
 
@@ -1170,100 +1537,146 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {sessionEdits.length ? (
-                    sessionEdits.map((session, index) => (
-                      <div
-                        key={session.sessionKey}
-                        className={`rounded-3xl border px-5 py-4 shadow-inner ${
-                          session.markedForDeletion
-                            ? "border-brand-orange/60 bg-brand-orange/10"
-                            : "border-brand-ink-muted/15 bg-white"
-                        }`}
-                      >
-                        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex flex-wrap items-center gap-2 text-brand-deep">
-                            <span className="text-sm font-semibold">
-                              {session.sessionId != null
-                                ? `Sesión ID ${session.sessionId}`
-                                : `Nueva sesión ${index + 1}`}
-                            </span>
-                            {session.isNew ? (
-                              <span className="inline-flex items-center rounded-full bg-brand-teal-soft/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-deep">
-                                Nueva
+                  {sessionRows.length ? (
+                    sessionRows.map((session, index) => {
+                      const editingDisabled =
+                        sessionsLoading || actionLoading || session.pendingAction === "delete";
+                      const deletingDisabled =
+                        sessionsLoading
+                        || actionLoading
+                        || session.pendingAction === "edit"
+                        || session.pendingAction === "create";
+                      const inputDisabled =
+                        !session.isEditing
+                        || session.pendingAction != null
+                        || sessionsLoading
+                        || actionLoading;
+
+                      return (
+                        <div
+                          key={session.sessionKey}
+                          className="rounded-3xl border border-brand-ink-muted/15 bg-white px-5 py-4 shadow-inner"
+                        >
+                          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-wrap items-center gap-2 text-brand-deep">
+                              <span className="text-sm font-semibold">
+                                {session.sessionId != null
+                                  ? `Sesión ID ${session.sessionId}`
+                                  : `Nueva sesión ${index + 1}`}
                               </span>
-                            ) : null}
-                            {session.markedForDeletion ? (
-                              <span className="inline-flex items-center rounded-full bg-brand-orange/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-orange">
-                                Marcada para eliminar
-                              </span>
-                            ) : null}
-                            {session.sessionId == null && !session.isNew ? (
-                              <span className="text-[10px] font-medium uppercase tracking-wide text-brand-orange">
-                                Sin identificador
-                              </span>
-                            ) : null}
+                              {session.isNew ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-teal-soft/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-deep">
+                                  Nueva
+                                </span>
+                              ) : null}
+                              {session.pendingAction ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  {session.pendingAction === "delete" ? "Eliminando…" : "Guardando…"}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleEditClick(session.sessionKey)}
+                                disabled={editingDisabled}
+                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {session.pendingAction === "edit" || session.pendingAction === "create"
+                                  ? "Guardando…"
+                                  : session.isEditing
+                                    ? "Guardar"
+                                    : "Editar"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={addBlankSession}
+                                disabled={sessionsLoading || actionLoading}
+                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Agregar sesión
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteClick(session.sessionKey)}
+                                disabled={deletingDisabled}
+                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {session.pendingAction === "delete" ? "Eliminando…" : "Eliminar"}
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                              <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+                                Entrada
+                              </span>
+                              <input
+                                type="datetime-local"
+                                value={session.isEditing
+                                  ? session.draftCheckin
+                                  : toLocalInputValue(session.checkinTime)}
+                                onChange={(event) =>
+                                  handleDraftChange(session.sessionKey, "checkin", event.target.value)
+                                }
+                                disabled={inputDisabled}
+                                className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                              <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+                                Salida
+                              </span>
+                              <input
+                                type="datetime-local"
+                                value={session.isEditing
+                                  ? session.draftCheckout
+                                  : toLocalInputValue(session.checkoutTime)}
+                                onChange={(event) =>
+                                  handleDraftChange(session.sessionKey, "checkout", event.target.value)
+                                }
+                                disabled={inputDisabled}
+                                className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                              />
+                            </label>
+                          </div>
+                          {session.validationError ? (
+                            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-orange">
+                              {session.validationError}
+                            </p>
+                          ) : null}
+                          {session.feedback ? (
+                            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-orange">
+                              {session.feedback}
+                            </p>
+                          ) : null}
+                          {session.isEditing && !session.isNew && session.pendingAction == null ? (
                             <button
                               type="button"
-                              onClick={() => toggleSessionDeletion(session.sessionKey)}
-                              className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                              onClick={() => cancelRowEditing(session.sessionKey)}
+                              className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted transition hover:text-brand-deep"
                             >
-                              {session.sessionId == null
-                                ? "Quitar"
-                                : session.markedForDeletion
-                                  ? "Restaurar"
-                                  : "Eliminar"}
+                              Cancelar edición
                             </button>
-                          </div>
+                          ) : null}
                         </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <label className="flex flex-col gap-1 text-sm text-brand-deep">
-                            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                              Entrada
-                            </span>
-                            <input
-                              type="datetime-local"
-                              value={toLocalInputValue(session.checkinTime)}
-                              onChange={(event) =>
-                                onSessionChange(session.sessionKey, "checkinTime", event.target.value)
-                              }
-                              disabled={session.markedForDeletion || actionLoading}
-                              className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1 text-sm text-brand-deep">
-                            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                              Salida
-                            </span>
-                            <input
-                              type="datetime-local"
-                              value={toLocalInputValue(session.checkoutTime)}
-                              onChange={(event) =>
-                                onSessionChange(session.sessionKey, "checkoutTime", event.target.value)
-                              }
-                              disabled={session.markedForDeletion || actionLoading}
-                              className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="rounded-3xl border border-brand-ink-muted/20 bg-brand-deep-soft/40 px-5 py-4 text-sm text-brand-ink-muted">
-                      No hay sesiones registradas para este día.
+                      <div>No hay sesiones registradas para este día.</div>
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={addBlankSession}
+                          disabled={sessionsLoading || actionLoading}
+                          className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Agregar sesión
+                        </button>
+                      </div>
                     </div>
                   )}
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={addNewSession}
-                      disabled={sessionsLoading || actionLoading}
-                      className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Agregar sesión
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
@@ -1290,15 +1703,36 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               >
                 {actionLoading ? "Procesando…" : "Aprobar día"}
               </button>
-              <button
-                type="button"
-                onClick={handleOverrideAndApprove}
-                disabled={actionLoading || !hasSessionChanges}
-                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-orange px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-brand-orange/90 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-brand-orange disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {actionLoading ? "Procesando…" : "Sobrescribir y aprobar"}
-              </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pinModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-8 backdrop-blur-sm">
+          <div className="relative w-full max-w-md">
+            <button
+              type="button"
+              onClick={() => {
+                setPinModalOpen(false);
+                resolvePinRequest(false);
+              }}
+              className="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white text-lg font-semibold text-brand-ink shadow hover:-translate-y-[1px] hover:bg-brand-teal-soft/40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              aria-label="Cerrar validación"
+            >
+              ×
+            </button>
+            <PinPrompt
+              scope="management"
+              title="PIN de gerencia requerido"
+              description="Confirma el PIN de gerencia para continuar."
+              ctaLabel="Validar PIN"
+              onSuccess={() => {
+                setPinSessionActive(true);
+                setPinModalOpen(false);
+                resolvePinRequest(true);
+              }}
+            />
           </div>
         </div>
       ) : null}

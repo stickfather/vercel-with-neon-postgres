@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
 import { approveStaffDay } from "@/features/administration/data/payroll-reports";
+import { hasValidPinSession } from "@/lib/security/pin-session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
 export async function POST(request: Request) {
+  const allowed = await hasValidPinSession("management");
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "PIN de gerencia requerido." },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   let payload: unknown;
 
   try {

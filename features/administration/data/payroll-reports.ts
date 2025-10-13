@@ -155,6 +155,106 @@ export function normalizeDateLike(value: unknown): string | null {
   return null;
 }
 
+const dayFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function toTimeZoneDayString(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const parts = dayFormatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "";
+  const month = parts.find((part) => part.type === "month")?.value ?? "";
+  const day = parts.find((part) => part.type === "day")?.value ?? "";
+  if (!year || !month || !day) {
+    return null;
+  }
+  return `${year}-${month}-${day}`;
+}
+
+async function invalidateStaffDayApproval(
+  sql: SqlClient,
+  staffId: number,
+  workDate: string,
+): Promise<void> {
+  await sql`
+    UPDATE payroll_day_approvals
+    SET
+      approved = FALSE,
+      approved_by = NULL,
+      approved_minutes = NULL
+    WHERE staff_id = ${staffId}::bigint
+      AND work_date = ${workDate}::date
+  `;
+}
+
+let payrollAuditReady = false;
+
+async function ensurePayrollAuditTable(sql: SqlClient): Promise<void> {
+  if (payrollAuditReady) return;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS payroll_audit_events (
+      id bigserial PRIMARY KEY,
+      action text NOT NULL,
+      staff_id bigint NOT NULL,
+      work_date date NOT NULL,
+      session_id bigint NULL,
+      details jsonb NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+
+  payrollAuditReady = true;
+}
+
+type PayrollAuditAction =
+  | "approve_day"
+  | "update_session"
+  | "create_session"
+  | "delete_session";
+
+async function logPayrollAuditEvent({
+  action,
+  staffId,
+  workDate,
+  sessionId,
+  details,
+  sql = getSqlClient(),
+}: {
+  action: PayrollAuditAction;
+  staffId: number;
+  workDate: string;
+  sessionId?: number | null;
+  details?: Record<string, unknown> | null;
+  sql?: SqlClient;
+}): Promise<void> {
+  await ensurePayrollAuditTable(sql);
+
+  await sql`
+    INSERT INTO payroll_audit_events (
+      action,
+      staff_id,
+      work_date,
+      session_id,
+      details
+    )
+    VALUES (
+      ${action},
+      ${staffId}::bigint,
+      ${workDate}::date,
+      ${sessionId ?? null}::bigint,
+      ${details ? JSON.stringify(details) : null}::jsonb
+    )
+  `;
+}
+
 function enumerateDays(from: Date, to: Date): string[] {
   const days: string[] = [];
   const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
@@ -614,6 +714,268 @@ export async function fetchDaySessions({
   });
 }
 
+function ensureWorkDate(value: string): string {
+  const normalized = normalizeDateLike(value);
+  if (!normalized) {
+    throw new Error("Debes indicar un día válido.");
+  }
+  return normalized;
+}
+
+function ensureIsoTime(value: string | null, label: string): string {
+  const iso = ensureIsoString(value);
+  if (!iso) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+  return iso;
+}
+
+function computeDurationMinutes(checkinIso: string, checkoutIso: string): number {
+  const start = new Date(checkinIso).getTime();
+  const end = new Date(checkoutIso).getTime();
+  const delta = end - start;
+  if (!Number.isFinite(delta) || delta <= 0) {
+    throw new Error("La sesión debe tener una duración positiva.");
+  }
+  return Math.round(delta / 60000);
+}
+
+async function assertNoOverlap(
+  sql: SqlClient,
+  {
+    staffId,
+    workDate,
+    checkinIso,
+    checkoutIso,
+    ignoreSessionId,
+  }: {
+    staffId: number;
+    workDate: string;
+    checkinIso: string;
+    checkoutIso: string;
+    ignoreSessionId?: number | null;
+  },
+): Promise<void> {
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT id, checkin_time, checkout_time
+    FROM staff_attendance
+    WHERE staff_id = ${staffId}::bigint
+      AND date(timezone(${TIMEZONE}, checkin_time)) = ${workDate}::date
+      AND id <> ${ignoreSessionId ?? 0}::bigint
+      AND ${checkoutIso}::timestamptz > checkin_time
+      AND ${checkinIso}::timestamptz < COALESCE(checkout_time, ${checkoutIso}::timestamptz)
+  `);
+
+  if (rows.length) {
+    throw new Error("Los horarios se superponen con otra sesión registrada.");
+  }
+}
+
+function ensureSessionMatchesDay(
+  checkinIso: string,
+  checkoutIso: string,
+  workDate: string,
+): void {
+  const checkinDay = toTimeZoneDayString(checkinIso);
+  const checkoutDay = toTimeZoneDayString(checkoutIso);
+  if (checkinDay !== workDate || checkoutDay !== workDate) {
+    throw new Error("La sesión debe pertenecer al día seleccionado.");
+  }
+}
+
+function toHoursFromMinutes(minutes: number): number {
+  return Number((minutes / 60).toFixed(2));
+}
+
+export async function updateStaffDaySession({
+  sessionId,
+  staffId,
+  workDate,
+  checkinTime,
+  checkoutTime,
+}: {
+  sessionId: number;
+  staffId: number;
+  workDate: string;
+  checkinTime: string | null;
+  checkoutTime: string | null;
+}): Promise<DaySession> {
+  const sql = getSqlClient();
+
+  const normalizedWorkDate = ensureWorkDate(workDate);
+  const checkinIso = ensureIsoTime(checkinTime, "entrada");
+  const checkoutIso = ensureIsoTime(checkoutTime, "salida");
+  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
+  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
+
+  const existingRows = normalizeRows<SqlRow>(await sql`
+    SELECT checkin_time, checkout_time
+    FROM staff_attendance
+    WHERE id = ${sessionId}::bigint
+      AND staff_id = ${staffId}::bigint
+    LIMIT 1
+  `);
+
+  if (!existingRows.length) {
+    throw new Error("No encontramos la sesión indicada.");
+  }
+
+  await assertNoOverlap(sql, {
+    staffId,
+    workDate: normalizedWorkDate,
+    checkinIso,
+    checkoutIso,
+    ignoreSessionId: sessionId,
+  });
+
+  await sql`
+    UPDATE staff_attendance
+    SET checkin_time = ${checkinIso}::timestamptz,
+        checkout_time = ${checkoutIso}::timestamptz
+    WHERE id = ${sessionId}::bigint
+      AND staff_id = ${staffId}::bigint
+  `;
+
+  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
+  await logPayrollAuditEvent({
+    action: "update_session",
+    staffId,
+    workDate: normalizedWorkDate,
+    sessionId,
+    details: {
+      before: {
+        checkinTime: existingRows[0].checkin_time,
+        checkoutTime: existingRows[0].checkout_time,
+      },
+      after: {
+        checkinTime: checkinIso,
+        checkoutTime: checkoutIso,
+      },
+      approvalRevoked: true,
+    },
+    sql,
+  });
+
+  return {
+    sessionId,
+    staffId,
+    workDate: normalizedWorkDate,
+    checkinTime: checkinIso,
+    checkoutTime: checkoutIso,
+    hours: toHoursFromMinutes(minutes),
+  };
+}
+
+export async function createStaffDaySession({
+  staffId,
+  workDate,
+  checkinTime,
+  checkoutTime,
+}: {
+  staffId: number;
+  workDate: string;
+  checkinTime: string | null;
+  checkoutTime: string | null;
+}): Promise<DaySession> {
+  const sql = getSqlClient();
+
+  const normalizedWorkDate = ensureWorkDate(workDate);
+  const checkinIso = ensureIsoTime(checkinTime, "entrada");
+  const checkoutIso = ensureIsoTime(checkoutTime, "salida");
+  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
+  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
+
+  await assertNoOverlap(sql, {
+    staffId,
+    workDate: normalizedWorkDate,
+    checkinIso,
+    checkoutIso,
+  });
+
+  const [nextId] = await allocateStaffAttendanceIds(sql, 1);
+  const sessionId = nextId;
+
+  await sql`
+    INSERT INTO staff_attendance (id, staff_id, checkin_time, checkout_time)
+    VALUES (
+      ${sessionId}::bigint,
+      ${staffId}::bigint,
+      ${checkinIso}::timestamptz,
+      ${checkoutIso}::timestamptz
+    )
+  `;
+
+  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
+  await logPayrollAuditEvent({
+    action: "create_session",
+    staffId,
+    workDate: normalizedWorkDate,
+    sessionId,
+    details: {
+      checkinTime: checkinIso,
+      checkoutTime: checkoutIso,
+      approvalRevoked: true,
+    },
+    sql,
+  });
+
+  return {
+    sessionId,
+    staffId,
+    workDate: normalizedWorkDate,
+    checkinTime: checkinIso,
+    checkoutTime: checkoutIso,
+    hours: toHoursFromMinutes(minutes),
+  };
+}
+
+export async function deleteStaffDaySession({
+  sessionId,
+  staffId,
+  workDate,
+}: {
+  sessionId: number;
+  staffId: number;
+  workDate: string;
+}): Promise<void> {
+  const sql = getSqlClient();
+  const normalizedWorkDate = ensureWorkDate(workDate);
+
+  const existingRows = normalizeRows<SqlRow>(await sql`
+    SELECT checkin_time, checkout_time
+    FROM staff_attendance
+    WHERE id = ${sessionId}::bigint
+      AND staff_id = ${staffId}::bigint
+    LIMIT 1
+  `);
+
+  if (!existingRows.length) {
+    throw new Error("No encontramos la sesión indicada.");
+  }
+
+  await sql`
+    DELETE FROM staff_attendance
+    WHERE id = ${sessionId}::bigint
+      AND staff_id = ${staffId}::bigint
+  `;
+
+  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
+  await logPayrollAuditEvent({
+    action: "delete_session",
+    staffId,
+    workDate: normalizedWorkDate,
+    sessionId,
+    details: {
+      removed: {
+        checkinTime: existingRows[0].checkin_time,
+        checkoutTime: existingRows[0].checkout_time,
+      },
+      approvalRevoked: true,
+    },
+    sql,
+  });
+}
+
 export async function approveStaffDay({
   staffId,
   workDate,
@@ -622,7 +984,15 @@ export async function approveStaffDay({
   workDate: string;
 }): Promise<void> {
   const sql = getSqlClient();
-  await applyStaffDayApproval(sql, staffId, workDate, null);
+  const normalizedWorkDate = ensureWorkDate(workDate);
+  await applyStaffDayApproval(sql, staffId, normalizedWorkDate, null);
+  await logPayrollAuditEvent({
+    action: "approve_day",
+    staffId,
+    workDate: normalizedWorkDate,
+    details: { approved: true },
+    sql,
+  });
 }
 
 function ensureIsoString(value: string | null | undefined): string | null {
