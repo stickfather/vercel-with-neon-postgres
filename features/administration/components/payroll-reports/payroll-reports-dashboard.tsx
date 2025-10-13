@@ -596,14 +596,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     });
   }, [selectedCell, staffNames]);
 
-  const { from, to } = useMemo(() => {
+  const monthRange = useMemo(() => {
     try {
       return getMonthRange(selectedMonth);
     } catch (error) {
       console.error("Mes inválido seleccionado", error);
       return { from: selectedMonth, to: selectedMonth, endExclusive: selectedMonth };
     }
-  }, [from, selectedMonth, to]);
+  }, [selectedMonth]);
+
+  const { from, to } = monthRange;
 
   const fetchMatrixData = useCallback(async (): Promise<MatrixResponse> => {
     const params = new URLSearchParams();
