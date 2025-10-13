@@ -1201,22 +1201,22 @@ export async function getStudentCoachPanelSummary(
     withTimeout(
       sql`
           WITH panel AS (
-            SELECT student_id, to_jsonb(p.*) AS payload
+            SELECT student_id, to_jsonb(p) AS payload
             FROM analytics.v_student_coaching_panel_enhanced AS p
             WHERE p.student_id = ${studentId}::bigint
           ),
           risk AS (
-            SELECT student_id, to_jsonb(r.*) AS payload
+            SELECT student_id, to_jsonb(r) AS payload
             FROM analytics.v_at_risk_students AS r
             WHERE r.student_id = ${studentId}::bigint
           ),
           plan AS (
-            SELECT student_id, to_jsonb(lp.*) AS payload
+            SELECT student_id, to_jsonb(lp) AS payload
             FROM analytics.v_student_lesson_plan AS lp
             WHERE lp.student_id = ${studentId}::bigint
           ),
           config AS (
-            SELECT to_jsonb(pc.*) AS payload
+            SELECT to_jsonb(pc) AS payload
             FROM analytics.progress_config AS pc
             ORDER BY pc.updated_at DESC NULLS LAST
             LIMIT 1
@@ -1240,7 +1240,7 @@ export async function getStudentCoachPanelSummary(
     ),
     withTimeout(
       sql`
-        SELECT to_jsonb(d.*) AS payload
+        SELECT to_jsonb(d) AS payload
         FROM analytics.v_student_daily_minutes_30d AS d
         WHERE d.student_id = ${studentId}::bigint
       `,
