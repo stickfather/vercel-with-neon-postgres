@@ -1093,7 +1093,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setSessionsError(null);
       try {
         const response = await fetch(
-          `/api/payroll/reports/day-sessions?staffId=${staffId}&date=${workDate}`,
+          `/api/payroll/day-sessions?staff_id=${staffId}&date=${workDate}`,
           createNoStoreInit(),
         );
         if (!response.ok) {
@@ -2129,7 +2129,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               ×
             </button>
             <PinPrompt
-              scope="management"
+              scope="manager"
               title="PIN de gerencia requerido"
               description="Confirma el PIN de gerencia para continuar."
               ctaLabel="Validar PIN"

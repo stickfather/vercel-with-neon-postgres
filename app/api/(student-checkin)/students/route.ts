@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { searchStudents } from "@/features/student-checkin/data/queries";
 
 const DEFAULT_LIMIT = 6;

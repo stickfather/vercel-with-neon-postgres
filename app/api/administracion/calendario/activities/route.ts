@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 import { createActivity } from "@/features/administration/data/calendar";
 

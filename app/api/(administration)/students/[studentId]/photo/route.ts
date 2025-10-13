@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { del, put } from "@vercel/blob";
 
 import { getSqlClient, normalizeRows } from "@/lib/db/client";

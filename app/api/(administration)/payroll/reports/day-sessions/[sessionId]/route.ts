@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 import {
   deleteStaffDaySession,
@@ -15,7 +15,7 @@ type RouteContext = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const allowed = await hasValidPinSession("management");
+  const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
       { error: "PIN de gerencia requerido." },
@@ -83,7 +83,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
-  const allowed = await hasValidPinSession("management");
+  const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
       { error: "PIN de gerencia requerido." },

@@ -13,7 +13,7 @@ type ConfigurationDashboardProps = {
   initialStaff: StaffMemberRecord[];
   staffError: string | null;
   pinStatuses: PinStatus[];
-  hasManagementSession: boolean;
+  hasManagerSession: boolean;
 };
 
 type PinFormState = {
@@ -57,35 +57,35 @@ export function ConfigurationDashboard({
   initialStaff,
   staffError,
   pinStatuses,
-  hasManagementSession,
+  hasManagerSession,
 }: ConfigurationDashboardProps) {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("staff");
   const [statuses, setStatuses] = useState(pinStatuses);
   const [forms, setForms] = useState<Record<PinScope, PinFormState>>({
     staff: { ...emptyForm },
-    management: { ...emptyForm },
+    manager: { ...emptyForm },
   });
   const [loadingScope, setLoadingScope] = useState<PinScope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [managementUnlocked, setManagementUnlocked] = useState(hasManagementSession);
+  const [managerUnlocked, setManagerUnlocked] = useState(hasManagerSession);
 
   const staffStatus = useMemo(
     () => findStatus(statuses, "staff"),
     [statuses],
   );
-  const managementStatus = useMemo(
-    () => findStatus(statuses, "management"),
+  const managerStatus = useMemo(
+    () => findStatus(statuses, "manager"),
     [statuses],
   );
 
   useEffect(() => {
-    if (!managementStatus.isSet && !managementUnlocked) {
-      setManagementUnlocked(true);
+    if (!managerStatus.isSet && !managerUnlocked) {
+      setManagerUnlocked(true);
     }
-  }, [managementStatus.isSet, managementUnlocked]);
+  }, [managerStatus.isSet, managerUnlocked]);
 
   const handleFormChange = (scope: PinScope, field: keyof PinFormState, value: string) => {
     setForms((previous) => ({
@@ -109,12 +109,12 @@ export function ConfigurationDashboard({
       setError("Los PIN ingresados no coinciden.");
       return;
     }
-    if (scope === "staff" && !managerConfirmation) {
-      setError("Ingresa el PIN de gerencia para actualizar el acceso del personal.");
-      return;
-    }
-    if (scope === "management" && managementStatus.isSet && !managerConfirmation) {
-      setError("Ingresa el PIN de gerencia actual para cambiarlo.");
+
+    const requiresManagerVerification =
+      scope === "staff" || (scope === "manager" && managerStatus.isSet);
+
+    if (requiresManagerVerification && !managerConfirmation) {
+      setError("Ingresa el PIN de gerencia para continuar.");
       return;
     }
 
@@ -122,25 +122,76 @@ export function ConfigurationDashboard({
     setError(null);
 
     try {
-      const response = await fetch("/api/(administration)/security-pins/update", {
+      if (requiresManagerVerification && managerConfirmation) {
+        const verifyResponse = await fetch("/api/security/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "manager", pin: managerConfirmation }),
+        });
+
+        const verifyPayload = await verifyResponse.json().catch(() => ({}));
+        if (!verifyResponse.ok || verifyPayload?.valid !== true) {
+          throw new Error(
+            verifyPayload?.error ?? "El PIN de gerencia no es correcto.",
+          );
+        }
+      }
+
+      const body: Record<string, string> = {};
+      if (scope === "staff") {
+        body.staffPin = pinValue;
+      } else {
+        body.managerPin = pinValue;
+      }
+
+      const updateResponse = await fetch("/api/security/pins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scope,
-          pin: pinValue,
-          managerPin: managerConfirmation || undefined,
-        }),
+        body: JSON.stringify(body),
       });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
+      if (!updateResponse.ok) {
+        const payload = await updateResponse.json().catch(() => ({}));
         throw new Error(payload?.error ?? "No se pudo actualizar el PIN.");
       }
 
-      if (payload?.status) {
+      const statusResponse = await fetch("/api/security/pins", {
+        cache: "no-store",
+      });
+      const statusPayload = (await statusResponse.json().catch(() => null)) as
+        | { hasManager?: unknown; hasStaff?: unknown; updatedAt?: unknown }
+        | null;
+
+      if (statusPayload) {
+        const updatedAt =
+          typeof statusPayload.updatedAt === "string"
+            ? statusPayload.updatedAt
+            : statusPayload.updatedAt instanceof Date
+              ? statusPayload.updatedAt.toISOString()
+              : null;
+        setStatuses([
+          {
+            scope: "staff",
+            isSet: Boolean(statusPayload.hasStaff),
+            updatedAt,
+          },
+          {
+            scope: "manager",
+            isSet: Boolean(statusPayload.hasManager),
+            updatedAt,
+          },
+        ]);
+      } else {
         setStatuses((previous) => {
           const other = previous.filter((status) => status.scope !== scope);
-          return [...other, payload.status as PinStatus];
+          return [
+            ...other,
+            {
+              scope,
+              isSet: true,
+              updatedAt: new Date().toISOString(),
+            },
+          ];
         });
       }
 
@@ -149,14 +200,14 @@ export function ConfigurationDashboard({
           scope === "staff"
             ? { ...emptyForm }
             : { ...previous.staff, managerPin: "" },
-        management:
-          scope === "management"
+        manager:
+          scope === "manager"
             ? { ...emptyForm }
-            : { ...previous.management, managerPin: "" },
+            : { ...previous.manager, managerPin: "" },
       }));
 
-      if (scope === "management") {
-        setManagementUnlocked(true);
+      if (scope === "manager") {
+        setManagerUnlocked(true);
       }
 
       setToast({
@@ -181,22 +232,22 @@ export function ConfigurationDashboard({
   };
 
   const renderSecurityPanel = () => {
-    if (!managementUnlocked) {
+    if (!managerUnlocked) {
       return (
         <div className="flex flex-col items-center justify-center gap-6">
           <PinPrompt
-            scope="management"
+            scope="manager"
             title="Protegido con PIN de gerencia"
             description="Ingresa el PIN de gerencia para gestionar los accesos de seguridad."
             ctaLabel="Desbloquear"
-            onSuccess={() => setManagementUnlocked(true)}
+            onSuccess={() => setManagerUnlocked(true)}
           />
         </div>
       );
     }
 
     const staffForm = forms.staff;
-    const managementForm = forms.management;
+    const managerForm = forms.manager;
 
     return (
       <div className="flex flex-col gap-8">
@@ -271,21 +322,21 @@ export function ConfigurationDashboard({
           <header className="mb-5 flex flex-col gap-1 text-left">
             <h2 className="text-xl font-black text-brand-deep">PIN de gerencia</h2>
             <p className="text-sm text-brand-ink-muted">
-              {managementStatus.isSet
-                ? `Última actualización: ${formatDate(managementStatus.updatedAt)}`
+              {managerStatus.isSet
+                ? `Última actualización: ${formatDate(managerStatus.updatedAt)}`
                 : "Configura un PIN maestro para controlar accesos sensibles."}
             </p>
           </header>
           <div className="grid gap-3 sm:grid-cols-3">
-            {managementStatus.isSet && (
+            {managerStatus.isSet && (
               <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
                 PIN actual
                 <input
                   type="password"
                   inputMode="numeric"
-                  value={managementForm.managerPin}
+                  value={managerForm.managerPin}
                   onChange={(event) =>
-                    handleFormChange("management", "managerPin", event.target.value)
+                    handleFormChange("manager", "managerPin", event.target.value)
                   }
                   className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
                   maxLength={8}
@@ -298,8 +349,8 @@ export function ConfigurationDashboard({
               <input
                 type="password"
                 inputMode="numeric"
-                value={managementForm.pin}
-                onChange={(event) => handleFormChange("management", "pin", event.target.value)}
+                value={managerForm.pin}
+                onChange={(event) => handleFormChange("manager", "pin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
                 maxLength={8}
                 required
@@ -310,9 +361,9 @@ export function ConfigurationDashboard({
               <input
                 type="password"
                 inputMode="numeric"
-                value={managementForm.confirmPin}
+                value={managerForm.confirmPin}
                 onChange={(event) =>
-                  handleFormChange("management", "confirmPin", event.target.value)
+                  handleFormChange("manager", "confirmPin", event.target.value)
                 }
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
                 maxLength={8}
@@ -322,11 +373,11 @@ export function ConfigurationDashboard({
           </div>
           <button
             type="button"
-            onClick={() => submitPinUpdate("management")}
-            disabled={loadingScope === "management"}
+            onClick={() => submitPinUpdate("manager")}
+            disabled={loadingScope === "manager"}
             className="cta-ripple mt-4 inline-flex items-center justify-center rounded-full bg-brand-deep px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {loadingScope === "management" ? "Guardando…" : "Actualizar PIN de gerencia"}
+            {loadingScope === "manager" ? "Guardando…" : "Actualizar PIN de gerencia"}
           </button>
         </section>
 

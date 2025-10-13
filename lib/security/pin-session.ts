@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies } from "next/headers.js";
 import { createHmac, randomBytes } from "crypto";
 
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
@@ -45,11 +45,11 @@ function setCookie(
   throw new Error("No se puede establecer la cookie de sesión del PIN en este contexto.");
 }
 
-export type PinScope = "staff" | "management";
+export type PinScope = "staff" | "manager";
 
 const COOKIE_NAMES: Record<PinScope, string> = {
   staff: "ir_pin_staff",
-  management: "ir_pin_management",
+  manager: "ir_pin_management",
 };
 
 const SESSION_TTL_MINUTES = 10;
@@ -90,7 +90,7 @@ function decodeSession(value: string): {
     if (signPayload(`${scopeRaw}|${expiresRaw}|${nonce}`) !== signature) {
       return { scope: null, expiresAt: null, valid: false };
     }
-    if (scopeRaw !== "staff" && scopeRaw !== "management") {
+    if (scopeRaw !== "staff" && scopeRaw !== "manager") {
       return { scope: null, expiresAt: null, valid: false };
     }
     const expiresAt = new Date(expiresRaw);
@@ -103,7 +103,7 @@ function decodeSession(value: string): {
   }
 }
 
-export async function hasValidPinSession(scope: PinScope): Promise<boolean> {
+async function checkPinSession(scope: PinScope): Promise<boolean> {
   const cookieName = COOKIE_NAMES[scope];
   const store = await resolveCookies();
   const stored = readCookie(store, cookieName);
@@ -119,6 +119,8 @@ export async function hasValidPinSession(scope: PinScope): Promise<boolean> {
   }
   return true;
 }
+
+export let hasValidPinSession: (scope: PinScope) => Promise<boolean> = checkPinSession;
 
 export async function setPinSession(
   scope: PinScope,
@@ -143,4 +145,14 @@ export async function clearPinSession(scope: PinScope) {
   const cookieName = COOKIE_NAMES[scope];
   const store = await resolveCookies();
   deleteCookie(store, cookieName);
+}
+
+export function __setHasValidPinSessionForTests(
+  fn: (scope: PinScope) => Promise<boolean>,
+) {
+  hasValidPinSession = fn;
+}
+
+export function __resetHasValidPinSessionForTests() {
+  hasValidPinSession = checkPinSession;
 }

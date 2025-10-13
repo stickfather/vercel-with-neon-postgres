@@ -38,14 +38,14 @@ export function PinPrompt({
     setError(null);
 
     try {
-      const response = await fetch("/api/(administration)/security-pins/verify", {
+      const response = await fetch("/api/security/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope, pin }),
+        body: JSON.stringify({ type: scope === "staff" ? "staff" : "manager", pin }),
       });
 
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.valid !== true) {
         throw new Error(payload?.error ?? "El PIN no es correcto.");
       }
 

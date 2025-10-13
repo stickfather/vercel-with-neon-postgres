@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { fetchPayrollMatrix } from "@/features/administration/data/payroll-reports";
 
 export const dynamic = "force-dynamic";

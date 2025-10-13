@@ -1,10 +1,5 @@
-import { promisify } from "util";
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "crypto";
-
 import { getSqlClient, normalizeRows, type SqlRow } from "@/lib/db/client";
 import type { PinScope } from "@/lib/security/pin-session";
-
-const scrypt = promisify(scryptCallback);
 
 export type PinStatus = {
   scope: PinScope;
@@ -12,69 +7,24 @@ export type PinStatus = {
   updatedAt: string | null;
 };
 
-const VALID_SCOPES: PinScope[] = ["staff", "management"];
+export type SecurityPinsSummary = {
+  hasManager: boolean;
+  hasStaff: boolean;
+  updatedAt: string | null;
+};
 
-function normalizeScope(scope: PinScope): PinScope {
-  return scope === "management" ? "management" : "staff";
-}
+const PIN_ROW_ID = 1;
 
-async function ensureTable() {
-  const sql = getSqlClient();
-  await sql`
-    CREATE TABLE IF NOT EXISTS security_pins (
-      id bigserial PRIMARY KEY,
-      manager_pin_hash text,
-      staff_pin_hash text,
-      updated_at timestamptz DEFAULT now()
-    )
-  `;
-}
+const COLUMN_BY_SCOPE: Record<PinScope, "manager_pin_hash" | "staff_pin_hash"> = {
+  staff: "staff_pin_hash",
+  manager: "manager_pin_hash",
+};
 
-async function fetchPinRow(scope: PinScope): Promise<SqlRow | undefined> {
-  const sql = getSqlClient();
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT scope, pin_hash, updated_at
-    FROM security_pins
-    WHERE scope = ${normalizeScope(scope)}
-    LIMIT 1
-  `);
-  return rows[0];
-}
-
-function parseStatus(scope: PinScope, row?: SqlRow): PinStatus {
-  const isSet = Boolean(
-    row && typeof row.pin_hash === "string" && row.pin_hash.trim().length > 0,
-  );
-  const updatedAtValue = row?.updated_at;
-  const updatedAt =
-    updatedAtValue instanceof Date
-      ? updatedAtValue.toISOString()
-      : typeof updatedAtValue === "string"
-        ? updatedAtValue
-        : null;
-
-  return { scope, isSet, updatedAt };
-}
-
-async function hashPin(pin: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const derived = (await scrypt(pin, salt, 64)) as Buffer;
-  return `scrypt:${salt}:${derived.toString("hex")}`;
-}
-
-async function verifyHash(pin: string, hash: string): Promise<boolean> {
-  const [method, salt, digest] = hash.split(":");
-  if (method !== "scrypt" || !salt || !digest) {
-    return false;
-  }
-
-  const derived = (await scrypt(pin, salt, 64)) as Buffer;
-  const expected = Buffer.from(digest, "hex");
-  if (expected.length !== derived.length) {
-    return false;
-  }
-  return timingSafeEqual(derived, expected);
-}
+type PinsRow = {
+  manager_pin_hash: string | null;
+  staff_pin_hash: string | null;
+  updated_at: Date | string | null;
+};
 
 function sanitizePin(pin: string): string {
   const trimmed = pin.trim();
@@ -84,64 +34,201 @@ function sanitizePin(pin: string): string {
   return trimmed;
 }
 
-export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
-  await ensureTable();
+async function ensurePgcrypto(sql = getSqlClient()) {
+  try {
+    await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`;
+  } catch (error) {
+    console.error("No se pudo asegurar la extensión pgcrypto", error);
+    throw new Error("No se pudo preparar el almacenamiento seguro de PIN.");
+  }
+}
+
+async function hashPin(pin: string): Promise<string> {
+  await ensurePgcrypto();
   const sql = getSqlClient();
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT scope, pin_hash, updated_at
+    SELECT crypt(${pin}, gen_salt('bf', 12)) AS hash
+  `);
+  const hash = rows[0]?.hash;
+  if (typeof hash !== "string" || !hash.trim()) {
+    throw new Error("No se pudo generar el hash del PIN.");
+  }
+  return hash;
+}
+
+async function verifyHash(pin: string, hash: string | null | undefined): Promise<boolean> {
+  if (!hash) return false;
+  await ensurePgcrypto();
+  const sql = getSqlClient();
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT crypt(${pin}, ${hash}) = ${hash} AS ok
+  `);
+  return rows[0]?.ok === true;
+}
+
+function parseUpdatedAt(value: Date | string | null | undefined): string | null {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string") return value;
+  return null;
+}
+
+async function ensureStorage() {
+  const sql = getSqlClient();
+  await ensurePgcrypto(sql);
+  await sql`
+    CREATE TABLE IF NOT EXISTS security_pins (
+      id bigserial PRIMARY KEY,
+      manager_pin_hash text,
+      staff_pin_hash text,
+      updated_at timestamptz DEFAULT now()
+    )
+  `;
+  await sql`ALTER TABLE security_pins ALTER COLUMN manager_pin_hash DROP NOT NULL`;
+  await sql`ALTER TABLE security_pins ALTER COLUMN staff_pin_hash DROP NOT NULL`;
+  await sql`INSERT INTO security_pins (id) VALUES (${PIN_ROW_ID}) ON CONFLICT (id) DO NOTHING`;
+  await sql`DELETE FROM security_pins WHERE id <> ${PIN_ROW_ID}`;
+}
+
+async function fetchPinsRow(): Promise<PinsRow> {
+  const sql = getSqlClient();
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT manager_pin_hash, staff_pin_hash, updated_at
     FROM security_pins
+    WHERE id = ${PIN_ROW_ID}
+    LIMIT 1
   `);
 
-  const byScope = new Map<string, SqlRow>();
-  rows.forEach((row) => {
-    if (typeof row.scope === "string") {
-      byScope.set(row.scope.trim().toLowerCase(), row);
-    }
-  });
+  const row = rows[0] as PinsRow | undefined;
+  if (row) {
+    return row;
+  }
 
-  return VALID_SCOPES.map((scope) => parseStatus(scope, byScope.get(scope)));
+  return {
+    manager_pin_hash: null,
+    staff_pin_hash: null,
+    updated_at: null,
+  };
+}
+
+function statusFromRow(scope: PinScope, row: PinsRow): PinStatus {
+  const column = COLUMN_BY_SCOPE[scope];
+  const hash = row?.[column];
+  return {
+    scope,
+    isSet: typeof hash === "string" && hash.trim().length > 0,
+    updatedAt: parseUpdatedAt(row?.updated_at),
+  };
+}
+
+export async function getSecurityPinsSummary(): Promise<SecurityPinsSummary> {
+  await ensureStorage();
+  const row = await fetchPinsRow();
+  const updatedAt = parseUpdatedAt(row?.updated_at);
+  const hasManager = typeof row.manager_pin_hash === "string" && row.manager_pin_hash.trim().length > 0;
+  const hasStaff = typeof row.staff_pin_hash === "string" && row.staff_pin_hash.trim().length > 0;
+
+  return { hasManager, hasStaff, updatedAt };
+}
+
+export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
+  await ensureStorage();
+  const row = await fetchPinsRow();
+  return [statusFromRow("staff", row), statusFromRow("manager", row)];
 }
 
 export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
-  await ensureTable();
-  const row = await fetchPinRow(scope);
-  return Boolean(row && typeof row.pin_hash === "string" && row.pin_hash.trim().length > 0);
+  const statuses = await getSecurityPinStatuses();
+  return statuses.some((status) => status.scope === scope && status.isSet);
 }
 
-export async function verifySecurityPin(
-  scope: PinScope,
-  pin: string,
-): Promise<boolean> {
-  await ensureTable();
-  const row = await fetchPinRow(scope);
-  if (!row) {
-    return false;
-  }
-  const hashValue = typeof row.pin_hash === "string" ? row.pin_hash.trim() : "";
-  if (!hashValue) {
-    return false;
-  }
-  try {
-    return await verifyHash(pin, hashValue);
-  } catch (error) {
-    console.error("Fallo al verificar PIN", error);
-    return false;
-  }
+export async function verifySecurityPin(scope: PinScope, pin: string): Promise<boolean> {
+  await ensureStorage();
+  const sanitized = sanitizePin(pin);
+  const row = await fetchPinsRow();
+  const column = COLUMN_BY_SCOPE[scope];
+  const hash = row?.[column];
+  return verifyHash(sanitized, hash);
 }
 
 export async function updateSecurityPin(scope: PinScope, pin: string): Promise<PinStatus> {
-  await ensureTable();
-  const sanitizedPin = sanitizePin(pin);
-  const hashed = await hashPin(sanitizedPin);
+  await ensureStorage();
   const sql = getSqlClient();
+  const column = COLUMN_BY_SCOPE[scope];
+  const sanitized = sanitizePin(pin);
+  const hashed = await hashPin(sanitized);
 
-  await sql`
-    INSERT INTO security_pins (scope, pin_hash, updated_at)
-    VALUES (${normalizeScope(scope)}, ${hashed}, now())
-    ON CONFLICT (scope)
-    DO UPDATE SET pin_hash = EXCLUDED.pin_hash, updated_at = now()
+  const query = `
+    UPDATE security_pins
+    SET ${column} = $1,
+        updated_at = now()
+    WHERE id = ${PIN_ROW_ID}
   `;
 
-  const row = await fetchPinRow(scope);
-  return parseStatus(scope, row);
+  await (sql as unknown as { unsafe: (query: string, params?: unknown[]) => Promise<unknown> }).unsafe(
+    query,
+    [hashed],
+  );
+
+  const row = await fetchPinsRow();
+  return statusFromRow(scope, row);
+}
+
+export async function updateSecurityPins({
+  staffPin,
+  managerPin,
+}: {
+  staffPin?: string;
+  managerPin?: string;
+}): Promise<void> {
+  await ensureStorage();
+  const sql = getSqlClient();
+
+  if (!staffPin && !managerPin) {
+    throw new Error("Debes indicar al menos un PIN para actualizar.");
+  }
+
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  if (typeof staffPin === "string") {
+    const sanitized = sanitizePin(staffPin);
+    const hashed = await hashPin(sanitized);
+    updates.push("staff_pin_hash = $" + (updates.length + 1));
+    values.push(hashed);
+  }
+
+  if (typeof managerPin === "string") {
+    const sanitized = sanitizePin(managerPin);
+    const hashed = await hashPin(sanitized);
+    updates.push("manager_pin_hash = $" + (updates.length + 1));
+    values.push(hashed);
+  }
+
+  updates.push(`updated_at = now()`);
+
+  const query = `
+    UPDATE security_pins
+    SET ${updates.join(", ")}
+    WHERE id = ${PIN_ROW_ID}
+  `;
+
+  await (sql as unknown as { unsafe: (query: string, params?: unknown[]) => Promise<unknown> }).unsafe(
+    query,
+    values,
+  );
+}
+
+export { sanitizePin };
+
+export async function _hashPinForTests(pin: string): Promise<string> {
+  await ensureStorage();
+  return hashPin(pin);
+}
+
+export async function _verifyHashForTests(
+  pin: string,
+  hash: string | null | undefined,
+): Promise<boolean> {
+  await ensureStorage();
+  return verifyHash(pin, hash);
 }

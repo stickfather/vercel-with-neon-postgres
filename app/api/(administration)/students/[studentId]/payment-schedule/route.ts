@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 import { createPaymentScheduleEntry } from "@/features/administration/data/student-profile";
 

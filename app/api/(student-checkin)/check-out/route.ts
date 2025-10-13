@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { registerCheckOut } from "@/features/student-checkin/data/queries";
 
 export async function POST(request: Request) {

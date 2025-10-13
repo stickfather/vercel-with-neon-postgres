@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { deleteStaffMember, updateStaffMember } from "@/features/staff/data/queries";
 
 export async function PATCH(request: Request, context: any) {
