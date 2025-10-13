@@ -154,13 +154,15 @@ export async function verifySecurityPin(scope: PinScope, pin: string): Promise<b
   const column = COLUMN_BY_SCOPE[scope];
   const rawValue = row?.[column];
 
-  if (!rawValue) return false;
+  if (typeof rawValue !== "string") {
+    return false;
+  }
 
   if (looksLikeBcrypt(rawValue)) {
     return verifyHash(sanitized, rawValue);
   }
 
-  if (typeof rawValue === "string" && rawValue.trim() === sanitized) {
+  if (rawValue.trim() === sanitized) {
     await updateSecurityPin(scope, sanitized);
     return true;
   }
