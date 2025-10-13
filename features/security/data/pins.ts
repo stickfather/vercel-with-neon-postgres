@@ -66,6 +66,12 @@ async function verifyHash(pin: string, hash: string | null | undefined): Promise
   return rows[0]?.ok === true;
 }
 
+function looksLikeBcrypt(hash: unknown): hash is string {
+  if (typeof hash !== "string") return false;
+  const trimmed = hash.trim();
+  return /^\$2[aby]\$\d{2}\$[./0-9A-Za-z]{53}$/.test(trimmed);
+}
+
 function parseUpdatedAt(value: Date | string | null | undefined): string | null {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "string") return value;
@@ -146,8 +152,20 @@ export async function verifySecurityPin(scope: PinScope, pin: string): Promise<b
   const sanitized = sanitizePin(pin);
   const row = await fetchPinsRow();
   const column = COLUMN_BY_SCOPE[scope];
-  const hash = row?.[column];
-  return verifyHash(sanitized, hash);
+  const rawValue = row?.[column];
+
+  if (!rawValue) return false;
+
+  if (looksLikeBcrypt(rawValue)) {
+    return verifyHash(sanitized, rawValue);
+  }
+
+  if (typeof rawValue === "string" && rawValue.trim() === sanitized) {
+    await updateSecurityPin(scope, sanitized);
+    return true;
+  }
+
+  return false;
 }
 
 export async function updateSecurityPin(scope: PinScope, pin: string): Promise<PinStatus> {
