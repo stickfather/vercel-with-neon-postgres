@@ -351,19 +351,6 @@ function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-function toMinutesFromHours(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.round(value * 60);
-  }
-  if (typeof value === "string" && value.trim().length) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return Math.round(parsed * 60);
-    }
-  }
-  return null;
-}
-
 function toHoursFromMinutes(value: unknown, fractionDigits = 2): number | null {
   const minutes = toInteger(value);
   if (minutes == null) return null;
@@ -592,10 +579,42 @@ export async function fetchPayrollMatrix({
   } = resolveMonthWindow(month);
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.staff_day_matrix_v
-    WHERE work_date >= ${monthStart}::date
-      AND work_date < ${monthEndExclusive}::date
+    WITH session_totals AS (
+      SELECT
+        s.staff_id,
+        s.work_date,
+        SUM(COALESCE(s.minutes, 0))::integer AS total_minutes
+      FROM public.staff_day_sessions_v s
+      WHERE s.work_date >= ${monthStart}::date
+        AND s.work_date < ${monthEndExclusive}::date
+      GROUP BY s.staff_id, s.work_date
+    ),
+    approvals AS (
+      SELECT
+        a.staff_id,
+        a.work_date,
+        a.approved,
+        a.approved_minutes,
+        a.approved_by,
+        a.approved_at
+      FROM payroll_day_approvals a
+      WHERE a.work_date >= ${monthStart}::date
+        AND a.work_date < ${monthEndExclusive}::date
+    )
+    SELECT
+      COALESCE(st.staff_id, ap.staff_id) AS staff_id,
+      sm.full_name AS staff_name,
+      COALESCE(st.work_date, ap.work_date) AS work_date,
+      COALESCE(st.total_minutes, 0) AS total_minutes,
+      ap.approved AS approved,
+      ap.approved_minutes AS approved_minutes
+    FROM session_totals st
+    FULL OUTER JOIN approvals ap
+      ON ap.staff_id = st.staff_id AND ap.work_date = st.work_date
+    LEFT JOIN staff_members sm ON sm.id = COALESCE(st.staff_id, ap.staff_id)
+    WHERE COALESCE(st.staff_id, ap.staff_id) IS NOT NULL
+      AND COALESCE(st.work_date, ap.work_date) >= ${monthStart}::date
+      AND COALESCE(st.work_date, ap.work_date) < ${monthEndExclusive}::date
     ORDER BY staff_id, work_date
   `);
 
@@ -693,20 +712,8 @@ export async function fetchDaySessions({
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
-      s.staff_id AS staff_id,
-      s.work_date AS work_date,
-      s.checkin_time AS checkin_time,
-      s.checkout_time AS checkout_time,
-      ROUND((s.minutes / 60.0)::numeric, 2) AS hours
-    FROM public.staff_day_sessions_v s
-    WHERE s.staff_id = ${staffId}::bigint
-      AND s.work_date = ${workDate}::date
-    ORDER BY s.checkin_time NULLS LAST
-  `);
-
-  const attendanceRows = normalizeRows<SqlRow>(await sql`
-    SELECT
       sa.id,
+      sa.staff_id,
       timezone(${TIMEZONE}, sa.checkin_time) AS checkin_local,
       timezone(${TIMEZONE}, sa.checkout_time) AS checkout_local
     FROM staff_attendance sa
@@ -715,17 +722,30 @@ export async function fetchDaySessions({
     ORDER BY sa.checkin_time ASC
   `);
 
-  return rows.map((row, index) => {
-    const sessionId = Number(attendanceRows[index]?.id ?? NaN);
-    const checkinTime = coerceString(row.checkin_time);
-    const checkoutTime = coerceString(row.checkout_time);
+  return rows.map((row) => {
+    const sessionId = Number(row.id ?? NaN);
+    const checkinTime = coerceString(row.checkin_local ?? row.checkin_time);
+    const checkoutTime = coerceString(row.checkout_local ?? row.checkout_time);
+
+    let hoursValue = 0;
+
+    if (checkinTime && checkoutTime) {
+      try {
+        const minutes = computeDurationMinutes(checkinTime, checkoutTime);
+        hoursValue = minutesToHours(minutes);
+      } catch (error) {
+        console.warn("No se pudo calcular la duración de la sesión", error);
+        hoursValue = 0;
+      }
+    }
+
     return {
       sessionId: Number.isFinite(sessionId) ? sessionId : null,
       staffId: Number(row.staff_id ?? staffId),
-      workDate: coerceString(row.work_date) ?? workDate,
+      workDate,
       checkinTime,
       checkoutTime,
-      hours: toNumber(row.hours ?? row.minutes ?? 0, 2),
+      hours: Number(hoursValue.toFixed(2)),
     };
   });
 }
@@ -1142,19 +1162,15 @@ export async function overrideSessionsAndApprove({
 
     const recalculatedRows = normalizeRows<SqlRow>(await sql`
       SELECT
-        m.total_minutes AS total_minutes,
-        m.approved_minutes AS approved_minutes,
-        m.total_hours AS total_hours
-      FROM public.staff_day_matrix_v m
-      WHERE m.staff_id = ${staffId}::bigint
-        AND m.work_date = ${workDate}::date
-      LIMIT 1
+        SUM(COALESCE(s.minutes, 0))::integer AS total_minutes
+      FROM public.staff_day_sessions_v s
+      WHERE s.staff_id = ${staffId}::bigint
+        AND s.work_date = ${workDate}::date
     `);
 
     const metrics = recalculatedRows[0] ?? {};
     const recalculatedMinutes =
-      toInteger(metrics.total_minutes ?? metrics.minutes ?? null) ??
-      toMinutesFromHours(metrics.total_hours ?? metrics.hours ?? null);
+      toInteger(metrics.total_minutes ?? metrics.minutes ?? null) ?? 0;
 
     await applyStaffDayApproval(sql, staffId, workDate, recalculatedMinutes);
     await sql`COMMIT`;

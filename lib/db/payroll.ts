@@ -15,17 +15,56 @@ export async function getStaffDayMatrix({ from, to }: { from: string; to: string
   const sql = await getSqlClient();
   const res = await sql.query(
     `
+    WITH session_totals AS (
+      SELECT
+        s.staff_id,
+        s.work_date,
+        SUM(COALESCE(s.minutes, 0))::integer AS total_minutes
+      FROM public.staff_day_sessions_v s
+      WHERE s.work_date BETWEEN $1::date AND $2::date
+      GROUP BY s.staff_id, s.work_date
+    ),
+    approvals AS (
+      SELECT
+        a.staff_id,
+        a.work_date,
+        a.approved,
+        a.approved_minutes,
+        a.approved_by,
+        a.approved_at
+      FROM payroll_day_approvals a
+      WHERE a.work_date BETWEEN $1::date AND $2::date
+    ),
+    combined AS (
+      SELECT
+        COALESCE(st.staff_id, ap.staff_id) AS staff_id,
+        COALESCE(st.work_date, ap.work_date) AS work_date,
+        COALESCE(st.total_minutes, 0) AS total_minutes,
+        ap.approved,
+        ap.approved_minutes,
+        ap.approved_by,
+        ap.approved_at
+      FROM session_totals st
+      FULL OUTER JOIN approvals ap
+        ON ap.staff_id = st.staff_id AND ap.work_date = st.work_date
+      WHERE COALESCE(st.staff_id, ap.staff_id) IS NOT NULL
+        AND COALESCE(st.work_date, ap.work_date) BETWEEN $1::date AND $2::date
+    )
     SELECT
-      m.staff_id, m.work_date, m.approved, m.approved_minutes,
-      m.approved_by, m.approved_at, m.total_minutes,
+      c.staff_id,
+      c.work_date,
+      c.approved,
+      c.approved_minutes,
+      c.approved_by,
+      c.approved_at,
+      c.total_minutes,
       ROUND(
-        CASE WHEN m.approved IS TRUE
-             THEN COALESCE(m.approved_minutes, m.total_minutes)::numeric / 60.0
-             ELSE m.total_minutes::numeric / 60.0 END, 2
+        CASE WHEN c.approved IS TRUE
+             THEN COALESCE(c.approved_minutes, c.total_minutes)::numeric / 60.0
+             ELSE c.total_minutes::numeric / 60.0 END, 2
       ) AS display_hours
-    FROM public.staff_day_matrix_v m
-    WHERE m.work_date BETWEEN $1::date AND $2::date
-    ORDER BY m.staff_id, m.work_date;`,
+    FROM combined c
+    ORDER BY c.staff_id, c.work_date;`,
     [from, to],
   );
   return normalizeRows<StaffDayMatrixRow>(res);

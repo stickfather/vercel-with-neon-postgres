@@ -181,6 +181,94 @@ async function loadPinTableMetadata(sql = getSqlClient()): Promise<PinTableMetad
   return { columnNames, shape: detectPinTableShape({ columnNames }) };
 }
 
+async function migrateCombinedPins(
+  sql: ReturnType<typeof getSqlClient>,
+  shape: Extract<PinTableShape, { kind: "combined" }>,
+  columns: { scope: string; hash: string; updatedAt: string | null },
+): Promise<void> {
+  const rows = normalizeRows<SqlRow>(
+    await runUnsafeQuery(
+      sql,
+      `
+        SELECT *
+        FROM security_pins
+      `,
+      [],
+    ),
+  );
+
+  if (!rows.length) {
+    return;
+  }
+
+  const upsertMigrated = async (
+    scope: PinScope,
+    hash: unknown,
+    updatedAt: string | null,
+  ) => {
+    if (typeof hash !== "string" || !hash.trim().length) {
+      return;
+    }
+
+    const scopeIdentifier = quoteIdentifier(columns.scope);
+    const hashIdentifier = quoteIdentifier(columns.hash);
+    const params: unknown[] = [normalizeScope(scope), hash];
+    const insertColumns = [scopeIdentifier, hashIdentifier];
+    const insertValues = ["$1", "$2"];
+    const updateAssignments = [`${hashIdentifier} = EXCLUDED.${hashIdentifier}`];
+
+    if (columns.updatedAt) {
+      const updatedIdentifier = quoteIdentifier(columns.updatedAt);
+      insertColumns.push(updatedIdentifier);
+      params.push(updatedAt);
+      insertValues.push(`COALESCE($${params.length}::timestamptz, now())`);
+      updateAssignments.push(
+        `${updatedIdentifier} = COALESCE(EXCLUDED.${updatedIdentifier}, now())`,
+      );
+    }
+
+    const query = `
+      INSERT INTO security_pins (${insertColumns.join(", ")})
+      VALUES (${insertValues.join(", ")})
+      ON CONFLICT (${scopeIdentifier})
+      DO UPDATE SET ${updateAssignments.join(", ")}
+    `;
+
+    await runUnsafeQuery(sql, query, params);
+  };
+
+  for (const row of rows) {
+    const managerHash = shape.managementColumn
+      ? (row[shape.managementColumn] as unknown)
+      : null;
+    const staffHash = shape.staffColumn
+      ? (row[shape.staffColumn] as unknown)
+      : null;
+
+    const managerUpdatedAt = readUpdatedAt(
+      row,
+      shape.managementUpdatedAtColumn ?? shape.updatedAtColumn,
+    );
+    const staffUpdatedAt = readUpdatedAt(
+      row,
+      shape.staffUpdatedAtColumn ?? shape.updatedAtColumn,
+    );
+
+    await upsertMigrated("management", managerHash, managerUpdatedAt);
+    await upsertMigrated("staff", staffHash, staffUpdatedAt);
+  }
+
+  const scopeIdentifier = quoteIdentifier(columns.scope);
+  await runUnsafeQuery(
+    sql,
+    `
+      DELETE FROM security_pins
+      WHERE ${scopeIdentifier} IS NULL
+    `,
+    [],
+  );
+}
+
 async function ensurePinsTable(): Promise<PinTableMetadata> {
   const sql = getSqlClient();
   await sql`
@@ -192,6 +280,20 @@ async function ensurePinsTable(): Promise<PinTableMetadata> {
   `;
 
   let metadata = await loadPinTableMetadata(sql);
+  const combinedShape =
+    metadata.shape.kind === "combined" ? metadata.shape : null;
+
+  if (!findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS)) {
+    try {
+      await sql`
+        ALTER TABLE security_pins
+        ADD COLUMN IF NOT EXISTS scope text
+      `;
+    } catch (error) {
+      console.warn("No se pudo agregar la columna scope a security_pins:", error);
+    }
+    metadata = await loadPinTableMetadata(sql);
+  }
 
   if (!findColumn(metadata, PIN_HASH_CANDIDATE_KEYS)) {
     try {
@@ -218,6 +320,64 @@ async function ensurePinsTable(): Promise<PinTableMetadata> {
       );
     }
     metadata = await loadPinTableMetadata(sql);
+  }
+
+  const scopeColumn =
+    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
+  const hashColumn =
+    findColumn(metadata, PIN_HASH_CANDIDATE_KEYS) ?? PIN_HASH_CANDIDATE_KEYS[0];
+  const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
+
+  if (combinedShape) {
+    try {
+      await migrateCombinedPins(sql, combinedShape, {
+        scope: scopeColumn,
+        hash: hashColumn,
+        updatedAt: updatedAtColumn ?? null,
+      });
+      metadata = await loadPinTableMetadata(sql);
+    } catch (error) {
+      console.warn("No se pudo migrar la estructura de security_pins:", error);
+    }
+  }
+
+  try {
+    await runUnsafeQuery(
+      sql,
+      `
+        DELETE FROM security_pins
+        WHERE ${quoteIdentifier(scopeColumn)} IS NULL
+      `,
+      [],
+    );
+  } catch (error) {
+    console.warn("No se pudieron limpiar filas sin scope definido:", error);
+  }
+
+  try {
+    await runUnsafeQuery(
+      sql,
+      `
+        CREATE UNIQUE INDEX IF NOT EXISTS security_pins_scope_key
+        ON security_pins (${quoteIdentifier(scopeColumn)})
+      `,
+      [],
+    );
+  } catch (error) {
+    console.warn("No se pudo crear el índice único para scope:", error);
+  }
+
+  try {
+    await runUnsafeQuery(
+      sql,
+      `
+        ALTER TABLE security_pins
+        ALTER COLUMN ${quoteIdentifier(scopeColumn)} SET NOT NULL
+      `,
+      [],
+    );
+  } catch (error) {
+    console.warn("No se pudo forzar el valor de scope como obligatorio:", error);
   }
 
   return { ...metadata, shape: detectPinTableShape({ columnNames: metadata.columnNames }) };
