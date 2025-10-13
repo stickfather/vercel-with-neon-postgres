@@ -651,6 +651,16 @@ export async function fetchPayrollMatrix({
     monthEndExclusive,
   } = resolveMonthWindow(month);
 
+  // Generate days array using Postgres to ensure correct month boundaries
+  const daysResult = normalizeRows<{ work_date: string }>(await sql`
+    SELECT generate_series(
+      ${monthStart}::date,
+      (${monthEndExclusive}::date - interval '1 day')::date,
+      interval '1 day'
+    )::date::text AS work_date
+  `);
+  const days = daysResult.map((row) => row.work_date);
+
   const rows = normalizeRows<SqlRow>(await sql`
     WITH session_totals AS (
       SELECT
@@ -690,15 +700,6 @@ export async function fetchPayrollMatrix({
       AND COALESCE(st.work_date, ap.work_date) < ${monthEndExclusive}::date
     ORDER BY staff_id, work_date
   `);
-
-  // Generate days list using date strings to avoid timezone conversion issues
-  // Extract year and month to compute the last day of the month
-  const [yearStr, monthStr] = monthStart.split("-");
-  const year = Number(yearStr);
-  const monthNum = Number(monthStr);
-  const lastDayOfMonth = new Date(year, monthNum, 0).getDate();
-  const monthEnd = `${yearStr}-${monthStr}-${String(lastDayOfMonth).padStart(2, "0")}`;
-  const days = enumerateDaysFromStrings(monthStart, monthEnd);
 
   const grouped = new Map<
     number,
