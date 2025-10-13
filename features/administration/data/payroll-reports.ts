@@ -710,41 +710,100 @@ export async function fetchDaySessions({
 }): Promise<DaySession[]> {
   const sql = getSqlClient();
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      s.staff_id AS staff_id,
-      s.work_date AS work_date,
-      s.checkin_time AS checkin_time,
-      s.checkout_time AS checkout_time,
-      ROUND((s.minutes / 60.0)::numeric, 2) AS hours
+  const columns = await fetchTableColumns(sql, "public", "staff_day_sessions_v");
+
+  const staffColumn =
+    findColumn(columns, ["staff_id", "staffid", "staff"]) ?? "staff_id";
+  const workDateColumn =
+    findColumn(columns, ["work_date", "workday", "date"]) ?? "work_date";
+  const checkinColumn = findColumn(columns, [
+    "checkin_local",
+    "checkin_time",
+    "checkin",
+    "start_time",
+  ]);
+  const checkoutColumn = findColumn(columns, [
+    "checkout_local",
+    "checkout_time",
+    "checkout",
+    "end_time",
+  ]);
+  const sessionColumn = findColumn(columns, [
+    "session_id",
+    "attendance_id",
+    "id",
+  ]);
+
+  const selectSegments = ["s.*"];
+
+  if (checkinColumn && !checkinColumn.toLowerCase().includes("local")) {
+    selectSegments.push(
+      `timezone('${TIMEZONE}', s.${quoteIdentifier(checkinColumn)}) AS checkin_local`,
+    );
+  }
+  if (checkoutColumn && !checkoutColumn.toLowerCase().includes("local")) {
+    selectSegments.push(
+      `timezone('${TIMEZONE}', s.${quoteIdentifier(checkoutColumn)}) AS checkout_local`,
+    );
+  }
+
+  const orderColumns = [workDateColumn, checkinColumn, sessionColumn]
+    .filter((value, index, array): value is string =>
+      Boolean(value) && array.indexOf(value) === index,
+    )
+    .map((column) => `s.${quoteIdentifier(column)}`);
+
+  const query = `
+    SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_v s
-    WHERE s.staff_id = ${staffId}::bigint
-      AND s.work_date = ${workDate}::date
-    ORDER BY s.checkin_time NULLS LAST
-  `);
+    WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
+      AND s.${quoteIdentifier(workDateColumn)} = $2::date
+    ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
+  `;
 
-  const attendanceRows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      sa.id,
-      timezone(${TIMEZONE}, sa.checkin_time) AS checkin_local,
-      timezone(${TIMEZONE}, sa.checkout_time) AS checkout_local
-    FROM staff_attendance sa
-    WHERE sa.staff_id = ${staffId}::bigint
-      AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${workDate}::date
-    ORDER BY sa.checkin_time ASC
-  `);
+  const client = sql as unknown as {
+    unsafe: (query: string, params?: unknown[]) => Promise<unknown>;
+  };
 
-  return rows.map((row, index) => {
-    const sessionId = Number(attendanceRows[index]?.id ?? NaN);
-    const checkinTime = coerceString(row.checkin_time);
-    const checkoutTime = coerceString(row.checkout_time);
+  const rows = normalizeRows<SqlRow>(await client.unsafe(query, [staffId, workDate]));
+
+  return rows.map((row) => {
+    const sessionId = Number(
+      row.session_id ?? row.attendance_id ?? row.id ?? NaN,
+    );
+    const checkinTime = coerceString(
+      row.checkin_local ?? row.checkin_time ?? row.checkin,
+    );
+    const checkoutTime = coerceString(
+      row.checkout_local ?? row.checkout_time ?? row.checkout,
+    );
+
+    const minutesValue =
+      toInteger(row.minutes ?? row.total_minutes ?? row.duration_minutes) ?? null;
+
+    let hoursValue = minutesValue != null ? minutesToHours(minutesValue) : 0;
+
+    if (!Number.isFinite(hoursValue)) {
+      hoursValue = 0;
+    }
+
+    if ((!minutesValue || hoursValue === 0) && checkinTime && checkoutTime) {
+      try {
+        const minutes = computeDurationMinutes(checkinTime, checkoutTime);
+        hoursValue = minutesToHours(minutes);
+      } catch (error) {
+        console.warn("No se pudo calcular la duración de la sesión", error);
+        hoursValue = 0;
+      }
+    }
+
     return {
       sessionId: Number.isFinite(sessionId) ? sessionId : null,
       staffId: Number(row.staff_id ?? staffId),
-      workDate: coerceString(row.work_date) ?? workDate,
+      workDate,
       checkinTime,
       checkoutTime,
-      hours: toNumber(row.hours ?? row.minutes ?? 0, 2),
+      hours: Number(hoursValue.toFixed(2)),
     };
   });
 }
