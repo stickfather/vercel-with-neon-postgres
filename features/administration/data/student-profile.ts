@@ -1202,7 +1202,7 @@ export async function getStudentCoachPanelSummary(
       sql`
           WITH panel AS (
             SELECT student_id, to_jsonb(p.*) AS payload
-            FROM analytics.v_student_coaching_panel_enhanced AS p
+            FROM analytics.v_student_progress_30d AS p
             WHERE p.student_id = ${studentId}::bigint
           ),
           risk AS (
