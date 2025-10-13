@@ -780,6 +780,8 @@ export async function fetchDaySessions({
   const rows = normalizeRows<SqlRow>(await client.unsafe(query, [staffId, workDate]));
 
   return rows.map((row) => {
+    // Use readRowValue for flexible column name matching to support various database schemas
+    // This handles case-insensitive matching and column name variations
     const sessionId = Number(
       readRowValue(row, ["session_id", "attendance_id", "id"]) ?? NaN,
     );
