@@ -711,18 +711,11 @@ export async function fetchDaySessions({
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      attendance_id,
-      staff_id,
-      checkin_local,
-      checkout_local,
-      minutes,
-      hours,
-      work_date
+    SELECT *
     FROM public.staff_day_sessions_local_v
     WHERE staff_id = ${staffId}::bigint
       AND work_date = ${normalizedWorkDate}::date
-    ORDER BY checkin_local NULLS LAST, attendance_id
+    ORDER BY checkin_local NULLS LAST, checkout_local NULLS LAST
   `);
 
   return rows.map((row) => {

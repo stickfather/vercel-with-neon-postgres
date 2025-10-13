@@ -151,22 +151,10 @@ export async function verifySecurityPin(scope: PinScope, pin: string): Promise<b
 }
 
 export async function updateSecurityPin(scope: PinScope, pin: string): Promise<PinStatus> {
-  await ensureStorage();
-  const sql = getSqlClient();
-  const column = COLUMN_BY_SCOPE[scope];
-  const sanitized = sanitizePin(pin);
-  const hashed = await hashPin(sanitized);
-
-  const query = `
-    UPDATE security_pins
-    SET ${column} = $1,
-        updated_at = now()
-    WHERE id = ${PIN_ROW_ID}
-  `;
-
-  await (sql as unknown as { unsafe: (query: string, params?: unknown[]) => Promise<unknown> }).unsafe(
-    query,
-    [hashed],
+  await updateSecurityPins(
+    scope === "manager"
+      ? { managerPin: pin }
+      : { staffPin: pin },
   );
 
   const row = await fetchPinsRow();
@@ -187,35 +175,31 @@ export async function updateSecurityPins({
     throw new Error("Debes indicar al menos un PIN para actualizar.");
   }
 
-  const updates: string[] = [];
-  const values: unknown[] = [];
+  let staffHash: string | null = null;
+  let managerHash: string | null = null;
 
   if (typeof staffPin === "string") {
     const sanitized = sanitizePin(staffPin);
-    const hashed = await hashPin(sanitized);
-    updates.push("staff_pin_hash = $" + (updates.length + 1));
-    values.push(hashed);
+    staffHash = await hashPin(sanitized);
   }
 
   if (typeof managerPin === "string") {
     const sanitized = sanitizePin(managerPin);
-    const hashed = await hashPin(sanitized);
-    updates.push("manager_pin_hash = $" + (updates.length + 1));
-    values.push(hashed);
+    managerHash = await hashPin(sanitized);
   }
 
-  updates.push(`updated_at = now()`);
+  if (staffHash === null && managerHash === null) {
+    throw new Error("Debes indicar al menos un PIN para actualizar.");
+  }
 
-  const query = `
+  await sql`
     UPDATE security_pins
-    SET ${updates.join(", ")}
+    SET
+      staff_pin_hash = COALESCE(${staffHash}, staff_pin_hash),
+      manager_pin_hash = COALESCE(${managerHash}, manager_pin_hash),
+      updated_at = now()
     WHERE id = ${PIN_ROW_ID}
   `;
-
-  await (sql as unknown as { unsafe: (query: string, params?: unknown[]) => Promise<unknown> }).unsafe(
-    query,
-    values,
-  );
 }
 
 export { sanitizePin };
