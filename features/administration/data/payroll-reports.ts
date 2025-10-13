@@ -783,8 +783,12 @@ function ensureSessionMatchesDay(
   }
 }
 
-function toHoursFromMinutes(minutes: number): number {
-  return Number((minutes / 60).toFixed(2));
+function minutesToHours(minutes: number): number {
+  const hours = toHoursFromMinutes(minutes);
+  if (hours == null) {
+    throw new Error("No se pudieron calcular las horas de la sesión.");
+  }
+  return hours;
 }
 
 export async function updateStaffDaySession({
@@ -862,7 +866,7 @@ export async function updateStaffDaySession({
     workDate: normalizedWorkDate,
     checkinTime: checkinIso,
     checkoutTime: checkoutIso,
-    hours: toHoursFromMinutes(minutes),
+    hours: minutesToHours(minutes),
   };
 }
 
@@ -925,7 +929,7 @@ export async function createStaffDaySession({
     workDate: normalizedWorkDate,
     checkinTime: checkinIso,
     checkoutTime: checkoutIso,
-    hours: toHoursFromMinutes(minutes),
+    hours: minutesToHours(minutes),
   };
 }
 
