@@ -333,6 +333,62 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
 
+  const resolvePinRequest = useCallback((granted: boolean) => {
+    const resolver = pinRequestRef.current;
+    pinRequestRef.current = null;
+    if (resolver) {
+      resolver(granted);
+    }
+  }, []);
+
+  const waitForPin = useCallback((): Promise<boolean> => {
+    return new Promise((resolve) => {
+      pinRequestRef.current = resolve;
+      setPinModalOpen(true);
+    });
+  }, []);
+
+  const ensureManagementAccess = useCallback(async (): Promise<boolean> => {
+    if (pinSessionActive) {
+      return true;
+    }
+    return waitForPin();
+  }, [pinSessionActive, waitForPin]);
+
+  const handleUnauthorized = useCallback(async (): Promise<boolean> => {
+    setPinSessionActive(false);
+    return waitForPin();
+  }, [waitForPin]);
+
+  const performProtectedFetch = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const allowed = await ensureManagementAccess();
+      if (!allowed) {
+        throw new Error("PIN de gerencia requerido.");
+      }
+
+      let response = await fetch(input, init);
+      if (response.status === 401) {
+        const granted = await handleUnauthorized();
+        if (!granted) {
+          throw new Error("PIN de gerencia requerido.");
+        }
+        response = await fetch(input, init);
+        if (response.status === 401) {
+          setPinSessionActive(false);
+          throw new Error("PIN de gerencia requerido.");
+        }
+      }
+
+      if (response.ok) {
+        setPinSessionActive(true);
+      }
+
+      return response;
+    },
+    [ensureManagementAccess, handleUnauthorized],
+  );
+
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
   const [monthStatusSaving, setMonthStatusSaving] = useState<Record<number, boolean>>({});
   const [monthStatusErrors, setMonthStatusErrors] = useState<Record<number, string | null>>({});
@@ -1126,62 +1182,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   useEffect(() => {
     sessionRowsRef.current = sessionRows;
   }, [sessionRows]);
-
-  const resolvePinRequest = useCallback((granted: boolean) => {
-    const resolver = pinRequestRef.current;
-    pinRequestRef.current = null;
-    if (resolver) {
-      resolver(granted);
-    }
-  }, []);
-
-  const waitForPin = useCallback((): Promise<boolean> => {
-    return new Promise((resolve) => {
-      pinRequestRef.current = resolve;
-      setPinModalOpen(true);
-    });
-  }, []);
-
-  const ensureManagementAccess = useCallback(async (): Promise<boolean> => {
-    if (pinSessionActive) {
-      return true;
-    }
-    return waitForPin();
-  }, [pinSessionActive, waitForPin]);
-
-  const handleUnauthorized = useCallback(async (): Promise<boolean> => {
-    setPinSessionActive(false);
-    return waitForPin();
-  }, [waitForPin]);
-
-  const performProtectedFetch = useCallback(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      const allowed = await ensureManagementAccess();
-      if (!allowed) {
-        throw new Error("PIN de gerencia requerido.");
-      }
-
-      let response = await fetch(input, init);
-      if (response.status === 401) {
-        const granted = await handleUnauthorized();
-        if (!granted) {
-          throw new Error("PIN de gerencia requerido.");
-        }
-        response = await fetch(input, init);
-        if (response.status === 401) {
-          setPinSessionActive(false);
-          throw new Error("PIN de gerencia requerido.");
-        }
-      }
-
-      if (response.ok) {
-        setPinSessionActive(true);
-      }
-
-      return response;
-    },
-    [ensureManagementAccess, handleUnauthorized],
-  );
 
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
