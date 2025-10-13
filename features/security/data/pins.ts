@@ -185,15 +185,20 @@ async function ensurePinsTable(): Promise<PinTableMetadata> {
   const sql = getSqlClient();
   await sql`
     CREATE TABLE IF NOT EXISTS security_pins (
-      scope text PRIMARY KEY,
-      pin_hash text,
+      id bigserial PRIMARY KEY,
+      manager_pin_hash text,
+      staff_pin_hash text,
       updated_at timestamptz DEFAULT now()
     )
   `;
 
   let metadata = await loadPinTableMetadata(sql);
 
-  if (!findColumn(metadata, PIN_HASH_CANDIDATE_KEYS)) {
+  const hasCombinedColumns =
+    Boolean(findColumn(metadata, PIN_MANAGER_HASH_CANDIDATE_KEYS)) ||
+    Boolean(findColumn(metadata, PIN_STAFF_HASH_CANDIDATE_KEYS));
+
+  if (!hasCombinedColumns && !findColumn(metadata, PIN_HASH_CANDIDATE_KEYS)) {
     try {
       await sql`
         ALTER TABLE security_pins
@@ -201,6 +206,36 @@ async function ensurePinsTable(): Promise<PinTableMetadata> {
       `;
     } catch (error) {
       console.warn("No se pudo agregar la columna pin_hash a security_pins:", error);
+    }
+    metadata = await loadPinTableMetadata(sql);
+  }
+
+  if (!findColumn(metadata, PIN_MANAGER_HASH_CANDIDATE_KEYS)) {
+    try {
+      await sql`
+        ALTER TABLE security_pins
+        ADD COLUMN IF NOT EXISTS manager_pin_hash text
+      `;
+    } catch (error) {
+      console.warn(
+        "No se pudo agregar la columna manager_pin_hash a security_pins:",
+        error,
+      );
+    }
+    metadata = await loadPinTableMetadata(sql);
+  }
+
+  if (!findColumn(metadata, PIN_STAFF_HASH_CANDIDATE_KEYS)) {
+    try {
+      await sql`
+        ALTER TABLE security_pins
+        ADD COLUMN IF NOT EXISTS staff_pin_hash text
+      `;
+    } catch (error) {
+      console.warn(
+        "No se pudo agregar la columna staff_pin_hash a security_pins:",
+        error,
+      );
     }
     metadata = await loadPinTableMetadata(sql);
   }
