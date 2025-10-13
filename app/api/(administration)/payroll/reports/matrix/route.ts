@@ -8,16 +8,21 @@ export const fetchCache = "force-no-store";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const month = searchParams.get("month");
+  const start = searchParams.get("start");
+  const end = searchParams.get("end");
 
-  if (!month) {
+  if (!month && (!start || !end)) {
     return NextResponse.json(
-      { error: "Debes indicar el parámetro 'month' en formato 'YYYY-MM'." },
+      {
+        error:
+          "Debes indicar el parámetro 'month' o un rango de fechas 'start' y 'end' en formato 'YYYY-MM-DD'.",
+      },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
 
   try {
-    const data = await fetchPayrollMatrix({ month });
+    const data = await fetchPayrollMatrix({ month, start, end });
     return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error al obtener la matriz de nómina", error);

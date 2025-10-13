@@ -970,6 +970,19 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+async function safeQuery(
+  promise: Promise<unknown>,
+  label: string,
+): Promise<SqlRow[]> {
+  try {
+    const result = await withTimeout(promise, 5000);
+    return normalizeRows<SqlRow>(result);
+  } catch (error) {
+    console.error(`Fallo al consultar ${label} para el panel del coach`, error);
+    return [];
+  }
+}
+
 function isIsoSunday(date: string): boolean {
   if (!date) return false;
   const normalized = date.includes("T") ? date : `${date}T00:00:00Z`;
@@ -982,25 +995,629 @@ function isIsoSunday(date: string): boolean {
   return isoDay === 7;
 }
 
+export type StudentLessonPlanLevelSegment = {
+  levelCode: string | null;
+  levelLabel: string | null;
+  startIndex: number;
+  endIndex: number;
+  startPercent: number;
+  endPercent: number;
+};
+
+export type StudentLessonPlanSnapshot = {
+  plannedLevelMin: string | null;
+  plannedLevelMax: string | null;
+  currentLevelCode: string | null;
+  currentLessonLabel: string | null;
+  currentLessonIndex: number | null;
+  lessonsCompleted: number | null;
+  lessonsRemaining: number | null;
+  lessonsTotal: number | null;
+  levelSegments: StudentLessonPlanLevelSegment[];
+};
+
+export type DailyStudyEntry = {
+  date: string;
+  hours: number;
+  minutes: number | null;
+  sessionCount: number | null;
+};
+
+export type SessionDurationTargets = {
+  shortMinutes: number | null;
+  optimalMinutes: number | null;
+  longMinutes: number | null;
+};
+
 export type StudentCoachPanelSummary = {
   studentId: number;
   fullName: string | null;
   levelCode: string | null;
   lessonSeq: number | null;
-  minutes30d: number | null;
-  daysActive30d: number | null;
-  avgSessionMinutes30d: number | null;
-  daysSinceLast: number | null;
-  lessonsGained30d: number | null;
+  onPace: boolean | null;
   lei30d: number | null;
+  leiTrendDelta: number | null;
   leiRatio: number | null;
+  hours30d: number | null;
+  weeklyActiveDays: number | null;
+  avgSessionMinutes30d: number | null;
+  lessonsGained30d: number | null;
   lessonsRemaining: number | null;
   forecastMonthsToFinish: number | null;
-  onPace: boolean | null;
-  repeatsAtLast: number | null;
-  stallFlag: boolean | null;
   targetLph: number | null;
+  lastSessionDaysAgo: number | null;
+  repeatsAtLast: number | null;
+  riskStall: boolean | null;
+  riskInactive14d: boolean | null;
+  riskAtRisk: boolean | null;
+  lessonPlan: StudentLessonPlanSnapshot | null;
+  dailyStudy: DailyStudyEntry[];
+  sessionDurationTargets: SessionDurationTargets;
 };
+
+type JsonRecord = Record<string, unknown> | null | undefined;
+
+function toJsonRecord(value: unknown): JsonRecord {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch (error) {
+      console.warn("No se pudo convertir el valor JSON", error);
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function extractNumber(source: JsonRecord, keys: string[]): number | null {
+  if (!source) {
+    return null;
+  }
+  for (const key of keys) {
+    if (key in source) {
+      const candidate = source[key];
+      const normalized = normalizeNumber(candidate);
+      if (normalized != null) {
+        return normalized;
+      }
+    }
+  }
+  return null;
+}
+
+function extractBoolean(source: JsonRecord, keys: string[]): boolean | null {
+  if (!source) {
+    return null;
+  }
+  for (const key of keys) {
+    if (!(key in source)) continue;
+    const candidate = source[key];
+    if (typeof candidate === "boolean") {
+      return candidate;
+    }
+    if (typeof candidate === "number") {
+      if (!Number.isFinite(candidate)) continue;
+      if (candidate === 1) return true;
+      if (candidate === 0) return false;
+    }
+    if (typeof candidate === "string") {
+      const normalized = candidate.trim().toLowerCase();
+      if (!normalized.length) continue;
+      if (["true", "t", "1", "si", "sí"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "f", "0", "no"].includes(normalized)) {
+        return false;
+      }
+    }
+  }
+  return null;
+}
+
+function extractString(source: JsonRecord, keys: string[]): string | null {
+  if (!source) {
+    return null;
+  }
+  for (const key of keys) {
+    if (!(key in source)) continue;
+    const candidate = source[key];
+    const normalized = normalizeString(candidate);
+    if (normalized != null) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
+function extractStringFromCollection(
+  records: JsonRecord[],
+  keys: string[],
+): string | null {
+  for (const record of records) {
+    const value = extractString(record, keys);
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function extractNumberFromCollection(
+  records: JsonRecord[],
+  keys: string[],
+): number | null {
+  for (const record of records) {
+    const value = extractNumber(record, keys);
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function sortLessonPlanRecords(records: JsonRecord[]): JsonRecord[] {
+  return records
+    .slice()
+    .sort((a, b) => {
+      const indexA = extractNumber(a, [
+        "current_lesson_index",
+        "lesson_index",
+        "lesson_seq",
+        "sequence",
+        "position",
+        "order_index",
+      ]);
+      const indexB = extractNumber(b, [
+        "current_lesson_index",
+        "lesson_index",
+        "lesson_seq",
+        "sequence",
+        "position",
+        "order_index",
+      ]);
+      if (indexA != null && indexB != null) {
+        return indexA - indexB;
+      }
+      if (indexA != null) {
+        return -1;
+      }
+      if (indexB != null) {
+        return 1;
+      }
+
+      const levelOrderA = extractNumber(a, [
+        "level_order",
+        "level_rank",
+        "level_position",
+        "level_index",
+        "level_priority",
+      ]);
+      const levelOrderB = extractNumber(b, [
+        "level_order",
+        "level_rank",
+        "level_position",
+        "level_index",
+        "level_priority",
+      ]);
+
+      if (levelOrderA != null && levelOrderB != null && levelOrderA !== levelOrderB) {
+        return levelOrderA - levelOrderB;
+      }
+      if (levelOrderA != null && levelOrderB == null) {
+        return -1;
+      }
+      if (levelOrderA == null && levelOrderB != null) {
+        return 1;
+      }
+
+      const levelSequenceA = extractNumber(a, [
+        "lesson_in_level",
+        "lesson_order_in_level",
+        "lesson_number",
+        "lesson_position",
+        "sequence_in_level",
+      ]);
+      const levelSequenceB = extractNumber(b, [
+        "lesson_in_level",
+        "lesson_order_in_level",
+        "lesson_number",
+        "lesson_position",
+        "sequence_in_level",
+      ]);
+
+      if (
+        levelOrderA != null &&
+        levelOrderB != null &&
+        levelOrderA === levelOrderB &&
+        levelSequenceA != null &&
+        levelSequenceB != null
+      ) {
+        return levelSequenceA - levelSequenceB;
+      }
+      if (levelSequenceA != null && levelSequenceB == null) {
+        return -1;
+      }
+      if (levelSequenceA == null && levelSequenceB != null) {
+        return 1;
+      }
+
+      const orderA = extractNumber(a, ["lesson_order", "sort_order"]);
+      const orderB = extractNumber(b, ["lesson_order", "sort_order"]);
+      if (orderA != null && orderB != null) {
+        return orderA - orderB;
+      }
+      if (orderA != null) {
+        return -1;
+      }
+      if (orderB != null) {
+        return 1;
+      }
+      return 0;
+    });
+}
+
+function countCompletedLessons(records: JsonRecord[]): number {
+  let count = 0;
+
+  for (const record of records) {
+    const completedFlag = extractBoolean(record, [
+      "is_completed",
+      "completed",
+      "completed_flag",
+      "is_done",
+    ]);
+    if (completedFlag === true) {
+      count += 1;
+      continue;
+    }
+
+    const status = extractString(record, [
+      "status",
+      "lesson_status",
+      "progress_status",
+    ]);
+    if (status) {
+      const normalized = status.toLowerCase();
+      if (
+        normalized.includes("complet") ||
+        normalized.includes("termin") ||
+        normalized.includes("aprob") ||
+        normalized.includes("finaliz") ||
+        normalized.includes("done")
+      ) {
+        count += 1;
+        continue;
+      }
+    }
+
+    const completedAt = extractString(record, [
+      "completed_at",
+      "finished_at",
+      "approved_at",
+      "terminado_en",
+    ]);
+    if (completedAt) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function findActiveLessonRecord(
+  records: JsonRecord[],
+  currentLessonIndex: number | null,
+): JsonRecord | null {
+  for (const record of records) {
+    const isCurrent = extractBoolean(record, [
+      "is_current",
+      "current_flag",
+      "is_active",
+      "active_flag",
+    ]);
+    if (isCurrent) {
+      return record;
+    }
+  }
+
+  if (currentLessonIndex != null) {
+    for (const record of records) {
+      const lessonIndex = extractNumber(record, [
+        "current_lesson_index",
+        "lesson_index",
+        "lesson_seq",
+        "sequence",
+        "position",
+      ]);
+      if (lessonIndex != null && Math.trunc(lessonIndex) === currentLessonIndex) {
+        return record;
+      }
+    }
+  }
+
+  for (const record of records) {
+    const status = extractString(record, [
+      "status",
+      "lesson_status",
+      "progress_status",
+    ]);
+    if (!status) {
+      continue;
+    }
+    const normalized = status.toLowerCase();
+    if (
+      normalized.includes("current") ||
+      normalized.includes("actual") ||
+      normalized.includes("curso") ||
+      normalized.includes("en curso") ||
+      normalized.includes("activa")
+    ) {
+      return record;
+    }
+  }
+
+  return null;
+}
+
+function mapLessonPlanSnapshot(
+  payload: JsonRecord | JsonRecord[] | null | undefined,
+): StudentLessonPlanSnapshot | null {
+  if (!payload) {
+    return null;
+  }
+
+  const records = (Array.isArray(payload) ? payload : [payload]).filter(
+    (record): record is JsonRecord => Boolean(record),
+  );
+
+  if (!records.length) {
+    return null;
+  }
+
+  const sortedRecords = sortLessonPlanRecords(records);
+
+  const plannedLevelMin = extractStringFromCollection(sortedRecords, [
+    "planned_level_min",
+    "planned_min_level",
+    "level_min",
+    "start_level",
+    "level_start",
+  ]);
+  const plannedLevelMax = extractStringFromCollection(sortedRecords, [
+    "planned_level_max",
+    "planned_max_level",
+    "level_max",
+    "target_level",
+    "goal_level",
+  ]);
+
+  const totalRecords = sortedRecords.length;
+
+  let lessonsTotal = extractNumberFromCollection(sortedRecords, [
+    "lessons_total",
+    "total_lessons",
+    "plan_length",
+    "lesson_count",
+  ]);
+  if (lessonsTotal == null && totalRecords) {
+    lessonsTotal = totalRecords;
+  }
+
+  let lessonsCompleted = extractNumberFromCollection(sortedRecords, [
+    "lessons_completed",
+    "completed_lessons",
+    "lessons_done",
+  ]);
+  if (lessonsCompleted == null) {
+    const completedCount = countCompletedLessons(sortedRecords);
+    if (completedCount > 0 || lessonsTotal != null) {
+      lessonsCompleted = completedCount;
+    }
+  }
+
+  let lessonsRemaining = extractNumberFromCollection(sortedRecords, [
+    "lessons_remaining",
+    "remaining_lessons",
+    "lessons_left",
+  ]);
+
+  let currentLessonIndex = extractNumberFromCollection(sortedRecords, [
+    "current_lesson_index",
+    "current_seq",
+    "current_position",
+    "lesson_index",
+    "lesson_seq",
+    "lesson_number",
+    "lesson_position",
+    "lesson_order",
+    "lesson_rank",
+  ]);
+
+  const activeRecord = findActiveLessonRecord(
+    sortedRecords,
+    currentLessonIndex != null ? Math.trunc(currentLessonIndex) : null,
+  );
+
+  const activeRecordIndex = activeRecord ? sortedRecords.indexOf(activeRecord) : -1;
+
+  if (activeRecordIndex >= 0) {
+    if (lessonsCompleted == null || lessonsCompleted < activeRecordIndex) {
+      lessonsCompleted = activeRecordIndex;
+    }
+    const derivedIndex = activeRecordIndex + 1;
+    if (currentLessonIndex == null || currentLessonIndex < derivedIndex) {
+      currentLessonIndex = derivedIndex;
+    }
+  }
+
+  if (lessonsTotal == null && totalRecords) {
+    lessonsTotal = totalRecords;
+  }
+
+  if (
+    lessonsRemaining == null &&
+    lessonsTotal != null &&
+    lessonsCompleted != null
+  ) {
+    lessonsRemaining = Math.max(lessonsTotal - lessonsCompleted, 0);
+  }
+
+  if (currentLessonIndex == null && lessonsCompleted != null) {
+    const tentativeIndex = lessonsCompleted + 1;
+    if (lessonsTotal == null || tentativeIndex <= lessonsTotal + 1) {
+      currentLessonIndex = tentativeIndex;
+    }
+  }
+
+  const currentLessonLabel =
+    extractStringFromCollection(sortedRecords, [
+      "current_lesson_label",
+      "current_lesson_name",
+      "current_lesson",
+    ]) ??
+    (activeRecord
+      ? extractString(activeRecord, [
+          "lesson_name",
+          "lesson_label",
+          "name",
+          "title",
+        ])
+      : null);
+
+  const currentLevelCode =
+    extractStringFromCollection(sortedRecords, [
+      "current_level_code",
+      "current_level",
+    ]) ??
+    (activeRecord
+      ? extractString(activeRecord, [
+          "level_code",
+          "lesson_level",
+          "level",
+        ])
+      : extractStringFromCollection(sortedRecords, [
+          "level_code",
+          "lesson_level",
+          "level",
+        ]));
+
+  if (
+    plannedLevelMin == null &&
+    plannedLevelMax == null &&
+    currentLessonIndex == null &&
+    lessonsTotal == null
+  ) {
+    return null;
+  }
+
+  const clampedLessonsTotal = lessonsTotal != null && lessonsTotal > 0 ? lessonsTotal : totalRecords || null;
+
+  const segments: StudentLessonPlanLevelSegment[] = [];
+  if (clampedLessonsTotal && totalRecords) {
+    let currentSegment: StudentLessonPlanLevelSegment | null = null;
+
+    sortedRecords.forEach((record, index) => {
+      const levelCode =
+        extractString(record, ["level_code", "lesson_level", "level"]) ?? null;
+      const levelLabel =
+        extractString(record, [
+          "level_label",
+          "lesson_level_label",
+          "level_name",
+          "level_display",
+        ]) ?? levelCode;
+
+      if (!currentSegment || currentSegment.levelCode !== levelCode) {
+        const startIndex = index + 1;
+        currentSegment = {
+          levelCode,
+          levelLabel,
+          startIndex,
+          endIndex: startIndex,
+          startPercent:
+            ((startIndex - 1) / clampedLessonsTotal) * 100,
+          endPercent: (startIndex / clampedLessonsTotal) * 100,
+        };
+        segments.push(currentSegment);
+      } else {
+        currentSegment.endIndex = index + 1;
+        currentSegment.endPercent =
+          ((index + 1) / clampedLessonsTotal) * 100;
+      }
+    });
+
+    // Normalize trailing segment boundaries to avoid floating point drift.
+    segments.forEach((segment, index) => {
+      if (index === 0) {
+        segment.startPercent = 0;
+      }
+      if (index === segments.length - 1) {
+        segment.endPercent = 100;
+      }
+
+      segment.startPercent = Math.min(100, Math.max(0, segment.startPercent));
+      segment.endPercent = Math.min(100, Math.max(segment.startPercent, segment.endPercent));
+    });
+  }
+
+  return {
+    plannedLevelMin,
+    plannedLevelMax,
+    currentLevelCode,
+    currentLessonLabel,
+    currentLessonIndex,
+    lessonsCompleted,
+    lessonsRemaining,
+    lessonsTotal: clampedLessonsTotal,
+    levelSegments: segments,
+  };
+}
+
+function mapDailyStudy(payload: JsonRecord): DailyStudyEntry | null {
+  if (!payload) {
+    return null;
+  }
+
+  const date =
+    extractString(payload, ["study_date", "session_date", "day", "date"]) ?? "";
+  const minutes = extractNumber(payload, [
+    "total_minutes",
+    "minutes",
+    "minutes_total",
+  ]);
+  const hours =
+    extractNumber(payload, ["total_hours", "hours"]) ??
+    (minutes != null ? minutes / 60 : null);
+
+  if (!date || hours == null) {
+    return null;
+  }
+
+  const sessionCount = extractNumber(payload, [
+    "session_count",
+    "sessions",
+    "total_sessions",
+  ]);
+
+  return {
+    date,
+    hours,
+    minutes,
+    sessionCount,
+  };
+}
 
 export async function getStudentCoachPanelSummary(
   studentId: number,
@@ -1008,69 +1625,242 @@ export async function getStudentCoachPanelSummary(
   noStore();
   const sql = getSqlClient();
 
-  const rows = normalizeRows<SqlRow>(
-    await withTimeout(
+  let studentRows: SqlRow[] = [];
+  try {
+    const rawStudentRows = await withTimeout(
       sql`
-        WITH p AS (
-          SELECT * FROM analytics.v_student_coaching_panel WHERE student_id = ${studentId}::bigint
-        ),
-        s AS (
-          SELECT id, full_name FROM public.students WHERE id = ${studentId}::bigint
-        ),
-        b AS (
-          SELECT target_lph FROM analytics.v_target_lph
-        )
-        SELECT
-          s.id            AS student_id,
-          s.full_name,
-          p.level_code,
-          p.lesson_seq,
-          p.minutes_30d,
-          p.days_active_30d,
-          p.avg_session_minutes_30d,
-          p.days_since_last,
-          p.lessons_gained_30d,
-          p.lei_30d,
-          p.lei_ratio,
-          p.lessons_remaining,
-          p.forecast_months_to_finish,
-          p.on_pace,
-          p.repeats_at_last,
-          p.stall_flag,
-          (SELECT target_lph FROM b) AS target_lph
-        FROM p
-        LEFT JOIN s ON s.id = p.student_id
+        SELECT id AS student_id, full_name
+        FROM public.students
+        WHERE id = ${studentId}::bigint
+        LIMIT 1
       `,
       5000,
-    ),
-  );
+    );
+    studentRows = normalizeRows<SqlRow>(rawStudentRows);
+  } catch (error) {
+    console.error(
+      "No se pudo cargar la fila base del estudiante para el panel del coach",
+      error,
+    );
+    throw error;
+  }
 
-  if (!rows.length) {
+  const [panelRows, riskRows, planRows, dailyRows, configRows] = await Promise.all([
+    safeQuery(
+      sql`
+        SELECT *
+        FROM analytics.v_student_coaching_panel_enhanced
+        WHERE student_id = ${studentId}::bigint
+        LIMIT 1
+      `,
+      "analytics.v_student_coaching_panel_enhanced",
+    ),
+    safeQuery(
+      sql`
+        SELECT *
+        FROM analytics.v_at_risk_students
+        WHERE student_id = ${studentId}::bigint
+        LIMIT 1
+      `,
+      "analytics.v_at_risk_students",
+    ),
+    safeQuery(
+      sql`
+        SELECT *
+        FROM analytics.v_student_lesson_plan
+        WHERE student_id = ${studentId}::bigint
+      `,
+      "analytics.v_student_lesson_plan",
+    ),
+    safeQuery(
+      sql`
+        SELECT *
+        FROM analytics.v_student_daily_minutes_30d
+        WHERE student_id = ${studentId}::bigint
+      `,
+      "analytics.v_student_daily_minutes_30d",
+    ),
+    safeQuery(
+      sql`
+        SELECT *
+        FROM analytics.progress_config
+        ORDER BY updated_at DESC NULLS LAST
+        LIMIT 1
+      `,
+      "analytics.progress_config",
+    ),
+  ]);
+  if (!studentRows.length) {
     return null;
   }
 
-  const row = rows[0];
+  const studentRow = studentRows[0];
+  const panelPayload = toJsonRecord(panelRows[0] ?? null);
+  const riskPayload = toJsonRecord(riskRows[0] ?? null);
+  const configPayload = toJsonRecord(configRows[0] ?? null);
+  const planRecords = planRows
+    .map((row) => toJsonRecord(row))
+    .filter((row): row is JsonRecord => Boolean(row));
+  const lessonPlanSnapshot = mapLessonPlanSnapshot(planRecords);
 
-  const studentIdValue = normalizeInteger(row.student_id) ?? studentId;
+  const studentIdValue =
+    normalizeInteger(extractNumber(panelPayload, ["student_id"])) ??
+    normalizeInteger(studentRow.student_id) ??
+    studentId;
+
+  const minutes30d = extractNumber(panelPayload, [
+    "minutes_30d",
+    "total_minutes_30d",
+  ]);
+  const hours30d =
+    extractNumber(panelPayload, [
+      "hours_30d",
+      "total_hours_30d",
+      "study_hours_30d",
+      "hours_last_30d",
+    ]) ??
+    (minutes30d != null ? minutes30d / 60 : null);
+  const daysActive30d = extractNumber(panelPayload, [
+    "days_active_30d",
+    "active_days_30d",
+  ]);
+  const weeklyActiveDays =
+    extractNumber(panelPayload, [
+      "weekly_active_days",
+      "days_active_per_week",
+      "avg_active_days_per_week",
+      "weekly_days_active",
+    ]) ??
+    (daysActive30d != null ? daysActive30d / 4.345 : null);
+
+  const leiTrendDelta = extractNumber(panelPayload, [
+    "lei_trend_30d",
+    "lei_delta_30d",
+    "lei_change_30d",
+  ]);
+
+  let computedLeiTrend: number | null = leiTrendDelta;
+  if (computedLeiTrend == null) {
+    const previousLei = extractNumber(panelPayload, [
+      "lei_prev_30d",
+      "lei_30d_prev",
+    ]);
+    const currentLei = extractNumber(panelPayload, ["lei_30d"]);
+    if (previousLei != null && currentLei != null) {
+      computedLeiTrend = currentLei - previousLei;
+    }
+  }
+
+  const dailyStudyEntries = dailyRows
+    .map((row) => mapDailyStudy(toJsonRecord(row)))
+    .filter((entry): entry is DailyStudyEntry => Boolean(entry))
+    .sort((a, b) => {
+      const aTime = Date.parse(a.date);
+      const bTime = Date.parse(b.date);
+      if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
+        return a.date.localeCompare(b.date);
+      }
+      if (Number.isNaN(aTime)) {
+        return -1;
+      }
+      if (Number.isNaN(bTime)) {
+        return 1;
+      }
+      return aTime - bTime;
+    });
 
   return {
     studentId: studentIdValue,
-    fullName: normalizeString(row.full_name),
-    levelCode: normalizeString(row.level_code),
-    lessonSeq: normalizeInteger(row.lesson_seq),
-    minutes30d: normalizeNumber(row.minutes_30d),
-    daysActive30d: normalizeInteger(row.days_active_30d),
-    avgSessionMinutes30d: normalizeNumber(row.avg_session_minutes_30d),
-    daysSinceLast: normalizeInteger(row.days_since_last),
-    lessonsGained30d: normalizeInteger(row.lessons_gained_30d),
-    lei30d: normalizeNumber(row.lei_30d),
-    leiRatio: normalizeNumber(row.lei_ratio),
-    lessonsRemaining: normalizeInteger(row.lessons_remaining),
-    forecastMonthsToFinish: normalizeNumber(row.forecast_months_to_finish),
-    onPace: normalizeFieldValue(row.on_pace, "boolean"),
-    repeatsAtLast: normalizeInteger(row.repeats_at_last),
-    stallFlag: normalizeFieldValue(row.stall_flag, "boolean"),
-    targetLph: normalizeNumber(row.target_lph),
+    fullName:
+      normalizeString(panelPayload?.full_name) ??
+      normalizeString(studentRow.full_name),
+    levelCode:
+      extractString(panelPayload, ["level_code", "current_level_code"]) ??
+      lessonPlanSnapshot?.currentLevelCode ??
+      null,
+    lessonSeq:
+      extractNumber(panelPayload, [
+        "lesson_seq",
+        "current_lesson_seq",
+        "current_lesson_index",
+      ]) ?? lessonPlanSnapshot?.currentLessonIndex ?? null,
+    onPace: extractBoolean(panelPayload, ["on_pace"]),
+    lei30d: extractNumber(panelPayload, ["lei_30d"]),
+    leiTrendDelta: computedLeiTrend,
+    leiRatio: extractNumber(panelPayload, ["lei_ratio"]),
+    hours30d,
+    weeklyActiveDays,
+    avgSessionMinutes30d: extractNumber(panelPayload, [
+      "avg_session_minutes_30d",
+      "average_session_minutes_30d",
+    ]),
+    lessonsGained30d: extractNumber(panelPayload, [
+      "lessons_gained_30d",
+      "lessons_progress_30d",
+      "lessons_last_30d",
+    ]),
+    lessonsRemaining:
+      extractNumber(panelPayload, ["lessons_remaining"]) ??
+      lessonPlanSnapshot?.lessonsRemaining ??
+      null,
+    forecastMonthsToFinish: extractNumber(panelPayload, [
+      "forecast_months_to_finish",
+      "months_to_finish",
+    ]),
+    targetLph:
+      extractNumber(panelPayload, ["target_lph", "target_lei", "lei_target"]) ??
+      extractNumber(configPayload, ["target_lph", "target_lei"]),
+    lastSessionDaysAgo: extractNumber(panelPayload, [
+      "days_since_last",
+      "days_since_last_session",
+      "days_last_seen",
+      "days_since_last_activity",
+    ]),
+    repeatsAtLast: extractNumber(panelPayload, [
+      "repeats_at_last",
+      "repeat_count_last",
+    ]),
+    riskStall:
+      extractBoolean(riskPayload, [
+        "stall_flag",
+        "is_stalled",
+        "stalling",
+        "stalling_flag",
+      ]) ??
+      extractBoolean(panelPayload, [
+        "stall_flag",
+        "is_stalled",
+        "stalling",
+        "stalling_flag",
+      ]),
+    riskInactive14d: extractBoolean(riskPayload, [
+      "inactive_14d",
+      "inactive_14_days",
+      "inactive_flag",
+    ]) ?? extractBoolean(panelPayload, [
+      "inactive_14d",
+      "inactive_14_days",
+      "inactive_flag",
+    ]),
+    riskAtRisk:
+      extractBoolean(riskPayload, ["at_risk", "is_at_risk"]) ??
+      extractBoolean(panelPayload, ["at_risk", "is_at_risk"]),
+    lessonPlan: lessonPlanSnapshot,
+    dailyStudy: dailyStudyEntries,
+    sessionDurationTargets: {
+      shortMinutes: extractNumber(configPayload, [
+        "short_session_minutes",
+        "short_session_threshold",
+      ]),
+      optimalMinutes: extractNumber(configPayload, [
+        "target_session_minutes",
+        "optimal_session_minutes",
+      ]),
+      longMinutes: extractNumber(configPayload, [
+        "long_session_minutes",
+        "long_session_threshold",
+      ]),
+    },
   };
 }
 

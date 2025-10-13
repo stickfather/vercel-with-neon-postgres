@@ -54,6 +54,102 @@ const rowDayFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
+const timeZoneDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PAYROLL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PAYROLL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+const timeZoneOffsetFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PAYROLL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
+  return parts.find((part) => part.type === type)?.value ?? null;
+}
+
+function toTimeZoneDateString(date: Date): string | null {
+  const parts = timeZoneDateFormatter.formatToParts(date);
+  const year = getPart(parts, "year");
+  const month = getPart(parts, "month");
+  const day = getPart(parts, "day");
+  if (!year || !month || !day) {
+    return null;
+  }
+  return `${year}-${month}-${day}`;
+}
+
+function toTimeZoneDateTimeParts(
+  date: Date,
+): { year: string; month: string; day: string; hour: string; minute: string } | null {
+  const parts = timeZoneDateTimeFormatter.formatToParts(date);
+  const year = getPart(parts, "year");
+  const month = getPart(parts, "month");
+  const day = getPart(parts, "day");
+  const hour = getPart(parts, "hour");
+  const minute = getPart(parts, "minute");
+  if (!year || !month || !day || !hour || !minute) {
+    return null;
+  }
+  return { year, month, day, hour, minute } as const;
+}
+
+function getTimeZoneOffsetInMinutes(baseDate: Date): number {
+  const parts = timeZoneOffsetFormatter.formatToParts(baseDate);
+  const year = getPart(parts, "year");
+  const month = getPart(parts, "month");
+  const day = getPart(parts, "day");
+  const hour = getPart(parts, "hour");
+  const minute = getPart(parts, "minute");
+  const second = getPart(parts, "second");
+  if (!year || !month || !day || !hour || !minute || !second) {
+    return 0;
+  }
+  const asUtc = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  );
+  return (asUtc - baseDate.getTime()) / 60000;
+}
+
+function toMiddayUtc(dateString: string): Date | null {
+  const trimmed = dateString.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const isoDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!isoDateMatch) {
+    return null;
+  }
+  const candidate = new Date(`${isoDateMatch[0]}T12:00:00Z`);
+  if (Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+  return candidate;
+}
+
 type MonthSummaryRow = {
   staffId: number;
   staffName: string | null;
@@ -134,28 +230,52 @@ function getMonthRange(month: string): { from: string; to: string; endExclusive:
 }
 
 function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
-  const date = new Date(`${dateString}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return dateString;
-  return formatter.format(date);
+  const midday = toMiddayUtc(dateString);
+  if (!midday) {
+    return dateString;
+  }
+  return formatter.format(midday);
 }
 
 function toLocalInputValue(value: string | null): string {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  const parts = toTimeZoneDateTimeParts(date);
+  if (!parts) {
+    return "";
+  }
+  const { year, month, day, hour, minute } = parts;
+  return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
 function fromLocalInputValue(value: string): string | null {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  const [, yearStr, monthStr, dayStr, hourStr, minuteStr] = match;
+  const baseUtcMs = Date.UTC(
+    Number(yearStr),
+    Number(monthStr) - 1,
+    Number(dayStr),
+    Number(hourStr),
+    Number(minuteStr),
+    0,
+    0,
+  );
+  if (!Number.isFinite(baseUtcMs)) {
+    return null;
+  }
+  const baseDate = new Date(baseUtcMs);
+  const offsetMinutes = getTimeZoneOffsetInMinutes(baseDate);
+  const adjustedMs = baseUtcMs - offsetMinutes * 60000;
+  const adjustedDate = new Date(adjustedMs);
+  if (Number.isNaN(adjustedDate.getTime())) {
+    return null;
+  }
+  return adjustedDate.toISOString();
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {
@@ -170,10 +290,6 @@ function toIsoDateOnly(value: string | null | undefined): string | null {
     const year = isoCandidate[1];
     const month = isoCandidate[2];
     const day = isoCandidate[3];
-    const date = new Date(`${year}-${month}-${day}T00:00:00Z`);
-    if (Number.isNaN(date.getTime())) {
-      return null;
-    }
     return `${year}-${month}-${day}`;
   }
 
@@ -182,10 +298,8 @@ function toIsoDateOnly(value: string | null | undefined): string | null {
     return null;
   }
 
-  const year = parsed.getUTCFullYear();
-  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const zoned = toTimeZoneDateString(parsed);
+  return zoned;
 }
 
 function normalizePaidAtInput(value: string): string | null {
@@ -230,10 +344,8 @@ function normalizePaidAtInput(value: string): string | null {
   if (Number.isNaN(parsed.getTime())) {
     return null;
   }
-  const year = parsed.getUTCFullYear();
-  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const zoned = toTimeZoneDateString(parsed);
+  return zoned;
 }
 
 function formatPaidAtDisplay(value: string | null | undefined): string {
@@ -386,6 +498,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paidAtDrafts, setPaidAtDrafts] = useState<Record<number, string>>({});
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
 
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -512,6 +626,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       new Intl.DateTimeFormat("es-EC", {
         day: "2-digit",
         month: "short",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -520,6 +635,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     () =>
       new Intl.DateTimeFormat("es-EC", {
         weekday: "short",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -531,6 +647,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         year: "numeric",
         month: "long",
         day: "2-digit",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -541,6 +658,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         year: "numeric",
         month: "short",
         day: "2-digit",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -596,7 +714,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     });
   }, [selectedCell, staffNames]);
 
-  const { from, to } = useMemo(() => {
+  const monthRange = useMemo(() => {
     try {
       return getMonthRange(selectedMonth);
     } catch (error) {
@@ -605,9 +723,112 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     }
   }, [selectedMonth]);
 
+  const { from, to } = monthRange;
+
+  const activeRange = useMemo(() => {
+    const trimmedStart = customStartDate.trim();
+    const trimmedEnd = customEndDate.trim();
+
+    const startIso = trimmedStart.length ? toIsoDateOnly(trimmedStart) : null;
+    const endIso = trimmedEnd.length ? toIsoDateOnly(trimmedEnd) : null;
+
+    if (trimmedStart.length && !startIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: "La fecha inicial es inválida.",
+        hint: null,
+      };
+    }
+
+    if (trimmedEnd.length && !endIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: "La fecha final es inválida.",
+        hint: null,
+      };
+    }
+
+    if (startIso && !endIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: null,
+        hint: "Ingresa también la fecha final para activar el rango manual.",
+      };
+    }
+
+    if (!startIso && endIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: null,
+        hint: "Ingresa también la fecha inicial para activar el rango manual.",
+      };
+    }
+
+    if (startIso && endIso) {
+      if (startIso > endIso) {
+        return {
+          start: from,
+          end: to,
+          usingCustom: false as const,
+          error: "La fecha inicial debe ser anterior o igual a la final.",
+          hint: null,
+        };
+      }
+      return {
+        start: startIso,
+        end: endIso,
+        usingCustom: true as const,
+        error: null,
+        hint: "Mostrando rango personalizado.",
+      };
+    }
+
+    return {
+      start: from,
+      end: to,
+      usingCustom: false as const,
+      error: null,
+      hint: null,
+    };
+  }, [customEndDate, customStartDate, from, to]);
+
+  const activeStart = activeRange.start;
+  const activeEnd = activeRange.end;
+  const usingCustomRange = activeRange.usingCustom;
+  const rangeError = activeRange.error;
+  const rangeHint = activeRange.hint;
+  const rangeStatusText =
+    rangeError
+      ?? rangeHint
+      ?? (usingCustomRange
+        ? "Mostrando sólo los días dentro del rango personalizado."
+        : "El mes seleccionado define el rango cuando no hay fechas manuales.");
+
   const fetchMatrixData = useCallback(async (): Promise<MatrixResponse> => {
+    const params = new URLSearchParams();
+    if (selectedMonth) {
+      params.set("month", selectedMonth);
+    }
+    if (activeStart) {
+      params.set("start", activeStart);
+    }
+    if (activeEnd) {
+      params.set("end", activeEnd);
+    }
+    if (usingCustomRange) {
+      params.set("rangeSource", "custom");
+    }
+
     const response = await fetch(
-      `/api/payroll/reports/matrix?month=${encodeURIComponent(selectedMonth)}`,
+      `/api/payroll/reports/matrix?${params.toString()}`,
       createNoStoreInit(),
     );
     const body = await response.json().catch(() => null);
@@ -623,7 +844,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         ? [...matrix.rows].sort((a, b) => a.staffId - b.staffId)
         : [],
     };
-  }, [selectedMonth]);
+  }, [activeEnd, activeStart, selectedMonth, usingCustomRange]);
 
   const fetchMonthStatusData = useCallback(
     async (staffId?: number): Promise<PayrollMonthStatusRow[]> => {
@@ -717,6 +938,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, [selectedMonth]);
 
   const refreshData = useCallback(async () => {
+    if (rangeError) {
+      setError(rangeError);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     setMonthStatusErrors({});
@@ -737,7 +963,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [fetchMatrixData, fetchMonthStatusData, fetchMonthSummaryData]);
+  }, [
+    fetchMatrixData,
+    fetchMonthStatusData,
+    fetchMonthSummaryData,
+    rangeError,
+  ]);
 
   const refreshMatrixOnly = useCallback(async () => {
     const matrixJson = await fetchMatrixData();
@@ -1352,25 +1583,71 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               Visualiza las horas trabajadas por el equipo, aprueba los días registrados y lleva un seguimiento de los pagos por mes.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-4 pt-1">
-            <label className="flex items-center gap-3 text-sm font-medium text-brand-deep">
-              <span>Mes de trabajo</span>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(event) => {
-                  setSelectedMonth(event.target.value);
-                }}
-                className="rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => void refreshData()}
-              className="inline-flex items-center justify-center rounded-full border border-brand-teal-soft bg-brand-teal-soft/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-            >
-              Refrescar datos
-            </button>
+          <div className="flex flex-col gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-3 text-sm font-medium text-brand-deep">
+                <span>Mes de trabajo</span>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(event) => {
+                    setSelectedMonth(event.target.value);
+                  }}
+                  className="rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void refreshData()}
+                className="inline-flex items-center justify-center rounded-full border border-brand-teal-soft bg-brand-teal-soft/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              >
+                Refrescar datos
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-brand-ink-muted sm:text-sm">
+              <label className="flex items-center gap-2">
+                <span>Desde</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(event) => setCustomStartDate(event.target.value)}
+                  className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-xs font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <span>Hasta</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(event) => setCustomEndDate(event.target.value)}
+                  className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-xs font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-sm"
+                />
+              </label>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold sm:text-sm ${
+                  usingCustomRange
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-600"
+                    : "border border-brand-deep-soft/30 bg-brand-deep-soft/20 text-brand-ink-muted"
+                }`}
+              >
+                {usingCustomRange ? "Rango manual activo" : "Usando mes completo"}
+              </span>
+              {customStartDate || customEndDate ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomStartDate("");
+                    setCustomEndDate("");
+                  }}
+                  className="inline-flex items-center rounded-full border border-brand-ink-muted/20 px-3 py-1 text-xs font-semibold text-brand-ink-muted shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/30 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-sm"
+                >
+                  Limpiar rango
+                </button>
+              ) : null}
+            </div>
+            <p className={`text-xs ${rangeError ? "text-rose-600" : "text-brand-ink-muted"}`}>
+              {rangeStatusText}
+            </p>
           </div>
         </header>
 
@@ -1392,8 +1669,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </div>
                 <div className="text-right text-sm text-brand-ink-muted">
                   <p>
-                    Rango: <span className="font-semibold text-brand-deep">{from}</span> a {" "}
-                    <span className="font-semibold text-brand-deep">{to}</span>
+                    Rango: <span className="font-semibold text-brand-deep">{activeStart}</span> a {" "}
+                    <span className="font-semibold text-brand-deep">{activeEnd}</span>
+                    <span className="ml-2 rounded-full border border-brand-ink-muted/20 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                      {usingCustomRange ? "Manual" : "Mes"}
+                    </span>
                   </p>
                   <p>Actualizado automáticamente al aprobar días.</p>
                 </div>
@@ -1604,7 +1884,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       <span className="text-[10px] font-medium text-brand-orange">{statusError}</span>
                                     ) : paidAtIsoValue ? (
                                       <span className="text-[10px] text-brand-ink-muted">
-                                        {paidDateFormatter.format(new Date(`${paidAtIsoValue}T00:00:00`))}
+                                        {paidDateFormatter.format(new Date(`${paidAtIsoValue}T12:00:00Z`))}
                                       </span>
                                     ) : (
                                       <span className="text-[10px] text-brand-ink-muted">—</span>
@@ -1644,7 +1924,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </span>
                 <h2 className="text-2xl font-black">{selectedCell.staffName}</h2>
                 <p className="text-sm text-brand-ink-muted">
-                  {humanDateFormatter.format(new Date(`${selectedCell.workDate}T00:00:00Z`))}
+                  {humanDateFormatter.format(new Date(`${selectedCell.workDate}T12:00:00Z`))}
                 </p>
               </div>
               <div className="rounded-[24px] border border-brand-ink-muted/10 bg-brand-deep-soft/30 px-5 py-4 text-sm text-brand-deep">
