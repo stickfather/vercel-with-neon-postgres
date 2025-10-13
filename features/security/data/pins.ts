@@ -22,8 +22,9 @@ async function ensureTable() {
   const sql = getSqlClient();
   await sql`
     CREATE TABLE IF NOT EXISTS security_pins (
-      scope text PRIMARY KEY,
-      pin_hash text,
+      id bigserial PRIMARY KEY,
+      manager_pin_hash text,
+      staff_pin_hash text,
       updated_at timestamptz DEFAULT now()
     )
   `;
