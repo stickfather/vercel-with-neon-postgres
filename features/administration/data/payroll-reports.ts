@@ -781,17 +781,17 @@ export async function fetchDaySessions({
 
   return rows.map((row) => {
     const sessionId = Number(
-      row.session_id ?? row.attendance_id ?? row.id ?? NaN,
+      readRowValue(row, ["session_id", "attendance_id", "id"]) ?? NaN,
     );
     const checkinTime = coerceString(
-      row.checkin_local ?? row.checkin_time ?? row.checkin,
+      readRowValue(row, ["checkin_local", "checkin_time", "checkin", "start_time"]),
     );
     const checkoutTime = coerceString(
-      row.checkout_local ?? row.checkout_time ?? row.checkout,
+      readRowValue(row, ["checkout_local", "checkout_time", "checkout", "end_time"]),
     );
 
     const minutesValue =
-      toInteger(row.minutes ?? row.total_minutes ?? row.duration_minutes) ?? null;
+      toInteger(readRowValue(row, ["minutes", "total_minutes", "duration_minutes"])) ?? null;
 
     let hoursValue = minutesValue != null ? minutesToHours(minutesValue) : 0;
 
@@ -811,7 +811,7 @@ export async function fetchDaySessions({
 
     return {
       sessionId: Number.isFinite(sessionId) ? sessionId : null,
-      staffId: Number(row.staff_id ?? staffId),
+      staffId: Number(readRowValue(row, ["staff_id", "staffid", "staff"]) ?? staffId),
       workDate,
       checkinTime,
       checkoutTime,
