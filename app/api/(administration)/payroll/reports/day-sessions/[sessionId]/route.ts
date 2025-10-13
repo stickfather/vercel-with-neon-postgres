@@ -10,11 +10,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-type RouteContext = {
-  params: { sessionId: string };
-};
-
-export async function PATCH(request: Request, context: RouteContext) {
+export async function PATCH(
+  request: Request,
+  context: { params: { sessionId: string } },
+) {
   const allowed = await hasValidPinSession("management");
   if (!allowed) {
     return NextResponse.json(
@@ -81,7 +80,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(request: Request, context: RouteContext) {
+export async function DELETE(
+  request: Request,
+  context: { params: { sessionId: string } },
+) {
   const allowed = await hasValidPinSession("management");
   if (!allowed) {
     return NextResponse.json(
