@@ -603,11 +603,22 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       console.error("Mes inválido seleccionado", error);
       return { from: selectedMonth, to: selectedMonth, endExclusive: selectedMonth };
     }
-  }, [selectedMonth]);
+  }, [from, selectedMonth, to]);
 
   const fetchMatrixData = useCallback(async (): Promise<MatrixResponse> => {
+    const params = new URLSearchParams();
+    if (selectedMonth) {
+      params.set("month", selectedMonth);
+    }
+    if (from) {
+      params.set("start", from);
+    }
+    if (to) {
+      params.set("end", to);
+    }
+
     const response = await fetch(
-      `/api/payroll/reports/matrix?month=${encodeURIComponent(selectedMonth)}`,
+      `/api/payroll/reports/matrix?${params.toString()}`,
       createNoStoreInit(),
     );
     const body = await response.json().catch(() => null);
@@ -623,7 +634,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         ? [...matrix.rows].sort((a, b) => a.staffId - b.staffId)
         : [],
     };
-  }, [selectedMonth]);
+  }, [from, selectedMonth, to]);
 
   const fetchMonthStatusData = useCallback(
     async (staffId?: number): Promise<PayrollMonthStatusRow[]> => {

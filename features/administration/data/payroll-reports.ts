@@ -597,15 +597,39 @@ export async function updatePayrollMonthStatus({
 
 export async function fetchPayrollMatrix({
   month,
+  start,
+  end,
 }: {
-  month: string;
+  month?: string | null;
+  start?: string | null;
+  end?: string | null;
 }): Promise<PayrollMatrixResponse> {
   noStore();
   const sql = getSqlClient();
 
-  const { monthEndInclusiveDate, monthStart } = resolveMonthWindow(month);
+  const normalizedStart = normalizeDateLike(start ?? null);
+  const normalizedEnd = normalizeDateLike(end ?? null);
 
-  const monthEnd = toIsoDateString(monthEndInclusiveDate);
+  let rangeStart: string;
+  let rangeEnd: string;
+
+  if (normalizedStart && normalizedEnd) {
+    if (normalizedStart > normalizedEnd) {
+      throw new Error(
+        "El rango de fechas es inválido: la fecha inicial debe ser anterior o igual a la final.",
+      );
+    }
+    rangeStart = normalizedStart;
+    rangeEnd = normalizedEnd;
+  } else if (typeof month === "string" && month.trim().length) {
+    const { monthEndInclusiveDate, monthStart } = resolveMonthWindow(month);
+    rangeStart = monthStart;
+    rangeEnd = toIsoDateString(monthEndInclusiveDate);
+  } else {
+    throw new Error(
+      "Debes indicar un mes o un rango de fechas válido para cargar la matriz de nómina.",
+    );
+  }
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
@@ -618,11 +642,11 @@ export async function fetchPayrollMatrix({
       m.total_hours
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-    WHERE m.work_date BETWEEN ${monthStart}::date AND ${monthEnd}::date
+    WHERE m.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
 
-  const days = enumerateDaysFromStrings(monthStart, monthEnd);
+  const days = enumerateDaysFromStrings(rangeStart, rangeEnd);
 
   const grouped = new Map<
     number,
@@ -737,6 +761,7 @@ export async function fetchDaySessions({
 }): Promise<DaySession[]> {
   noStore();
   const sql = getSqlClient();
+  const normalizedWorkDate = ensureWorkDate(workDate);
 
   const columns = await fetchTableColumns(
     sql,
@@ -805,33 +830,18 @@ export async function fetchDaySessions({
     )
     .map((column) => `s.${quoteIdentifier(column)}`);
 
-  const predicates: string[] = [];
   const workDateExpression = buildDateExpression(workDateColumn);
   if (!workDateExpression) {
     throw new Error(
       "La vista de sesiones no expone una columna de fecha de trabajo compatible.",
     );
   }
-  predicates.push(`${workDateExpression} = $2::date`);
-
-  const checkinExpression = buildDateExpression(checkinColumn ?? null);
-  if (checkinExpression && !predicates.includes(`${checkinExpression} = $2::date`)) {
-    predicates.push(`${checkinExpression} = $2::date`);
-  }
-
-  const checkoutExpression = buildDateExpression(checkoutColumn ?? null);
-  if (
-    checkoutExpression &&
-    !predicates.includes(`${checkoutExpression} = $2::date`)
-  ) {
-    predicates.push(`${checkoutExpression} = $2::date`);
-  }
 
   const query = `
     SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_local_v s
     WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND (${predicates.join(" OR ")})
+      AND ${workDateExpression} = $2::date
     ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
   `;
 
@@ -839,7 +849,9 @@ export async function fetchDaySessions({
     unsafe: (query: string, params?: unknown[]) => Promise<unknown>;
   };
 
-  const rows = normalizeRows<SqlRow>(await client.unsafe(query, [staffId, workDate]));
+  const rows = normalizeRows<SqlRow>(
+    await client.unsafe(query, [staffId, normalizedWorkDate]),
+  );
 
   return rows.map((row) => {
     // Use readRowValue for flexible column name matching to support various database schemas

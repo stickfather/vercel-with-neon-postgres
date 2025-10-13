@@ -186,6 +186,13 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 </span>
               </div>
               <div className="text-xl font-semibold text-brand-deep">{formatForecast(data.forecastMonthsToFinish)}</div>
+              <p className="text-xs text-brand-ink-muted">
+                {data.onPace === true
+                  ? "Pronóstico alineado con el plan actual."
+                  : data.onPace === false
+                    ? "Ritmo por debajo de lo esperado; considera intervenir."
+                    : "Necesitamos más datos para proyectar la meta."}
+              </p>
               <p className="text-xs text-brand-ink-muted">{formatLastSession(data.lastSessionDaysAgo)}</p>
             </article>
 
@@ -215,6 +222,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     : `${data.leiTrendDelta > 0 ? "▲" : data.leiTrendDelta < 0 ? "▼" : "→"} ${formatDecimal(Math.abs(data.leiTrendDelta), 2)}`}
                 </span>
               </div>
+              <p className="text-xs text-brand-ink-muted">
+                Velocidad de avance en lecciones. Una tendencia ↑ indica más progreso por hora dedicada.
+              </p>
             </article>
 
             <article className="flex flex-col gap-3 rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
@@ -238,7 +248,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   }}
                 />
               </div>
-              <p className="text-xs text-brand-ink-muted">Progreso relativo a la meta de eficiencia.</p>
+              <p className="text-xs text-brand-ink-muted">
+                <span className="font-semibold">100% = meta cumplida.</span> Valores menores indican menor eficiencia por hora.
+              </p>
             </article>
 
             <article className="flex flex-col gap-3 rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
@@ -247,12 +259,28 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               <p className="text-xs text-brand-ink-muted">
                 Promedio sesión: {formatInteger(data.avgSessionMinutes30d)} min
               </p>
+              <p className="text-xs text-brand-ink-muted">
+                Equivale a {formatDecimal(
+                  data.hours30d != null && Number.isFinite(data.hours30d)
+                    ? data.hours30d / 4.345
+                    : null,
+                  1,
+                )} h por semana registradas.
+              </p>
             </article>
 
             <article className="flex flex-col gap-3 rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
               <h3 className="text-sm font-semibold text-brand-ink-muted">Días activos (prom. / sem)</h3>
               <div className="text-3xl font-bold text-brand-deep">{formatWeeklyDays(data.weeklyActiveDays)}</div>
-              <p className="text-xs text-brand-ink-muted">Actividad consistente en la última ventana de 30 días.</p>
+              <p className="text-xs text-brand-ink-muted">
+                {data.weeklyActiveDays != null && Number.isFinite(data.weeklyActiveDays)
+                  ? data.weeklyActiveDays >= 5
+                    ? "Rutina sólida: práctica casi diaria."
+                    : data.weeklyActiveDays >= 3
+                      ? "Actividad moderada, aún con margen para reforzar."
+                      : "Pocos días activos; requiere acompañamiento."
+                  : "Sin suficientes datos de consistencia."}
+              </p>
             </article>
           </div>
 
@@ -294,6 +322,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   <dd className="font-semibold">{formatInteger(data.lessonsRemaining)}</dd>
                 </div>
               </dl>
+              <p className="text-xs text-brand-ink-muted">
+                Responde si el aprendizaje avanza: cuántas lecciones se sumaron este mes y cuántas quedan para lograr el objetivo.
+              </p>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between text-xs text-brand-ink-muted">
                   <span>Tiempo estimado hasta meta</span>
@@ -375,6 +406,9 @@ function StudyTrendChart({ entries }: StudyTrendChartProps) {
         <span>{entries.length ? formatDateLabel(entries[0].date) : "—"}</span>
         <span>{entries.length ? formatDateLabel(entries[entries.length - 1].date) : "—"}</span>
       </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-brand-ink-muted">
+        La franja rosa resalta días con menos de 30 minutos. Busca barras continuas por encima de esa zona para confirmar hábito.
+      </p>
     </div>
   );
 }
@@ -433,6 +467,9 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
             : "Sin datos completos"}
         </span>
       </div>
+      <p className="text-xs text-brand-ink-muted">
+        Muestra el lugar actual del estudiante en su plan A1→B2 y cuánto falta para completar la ruta pactada.
+      </p>
     </div>
   );
 }
@@ -473,6 +510,9 @@ function RiskCard({ data }: RiskCardProps) {
         <span className={`text-sm font-semibold ${badge.className}`}>{badge.label}</span>
         <span className="text-xs text-brand-ink-muted">{badge.description}</span>
       </div>
+      <p className="text-xs text-brand-ink-muted">
+        Resume el riesgo actual del estudiante combinando estancamientos, inactividad y alertas automáticas.
+      </p>
       <div className="flex flex-col gap-2 text-sm text-brand-deep">
         <span className="font-semibold text-brand-deep">Duración promedio de sesión</span>
         <div className="relative h-2 rounded-full bg-brand-deep-soft/30">
@@ -556,6 +596,9 @@ function JourneyTimeline({ data }: JourneyTimelineProps) {
             : "Sin datos completos"}
         </span>
       </div>
+      <p className="text-xs text-brand-ink-muted">
+        Línea de tiempo completa: verde = recorrido cubierto, marcador = lección actual dentro del nivel meta.
+      </p>
     </div>
   );
 }
