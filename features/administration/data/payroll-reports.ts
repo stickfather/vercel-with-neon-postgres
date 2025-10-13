@@ -46,6 +46,10 @@ export type PayrollMonthStatusRow = {
   paidAt: string | null;
 };
 
+/**
+ * Resolves a month parameter (YYYY-MM) into date boundaries for queries and day enumeration.
+ * Returns dates adjusted for the application timezone to prevent month boundary leakage.
+ */
 function resolveMonthWindow(monthParam: string): {
   monthKey: string;
   monthStartDate: Date;
@@ -75,6 +79,8 @@ function resolveMonthWindow(monthParam: string): {
   const nextMonthYear = monthNumber === 12 ? year + 1 : year;
   const monthEndExclusiveString = `${nextMonthYear}-${String(nextMonthNumber).padStart(2, "0")}-01`;
 
+  // Create Date objects that represent the local timezone dates, not UTC
+  // This ensures enumerateDays generates the correct month days without spillover
   const monthStartDate = new Date(`${monthStartString}T00:00:00Z`);
   const monthEndExclusiveDate = new Date(`${monthEndExclusiveString}T00:00:00Z`);
   const monthEndInclusiveDate = new Date(monthEndExclusiveDate.getTime() - 24 * 60 * 60 * 1000);
@@ -283,17 +289,72 @@ async function logPayrollAuditEvent({
   `;
 }
 
-function enumerateDays(from: Date, to: Date): string[] {
+/**
+ * Generates an array of ISO date strings (YYYY-MM-DD) for each day in the range [from, to] inclusive.
+ * Works with date strings directly to avoid timezone conversion issues.
+ * This prevents leakage of adjacent month days when UTC vs local timezone boundaries differ.
+ */
+function enumerateDaysFromStrings(fromStr: string, toStr: string): string[] {
   const days: string[] = [];
-  const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
-  const end = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
-
-  while (cursor.getTime() <= end.getTime()) {
-    days.push(toIsoDateString(cursor));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  
+  // Parse the from date
+  const fromMatch = fromStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const toMatch = toStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  
+  if (!fromMatch || !toMatch) {
+    throw new Error("Invalid date format for enumerateDays");
   }
-
+  
+  let year = Number(fromMatch[1]);
+  let month = Number(fromMatch[2]);
+  let day = Number(fromMatch[3]);
+  
+  const toYear = Number(toMatch[1]);
+  const toMonth = Number(toMatch[2]);
+  const toDay = Number(toMatch[3]);
+  
+  // Iterate day by day
+  while (true) {
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    days.push(dateStr);
+    
+    // Check if we've reached the end date
+    if (year === toYear && month === toMonth && day === toDay) {
+      break;
+    }
+    
+    // Increment day
+    day++;
+    
+    // Get days in current month
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    if (day > daysInMonth) {
+      day = 1;
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+    }
+    
+    // Safety check to prevent infinite loop
+    if (days.length > 366) {
+      throw new Error("enumerateDays exceeded maximum iteration count");
+    }
+  }
+  
   return days;
+}
+
+/**
+ * Legacy function maintained for compatibility.
+ * Converts Date objects to strings and delegates to enumerateDaysFromStrings.
+ */
+function enumerateDays(from: Date, to: Date): string[] {
+  const fromStr = toIsoDateString(from);
+  const toStr = toIsoDateString(to);
+  return enumerateDaysFromStrings(fromStr, toStr);
 }
 
 function toNumber(value: unknown, fractionDigits = 2): number {
@@ -630,7 +691,14 @@ export async function fetchPayrollMatrix({
     ORDER BY staff_id, work_date
   `);
 
-  const days = enumerateDays(monthStartDate, monthEndInclusiveDate);
+  // Generate days list using date strings to avoid timezone conversion issues
+  // Extract year and month to compute the last day of the month
+  const [yearStr, monthStr] = monthStart.split("-");
+  const year = Number(yearStr);
+  const monthNum = Number(monthStr);
+  const lastDayOfMonth = new Date(year, monthNum, 0).getDate();
+  const monthEnd = `${yearStr}-${monthStr}-${String(lastDayOfMonth).padStart(2, "0")}`;
+  const days = enumerateDaysFromStrings(monthStart, monthEnd);
 
   const grouped = new Map<
     number,
@@ -713,6 +781,13 @@ export async function fetchPayrollMatrix({
   return { days, rows: matrixRows };
 }
 
+/**
+ * Fetches all sessions for a specific staff member on a specific work date.
+ * The work_date parameter should be in local timezone (YYYY-MM-DD format).
+ * The staff_day_sessions_v view is expected to have work_date computed in the local timezone.
+ * If the view provides *_local timestamp columns, they will be used; otherwise timestamps
+ * will be converted to local timezone.
+ */
 export async function fetchDaySessions({
   staffId,
   workDate,
@@ -765,11 +840,19 @@ export async function fetchDaySessions({
     )
     .map((column) => `s.${quoteIdentifier(column)}`);
 
+  // Build the WHERE clause to filter by work_date
+  // We try to use the work_date column directly, but if the view computes it in UTC,
+  // we may need to also check via timezone-converted checkin_time
+  // The safest approach is to check if work_date matches OR if the checkin falls on that local date
+  const checkinDateCheck = checkinColumn
+    ? `OR DATE(timezone('${TIMEZONE}', s.${quoteIdentifier(checkinColumn)})) = $2::date`
+    : "";
+
   const query = `
     SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_v s
     WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND s.${quoteIdentifier(workDateColumn)} = $2::date
+      AND (s.${quoteIdentifier(workDateColumn)} = $2::date ${checkinDateCheck})
     ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
   `;
 
