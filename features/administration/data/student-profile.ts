@@ -970,6 +970,19 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+async function safeQuery(
+  promise: Promise<unknown>,
+  label: string,
+): Promise<SqlRow[]> {
+  try {
+    const result = await withTimeout(promise, 5000);
+    return normalizeRows<SqlRow>(result);
+  } catch (error) {
+    console.error(`Fallo al consultar ${label} para el panel del coach`, error);
+    return [];
+  }
+}
+
 function isIsoSunday(date: string): boolean {
   if (!date) return false;
   const normalized = date.includes("T") ? date : `${date}T00:00:00Z`;
@@ -1471,15 +1484,9 @@ export async function getStudentCoachPanelSummary(
   noStore();
   const sql = getSqlClient();
 
-  const [
-    studentRawRows,
-    panelRawRows,
-    riskRawRows,
-    planRawRows,
-    dailyRawRows,
-    configRawRows,
-  ] = await Promise.all([
-    withTimeout(
+  let studentRows: SqlRow[] = [];
+  try {
+    const rawStudentRows = await withTimeout(
       sql`
         SELECT id AS student_id, full_name
         FROM public.students
@@ -1487,62 +1494,64 @@ export async function getStudentCoachPanelSummary(
         LIMIT 1
       `,
       5000,
-    ),
-    withTimeout(
+    );
+    studentRows = normalizeRows<SqlRow>(rawStudentRows);
+  } catch (error) {
+    console.error(
+      "No se pudo cargar la fila base del estudiante para el panel del coach",
+      error,
+    );
+    throw error;
+  }
+
+  const [panelRows, riskRows, planRows, dailyRows, configRows] = await Promise.all([
+    safeQuery(
       sql`
         SELECT *
         FROM analytics.v_student_coaching_panel_enhanced
         WHERE student_id = ${studentId}::bigint
         LIMIT 1
       `,
-      5000,
+      "analytics.v_student_coaching_panel_enhanced",
     ),
-    withTimeout(
+    safeQuery(
       sql`
         SELECT *
         FROM analytics.v_at_risk_students
         WHERE student_id = ${studentId}::bigint
         LIMIT 1
       `,
-      5000,
+      "analytics.v_at_risk_students",
     ),
-    withTimeout(
+    safeQuery(
       sql`
         SELECT *
         FROM analytics.v_student_lesson_plan
         WHERE student_id = ${studentId}::bigint
       `,
-      5000,
+      "analytics.v_student_lesson_plan",
     ),
-    withTimeout(
+    safeQuery(
       sql`
         SELECT *
         FROM analytics.v_student_daily_minutes_30d
         WHERE student_id = ${studentId}::bigint
       `,
-      5000,
+      "analytics.v_student_daily_minutes_30d",
     ),
-    withTimeout(
+    safeQuery(
       sql`
         SELECT *
         FROM analytics.progress_config
         ORDER BY updated_at DESC NULLS LAST
         LIMIT 1
       `,
-      5000,
+      "analytics.progress_config",
     ),
   ]);
-
-  const studentRows = normalizeRows<SqlRow>(studentRawRows);
   if (!studentRows.length) {
     return null;
   }
-
-  const panelRows = normalizeRows<SqlRow>(panelRawRows);
-  const riskRows = normalizeRows<SqlRow>(riskRawRows);
-  const planRows = normalizeRows<SqlRow>(planRawRows);
-  const dailyRows = normalizeRows<SqlRow>(dailyRawRows);
-  const configRows = normalizeRows<SqlRow>(configRawRows);
 
   const studentRow = studentRows[0];
   const panelPayload = toJsonRecord(panelRows[0] ?? null);

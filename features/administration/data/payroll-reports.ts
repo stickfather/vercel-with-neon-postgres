@@ -603,11 +603,7 @@ export async function fetchPayrollMatrix({
   noStore();
   const sql = getSqlClient();
 
-  const {
-    monthKey,
-    monthEndInclusiveDate,
-    monthStart,
-  } = resolveMonthWindow(month);
+  const { monthEndInclusiveDate, monthStart } = resolveMonthWindow(month);
 
   const monthEnd = toIsoDateString(monthEndInclusiveDate);
 
@@ -622,7 +618,7 @@ export async function fetchPayrollMatrix({
       m.total_hours
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-    WHERE DATE(m.work_date) BETWEEN ${monthStart}::date AND ${monthEnd}::date
+    WHERE m.work_date BETWEEN ${monthStart}::date AND ${monthEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
 
@@ -652,7 +648,7 @@ export async function fetchPayrollMatrix({
         "date",
       ]),
     );
-    if (!workDate || workDate.slice(0, 7) !== monthKey) continue;
+    if (!workDate) continue;
 
     if (!grouped.has(staffId)) {
       grouped.set(staffId, {
@@ -803,39 +799,39 @@ export async function fetchDaySessions({
     );
   }
 
-  const orderColumns = [workDateColumn, checkinColumn, sessionColumn]
+  const orderColumns = [checkinColumn, sessionColumn]
     .filter((value, index, array): value is string =>
       Boolean(value) && array.indexOf(value) === index,
     )
     .map((column) => `s.${quoteIdentifier(column)}`);
 
-  const dateExpressions = new Set<string>();
+  const predicates: string[] = [];
   const workDateExpression = buildDateExpression(workDateColumn);
-  if (workDateExpression) {
-    dateExpressions.add(`${workDateExpression} = $2::date`);
+  if (!workDateExpression) {
+    throw new Error(
+      "La vista de sesiones no expone una columna de fecha de trabajo compatible.",
+    );
   }
+  predicates.push(`${workDateExpression} = $2::date`);
 
   const checkinExpression = buildDateExpression(checkinColumn ?? null);
-  if (checkinExpression) {
-    dateExpressions.add(`${checkinExpression} = $2::date`);
+  if (checkinExpression && !predicates.includes(`${checkinExpression} = $2::date`)) {
+    predicates.push(`${checkinExpression} = $2::date`);
   }
 
   const checkoutExpression = buildDateExpression(checkoutColumn ?? null);
-  if (checkoutExpression) {
-    dateExpressions.add(`${checkoutExpression} = $2::date`);
-  }
-
-  if (!dateExpressions.size) {
-    throw new Error(
-      "No se pudieron determinar columnas de fecha válidas para filtrar las sesiones.",
-    );
+  if (
+    checkoutExpression &&
+    !predicates.includes(`${checkoutExpression} = $2::date`)
+  ) {
+    predicates.push(`${checkoutExpression} = $2::date`);
   }
 
   const query = `
     SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_local_v s
     WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND (${Array.from(dateExpressions).join(" OR ")})
+      AND (${predicates.join(" OR ")})
     ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
   `;
 
