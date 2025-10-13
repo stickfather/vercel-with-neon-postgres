@@ -837,11 +837,37 @@ export async function fetchDaySessions({
     );
   }
 
+  const checkinDateExpression = checkinColumn
+    ? buildDateExpression(checkinColumn)
+    : null;
+  const checkoutDateExpression = checkoutColumn
+    ? buildDateExpression(checkoutColumn)
+    : null;
+
+  const dateComparisons = [
+    workDateExpression,
+    checkinDateExpression,
+    checkoutDateExpression,
+  ]
+    .filter((expression): expression is string => Boolean(expression))
+    .map((expression) => `${expression} = $2::date`);
+
+  if (!dateComparisons.length) {
+    throw new Error(
+      "No se pudo construir una expresión de fecha para filtrar las sesiones por día.",
+    );
+  }
+
+  const dateClause =
+    dateComparisons.length === 1
+      ? dateComparisons[0]
+      : `(${dateComparisons.join(" OR ")})`;
+
   const query = `
     SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_local_v s
     WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND ${workDateExpression} = $2::date
+      AND ${dateClause}
     ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
   `;
 

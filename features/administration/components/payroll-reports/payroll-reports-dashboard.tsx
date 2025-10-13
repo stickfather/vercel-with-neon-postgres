@@ -386,6 +386,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paidAtDrafts, setPaidAtDrafts] = useState<Record<number, string>>({});
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
 
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -607,16 +609,106 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const { from, to } = monthRange;
 
+  const activeRange = useMemo(() => {
+    const trimmedStart = customStartDate.trim();
+    const trimmedEnd = customEndDate.trim();
+
+    const startIso = trimmedStart.length ? toIsoDateOnly(trimmedStart) : null;
+    const endIso = trimmedEnd.length ? toIsoDateOnly(trimmedEnd) : null;
+
+    if (trimmedStart.length && !startIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: "La fecha inicial es inválida.",
+        hint: null,
+      };
+    }
+
+    if (trimmedEnd.length && !endIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: "La fecha final es inválida.",
+        hint: null,
+      };
+    }
+
+    if (startIso && !endIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: null,
+        hint: "Ingresa también la fecha final para activar el rango manual.",
+      };
+    }
+
+    if (!startIso && endIso) {
+      return {
+        start: from,
+        end: to,
+        usingCustom: false as const,
+        error: null,
+        hint: "Ingresa también la fecha inicial para activar el rango manual.",
+      };
+    }
+
+    if (startIso && endIso) {
+      if (startIso > endIso) {
+        return {
+          start: from,
+          end: to,
+          usingCustom: false as const,
+          error: "La fecha inicial debe ser anterior o igual a la final.",
+          hint: null,
+        };
+      }
+      return {
+        start: startIso,
+        end: endIso,
+        usingCustom: true as const,
+        error: null,
+        hint: "Mostrando rango personalizado.",
+      };
+    }
+
+    return {
+      start: from,
+      end: to,
+      usingCustom: false as const,
+      error: null,
+      hint: null,
+    };
+  }, [customEndDate, customStartDate, from, to]);
+
+  const activeStart = activeRange.start;
+  const activeEnd = activeRange.end;
+  const usingCustomRange = activeRange.usingCustom;
+  const rangeError = activeRange.error;
+  const rangeHint = activeRange.hint;
+  const rangeStatusText =
+    rangeError
+      ?? rangeHint
+      ?? (usingCustomRange
+        ? "Mostrando sólo los días dentro del rango personalizado."
+        : "El mes seleccionado define el rango cuando no hay fechas manuales.");
+
   const fetchMatrixData = useCallback(async (): Promise<MatrixResponse> => {
     const params = new URLSearchParams();
     if (selectedMonth) {
       params.set("month", selectedMonth);
     }
-    if (from) {
-      params.set("start", from);
+    if (activeStart) {
+      params.set("start", activeStart);
     }
-    if (to) {
-      params.set("end", to);
+    if (activeEnd) {
+      params.set("end", activeEnd);
+    }
+    if (usingCustomRange) {
+      params.set("rangeSource", "custom");
     }
 
     const response = await fetch(
@@ -636,7 +728,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         ? [...matrix.rows].sort((a, b) => a.staffId - b.staffId)
         : [],
     };
-  }, [from, selectedMonth, to]);
+  }, [activeEnd, activeStart, selectedMonth, usingCustomRange]);
 
   const fetchMonthStatusData = useCallback(
     async (staffId?: number): Promise<PayrollMonthStatusRow[]> => {
@@ -730,6 +822,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, [selectedMonth]);
 
   const refreshData = useCallback(async () => {
+    if (rangeError) {
+      setError(rangeError);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     setMonthStatusErrors({});
@@ -750,7 +847,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [fetchMatrixData, fetchMonthStatusData, fetchMonthSummaryData]);
+  }, [
+    fetchMatrixData,
+    fetchMonthStatusData,
+    fetchMonthSummaryData,
+    rangeError,
+  ]);
 
   const refreshMatrixOnly = useCallback(async () => {
     const matrixJson = await fetchMatrixData();
@@ -1365,25 +1467,71 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               Visualiza las horas trabajadas por el equipo, aprueba los días registrados y lleva un seguimiento de los pagos por mes.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-4 pt-1">
-            <label className="flex items-center gap-3 text-sm font-medium text-brand-deep">
-              <span>Mes de trabajo</span>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(event) => {
-                  setSelectedMonth(event.target.value);
-                }}
-                className="rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => void refreshData()}
-              className="inline-flex items-center justify-center rounded-full border border-brand-teal-soft bg-brand-teal-soft/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-            >
-              Refrescar datos
-            </button>
+          <div className="flex flex-col gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-3 text-sm font-medium text-brand-deep">
+                <span>Mes de trabajo</span>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(event) => {
+                    setSelectedMonth(event.target.value);
+                  }}
+                  className="rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void refreshData()}
+                className="inline-flex items-center justify-center rounded-full border border-brand-teal-soft bg-brand-teal-soft/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              >
+                Refrescar datos
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-brand-ink-muted sm:text-sm">
+              <label className="flex items-center gap-2">
+                <span>Desde</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(event) => setCustomStartDate(event.target.value)}
+                  className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-xs font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <span>Hasta</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(event) => setCustomEndDate(event.target.value)}
+                  className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-xs font-semibold text-brand-deep shadow focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-sm"
+                />
+              </label>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold sm:text-sm ${
+                  usingCustomRange
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-600"
+                    : "border border-brand-deep-soft/30 bg-brand-deep-soft/20 text-brand-ink-muted"
+                }`}
+              >
+                {usingCustomRange ? "Rango manual activo" : "Usando mes completo"}
+              </span>
+              {customStartDate || customEndDate ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomStartDate("");
+                    setCustomEndDate("");
+                  }}
+                  className="inline-flex items-center rounded-full border border-brand-ink-muted/20 px-3 py-1 text-xs font-semibold text-brand-ink-muted shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/30 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-sm"
+                >
+                  Limpiar rango
+                </button>
+              ) : null}
+            </div>
+            <p className={`text-xs ${rangeError ? "text-rose-600" : "text-brand-ink-muted"}`}>
+              {rangeStatusText}
+            </p>
           </div>
         </header>
 
@@ -1405,8 +1553,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </div>
                 <div className="text-right text-sm text-brand-ink-muted">
                   <p>
-                    Rango: <span className="font-semibold text-brand-deep">{from}</span> a {" "}
-                    <span className="font-semibold text-brand-deep">{to}</span>
+                    Rango: <span className="font-semibold text-brand-deep">{activeStart}</span> a {" "}
+                    <span className="font-semibold text-brand-deep">{activeEnd}</span>
+                    <span className="ml-2 rounded-full border border-brand-ink-muted/20 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                      {usingCustomRange ? "Manual" : "Mes"}
+                    </span>
                   </p>
                   <p>Actualizado automáticamente al aprobar días.</p>
                 </div>

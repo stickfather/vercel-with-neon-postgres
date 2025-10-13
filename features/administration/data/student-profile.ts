@@ -995,6 +995,15 @@ function isIsoSunday(date: string): boolean {
   return isoDay === 7;
 }
 
+export type StudentLessonPlanLevelSegment = {
+  levelCode: string | null;
+  levelLabel: string | null;
+  startIndex: number;
+  endIndex: number;
+  startPercent: number;
+  endPercent: number;
+};
+
 export type StudentLessonPlanSnapshot = {
   plannedLevelMin: string | null;
   plannedLevelMax: string | null;
@@ -1004,6 +1013,7 @@ export type StudentLessonPlanSnapshot = {
   lessonsCompleted: number | null;
   lessonsRemaining: number | null;
   lessonsTotal: number | null;
+  levelSegments: StudentLessonPlanLevelSegment[];
 };
 
 export type DailyStudyEntry = {
@@ -1337,14 +1347,16 @@ function mapLessonPlanSnapshot(
     "goal_level",
   ]);
 
+  const totalRecords = sortedRecords.length;
+
   let lessonsTotal = extractNumberFromCollection(sortedRecords, [
     "lessons_total",
     "total_lessons",
     "plan_length",
     "lesson_count",
   ]);
-  if (lessonsTotal == null && sortedRecords.length) {
-    lessonsTotal = sortedRecords.length;
+  if (lessonsTotal == null && totalRecords) {
+    lessonsTotal = totalRecords;
   }
 
   let lessonsCompleted = extractNumberFromCollection(sortedRecords, [
@@ -1364,13 +1376,6 @@ function mapLessonPlanSnapshot(
     "remaining_lessons",
     "lessons_left",
   ]);
-  if (
-    lessonsRemaining == null &&
-    lessonsTotal != null &&
-    lessonsCompleted != null
-  ) {
-    lessonsRemaining = Math.max(lessonsTotal - lessonsCompleted, 0);
-  }
 
   let currentLessonIndex = extractNumberFromCollection(sortedRecords, [
     "current_lesson_index",
@@ -1379,17 +1384,42 @@ function mapLessonPlanSnapshot(
     "lesson_index",
     "lesson_seq",
   ]);
+
+  const activeRecord = findActiveLessonRecord(
+    sortedRecords,
+    currentLessonIndex != null ? Math.trunc(currentLessonIndex) : null,
+  );
+
+  const activeRecordIndex = activeRecord ? sortedRecords.indexOf(activeRecord) : -1;
+
+  if (activeRecordIndex >= 0) {
+    if (lessonsCompleted == null || lessonsCompleted < activeRecordIndex) {
+      lessonsCompleted = activeRecordIndex;
+    }
+    const derivedIndex = activeRecordIndex + 1;
+    if (currentLessonIndex == null || currentLessonIndex < derivedIndex) {
+      currentLessonIndex = derivedIndex;
+    }
+  }
+
+  if (lessonsTotal == null && totalRecords) {
+    lessonsTotal = totalRecords;
+  }
+
+  if (
+    lessonsRemaining == null &&
+    lessonsTotal != null &&
+    lessonsCompleted != null
+  ) {
+    lessonsRemaining = Math.max(lessonsTotal - lessonsCompleted, 0);
+  }
+
   if (currentLessonIndex == null && lessonsCompleted != null) {
     const tentativeIndex = lessonsCompleted + 1;
     if (lessonsTotal == null || tentativeIndex <= lessonsTotal + 1) {
       currentLessonIndex = tentativeIndex;
     }
   }
-
-  const activeRecord = findActiveLessonRecord(
-    sortedRecords,
-    currentLessonIndex != null ? Math.trunc(currentLessonIndex) : null,
-  );
 
   const currentLessonLabel =
     extractStringFromCollection(sortedRecords, [
@@ -1432,6 +1462,56 @@ function mapLessonPlanSnapshot(
     return null;
   }
 
+  const clampedLessonsTotal = lessonsTotal != null && lessonsTotal > 0 ? lessonsTotal : totalRecords || null;
+
+  const segments: StudentLessonPlanLevelSegment[] = [];
+  if (clampedLessonsTotal && totalRecords) {
+    let currentSegment: StudentLessonPlanLevelSegment | null = null;
+
+    sortedRecords.forEach((record, index) => {
+      const levelCode =
+        extractString(record, ["level_code", "lesson_level", "level"]) ?? null;
+      const levelLabel =
+        extractString(record, [
+          "level_label",
+          "lesson_level_label",
+          "level_name",
+          "level_display",
+        ]) ?? levelCode;
+
+      if (!currentSegment || currentSegment.levelCode !== levelCode) {
+        const startIndex = index + 1;
+        currentSegment = {
+          levelCode,
+          levelLabel,
+          startIndex,
+          endIndex: startIndex,
+          startPercent:
+            ((startIndex - 1) / clampedLessonsTotal) * 100,
+          endPercent: (startIndex / clampedLessonsTotal) * 100,
+        };
+        segments.push(currentSegment);
+      } else {
+        currentSegment.endIndex = index + 1;
+        currentSegment.endPercent =
+          ((index + 1) / clampedLessonsTotal) * 100;
+      }
+    });
+
+    // Normalize trailing segment boundaries to avoid floating point drift.
+    segments.forEach((segment, index) => {
+      if (index === 0) {
+        segment.startPercent = 0;
+      }
+      if (index === segments.length - 1) {
+        segment.endPercent = 100;
+      }
+
+      segment.startPercent = Math.min(100, Math.max(0, segment.startPercent));
+      segment.endPercent = Math.min(100, Math.max(segment.startPercent, segment.endPercent));
+    });
+  }
+
   return {
     plannedLevelMin,
     plannedLevelMax,
@@ -1440,7 +1520,8 @@ function mapLessonPlanSnapshot(
     currentLessonIndex,
     lessonsCompleted,
     lessonsRemaining,
-    lessonsTotal,
+    lessonsTotal: clampedLessonsTotal,
+    levelSegments: segments,
   };
 }
 

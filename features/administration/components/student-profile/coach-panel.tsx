@@ -421,6 +421,7 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
   const plan = data.lessonPlan;
   const completedFromPlan = plan?.lessonsCompleted ?? null;
   const remainingForTotal = plan?.lessonsRemaining ?? data.lessonsRemaining ?? null;
+  const levelSegments = plan?.levelSegments ?? [];
   const totalLessons =
     plan?.lessonsTotal ??
     (completedFromPlan != null && remainingForTotal != null
@@ -439,15 +440,68 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
     ? clampPercent((plan.currentLessonIndex / totalLessons) * 100)
     : progressPercent;
 
+  const currentSegment = levelSegments.find((segment) => {
+    if (currentPercent == null) return false;
+    const start = segment.startPercent ?? 0;
+    const end = segment.endPercent ?? 0;
+    return currentPercent >= start && currentPercent <= end + 0.5;
+  });
+
+  const lessonsCompletedValue = completedLessons ?? 0;
+  const segmentLessons = currentSegment
+    ? currentSegment.endIndex - currentSegment.startIndex + 1
+    : null;
+  const completedWithinSegment =
+    currentSegment && segmentLessons
+      ? Math.min(
+          Math.max(
+            0,
+            lessonsCompletedValue - (currentSegment.startIndex - 1),
+          ),
+          segmentLessons,
+        )
+      : null;
+  const segmentPercent =
+    currentSegment && segmentLessons && segmentLessons > 0 && completedWithinSegment != null
+      ? clampPercent((completedWithinSegment / segmentLessons) * 100)
+      : null;
+
+  const globalPercentLabel =
+    progressPercent != null ? `${formatDecimal(progressPercent, progressPercent >= 10 ? 0 : 1)}%` : null;
+  const segmentPercentLabel =
+    currentSegment && segmentPercent != null
+      ? `${formatDecimal(segmentPercent, segmentPercent >= 10 ? 0 : 1)}%`
+      : null;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between text-sm text-brand-ink-muted">
         <span>{plan?.plannedLevelMin ?? "Nivel inicial"}</span>
         <span>{plan?.plannedLevelMax ?? "Nivel meta"}</span>
       </div>
-      <div className="relative h-3 rounded-full bg-brand-deep-soft/30">
+      <div className="relative h-3 overflow-hidden rounded-full bg-brand-deep-soft/20">
+        {levelSegments.map((segment, index) => (
+          <div
+            key={`${segment.levelCode ?? "nivel"}-${segment.startIndex}`}
+            className={`absolute inset-y-0 ${index % 2 === 0 ? "bg-brand-deep-soft/40" : "bg-brand-deep-soft/25"}`}
+            style={{
+              left: `${segment.startPercent}%`,
+              width: `${Math.max(0, segment.endPercent - segment.startPercent)}%`,
+            }}
+            title={`Nivel ${segment.levelLabel ?? segment.levelCode ?? "sin nivel"}`}
+            aria-hidden
+          />
+        ))}
+        {levelSegments.slice(1).map((segment) => (
+          <span
+            key={`divider-${segment.startIndex}`}
+            className="absolute inset-y-0 w-px bg-white/60"
+            style={{ left: `${segment.startPercent}%` }}
+            aria-hidden
+          />
+        ))}
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-brand-teal/60"
+          className="absolute inset-y-0 left-0 bg-brand-teal/50"
           style={{ width: `${progressPercent ?? 0}%` }}
           aria-hidden
         />
@@ -463,12 +517,56 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
         </span>
         <span className="text-brand-ink-muted">
           {completedLessons != null && totalLessons
-            ? `${formatInteger(completedLessons)} de ${formatInteger(totalLessons)} lecciones`
+            ? `${formatInteger(completedLessons)} de ${formatInteger(totalLessons)} lecciones (${globalPercentLabel ?? "—"})`
             : "Sin datos completos"}
         </span>
       </div>
+      {levelSegments.length ? (
+        <div className="grid gap-2 text-xs text-brand-ink-muted sm:grid-cols-2">
+          {levelSegments.map((segment) => {
+            const lessonsInSegment = segment.endIndex - segment.startIndex + 1;
+            const completedInSegment =
+              completedLessons != null
+                ? Math.max(
+                    0,
+                    Math.min(
+                      lessonsInSegment,
+                      completedLessons - (segment.startIndex - 1),
+                    ),
+                  )
+                : null;
+            const percentInSegment =
+              completedInSegment != null && lessonsInSegment > 0
+                ? clampPercent((completedInSegment / lessonsInSegment) * 100)
+                : null;
+            const isCurrent = currentSegment?.levelCode === segment.levelCode;
+            return (
+              <div
+                key={`${segment.levelCode ?? "nivel"}-${segment.startIndex}-summary`}
+                className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
+                  isCurrent
+                    ? "border-brand-teal bg-brand-teal-soft/30 text-brand-deep"
+                    : "border-brand-deep-soft/40 bg-white/60"
+                }`}
+              >
+                <span className="font-semibold text-brand-deep">
+                  {segment.levelLabel ?? segment.levelCode ?? "Nivel"}
+                </span>
+                <span>
+                  {percentInSegment != null
+                    ? `${formatDecimal(percentInSegment, percentInSegment >= 10 ? 0 : 1)}%`
+                    : "—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       <p className="text-xs text-brand-ink-muted">
         Muestra el lugar actual del estudiante en su plan A1→B2 y cuánto falta para completar la ruta pactada.
+        {currentSegment && segmentPercentLabel
+          ? ` Dentro de ${currentSegment.levelLabel ?? currentSegment.levelCode}, lleva ${segmentPercentLabel} del nivel.`
+          : ""}
       </p>
     </div>
   );
@@ -566,9 +664,44 @@ function JourneyTimeline({ data }: JourneyTimelineProps) {
     completedFromPlan ??
     (plan.currentLessonIndex != null ? Math.max(plan.currentLessonIndex - 1, 0) : null);
 
+  const levelSegments = plan.levelSegments ?? [];
+
   const percent = totalLessons && completed != null && totalLessons > 0
     ? clampPercent((completed / totalLessons) * 100)
     : 0;
+  const currentPercent =
+    totalLessons && plan.currentLessonIndex != null && totalLessons > 0
+      ? clampPercent((plan.currentLessonIndex / totalLessons) * 100)
+      : percent;
+
+  const globalPercentLabel =
+    totalLessons && completed != null
+      ? `${formatDecimal(percent, percent >= 10 ? 0 : 1)}%`
+      : null;
+
+  const currentSegment = levelSegments.find((segment) => {
+    if (currentPercent == null) return false;
+    return currentPercent >= segment.startPercent && currentPercent <= segment.endPercent + 0.5;
+  });
+
+  const lessonsCompletedValue = completed ?? 0;
+  const segmentLessons = currentSegment
+    ? currentSegment.endIndex - currentSegment.startIndex + 1
+    : null;
+  const completedWithinSegment =
+    currentSegment && segmentLessons
+      ? Math.min(
+          Math.max(
+            0,
+            lessonsCompletedValue - (currentSegment.startIndex - 1),
+          ),
+          segmentLessons,
+        )
+      : null;
+  const segmentPercent =
+    currentSegment && segmentLessons && segmentLessons > 0 && completedWithinSegment != null
+      ? clampPercent((completedWithinSegment / segmentLessons) * 100)
+      : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -576,29 +709,57 @@ function JourneyTimeline({ data }: JourneyTimelineProps) {
         <span>{plan.plannedLevelMin ?? "Inicio"}</span>
         <span>{plan.plannedLevelMax ?? "Meta"}</span>
       </div>
-      <div className="relative h-2 rounded-full bg-brand-deep-soft/30">
+      <div className="relative h-2 overflow-hidden rounded-full bg-brand-deep-soft/20">
+        {levelSegments.map((segment, index) => (
+          <div
+            key={`${segment.levelCode ?? "nivel"}-${segment.startIndex}-timeline`}
+            className={`absolute inset-y-0 ${index % 2 === 0 ? "bg-brand-deep-soft/35" : "bg-brand-deep-soft/15"}`}
+            style={{
+              left: `${segment.startPercent}%`,
+              width: `${Math.max(0, segment.endPercent - segment.startPercent)}%`,
+            }}
+            aria-hidden
+          />
+        ))}
+        {levelSegments.slice(1).map((segment) => (
+          <span
+            key={`timeline-divider-${segment.startIndex}`}
+            className="absolute inset-y-0 w-px bg-white/70"
+            style={{ left: `${segment.startPercent}%` }}
+            aria-hidden
+          />
+        ))}
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-brand-teal"
+          className="absolute inset-y-0 left-0 bg-brand-teal/60"
           style={{ width: `${percent}%` }}
           aria-hidden
         />
         <div
           className="absolute -top-1.5 h-5 w-5 -translate-x-1/2 rounded-full border-2 border-white bg-brand-teal shadow"
-          style={{ left: `${percent}%` }}
+          style={{ left: `${currentPercent}%` }}
           title={plan.currentLessonLabel ?? `Lección ${formatInteger(plan.currentLessonIndex)}`}
         />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-brand-deep">
-        <span className="font-semibold text-brand-deep">{plan.currentLessonLabel ?? `Lección ${formatInteger(plan.currentLessonIndex)}`}</span>
+        <span className="font-semibold text-brand-deep">
+          {plan.currentLessonLabel ?? `Lección ${formatInteger(plan.currentLessonIndex)}`}
+        </span>
         <span className="text-brand-ink-muted">
           {completed != null && totalLessons
-            ? `${formatInteger(completed)} completadas · ${formatInteger(plan.lessonsRemaining ?? data.lessonsRemaining)} restantes`
+            ? `${formatInteger(completed)} completadas · ${formatInteger(plan.lessonsRemaining ?? data.lessonsRemaining)} restantes (${globalPercentLabel ?? "—"})`
             : "Sin datos completos"}
         </span>
       </div>
-      <p className="text-xs text-brand-ink-muted">
-        Línea de tiempo completa: verde = recorrido cubierto, marcador = lección actual dentro del nivel meta.
-      </p>
+      {currentSegment && segmentPercent != null ? (
+        <p className="text-xs text-brand-ink-muted">
+          En <span className="font-semibold text-brand-deep">{currentSegment.levelLabel ?? currentSegment.levelCode}</span>,
+          lleva {formatDecimal(segmentPercent, segmentPercent >= 10 ? 0 : 1)}% del nivel actual.
+        </p>
+      ) : (
+        <p className="text-xs text-brand-ink-muted">
+          Línea de tiempo completa: verde = recorrido cubierto, marcador = lección actual dentro del nivel meta.
+        </p>
+      )}
     </div>
   );
 }
