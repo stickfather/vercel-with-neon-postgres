@@ -10,10 +10,11 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { sessionId: string } },
-) {
+type RouteContext = {
+  params: Promise<{ sessionId: string }>;
+};
+
+export async function PATCH(request: Request, context: RouteContext) {
   const allowed = await hasValidPinSession("management");
   if (!allowed) {
     return NextResponse.json(
@@ -22,7 +23,8 @@ export async function PATCH(
     );
   }
 
-  const parsedId = Number(params.sessionId);
+  const params = await context.params;
+  const parsedId = Number(params?.sessionId);
   if (!Number.isFinite(parsedId) || parsedId <= 0) {
     return NextResponse.json(
       { error: "El identificador de la sesión no es válido." },
@@ -80,10 +82,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { sessionId: string } },
-) {
+export async function DELETE(request: Request, context: RouteContext) {
   const allowed = await hasValidPinSession("management");
   if (!allowed) {
     return NextResponse.json(
@@ -92,7 +91,8 @@ export async function DELETE(
     );
   }
 
-  const parsedId = Number(params.sessionId);
+  const params = await context.params;
+  const parsedId = Number(params?.sessionId);
   if (!Number.isFinite(parsedId) || parsedId <= 0) {
     return NextResponse.json(
       { error: "El identificador de la sesión no es válido." },
