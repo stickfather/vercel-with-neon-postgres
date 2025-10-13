@@ -122,20 +122,11 @@ function findColumn(
 }
 
 function detectPinTableShape(metadata: { columnNames: Map<string, string> }): PinTableShape {
-  const scopeColumn = findColumn(
-    { ...metadata, shape: { kind: "scopedRows", scopeColumn: "", hashColumn: "", updatedAtColumn: null } },
-    PIN_SCOPE_CANDIDATE_KEYS,
-  );
+  const scopeColumn = findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS);
   if (scopeColumn) {
     const hashColumn =
-      findColumn(
-        { ...metadata, shape: { kind: "scopedRows", scopeColumn: "", hashColumn: "", updatedAtColumn: null } },
-        PIN_HASH_CANDIDATE_KEYS,
-      ) ?? PIN_HASH_CANDIDATE_KEYS[0];
-    const updatedAtColumn = findColumn(
-      { ...metadata, shape: { kind: "scopedRows", scopeColumn: "", hashColumn: "", updatedAtColumn: null } },
-      PIN_UPDATED_AT_CANDIDATE_KEYS,
-    );
+      findColumn(metadata, PIN_HASH_CANDIDATE_KEYS) ?? PIN_HASH_CANDIDATE_KEYS[0];
+    const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
     return {
       kind: "scopedRows",
       scopeColumn,
@@ -144,32 +135,14 @@ function detectPinTableShape(metadata: { columnNames: Map<string, string> }): Pi
     } satisfies PinTableShape;
   }
 
-  const managementColumn = findColumn(
-    { ...metadata, shape: { kind: "combined", managementColumn: null, staffColumn: null, updatedAtColumn: null, managementUpdatedAtColumn: null, staffUpdatedAtColumn: null, idColumn: null } },
-    PIN_MANAGER_HASH_CANDIDATE_KEYS,
-  );
-  const staffColumn = findColumn(
-    { ...metadata, shape: { kind: "combined", managementColumn: null, staffColumn: null, updatedAtColumn: null, managementUpdatedAtColumn: null, staffUpdatedAtColumn: null, idColumn: null } },
-    PIN_STAFF_HASH_CANDIDATE_KEYS,
-  );
+  const managementColumn = findColumn(metadata, PIN_MANAGER_HASH_CANDIDATE_KEYS);
+  const staffColumn = findColumn(metadata, PIN_STAFF_HASH_CANDIDATE_KEYS);
 
   if (managementColumn || staffColumn) {
-    const updatedAtColumn = findColumn(
-      { ...metadata, shape: { kind: "combined", managementColumn: null, staffColumn: null, updatedAtColumn: null, managementUpdatedAtColumn: null, staffUpdatedAtColumn: null, idColumn: null } },
-      PIN_UPDATED_AT_CANDIDATE_KEYS,
-    );
-    const managementUpdatedAtColumn = findColumn(
-      { ...metadata, shape: { kind: "combined", managementColumn: null, staffColumn: null, updatedAtColumn: null, managementUpdatedAtColumn: null, staffUpdatedAtColumn: null, idColumn: null } },
-      PIN_MANAGER_UPDATED_AT_CANDIDATE_KEYS,
-    );
-    const staffUpdatedAtColumn = findColumn(
-      { ...metadata, shape: { kind: "combined", managementColumn: null, staffColumn: null, updatedAtColumn: null, managementUpdatedAtColumn: null, staffUpdatedAtColumn: null, idColumn: null } },
-      PIN_STAFF_UPDATED_AT_CANDIDATE_KEYS,
-    );
-    const idColumn = findColumn(
-      { ...metadata, shape: { kind: "combined", managementColumn: null, staffColumn: null, updatedAtColumn: null, managementUpdatedAtColumn: null, staffUpdatedAtColumn: null, idColumn: null } },
-      PIN_ID_CANDIDATE_KEYS,
-    );
+    const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
+    const managementUpdatedAtColumn = findColumn(metadata, PIN_MANAGER_UPDATED_AT_CANDIDATE_KEYS);
+    const staffUpdatedAtColumn = findColumn(metadata, PIN_STAFF_UPDATED_AT_CANDIDATE_KEYS);
+    const idColumn = findColumn(metadata, PIN_ID_CANDIDATE_KEYS);
     return {
       kind: "combined",
       managementColumn: managementColumn ?? null,
@@ -247,7 +220,7 @@ async function ensurePinsTable(): Promise<PinTableMetadata> {
     metadata = await loadPinTableMetadata(sql);
   }
 
-  return { ...metadata, shape: detectPinTableShape(metadata) };
+  return { ...metadata, shape: detectPinTableShape({ columnNames: metadata.columnNames }) };
 }
 
 function readScopeValue(row: SqlRow | undefined, scopeColumn: string): string {

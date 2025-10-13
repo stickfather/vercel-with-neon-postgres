@@ -158,24 +158,91 @@ function fromLocalInputValue(value: string): string | null {
   return date.toISOString();
 }
 
-function toDateInputValue(value: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+function toIsoDateOnly(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+
+  const isoCandidate = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoCandidate) {
+    const year = isoCandidate[1];
+    const month = isoCandidate[2];
+    const day = isoCandidate[3];
+    const date = new Date(`${year}-${month}-${day}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-function fromDateInputValue(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+function normalizePaidAtInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+
+  const isoDirect = toIsoDateOnly(trimmed);
+  if (isoDirect) {
+    return isoDirect;
+  }
+
+  const dmyMatch = trimmed.match(/^(\d{1,2})([\/.\-])(\d{1,2})\2(\d{4})$/);
+  if (dmyMatch) {
+    const day = Number(dmyMatch[1]);
+    const month = Number(dmyMatch[3]);
+    const year = Number(dmyMatch[4]);
+    if (
+      Number.isFinite(day) &&
+      Number.isFinite(month) &&
+      Number.isFinite(year) &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= 31
+    ) {
+      const candidate = new Date(Date.UTC(year, month - 1, day));
+      if (
+        !Number.isNaN(candidate.getTime()) &&
+        candidate.getUTCFullYear() === year &&
+        candidate.getUTCMonth() + 1 === month &&
+        candidate.getUTCDate() === day
+      ) {
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
+    }
+    return null;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatPaidAtDisplay(value: string | null | undefined): string {
+  const iso = toIsoDateOnly(value);
+  if (!iso) {
+    return "";
+  }
+  const [year, month, day] = iso.split("-");
+  return `${day}/${month}/${year}`;
 }
 
 function generateSessionKey(prefix: string): string {
@@ -318,6 +385,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [monthSummaryRows, setMonthSummaryRows] = useState<MonthSummaryRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [paidAtDrafts, setPaidAtDrafts] = useState<Record<number, string>>({});
 
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -392,6 +460,30 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
   const [monthStatusSaving, setMonthStatusSaving] = useState<Record<number, boolean>>({});
   const [monthStatusErrors, setMonthStatusErrors] = useState<Record<number, string | null>>({});
+
+  useEffect(() => {
+    setPaidAtDrafts((previous) => {
+      const next: Record<number, string> = {};
+      monthStatusRows.forEach((row) => {
+        next[row.staffId] = formatPaidAtDisplay(row.paidAt);
+      });
+
+      const previousEntries = Object.entries(previous);
+      const nextEntries = Object.entries(next);
+
+      if (previousEntries.length === nextEntries.length) {
+        const allEqual = nextEntries.every(([key, value]) => {
+          const prevValue = (previous as Record<string, string>)[key] ?? "";
+          return prevValue === value;
+        });
+        if (allEqual) {
+          return previous;
+        }
+      }
+
+      return next;
+    });
+  }, [monthStatusRows]);
 
   const summaryStaffNames = useMemo(() => {
     const map: Record<number, string> = {};
@@ -678,7 +770,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     ) => {
       const monthValue = currentRow?.month ?? `${selectedMonth}-01`;
       const nextPaid = updates.paid ?? currentRow?.paid ?? false;
-      const currentPaidAtInput = currentRow?.paidAt ? toDateInputValue(currentRow.paidAt) : null;
+      const currentPaidAtInput = currentRow?.paidAt
+        ? toIsoDateOnly(currentRow.paidAt)
+        : null;
       const nextPaidAtInput =
         updates.paidAt !== undefined ? updates.paidAt : currentPaidAtInput;
 
@@ -1374,7 +1468,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                             const monthSummary = monthSummaryByStaff.get(row.staffId);
                             const staffName = resolveStaffName(row);
                             const paidValue = monthStatus?.paid ?? false;
-                            const paidAtValue = toDateInputValue(monthStatus?.paidAt ?? null);
+                            const paidAtIsoValue = toIsoDateOnly(monthStatus?.paidAt ?? null);
+                            const paidAtInputValue =
+                              paidAtDrafts[row.staffId] ?? formatPaidAtDisplay(monthStatus?.paidAt);
                             const isStatusSaving = Boolean(monthStatusSaving[row.staffId]);
                             const statusError = monthStatusErrors[row.staffId] ?? null;
 
@@ -1418,6 +1514,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   <button
                                     type="button"
                                     onClick={() => {
+                                      if (paidValue) {
+                                        setPaidAtDrafts((previous) => ({
+                                          ...previous,
+                                          [row.staffId]: "",
+                                        }));
+                                      }
                                       void updateMonthStatus(row.staffId, monthStatus, {
                                         paid: !paidValue,
                                       });
@@ -1435,10 +1537,59 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 <td className="px-2 py-1 text-center text-brand-ink-muted">
                                   <div className="flex flex-col items-center gap-1">
                                     <input
-                                      type="date"
-                                      value={paidAtValue}
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="dd/mm/aaaa"
+                                      value={paidAtInputValue}
                                       onChange={(event) => {
-                                        const normalized = fromDateInputValue(event.target.value);
+                                        const { value } = event.target;
+                                        setPaidAtDrafts((previous) => ({
+                                          ...previous,
+                                          [row.staffId]: value,
+                                        }));
+                                        setMonthStatusErrors((previous) => ({
+                                          ...previous,
+                                          [row.staffId]: null,
+                                        }));
+                                      }}
+                                      onBlur={(event) => {
+                                        const rawValue = event.target.value.trim();
+                                        if (!rawValue.length) {
+                                          setPaidAtDrafts((previous) => ({
+                                            ...previous,
+                                            [row.staffId]: "",
+                                          }));
+                                          if (paidAtIsoValue) {
+                                            void updateMonthStatus(row.staffId, monthStatus, {
+                                              paid: paidValue,
+                                              paidAt: null,
+                                            });
+                                          }
+                                          return;
+                                        }
+
+                                        const normalized = normalizePaidAtInput(rawValue);
+                                        if (!normalized) {
+                                          setMonthStatusErrors((previous) => ({
+                                            ...previous,
+                                            [row.staffId]:
+                                              "Ingresa la fecha en formato DD/MM/AAAA o AAAA-MM-DD.",
+                                          }));
+                                          return;
+                                        }
+
+                                        if (normalized === paidAtIsoValue) {
+                                          setPaidAtDrafts((previous) => ({
+                                            ...previous,
+                                            [row.staffId]: formatPaidAtDisplay(normalized),
+                                          }));
+                                          return;
+                                        }
+
+                                        setPaidAtDrafts((previous) => ({
+                                          ...previous,
+                                          [row.staffId]: formatPaidAtDisplay(normalized),
+                                        }));
                                         void updateMonthStatus(row.staffId, monthStatus, {
                                           paid: paidValue,
                                           paidAt: normalized,
@@ -1451,9 +1602,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       <span className="text-[10px] text-brand-ink-muted">Guardando…</span>
                                     ) : statusError ? (
                                       <span className="text-[10px] font-medium text-brand-orange">{statusError}</span>
-                                    ) : paidAtValue ? (
+                                    ) : paidAtIsoValue ? (
                                       <span className="text-[10px] text-brand-ink-muted">
-                                        {paidDateFormatter.format(new Date(`${paidAtValue}T00:00:00`))}
+                                        {paidDateFormatter.format(new Date(`${paidAtIsoValue}T00:00:00`))}
                                       </span>
                                     ) : (
                                       <span className="text-[10px] text-brand-ink-muted">—</span>
