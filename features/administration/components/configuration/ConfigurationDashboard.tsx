@@ -329,6 +329,31 @@ export function ConfigurationDashboard({
             {loadingScope === "management" ? "Guardando…" : "Actualizar PIN de gerencia"}
           </button>
         </section>
+
+        <section className="rounded-[24px] border border-brand-ink-muted/15 bg-white/95 px-6 py-6 shadow-[0_18px_44px_rgba(15,23,42,0.12)]">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">Responsabilidades de PIN</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-teal-soft/15 px-4 py-3">
+              <h3 className="text-base font-semibold text-brand-deep">PIN del personal</h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-brand-ink">
+                <li>Permite acceder a Administración para consultas y tareas no sensibles.</li>
+                <li>No autoriza aprobar días de nómina ni modificar sesiones.</li>
+                <li>No puede administrar la seguridad ni actualizar los PIN.</li>
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-orange/10 px-4 py-3">
+              <h3 className="text-base font-semibold text-brand-deep">PIN de gerencia</h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-brand-ink">
+                <li>Aprueba días de nómina y gestiona sesiones (editar, agregar, eliminar).</li>
+                <li>Actualiza los PIN desde este panel de “Contraseñas y seguridad”.</li>
+                <li>No muestra PIN en texto plano ni evita el registro de auditoría.</li>
+              </ul>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-brand-ink-muted">
+            Toda verificación se realiza en el servidor, con sesiones temporales por tipo de PIN y sin almacenar códigos en texto plano.
+          </p>
+        </section>
       </div>
     );
   };

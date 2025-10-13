@@ -178,6 +178,22 @@ function toTimeZoneDayString(value: string | null): string | null {
   return `${year}-${month}-${day}`;
 }
 
+function resolveWorkDateValue(value: unknown): string | null {
+  const normalized = normalizeDateLike(value);
+  let candidate: string | null = null;
+
+  if (typeof value === "string" && value.trim().length) {
+    candidate = value.trim();
+  } else if (value instanceof Date) {
+    candidate = value.toISOString();
+  } else if (normalized) {
+    candidate = normalized;
+  }
+
+  const zoned = candidate ? toTimeZoneDayString(candidate) : null;
+  return zoned ?? normalized;
+}
+
 async function invalidateStaffDayApproval(
   sql: SqlClient,
   staffId: number,
@@ -599,7 +615,7 @@ export async function fetchPayrollMatrix({
       readRowValue(row, ["staff_id", "staffid", "staff"]),
     );
     if (!Number.isFinite(staffId)) continue;
-    const workDate = normalizeDateLike(
+    const workDate = resolveWorkDateValue(
       readRowValue(row, ["work_date", "workday", "date"]),
     );
     if (!workDate || workDate.slice(0, 7) !== monthKey) continue;

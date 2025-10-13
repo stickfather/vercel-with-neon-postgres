@@ -35,8 +35,54 @@ const PIN_UPDATED_AT_CANDIDATE_KEYS = [
   "updatedat",
 ] as const;
 
+const PIN_MANAGER_HASH_CANDIDATE_KEYS = [
+  "manager_pin_hash",
+  "managerPinHash",
+  "manager_hash",
+  "managerhash",
+] as const;
+
+const PIN_STAFF_HASH_CANDIDATE_KEYS = [
+  "staff_pin_hash",
+  "staffPinHash",
+  "staff_hash",
+  "staffhash",
+] as const;
+
+const PIN_ID_CANDIDATE_KEYS = ["id", "pin_id", "pinId"] as const;
+
+const PIN_MANAGER_UPDATED_AT_CANDIDATE_KEYS = [
+  "manager_updated_at",
+  "managerUpdatedAt",
+  "managerupdatedat",
+] as const;
+
+const PIN_STAFF_UPDATED_AT_CANDIDATE_KEYS = [
+  "staff_updated_at",
+  "staffUpdatedAt",
+  "staffupdatedat",
+] as const;
+
+type PinTableShape =
+  | {
+      kind: "scopedRows";
+      scopeColumn: string;
+      hashColumn: string;
+      updatedAtColumn: string | null;
+    }
+  | {
+      kind: "combined";
+      managementColumn: string | null;
+      staffColumn: string | null;
+      updatedAtColumn: string | null;
+      managementUpdatedAtColumn: string | null;
+      staffUpdatedAtColumn: string | null;
+      idColumn: string | null;
+    };
+
 type PinTableMetadata = {
   columnNames: Map<string, string>;
+  shape: PinTableShape;
 };
 
 type UnsafeQueryRunner = (
@@ -62,7 +108,7 @@ function quoteIdentifier(identifier: string): string {
 }
 
 function findColumn(
-  metadata: PinTableMetadata,
+  metadata: { columnNames: Map<string, string> },
   candidates: readonly string[],
 ): string | undefined {
   for (const candidate of candidates) {
@@ -73,6 +119,47 @@ function findColumn(
     }
   }
   return undefined;
+}
+
+function detectPinTableShape(metadata: { columnNames: Map<string, string> }): PinTableShape {
+  const scopeColumn = findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS);
+  if (scopeColumn) {
+    const hashColumn =
+      findColumn(metadata, PIN_HASH_CANDIDATE_KEYS) ?? PIN_HASH_CANDIDATE_KEYS[0];
+    const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
+    return {
+      kind: "scopedRows",
+      scopeColumn,
+      hashColumn,
+      updatedAtColumn: updatedAtColumn ?? null,
+    } satisfies PinTableShape;
+  }
+
+  const managementColumn = findColumn(metadata, PIN_MANAGER_HASH_CANDIDATE_KEYS);
+  const staffColumn = findColumn(metadata, PIN_STAFF_HASH_CANDIDATE_KEYS);
+
+  if (managementColumn || staffColumn) {
+    const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
+    const managementUpdatedAtColumn = findColumn(metadata, PIN_MANAGER_UPDATED_AT_CANDIDATE_KEYS);
+    const staffUpdatedAtColumn = findColumn(metadata, PIN_STAFF_UPDATED_AT_CANDIDATE_KEYS);
+    const idColumn = findColumn(metadata, PIN_ID_CANDIDATE_KEYS);
+    return {
+      kind: "combined",
+      managementColumn: managementColumn ?? null,
+      staffColumn: staffColumn ?? null,
+      updatedAtColumn: updatedAtColumn ?? null,
+      managementUpdatedAtColumn: managementUpdatedAtColumn ?? null,
+      staffUpdatedAtColumn: staffUpdatedAtColumn ?? null,
+      idColumn: idColumn ?? null,
+    } satisfies PinTableShape;
+  }
+
+  return {
+    kind: "scopedRows",
+    scopeColumn: PIN_SCOPE_CANDIDATE_KEYS[0],
+    hashColumn: PIN_HASH_CANDIDATE_KEYS[0],
+    updatedAtColumn: null,
+  } satisfies PinTableShape;
 }
 
 async function loadPinTableMetadata(sql = getSqlClient()): Promise<PinTableMetadata> {
@@ -91,7 +178,7 @@ async function loadPinTableMetadata(sql = getSqlClient()): Promise<PinTableMetad
     }
   });
 
-  return { columnNames };
+  return { columnNames, shape: detectPinTableShape({ columnNames }) };
 }
 
 async function ensurePinsTable(): Promise<PinTableMetadata> {
@@ -133,7 +220,7 @@ async function ensurePinsTable(): Promise<PinTableMetadata> {
     metadata = await loadPinTableMetadata(sql);
   }
 
-  return metadata;
+  return { ...metadata, shape: detectPinTableShape({ columnNames: metadata.columnNames }) };
 }
 
 function readScopeValue(row: SqlRow | undefined, scopeColumn: string): string {
@@ -152,6 +239,20 @@ function readScopeValue(row: SqlRow | undefined, scopeColumn: string): string {
     return "";
   }
   return String(value).trim().toLowerCase();
+}
+
+function readUpdatedAt(row: SqlRow | undefined, column: string | null): string | null {
+  if (!row || !column) {
+    return null;
+  }
+  const value = row[column];
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+  return null;
 }
 
 function parseStatusRow(scope: PinScope, row?: SqlRow): PinStatus {
@@ -182,8 +283,46 @@ function parseStatusRow(scope: PinScope, row?: SqlRow): PinStatus {
 export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
   const metadata = await ensurePinsTable();
   const sql = getSqlClient();
-  const scopeColumn =
-    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
+
+  if (metadata.shape.kind === "combined") {
+    const shape = metadata.shape;
+    const orderClause = shape.idColumn
+      ? `ORDER BY ${quoteIdentifier(shape.idColumn)} ASC`
+      : "";
+    const rows = normalizeRows<SqlRow>(
+      await runUnsafeQuery(
+        sql,
+        `
+          SELECT *
+          FROM security_pins
+          ${orderClause}
+          LIMIT 1
+        `,
+        [],
+      ),
+    );
+    const row = rows[0];
+
+    const toStatus = (scope: PinScope): PinStatus => {
+      const hashColumn = scope === "management" ? shape.managementColumn : shape.staffColumn;
+      const hashValue = hashColumn ? (row?.[hashColumn] as unknown) : null;
+      const hasPin =
+        typeof hashValue === "string" && hashValue.trim().length > 0;
+      const updatedAtColumn =
+        scope === "management"
+          ? shape.managementUpdatedAtColumn ?? shape.updatedAtColumn
+          : shape.staffUpdatedAtColumn ?? shape.updatedAtColumn;
+      return {
+        scope,
+        isSet: hasPin,
+        updatedAt: readUpdatedAt(row, updatedAtColumn),
+      };
+    };
+
+    return ["staff", "management"].map((scope) => toStatus(scope as PinScope));
+  }
+
+  const scopeColumn = metadata.shape.scopeColumn;
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
@@ -206,11 +345,29 @@ export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
 
 export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
   const metadata = await ensurePinsTable();
+  const sql = getSqlClient();
+
+  if (metadata.shape.kind === "combined") {
+    const shape = metadata.shape;
+    const rows = normalizeRows<SqlRow>(await sql`
+      SELECT *
+      FROM security_pins
+      LIMIT 1
+    `);
+    const row = rows[0];
+    if (!row) return false;
+    const column =
+      scope === "management"
+        ? shape.managementColumn
+        : shape.staffColumn;
+    if (!column) return false;
+    const value = row[column];
+    return typeof value === "string" && value.trim().length > 0;
+  }
+
   const normalizedScope = normalizeScope(scope);
 
-  const sql = getSqlClient();
-  const scopeColumn =
-    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
+  const scopeColumn = metadata.shape.scopeColumn;
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
@@ -272,11 +429,39 @@ export async function verifySecurityPin(
   pin: string,
 ): Promise<boolean> {
   const metadata = await ensurePinsTable();
-  const normalizedScope = normalizeScope(scope);
 
   const sql = getSqlClient();
-  const scopeColumn =
-    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
+
+  if (metadata.shape.kind === "combined") {
+    const shape = metadata.shape;
+    const rows = normalizeRows<SqlRow>(await sql`
+      SELECT *
+      FROM security_pins
+      LIMIT 1
+    `);
+    const row = rows[0];
+    if (!row) return false;
+    const column =
+      scope === "management"
+        ? shape.managementColumn
+        : shape.staffColumn;
+    if (!column) return false;
+    const hash = row[column];
+    if (typeof hash !== "string" || !hash.trim().length) {
+      return false;
+    }
+
+    try {
+      return await verifyHash(pin, hash);
+    } catch (error) {
+      console.error("Fallo al verificar PIN", error);
+      return false;
+    }
+  }
+
+  const normalizedScope = normalizeScope(scope);
+
+  const scopeColumn = metadata.shape.scopeColumn;
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT *
@@ -307,6 +492,27 @@ export async function verifySecurityPin(
   }
 }
 
+async function relaxCombinedSchema(
+  sql: ReturnType<typeof getSqlClient>,
+  shape: Extract<PinTableShape, { kind: "combined" }>,
+): Promise<void> {
+  const targets = [shape.managementColumn, shape.staffColumn]
+    .filter((value): value is string => Boolean(value));
+
+  for (const column of targets) {
+    try {
+      await runUnsafeQuery(
+        sql,
+        `ALTER TABLE security_pins ALTER COLUMN ${quoteIdentifier(column)} DROP NOT NULL`,
+        [],
+      );
+    } catch (error) {
+      // Ignored on purpose.
+      console.warn("No se pudo ajustar la columna de PIN", column, error);
+    }
+  }
+}
+
 export async function updateSecurityPin(scope: PinScope, pin: string): Promise<PinStatus> {
   const metadata = await ensurePinsTable();
   const sql = getSqlClient();
@@ -314,12 +520,104 @@ export async function updateSecurityPin(scope: PinScope, pin: string): Promise<P
   const normalizedPin = sanitizePin(pin);
   const hashed = await hashPin(normalizedPin);
 
-  const scopeColumn =
-    findColumn(metadata, PIN_SCOPE_CANDIDATE_KEYS) ?? PIN_SCOPE_CANDIDATE_KEYS[0];
+  if (metadata.shape.kind === "combined") {
+    const shape = metadata.shape;
+    const targetColumn =
+      scope === "management"
+        ? shape.managementColumn
+        : shape.staffColumn;
+
+    if (!targetColumn) {
+      throw new Error("No se pudo identificar la columna de almacenamiento del PIN.");
+    }
+
+    const quotedTargetColumn = quoteIdentifier(targetColumn);
+    const params: unknown[] = [hashed];
+    const updateSegments = [`${quotedTargetColumn} = $1`];
+
+    const updatedAtColumn =
+      scope === "management"
+        ? shape.managementUpdatedAtColumn ?? shape.updatedAtColumn
+        : shape.staffUpdatedAtColumn ?? shape.updatedAtColumn;
+
+    if (updatedAtColumn) {
+      updateSegments.push(`${quoteIdentifier(updatedAtColumn)} = now()`);
+    }
+
+    const whereClause = shape.idColumn
+      ? `WHERE ${quoteIdentifier(shape.idColumn)} = (
+          SELECT ${quoteIdentifier(shape.idColumn)}
+          FROM security_pins
+          ORDER BY ${quoteIdentifier(shape.idColumn)} ASC
+          LIMIT 1
+        )`
+      : "";
+
+    const updateQuery = `
+      UPDATE security_pins
+      SET ${updateSegments.join(", ")}
+      ${whereClause}
+      RETURNING *
+    `;
+
+    let rows = normalizeRows<SqlRow>(
+      await runUnsafeQuery(sql, updateQuery, params),
+    );
+
+    if (!rows.length) {
+      await relaxCombinedSchema(sql, shape);
+
+      const insertColumns = [quotedTargetColumn];
+      const insertValues = ["$1"];
+
+      const companionColumn =
+        scope === "management"
+          ? shape.staffColumn
+          : shape.managementColumn;
+      if (companionColumn) {
+        insertColumns.push(quoteIdentifier(companionColumn));
+        insertValues.push("NULL");
+      }
+
+      if (updatedAtColumn && !shape.managementUpdatedAtColumn && !shape.staffUpdatedAtColumn) {
+        insertColumns.push(quoteIdentifier(updatedAtColumn));
+        insertValues.push("now()");
+      } else if (updatedAtColumn) {
+        insertColumns.push(quoteIdentifier(updatedAtColumn));
+        insertValues.push("now()");
+      }
+
+      const insertQuery = `
+        INSERT INTO security_pins (${insertColumns.join(", ")})
+        VALUES (${insertValues.join(", ")})
+        RETURNING *
+      `;
+
+      rows = normalizeRows<SqlRow>(
+        await runUnsafeQuery(sql, insertQuery, params),
+      );
+    }
+
+    const row = rows[0];
+    const hashValue = row && targetColumn ? row[targetColumn] : null;
+    const hasPin =
+      typeof hashValue === "string" && hashValue.trim().length > 0;
+    return {
+      scope,
+      isSet: hasPin,
+      updatedAt: readUpdatedAt(
+        row,
+        scope === "management"
+          ? shape.managementUpdatedAtColumn ?? shape.updatedAtColumn
+          : shape.staffUpdatedAtColumn ?? shape.updatedAtColumn,
+      ),
+    };
+  }
+
+  const scopeColumn = metadata.shape.scopeColumn;
   const quotedScopeColumn = quoteIdentifier(scopeColumn);
-  const hashColumn =
-    findColumn(metadata, PIN_HASH_CANDIDATE_KEYS) ?? "pin_hash";
-  const updatedAtColumn = findColumn(metadata, PIN_UPDATED_AT_CANDIDATE_KEYS);
+  const hashColumn = metadata.shape.hashColumn;
+  const updatedAtColumn = metadata.shape.updatedAtColumn;
 
   const quotedHashColumn = quoteIdentifier(hashColumn);
   const quotedUpdatedAtColumn = updatedAtColumn
