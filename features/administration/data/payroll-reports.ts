@@ -784,9 +784,9 @@ export async function fetchPayrollMatrix({
 /**
  * Fetches all sessions for a specific staff member on a specific work date.
  * The work_date parameter should be in local timezone (YYYY-MM-DD format).
- * The staff_day_sessions_v view is expected to have work_date computed in the local timezone.
- * If the view provides *_local timestamp columns, they will be used; otherwise timestamps
- * will be converted to local timezone.
+ * The staff_day_sessions_v view computes work_date in America/Guayaquil timezone,
+ * providing authoritative grouping for payroll reports. This ensures the modal
+ * and matrix always show consistent data.
  */
 export async function fetchDaySessions({
   staffId,
@@ -840,19 +840,13 @@ export async function fetchDaySessions({
     )
     .map((column) => `s.${quoteIdentifier(column)}`);
 
-  // Build the WHERE clause to filter by work_date
-  // We try to use the work_date column directly, but if the view computes it in UTC,
-  // we may need to also check via timezone-converted checkin_time
-  // The safest approach is to check if work_date matches OR if the checkin falls on that local date
-  const checkinDateCheck = checkinColumn
-    ? `OR DATE(timezone('${TIMEZONE}', s.${quoteIdentifier(checkinColumn)})) = $2::date`
-    : "";
-
+  // Filter by work_date which is now authoritatively computed in America/Guayaquil timezone
+  // by the staff_day_sessions_v view. This ensures consistent grouping between matrix and modal.
   const query = `
     SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_v s
     WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND (s.${quoteIdentifier(workDateColumn)} = $2::date ${checkinDateCheck})
+      AND s.${quoteIdentifier(workDateColumn)} = $2::date
     ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
   `;
 
