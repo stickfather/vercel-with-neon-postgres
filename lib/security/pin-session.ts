@@ -52,7 +52,7 @@ const COOKIE_NAMES: Record<PinScope, string> = {
   management: "ir_pin_management",
 };
 
-const SESSION_TTL_MINUTES = 30;
+const SESSION_TTL_MINUTES = 10;
 
 function getSessionSecret(): string {
   const secret =
