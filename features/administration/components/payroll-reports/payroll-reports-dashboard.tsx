@@ -54,6 +54,102 @@ const rowDayFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
+const timeZoneDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PAYROLL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PAYROLL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+const timeZoneOffsetFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PAYROLL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
+  return parts.find((part) => part.type === type)?.value ?? null;
+}
+
+function toTimeZoneDateString(date: Date): string | null {
+  const parts = timeZoneDateFormatter.formatToParts(date);
+  const year = getPart(parts, "year");
+  const month = getPart(parts, "month");
+  const day = getPart(parts, "day");
+  if (!year || !month || !day) {
+    return null;
+  }
+  return `${year}-${month}-${day}`;
+}
+
+function toTimeZoneDateTimeParts(
+  date: Date,
+): { year: string; month: string; day: string; hour: string; minute: string } | null {
+  const parts = timeZoneDateTimeFormatter.formatToParts(date);
+  const year = getPart(parts, "year");
+  const month = getPart(parts, "month");
+  const day = getPart(parts, "day");
+  const hour = getPart(parts, "hour");
+  const minute = getPart(parts, "minute");
+  if (!year || !month || !day || !hour || !minute) {
+    return null;
+  }
+  return { year, month, day, hour, minute } as const;
+}
+
+function getTimeZoneOffsetInMinutes(baseDate: Date): number {
+  const parts = timeZoneOffsetFormatter.formatToParts(baseDate);
+  const year = getPart(parts, "year");
+  const month = getPart(parts, "month");
+  const day = getPart(parts, "day");
+  const hour = getPart(parts, "hour");
+  const minute = getPart(parts, "minute");
+  const second = getPart(parts, "second");
+  if (!year || !month || !day || !hour || !minute || !second) {
+    return 0;
+  }
+  const asUtc = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  );
+  return (asUtc - baseDate.getTime()) / 60000;
+}
+
+function toMiddayUtc(dateString: string): Date | null {
+  const trimmed = dateString.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const isoDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!isoDateMatch) {
+    return null;
+  }
+  const candidate = new Date(`${isoDateMatch[0]}T12:00:00Z`);
+  if (Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+  return candidate;
+}
+
 type MonthSummaryRow = {
   staffId: number;
   staffName: string | null;
@@ -134,28 +230,52 @@ function getMonthRange(month: string): { from: string; to: string; endExclusive:
 }
 
 function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
-  const date = new Date(`${dateString}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return dateString;
-  return formatter.format(date);
+  const midday = toMiddayUtc(dateString);
+  if (!midday) {
+    return dateString;
+  }
+  return formatter.format(midday);
 }
 
 function toLocalInputValue(value: string | null): string {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  const parts = toTimeZoneDateTimeParts(date);
+  if (!parts) {
+    return "";
+  }
+  const { year, month, day, hour, minute } = parts;
+  return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
 function fromLocalInputValue(value: string): string | null {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  const [, yearStr, monthStr, dayStr, hourStr, minuteStr] = match;
+  const baseUtcMs = Date.UTC(
+    Number(yearStr),
+    Number(monthStr) - 1,
+    Number(dayStr),
+    Number(hourStr),
+    Number(minuteStr),
+    0,
+    0,
+  );
+  if (!Number.isFinite(baseUtcMs)) {
+    return null;
+  }
+  const baseDate = new Date(baseUtcMs);
+  const offsetMinutes = getTimeZoneOffsetInMinutes(baseDate);
+  const adjustedMs = baseUtcMs - offsetMinutes * 60000;
+  const adjustedDate = new Date(adjustedMs);
+  if (Number.isNaN(adjustedDate.getTime())) {
+    return null;
+  }
+  return adjustedDate.toISOString();
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {
@@ -170,10 +290,6 @@ function toIsoDateOnly(value: string | null | undefined): string | null {
     const year = isoCandidate[1];
     const month = isoCandidate[2];
     const day = isoCandidate[3];
-    const date = new Date(`${year}-${month}-${day}T00:00:00Z`);
-    if (Number.isNaN(date.getTime())) {
-      return null;
-    }
     return `${year}-${month}-${day}`;
   }
 
@@ -182,10 +298,8 @@ function toIsoDateOnly(value: string | null | undefined): string | null {
     return null;
   }
 
-  const year = parsed.getUTCFullYear();
-  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const zoned = toTimeZoneDateString(parsed);
+  return zoned;
 }
 
 function normalizePaidAtInput(value: string): string | null {
@@ -230,10 +344,8 @@ function normalizePaidAtInput(value: string): string | null {
   if (Number.isNaN(parsed.getTime())) {
     return null;
   }
-  const year = parsed.getUTCFullYear();
-  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const zoned = toTimeZoneDateString(parsed);
+  return zoned;
 }
 
 function formatPaidAtDisplay(value: string | null | undefined): string {
@@ -514,6 +626,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       new Intl.DateTimeFormat("es-EC", {
         day: "2-digit",
         month: "short",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -522,6 +635,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     () =>
       new Intl.DateTimeFormat("es-EC", {
         weekday: "short",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -533,6 +647,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         year: "numeric",
         month: "long",
         day: "2-digit",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -543,6 +658,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         year: "numeric",
         month: "short",
         day: "2-digit",
+        timeZone: PAYROLL_TIMEZONE,
       }),
     [],
   );
@@ -1768,7 +1884,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       <span className="text-[10px] font-medium text-brand-orange">{statusError}</span>
                                     ) : paidAtIsoValue ? (
                                       <span className="text-[10px] text-brand-ink-muted">
-                                        {paidDateFormatter.format(new Date(`${paidAtIsoValue}T00:00:00`))}
+                                        {paidDateFormatter.format(new Date(`${paidAtIsoValue}T12:00:00Z`))}
                                       </span>
                                     ) : (
                                       <span className="text-[10px] text-brand-ink-muted">—</span>
@@ -1808,7 +1924,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </span>
                 <h2 className="text-2xl font-black">{selectedCell.staffName}</h2>
                 <p className="text-sm text-brand-ink-muted">
-                  {humanDateFormatter.format(new Date(`${selectedCell.workDate}T00:00:00Z`))}
+                  {humanDateFormatter.format(new Date(`${selectedCell.workDate}T12:00:00Z`))}
                 </p>
               </div>
               <div className="rounded-[24px] border border-brand-ink-muted/10 bg-brand-deep-soft/30 px-5 py-4 text-sm text-brand-deep">

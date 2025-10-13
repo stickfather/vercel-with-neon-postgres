@@ -1197,6 +1197,62 @@ function sortLessonPlanRecords(records: JsonRecord[]): JsonRecord[] {
         return 1;
       }
 
+      const levelOrderA = extractNumber(a, [
+        "level_order",
+        "level_rank",
+        "level_position",
+        "level_index",
+        "level_priority",
+      ]);
+      const levelOrderB = extractNumber(b, [
+        "level_order",
+        "level_rank",
+        "level_position",
+        "level_index",
+        "level_priority",
+      ]);
+
+      if (levelOrderA != null && levelOrderB != null && levelOrderA !== levelOrderB) {
+        return levelOrderA - levelOrderB;
+      }
+      if (levelOrderA != null && levelOrderB == null) {
+        return -1;
+      }
+      if (levelOrderA == null && levelOrderB != null) {
+        return 1;
+      }
+
+      const levelSequenceA = extractNumber(a, [
+        "lesson_in_level",
+        "lesson_order_in_level",
+        "lesson_number",
+        "lesson_position",
+        "sequence_in_level",
+      ]);
+      const levelSequenceB = extractNumber(b, [
+        "lesson_in_level",
+        "lesson_order_in_level",
+        "lesson_number",
+        "lesson_position",
+        "sequence_in_level",
+      ]);
+
+      if (
+        levelOrderA != null &&
+        levelOrderB != null &&
+        levelOrderA === levelOrderB &&
+        levelSequenceA != null &&
+        levelSequenceB != null
+      ) {
+        return levelSequenceA - levelSequenceB;
+      }
+      if (levelSequenceA != null && levelSequenceB == null) {
+        return -1;
+      }
+      if (levelSequenceA == null && levelSequenceB != null) {
+        return 1;
+      }
+
       const orderA = extractNumber(a, ["lesson_order", "sort_order"]);
       const orderB = extractNumber(b, ["lesson_order", "sort_order"]);
       if (orderA != null && orderB != null) {
@@ -1383,6 +1439,10 @@ function mapLessonPlanSnapshot(
     "current_position",
     "lesson_index",
     "lesson_seq",
+    "lesson_number",
+    "lesson_position",
+    "lesson_order",
+    "lesson_rank",
   ]);
 
   const activeRecord = findActiveLessonRecord(

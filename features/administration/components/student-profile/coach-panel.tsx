@@ -137,6 +137,89 @@ function clampPercent(value: number | null | undefined, fallback = 0) {
   return Math.min(100, Math.max(0, value));
 }
 
+const levelListFormatter = new Intl.ListFormat("es", {
+  style: "short",
+  type: "conjunction",
+});
+
+type LessonPlanSegment = NonNullable<
+  StudentCoachPanelSummary["lessonPlan"]
+>["levelSegments"][number];
+
+function buildLevelNarrative({
+  levelSegments,
+  completedLessons,
+  currentSegment,
+  segmentPercent,
+  globalPercent,
+}: {
+  levelSegments: LessonPlanSegment[];
+  completedLessons: number | null | undefined;
+  currentSegment: LessonPlanSegment | undefined;
+  segmentPercent: number | null;
+  globalPercent: number | null;
+}): string | null {
+  if (!levelSegments.length && globalPercent == null) {
+    return null;
+  }
+
+  const completedLevelLabels = levelSegments
+    .filter((segment) =>
+      completedLessons != null ? completedLessons >= segment.endIndex : false,
+    )
+    .map((segment) => segment.levelLabel ?? segment.levelCode ?? null)
+    .filter((label): label is string => Boolean(label));
+
+  const narrativeParts: string[] = [];
+
+  if (completedLevelLabels.length) {
+    const formatted =
+      completedLevelLabels.length === 1
+        ? completedLevelLabels[0]
+        : levelListFormatter.format(completedLevelLabels);
+    narrativeParts.push(`Completó ${formatted}.`);
+  }
+
+  if (currentSegment) {
+    const currentLabel = currentSegment.levelLabel ?? currentSegment.levelCode ?? "su nivel actual";
+    if (segmentPercent != null) {
+      narrativeParts.push(
+        `Lleva ${formatDecimal(
+          segmentPercent,
+          segmentPercent >= 10 ? 0 : 1,
+        )}% de ${currentLabel}.`,
+      );
+    } else {
+      narrativeParts.push(`Actualmente cursa ${currentLabel}.`);
+    }
+  }
+
+  const currentIndex = currentSegment ? levelSegments.indexOf(currentSegment) : -1;
+  const nextSegment = currentIndex >= 0 ? levelSegments[currentIndex + 1] : null;
+  if (nextSegment) {
+    const nextLabel = nextSegment.levelLabel ?? nextSegment.levelCode ?? null;
+    if (nextLabel) {
+      if (segmentPercent != null && segmentPercent >= 75) {
+        narrativeParts.push(`Entra pronto a ${nextLabel}.`);
+      } else if (!currentSegment) {
+        narrativeParts.push(`Próximo nivel objetivo: ${nextLabel}.`);
+      }
+    }
+  }
+
+  if (globalPercent != null) {
+    narrativeParts.push(
+      `Avance total ${formatDecimal(globalPercent, globalPercent >= 10 ? 0 : 1)}%.`,
+    );
+  }
+
+  if (!narrativeParts.length) {
+    return null;
+  }
+
+  return narrativeParts.join(" ");
+}
+
 export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   return (
     <section className="flex h-full flex-col gap-6 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 text-brand-deep shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
@@ -375,6 +458,19 @@ function StudyTrendChart({ entries }: StudyTrendChartProps) {
   const safeMax = maxHours > 0 ? maxHours : 1;
   const shortThreshold = 0.5;
   const shortZoneHeight = Math.min(100, (shortThreshold / safeMax) * 100);
+  const totalHours = entries.reduce((sum, entry) => sum + entry.hours, 0);
+  const averageHours = entries.length ? totalHours / entries.length : 0;
+  const activeDays = entries.reduce((count, entry) => (entry.hours > 0 ? count + 1 : count), 0);
+  let currentStreak = 0;
+  let longestStreak = 0;
+  entries.forEach((entry) => {
+    if (entry.hours >= shortThreshold) {
+      currentStreak += 1;
+      longestStreak = Math.max(longestStreak, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
+  });
 
   return (
     <div className="flex h-full flex-col">
@@ -405,6 +501,22 @@ function StudyTrendChart({ entries }: StudyTrendChartProps) {
       <div className="mt-3 flex justify-between text-[11px] uppercase tracking-wide text-brand-ink-muted">
         <span>{entries.length ? formatDateLabel(entries[0].date) : "—"}</span>
         <span>{entries.length ? formatDateLabel(entries[entries.length - 1].date) : "—"}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-brand-ink-muted">
+        <span>
+          <span className="font-semibold text-brand-deep">
+            {formatDecimal(averageHours, averageHours >= 10 ? 0 : 1)} h/día
+          </span>{" "}
+          promedio
+        </span>
+        <span>
+          <span className="font-semibold text-brand-deep">{formatInteger(activeDays)}</span>{" "}
+          días con estudio
+        </span>
+        <span>
+          <span className="font-semibold text-brand-deep">{formatInteger(longestStreak)}</span>{" "}
+          días seguidos ≥30 min
+        </span>
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-brand-ink-muted">
         La franja rosa resalta días con menos de 30 minutos. Busca barras continuas por encima de esa zona para confirmar hábito.
@@ -468,10 +580,13 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
 
   const globalPercentLabel =
     progressPercent != null ? `${formatDecimal(progressPercent, progressPercent >= 10 ? 0 : 1)}%` : null;
-  const segmentPercentLabel =
-    currentSegment && segmentPercent != null
-      ? `${formatDecimal(segmentPercent, segmentPercent >= 10 ? 0 : 1)}%`
-      : null;
+  const levelNarrative = buildLevelNarrative({
+    levelSegments,
+    completedLessons,
+    currentSegment: currentSegment ?? undefined,
+    segmentPercent,
+    globalPercent: progressPercent,
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -563,10 +678,9 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
         </div>
       ) : null}
       <p className="text-xs text-brand-ink-muted">
-        Muestra el lugar actual del estudiante en su plan A1→B2 y cuánto falta para completar la ruta pactada.
-        {currentSegment && segmentPercentLabel
-          ? ` Dentro de ${currentSegment.levelLabel ?? currentSegment.levelCode}, lleva ${segmentPercentLabel} del nivel.`
-          : ""}
+        {levelNarrative
+          ? `${levelNarrative} Refleja la ruta pactada del plan.`
+          : "Muestra el lugar actual del estudiante en su plan A1→B2 y cuánto falta para completar la ruta pactada."}
       </p>
     </div>
   );
@@ -703,6 +817,14 @@ function JourneyTimeline({ data }: JourneyTimelineProps) {
       ? clampPercent((completedWithinSegment / segmentLessons) * 100)
       : null;
 
+  const levelNarrative = buildLevelNarrative({
+    levelSegments,
+    completedLessons: completed,
+    currentSegment: currentSegment ?? undefined,
+    segmentPercent,
+    globalPercent: percent,
+  });
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between text-xs uppercase tracking-wide text-brand-ink-muted">
@@ -750,16 +872,11 @@ function JourneyTimeline({ data }: JourneyTimelineProps) {
             : "Sin datos completos"}
         </span>
       </div>
-      {currentSegment && segmentPercent != null ? (
-        <p className="text-xs text-brand-ink-muted">
-          En <span className="font-semibold text-brand-deep">{currentSegment.levelLabel ?? currentSegment.levelCode}</span>,
-          lleva {formatDecimal(segmentPercent, segmentPercent >= 10 ? 0 : 1)}% del nivel actual.
-        </p>
-      ) : (
-        <p className="text-xs text-brand-ink-muted">
-          Línea de tiempo completa: verde = recorrido cubierto, marcador = lección actual dentro del nivel meta.
-        </p>
-      )}
+      <p className="text-xs text-brand-ink-muted">
+        {levelNarrative
+          ? levelNarrative
+          : "Línea de tiempo completa: verde = recorrido cubierto, marcador = lección actual dentro del nivel meta."}
+      </p>
     </div>
   );
 }
