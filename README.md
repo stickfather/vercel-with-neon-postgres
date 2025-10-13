@@ -57,6 +57,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+### Database Setup
+
+The application requires specific database views to be created for the payroll system to work correctly. See [DATABASE_SETUP.md](./DATABASE_SETUP.md) for detailed instructions on deploying the required database views.
+
 ## Learn More
 
 To learn more about Neon, check out the Neon documentation:
