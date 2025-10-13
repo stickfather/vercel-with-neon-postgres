@@ -651,6 +651,24 @@ export async function fetchPayrollMatrix({
     monthEndExclusive,
   } = resolveMonthWindow(month);
 
+  // Generate days array directly from the database using SQL date arithmetic
+  // This eliminates all JS date math and ensures we get exactly the days in the month
+  const [yearStr, monthStr] = monthStart.split("-");
+  const year = Number(yearStr);
+  const monthNum = Number(monthStr);
+  
+  const daysRows = normalizeRows<SqlRow>(await sql`
+    SELECT generate_series(
+      make_date(${year}, ${monthNum}, 1),
+      make_date(${year}, ${monthNum}, 1) + interval '1 month' - interval '1 day',
+      '1 day'::interval
+    )::date AS day
+  `);
+  
+  const days = daysRows
+    .map((row) => coerceString(row.day))
+    .filter((day): day is string => Boolean(day));
+
   const rows = normalizeRows<SqlRow>(await sql`
     WITH session_totals AS (
       SELECT
@@ -690,15 +708,6 @@ export async function fetchPayrollMatrix({
       AND COALESCE(st.work_date, ap.work_date) < ${monthEndExclusive}::date
     ORDER BY staff_id, work_date
   `);
-
-  // Generate days list using date strings to avoid timezone conversion issues
-  // Extract year and month to compute the last day of the month
-  const [yearStr, monthStr] = monthStart.split("-");
-  const year = Number(yearStr);
-  const monthNum = Number(monthStr);
-  const lastDayOfMonth = new Date(year, monthNum, 0).getDate();
-  const monthEnd = `${yearStr}-${monthStr}-${String(lastDayOfMonth).padStart(2, "0")}`;
-  const days = enumerateDaysFromStrings(monthStart, monthEnd);
 
   const grouped = new Map<
     number,
@@ -840,19 +849,13 @@ export async function fetchDaySessions({
     )
     .map((column) => `s.${quoteIdentifier(column)}`);
 
-  // Build the WHERE clause to filter by work_date
-  // We try to use the work_date column directly, but if the view computes it in UTC,
-  // we may need to also check via timezone-converted checkin_time
-  // The safest approach is to check if work_date matches OR if the checkin falls on that local date
-  const checkinDateCheck = checkinColumn
-    ? `OR DATE(timezone('${TIMEZONE}', s.${quoteIdentifier(checkinColumn)})) = $2::date`
-    : "";
-
+  // The staff_day_sessions_v view now properly computes work_date in America/Guayaquil timezone,
+  // so we can rely on it directly without needing a fallback OR clause.
   const query = `
     SELECT ${selectSegments.join(", ")}
     FROM public.staff_day_sessions_v s
     WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND (s.${quoteIdentifier(workDateColumn)} = $2::date ${checkinDateCheck})
+      AND s.${quoteIdentifier(workDateColumn)} = $2::date
     ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
   `;
 
