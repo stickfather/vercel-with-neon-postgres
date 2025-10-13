@@ -12,7 +12,7 @@ export const fetchCache = "force-no-store";
 
 export async function PATCH(
   request: Request,
-  context: { params: { sessionId: string } },
+  { params }: { params: { sessionId: string } },
 ) {
   const allowed = await hasValidPinSession("management");
   if (!allowed) {
@@ -22,7 +22,7 @@ export async function PATCH(
     );
   }
 
-  const parsedId = Number(context.params.sessionId);
+  const parsedId = Number(params.sessionId);
   if (!Number.isFinite(parsedId) || parsedId <= 0) {
     return NextResponse.json(
       { error: "El identificador de la sesión no es válido." },
@@ -82,7 +82,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  context: { params: { sessionId: string } },
+  { params }: { params: { sessionId: string } },
 ) {
   const allowed = await hasValidPinSession("management");
   if (!allowed) {
@@ -92,7 +92,7 @@ export async function DELETE(
     );
   }
 
-  const parsedId = Number(context.params.sessionId);
+  const parsedId = Number(params.sessionId);
   if (!Number.isFinite(parsedId) || parsedId <= 0) {
     return NextResponse.json(
       { error: "El identificador de la sesión no es válido." },
