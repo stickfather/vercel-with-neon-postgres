@@ -180,6 +180,18 @@ function toTimeZoneDayString(value: string | null): string | null {
 
 function resolveWorkDateValue(value: unknown): string | null {
   const normalized = normalizeDateLike(value);
+  
+  // If we already have a clean date string (YYYY-MM-DD format), return it directly
+  // without timezone conversion, as DATE types from PostgreSQL are timezone-agnostic
+  if (typeof value === "string" && value.trim().length) {
+    const trimmed = value.trim();
+    const dateOnlyMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})$/);
+    if (dateOnlyMatch) {
+      return dateOnlyMatch[1];
+    }
+  }
+  
+  // For timestamps or other date representations, apply timezone conversion
   let candidate: string | null = null;
 
   if (typeof value === "string" && value.trim().length) {
