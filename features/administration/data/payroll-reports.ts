@@ -35,6 +35,7 @@ export type DaySession = {
 
 export type PayrollMonthStatusRow = {
   staffId: number;
+  staffName: string | null;
   month: string;
   approvedDays: number;
   approvedHours: number;
@@ -591,13 +592,14 @@ export async function fetchPayrollMatrix({
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       m.staff_id,
-      m.staff_name,
+      sm.full_name AS staff_name,
       m.work_date,
       m.horas_mostrar,
       m.approved,
       m.approved_hours,
       m.total_hours
     FROM public.staff_day_matrix_local_v AS m
+    LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
     WHERE m.work_date BETWEEN ${monthStart}::date AND ${monthEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
@@ -1288,6 +1290,7 @@ export async function fetchPayrollMonthStatus({
   let query = `
     SELECT
       v.staff_id AS staff_id,
+      sm.full_name AS staff_name,
       v.month AS month,
       v.approved_days AS approved_days,
       v.approved_hours AS approved_hours,
@@ -1298,6 +1301,7 @@ export async function fetchPayrollMonthStatus({
       v.paid_by AS paid_by,
       v.paid_at AT TIME ZONE '${TIMEZONE}' AS paid_at
     FROM public.payroll_month_status_v v
+    LEFT JOIN public.staff_members sm ON sm.id = v.staff_id
     WHERE v.month = date_trunc('month', $1::date)
   `;
   const params: Array<string | number> = [monthStart];
@@ -1313,6 +1317,7 @@ export async function fetchPayrollMonthStatus({
 
   return rows.map((row) => ({
     staffId: Number(row.staff_id),
+    staffName: coerceString(row.staff_name),
     month: coerceString(row.month) ?? monthKey,
     approvedDays: Number(row.approved_days ?? 0),
     approvedHours: toNumber(row.approved_hours ?? 0, 2),

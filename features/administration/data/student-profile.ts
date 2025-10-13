@@ -1034,6 +1034,30 @@ export type StudentCoachPanelSummary = {
 
 type JsonRecord = Record<string, unknown> | null | undefined;
 
+function toJsonRecord(value: unknown): JsonRecord {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch (error) {
+      console.warn("No se pudo convertir el valor JSON", error);
+      return null;
+    }
+  }
+
+  return null;
+}
+
 function extractNumber(source: JsonRecord, keys: string[]): number | null {
   if (!source) {
     return null;
@@ -1256,10 +1280,10 @@ export async function getStudentCoachPanelSummary(
   }
 
   const summaryRow = summaryRows[0];
-  const panelPayload = (summaryRow.panel_payload ?? null) as JsonRecord;
-  const riskPayload = (summaryRow.risk_payload ?? null) as JsonRecord;
-  const planPayload = (summaryRow.plan_payload ?? null) as JsonRecord;
-  const configPayload = (summaryRow.config_payload ?? null) as JsonRecord;
+  const panelPayload = toJsonRecord(summaryRow.panel_payload ?? null);
+  const riskPayload = toJsonRecord(summaryRow.risk_payload ?? null);
+  const planPayload = toJsonRecord(summaryRow.plan_payload ?? null);
+  const configPayload = toJsonRecord(summaryRow.config_payload ?? null);
 
   const studentIdValue = normalizeInteger(summaryRow.student_id) ?? studentId;
 
@@ -1297,7 +1321,7 @@ export async function getStudentCoachPanelSummary(
   }
 
   const dailyStudyEntries = dailyRows
-    .map((row) => mapDailyStudy((row.payload ?? null) as JsonRecord))
+    .map((row) => mapDailyStudy(toJsonRecord(row.payload)))
     .filter((entry): entry is DailyStudyEntry => Boolean(entry))
     .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
 
