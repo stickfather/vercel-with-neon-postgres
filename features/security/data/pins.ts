@@ -14,6 +14,7 @@ export type SecurityPinsSummary = {
 };
 
 const PIN_ROW_ID = 1;
+const DEFAULT_PIN = "1234";
 
 const COLUMN_BY_SCOPE: Record<PinScope, "manager_pin_hash" | "staff_pin_hash"> = {
   staff: "staff_pin_hash",
@@ -25,6 +26,10 @@ type PinsRow = {
   staff_pin_hash: string | null;
   updated_at: Date | string | null;
 };
+
+function hasStoredPinValue(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
 
 function sanitizePin(pin: string): string {
   const trimmed = pin.trim();
@@ -95,7 +100,7 @@ async function ensureStorage() {
   await sql`DELETE FROM security_pins WHERE id <> ${PIN_ROW_ID}`;
 }
 
-async function fetchPinsRow(): Promise<PinsRow> {
+async function fetchPinsRowRaw(): Promise<PinsRow | undefined> {
   const sql = getSqlClient();
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT manager_pin_hash, staff_pin_hash, updated_at
@@ -104,16 +109,45 @@ async function fetchPinsRow(): Promise<PinsRow> {
     LIMIT 1
   `);
 
-  const row = rows[0] as PinsRow | undefined;
-  if (row) {
+  return rows[0] as PinsRow | undefined;
+}
+
+async function ensureDefaultPins(row: PinsRow): Promise<PinsRow> {
+  const needsStaff = !hasStoredPinValue(row.staff_pin_hash);
+  const needsManager = !hasStoredPinValue(row.manager_pin_hash);
+
+  if (!needsStaff && !needsManager) {
     return row;
   }
 
-  return {
+  const updates: { staffPin?: string; managerPin?: string } = {};
+
+  if (needsStaff) {
+    updates.staffPin = DEFAULT_PIN;
+  }
+
+  if (needsManager) {
+    updates.managerPin = DEFAULT_PIN;
+  }
+
+  await updateSecurityPins(updates);
+
+  const refreshed = await fetchPinsRowRaw();
+  if (refreshed) {
+    return refreshed;
+  }
+
+  return row;
+}
+
+async function fetchPinsRow(): Promise<PinsRow> {
+  const row = (await fetchPinsRowRaw()) ?? {
     manager_pin_hash: null,
     staff_pin_hash: null,
     updated_at: null,
   };
+
+  return ensureDefaultPins(row);
 }
 
 function statusFromRow(scope: PinScope, row: PinsRow): PinStatus {
@@ -121,7 +155,7 @@ function statusFromRow(scope: PinScope, row: PinsRow): PinStatus {
   const hash = row?.[column];
   return {
     scope,
-    isSet: typeof hash === "string" && hash.trim().length > 0,
+    isSet: hasStoredPinValue(hash),
     updatedAt: parseUpdatedAt(row?.updated_at),
   };
 }
@@ -130,8 +164,8 @@ export async function getSecurityPinsSummary(): Promise<SecurityPinsSummary> {
   await ensureStorage();
   const row = await fetchPinsRow();
   const updatedAt = parseUpdatedAt(row?.updated_at);
-  const hasManager = typeof row.manager_pin_hash === "string" && row.manager_pin_hash.trim().length > 0;
-  const hasStaff = typeof row.staff_pin_hash === "string" && row.staff_pin_hash.trim().length > 0;
+  const hasManager = hasStoredPinValue(row.manager_pin_hash);
+  const hasStaff = hasStoredPinValue(row.staff_pin_hash);
 
   return { hasManager, hasStaff, updatedAt };
 }

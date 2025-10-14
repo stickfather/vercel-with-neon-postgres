@@ -46,4 +46,34 @@ describeSuite("PIN hashing", () => {
     assert.equal(typeof stored, "string");
     assert.equal(String(stored).startsWith("$2"), true);
   });
+
+  it("seeds default PINs when none are stored", async () => {
+    const sql = getSqlClient();
+
+    await sql`
+      UPDATE security_pins
+      SET manager_pin_hash = NULL, staff_pin_hash = NULL, updated_at = now()
+      WHERE id = 1
+    `;
+
+    const managerOk = await verifySecurityPin("manager", "1234");
+    const staffOk = await verifySecurityPin("staff", "1234");
+
+    assert.equal(managerOk, true);
+    assert.equal(staffOk, true);
+
+    const rows = normalizeRows(await sql`
+      SELECT manager_pin_hash, staff_pin_hash
+      FROM security_pins
+      WHERE id = 1
+    `);
+
+    const managerHash = rows[0]?.manager_pin_hash;
+    const staffHash = rows[0]?.staff_pin_hash;
+
+    assert.equal(typeof managerHash, "string");
+    assert.equal(typeof staffHash, "string");
+    assert.equal(String(managerHash).startsWith("$2"), true);
+    assert.equal(String(staffHash).startsWith("$2"), true);
+  });
 });
