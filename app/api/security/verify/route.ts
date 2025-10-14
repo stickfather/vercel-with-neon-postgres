@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server.js";
 
 import { verifySecurityPin } from "@/features/security/data/pins";
-import { getSqlClient, normalizeRows, type SqlRow } from "@/lib/db/client";
 import { setPinSession, type PinScope } from "@/lib/security/pin-session";
 
 const RATE_LIMIT_ATTEMPTS = 5;
-const RATE_LIMIT_WINDOW_MINUTES = 10;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
+const attemptStore = new Map<string, { count: number; expiresAt: number }>();
 
 function resolveType(value: unknown): PinScope | null {
   if (typeof value !== "string") return null;
@@ -26,39 +27,25 @@ function getClientIp(request: Request): string {
   return "unknown";
 }
 
-async function ensureAuditTable() {
-  const sql = getSqlClient();
-  await sql`
-    CREATE TABLE IF NOT EXISTS pin_audit_log (
-      id bigserial PRIMARY KEY,
-      event text NOT NULL,
-      ok boolean NOT NULL,
-      staff_id bigint,
-      ip text,
-      created_at timestamptz DEFAULT now()
-    )
-  `;
+function getAttemptKey(event: string, ip: string): string {
+  return `${event}:${ip}`;
 }
 
-async function getRecentAttempts(event: string, ip: string): Promise<number> {
-  const sql = getSqlClient();
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT COUNT(*)::int AS attempts
-    FROM pin_audit_log
-    WHERE event = ${event}
-      AND ip = ${ip}
-      AND created_at >= NOW() - INTERVAL '${RATE_LIMIT_WINDOW_MINUTES} minutes'
-  `);
-  const attempts = Number(rows[0]?.attempts ?? 0);
-  return Number.isFinite(attempts) ? attempts : 0;
+function getAttemptState(key: string): { count: number; expiresAt: number } {
+  const existing = attemptStore.get(key);
+  if (existing && existing.expiresAt > Date.now()) {
+    return existing;
+  }
+  const next = { count: 0, expiresAt: Date.now() + RATE_LIMIT_WINDOW_MS };
+  attemptStore.set(key, next);
+  return next;
 }
 
-async function logAttempt(event: string, ok: boolean, ip: string) {
-  const sql = getSqlClient();
-  await sql`
-    INSERT INTO pin_audit_log (event, ok, staff_id, ip)
-    VALUES (${event}, ${ok}, ${null}, ${ip})
-  `;
+function incrementAttempts(key: string): number {
+  const state = getAttemptState(key);
+  state.count += 1;
+  attemptStore.set(key, state);
+  return state.count;
 }
 
 export const dynamic = "force-dynamic";
@@ -94,12 +81,11 @@ export async function POST(request: Request) {
 
   const event = `verify:${type}`;
   const ip = getClientIp(request);
+  const key = getAttemptKey(event, ip);
+  const state = getAttemptState(key);
 
-  await ensureAuditTable();
-
-  const attempts = await getRecentAttempts(event, ip);
-  if (attempts >= RATE_LIMIT_ATTEMPTS) {
-    await logAttempt(event, false, ip);
+  if (state.count >= RATE_LIMIT_ATTEMPTS && state.expiresAt > Date.now()) {
+    incrementAttempts(key);
     return NextResponse.json(
       { valid: false, error: "Demasiados intentos. Inténtalo más tarde." },
       { status: 429, headers: { "Cache-Control": "no-store" } },
@@ -107,14 +93,19 @@ export async function POST(request: Request) {
   }
 
   const isValid = await verifySecurityPin(type, pin);
-  await logAttempt(event, isValid, ip);
+  const attempts = incrementAttempts(key);
 
   if (!isValid) {
+    if (attempts >= RATE_LIMIT_ATTEMPTS) {
+      attemptStore.set(key, { count: attempts, expiresAt: Date.now() + RATE_LIMIT_WINDOW_MS });
+    }
     return NextResponse.json(
       { valid: false, error: "PIN incorrecto." },
       { status: 200, headers: { "Cache-Control": "no-store" } },
     );
   }
+
+  attemptStore.delete(key);
 
   const ttlMinutes = type === "manager" ? 10 : undefined;
   await setPinSession(type, ttlMinutes);
