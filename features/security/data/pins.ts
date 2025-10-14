@@ -100,8 +100,7 @@ async function ensureStorage() {
   await seedDefaultPinsIfMissing(sql);
 }
 
-async function fetchPinsRowRaw(): Promise<PinsRow | undefined> {
-  const sql = getSqlClient();
+async function fetchPinsRowRaw(sql = getSqlClient()): Promise<PinsRow | undefined> {
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT manager_pin_hash, staff_pin_hash, updated_at
     FROM security_pins
@@ -112,81 +111,55 @@ async function fetchPinsRowRaw(): Promise<PinsRow | undefined> {
   return rows[0] as PinsRow | undefined;
 }
 
-async function ensureDefaultPins(row: PinsRow): Promise<PinsRow> {
-  const needsStaff = !hasStoredPinValue(row.staff_pin_hash);
-  const needsManager = !hasStoredPinValue(row.manager_pin_hash);
-
-  if (!needsStaff && !needsManager) {
-    return row;
-  }
-
-  const updates: { staffPin?: string; managerPin?: string } = {};
-
-  if (needsStaff) {
-    updates.staffPin = DEFAULT_PIN;
-  }
-
-  if (needsManager) {
-    updates.managerPin = DEFAULT_PIN;
-  }
-
-  await updateSecurityPins(updates);
-
-  const refreshed = await fetchPinsRowRaw();
-  if (refreshed) {
-    return refreshed;
-  }
-
-  return row;
-}
-
-async function seedDefaultPinsIfMissing(sql = getSqlClient()) {
+async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow | null> {
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT manager_pin_hash, staff_pin_hash
-    FROM security_pins
-    WHERE id = ${PIN_ROW_ID}
-    LIMIT 1
-  `);
-
-  const row = rows[0] as PinsRow | undefined;
-  const needsStaff = !hasStoredPinValue(row?.staff_pin_hash);
-  const needsManager = !hasStoredPinValue(row?.manager_pin_hash);
-
-  if (!needsStaff && !needsManager) {
-    return;
-  }
-
-  const staffHash = needsStaff ? await hashPin(DEFAULT_PIN, sql) : null;
-  const managerHash = needsManager ? await hashPin(DEFAULT_PIN, sql) : null;
-  const shouldTouchTimestamp = needsStaff || needsManager;
-
-  await sql`
     UPDATE security_pins
     SET
-      staff_pin_hash = CASE
-        WHEN ${needsStaff} THEN ${staffHash}
-        ELSE staff_pin_hash
-      END,
-      manager_pin_hash = CASE
-        WHEN ${needsManager} THEN ${managerHash}
-        ELSE manager_pin_hash
-      END,
-      updated_at = CASE
-        WHEN ${shouldTouchTimestamp} THEN now()
-        ELSE updated_at
-      END
+      staff_pin_hash = COALESCE(
+        NULLIF(btrim(staff_pin_hash), ''),
+        crypt(${DEFAULT_PIN}, gen_salt('bf', 12))
+      ),
+      manager_pin_hash = COALESCE(
+        NULLIF(btrim(manager_pin_hash), ''),
+        crypt(${DEFAULT_PIN}, gen_salt('bf', 12))
+      ),
+      updated_at = now()
     WHERE id = ${PIN_ROW_ID}
-  `;
+      AND (
+        staff_pin_hash IS NULL
+        OR btrim(staff_pin_hash) = ''
+        OR manager_pin_hash IS NULL
+        OR btrim(manager_pin_hash) = ''
+      )
+    RETURNING manager_pin_hash, staff_pin_hash, updated_at
+  `);
+
+  return (rows[0] as PinsRow | undefined) ?? null;
 }
 
 async function fetchPinsRow(): Promise<PinsRow> {
-  const row = (await fetchPinsRowRaw()) ?? {
-    manager_pin_hash: null,
-    staff_pin_hash: null,
-    updated_at: null,
-  };
+  const sql = getSqlClient();
+  let row = await fetchPinsRowRaw(sql);
 
-  return ensureDefaultPins(row);
+  if (!row) {
+    await seedDefaultPinsIfMissing(sql);
+    row = await fetchPinsRowRaw(sql);
+  } else if (!hasStoredPinValue(row.staff_pin_hash) || !hasStoredPinValue(row.manager_pin_hash)) {
+    const seeded = await seedDefaultPinsIfMissing(sql);
+    if (seeded) {
+      row = seeded;
+    } else {
+      row = await fetchPinsRowRaw(sql);
+    }
+  }
+
+  return (
+    row ?? {
+      manager_pin_hash: null,
+      staff_pin_hash: null,
+      updated_at: null,
+    }
+  );
 }
 
 function statusFromRow(scope: PinScope, row: PinsRow): PinStatus {
@@ -227,7 +200,11 @@ export async function verifySecurityPin(scope: PinScope, pin: string): Promise<b
   const column = COLUMN_BY_SCOPE[scope];
   const rawValue = row?.[column];
 
-  if (typeof rawValue !== "string") {
+  if (typeof rawValue !== "string" || !rawValue.trim()) {
+    if (sanitized === DEFAULT_PIN) {
+      await updateSecurityPin(scope, sanitized);
+      return true;
+    }
     return false;
   }
 
