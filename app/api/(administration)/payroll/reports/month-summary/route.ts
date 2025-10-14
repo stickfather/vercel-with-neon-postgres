@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { getPayrollMonthSummary } from "@/lib/db/payroll";
 
 export const dynamic = "force-dynamic";

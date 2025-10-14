@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { createStaffMember, listStaffMembers } from "@/features/staff/data/queries";
 
 export async function GET() {

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import {
   createStaffDaySession,
   fetchDaySessions,
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const allowed = await hasValidPinSession("management");
+  const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
       { error: "PIN de gerencia requerido." },

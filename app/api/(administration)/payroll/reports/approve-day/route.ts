@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { approveStaffDay } from "@/features/administration/data/payroll-reports";
 import { hasValidPinSession } from "@/lib/security/pin-session";
 
@@ -7,7 +7,7 @@ export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
 export async function POST(request: Request) {
-  const allowed = await hasValidPinSession("management");
+  const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
       { error: "PIN de gerencia requerido." },

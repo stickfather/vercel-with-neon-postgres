@@ -1,4 +1,4 @@
-import { unstable_noStore as noStore } from "next/cache";
+import { unstable_noStore as noStore } from "next/cache.js";
 
 import {
   getSqlClient,
@@ -171,7 +171,7 @@ const dayFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-function toTimeZoneDayString(value: string | null): string | null {
+export function toTimeZoneDayString(value: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -423,44 +423,10 @@ function toInteger(value: unknown): number | null {
   return null;
 }
 
-function quoteIdentifier(identifier: string): string {
-  return `"${identifier.replace(/"/g, '""')}"`;
-}
-
-function buildDateExpression(column: string | null): string | null {
-  if (!column) {
-    return null;
-  }
-
-  const normalized = column.toLowerCase();
-  const qualified = `s.${quoteIdentifier(column)}`;
-
-  if (normalized.includes("date") && !normalized.includes("time")) {
-    return `DATE(${qualified})`;
-  }
-
-  if (normalized.includes("local")) {
-    return `DATE(${qualified})`;
-  }
-
-  return `DATE(timezone('${TIMEZONE}', ${qualified}))`;
-}
-
 function toHoursFromMinutes(value: unknown, fractionDigits = 2): number | null {
   const minutes = toInteger(value);
   if (minutes == null) return null;
   return Number((minutes / 60).toFixed(fractionDigits));
-}
-
-function findColumn(columns: string[], candidates: string[]): string | null {
-  for (const candidate of candidates) {
-    const candidateLower = candidate.toLowerCase();
-    for (const column of columns) {
-      if (column === candidate) return column;
-      if (column.toLowerCase() === candidateLower) return column;
-    }
-  }
-  return null;
 }
 
 function readRowValue(row: SqlRow, candidates: string[]): unknown {
@@ -477,24 +443,6 @@ function readRowValue(row: SqlRow, candidates: string[]): unknown {
     }
   }
   return undefined;
-}
-
-async function fetchTableColumns(
-  sql: SqlClient,
-  schema: string,
-  table: string,
-): Promise<string[]> {
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = ${schema}
-      AND table_name = ${table}
-  `);
-
-  return rows
-    .map((row) => coerceString(row.column_name))
-    .filter((name): name is string => Boolean(name))
-    .map((name) => name);
 }
 
 async function applyStaffDayApproval(
@@ -762,122 +710,13 @@ export async function fetchDaySessions({
   noStore();
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
-
-  const columns = await fetchTableColumns(
-    sql,
-    "public",
-    "staff_day_sessions_local_v",
-  );
-
-  const staffColumn =
-    findColumn(columns, ["staff_id", "staffid", "staff"]) ?? "staff_id";
-  const workDateColumn = findColumn(columns, [
-    "work_date_local",
-    "local_work_date",
-    "work_date",
-    "workday",
-    "work_day",
-    "date",
-  ]);
-
-  if (!workDateColumn) {
-    throw new Error(
-      "La vista de sesiones no expone una columna de fecha de trabajo compatible.",
-    );
-  }
-
-  const checkinColumn = findColumn(columns, [
-    "checkin_local",
-    "local_checkin",
-    "check_in_local",
-    "checkin_time",
-    "check_in_time",
-    "checkin",
-    "start_time",
-  ]);
-  const checkoutColumn = findColumn(columns, [
-    "checkout_local",
-    "local_checkout",
-    "check_out_local",
-    "checkout_time",
-    "check_out_time",
-    "checkout",
-    "end_time",
-  ]);
-  const sessionColumn = findColumn(columns, [
-    "session_id",
-    "session_record_id",
-    "attendance_id",
-    "id",
-  ]);
-
-  const selectSegments = ["s.*"];
-
-  if (checkinColumn && !checkinColumn.toLowerCase().includes("local")) {
-    selectSegments.push(
-      `timezone('${TIMEZONE}', s.${quoteIdentifier(checkinColumn)}) AS checkin_local`,
-    );
-  }
-  if (checkoutColumn && !checkoutColumn.toLowerCase().includes("local")) {
-    selectSegments.push(
-      `timezone('${TIMEZONE}', s.${quoteIdentifier(checkoutColumn)}) AS checkout_local`,
-    );
-  }
-
-  const orderColumns = [checkinColumn, sessionColumn]
-    .filter((value, index, array): value is string =>
-      Boolean(value) && array.indexOf(value) === index,
-    )
-    .map((column) => `s.${quoteIdentifier(column)}`);
-
-  const workDateExpression = buildDateExpression(workDateColumn);
-  if (!workDateExpression) {
-    throw new Error(
-      "La vista de sesiones no expone una columna de fecha de trabajo compatible.",
-    );
-  }
-
-  const checkinDateExpression = checkinColumn
-    ? buildDateExpression(checkinColumn)
-    : null;
-  const checkoutDateExpression = checkoutColumn
-    ? buildDateExpression(checkoutColumn)
-    : null;
-
-  const dateComparisons = [
-    workDateExpression,
-    checkinDateExpression,
-    checkoutDateExpression,
-  ]
-    .filter((expression): expression is string => Boolean(expression))
-    .map((expression) => `${expression} = $2::date`);
-
-  if (!dateComparisons.length) {
-    throw new Error(
-      "No se pudo construir una expresión de fecha para filtrar las sesiones por día.",
-    );
-  }
-
-  const dateClause =
-    dateComparisons.length === 1
-      ? dateComparisons[0]
-      : `(${dateComparisons.join(" OR ")})`;
-
-  const query = `
-    SELECT ${selectSegments.join(", ")}
-    FROM public.staff_day_sessions_local_v s
-    WHERE s.${quoteIdentifier(staffColumn)} = $1::bigint
-      AND ${dateClause}
-    ${orderColumns.length ? `ORDER BY ${orderColumns.join(", ")}` : ""}
-  `;
-
-  const client = sql as unknown as {
-    unsafe: (query: string, params?: unknown[]) => Promise<unknown>;
-  };
-
-  const rows = normalizeRows<SqlRow>(
-    await client.unsafe(query, [staffId, normalizedWorkDate]),
-  );
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.staff_day_sessions_local_v
+    WHERE staff_id = ${staffId}::bigint
+      AND work_date = ${normalizedWorkDate}::date
+    ORDER BY checkin_time NULLS LAST, checkout_time NULLS LAST
+  `);
 
   return rows.map((row) => {
     // Use readRowValue for flexible column name matching to support various database schemas

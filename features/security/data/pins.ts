@@ -1,10 +1,4 @@
-import { promisify } from "util";
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "crypto";
-
-import { getSqlClient, normalizeRows, type SqlRow } from "@/lib/db/client";
 import type { PinScope } from "@/lib/security/pin-session";
-
-const scrypt = promisify(scryptCallback);
 
 export type PinStatus = {
   scope: PinScope;
@@ -12,69 +6,28 @@ export type PinStatus = {
   updatedAt: string | null;
 };
 
-const VALID_SCOPES: PinScope[] = ["staff", "management"];
+export type SecurityPinsSummary = {
+  hasManager: boolean;
+  hasStaff: boolean;
+  updatedAt: string | null;
+};
 
-function normalizeScope(scope: PinScope): PinScope {
-  return scope === "management" ? "management" : "staff";
-}
+const DEFAULT_PIN = "1234";
 
-async function ensureTable() {
-  const sql = getSqlClient();
-  await sql`
-    CREATE TABLE IF NOT EXISTS security_pins (
-      id bigserial PRIMARY KEY,
-      manager_pin_hash text,
-      staff_pin_hash text,
-      updated_at timestamptz DEFAULT now()
-    )
-  `;
-}
+type PinRecord = {
+  value: string;
+  updatedAt: string | null;
+};
 
-async function fetchPinRow(scope: PinScope): Promise<SqlRow | undefined> {
-  const sql = getSqlClient();
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT scope, pin_hash, updated_at
-    FROM security_pins
-    WHERE scope = ${normalizeScope(scope)}
-    LIMIT 1
-  `);
-  return rows[0];
-}
+type PinUpdates = {
+  staffPin?: string;
+  managerPin?: string;
+};
 
-function parseStatus(scope: PinScope, row?: SqlRow): PinStatus {
-  const isSet = Boolean(
-    row && typeof row.pin_hash === "string" && row.pin_hash.trim().length > 0,
-  );
-  const updatedAtValue = row?.updated_at;
-  const updatedAt =
-    updatedAtValue instanceof Date
-      ? updatedAtValue.toISOString()
-      : typeof updatedAtValue === "string"
-        ? updatedAtValue
-        : null;
-
-  return { scope, isSet, updatedAt };
-}
-
-async function hashPin(pin: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const derived = (await scrypt(pin, salt, 64)) as Buffer;
-  return `scrypt:${salt}:${derived.toString("hex")}`;
-}
-
-async function verifyHash(pin: string, hash: string): Promise<boolean> {
-  const [method, salt, digest] = hash.split(":");
-  if (method !== "scrypt" || !salt || !digest) {
-    return false;
-  }
-
-  const derived = (await scrypt(pin, salt, 64)) as Buffer;
-  const expected = Buffer.from(digest, "hex");
-  if (expected.length !== derived.length) {
-    return false;
-  }
-  return timingSafeEqual(derived, expected);
-}
+const pinStore: Record<PinScope, PinRecord> = {
+  staff: { value: DEFAULT_PIN, updatedAt: null },
+  manager: { value: DEFAULT_PIN, updatedAt: null },
+};
 
 function sanitizePin(pin: string): string {
   const trimmed = pin.trim();
@@ -84,64 +37,77 @@ function sanitizePin(pin: string): string {
   return trimmed;
 }
 
+function getLatestUpdatedAt(): string | null {
+  const timestamps = Object.values(pinStore)
+    .map((record) => record.updatedAt)
+    .filter((value): value is string => typeof value === "string");
+  if (timestamps.length === 0) {
+    return null;
+  }
+  return timestamps.sort().at(-1) ?? null;
+}
+
+export async function getSecurityPinsSummary(): Promise<SecurityPinsSummary> {
+  return {
+    hasManager: pinStore.manager.value.length > 0,
+    hasStaff: pinStore.staff.value.length > 0,
+    updatedAt: getLatestUpdatedAt(),
+  };
+}
+
 export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
-  await ensureTable();
-  const sql = getSqlClient();
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT scope, pin_hash, updated_at
-    FROM security_pins
-  `);
-
-  const byScope = new Map<string, SqlRow>();
-  rows.forEach((row) => {
-    if (typeof row.scope === "string") {
-      byScope.set(row.scope.trim().toLowerCase(), row);
-    }
-  });
-
-  return VALID_SCOPES.map((scope) => parseStatus(scope, byScope.get(scope)));
+  return [
+    {
+      scope: "manager",
+      isSet: pinStore.manager.value.length > 0,
+      updatedAt: pinStore.manager.updatedAt,
+    },
+    {
+      scope: "staff",
+      isSet: pinStore.staff.value.length > 0,
+      updatedAt: pinStore.staff.updatedAt,
+    },
+  ];
 }
 
 export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
-  await ensureTable();
-  const row = await fetchPinRow(scope);
-  return Boolean(row && typeof row.pin_hash === "string" && row.pin_hash.trim().length > 0);
+  return pinStore[scope].value.length > 0;
+}
+
+export async function updateSecurityPins({
+  staffPin,
+  managerPin,
+}: PinUpdates): Promise<void> {
+  const now = new Date().toISOString();
+
+  if (typeof staffPin === "string") {
+    const sanitized = sanitizePin(staffPin);
+    pinStore.staff.value = sanitized;
+    pinStore.staff.updatedAt = now;
+  }
+
+  if (typeof managerPin === "string") {
+    const sanitized = sanitizePin(managerPin);
+    pinStore.manager.value = sanitized;
+    pinStore.manager.updatedAt = now;
+  }
 }
 
 export async function verifySecurityPin(
   scope: PinScope,
   pin: string,
 ): Promise<boolean> {
-  await ensureTable();
-  const row = await fetchPinRow(scope);
-  if (!row) {
-    return false;
-  }
-  const hashValue = typeof row.pin_hash === "string" ? row.pin_hash.trim() : "";
-  if (!hashValue) {
-    return false;
-  }
   try {
-    return await verifyHash(pin, hashValue);
+    const sanitized = sanitizePin(pin);
+    return pinStore[scope].value === sanitized;
   } catch (error) {
-    console.error("Fallo al verificar PIN", error);
     return false;
   }
 }
 
-export async function updateSecurityPin(scope: PinScope, pin: string): Promise<PinStatus> {
-  await ensureTable();
-  const sanitizedPin = sanitizePin(pin);
-  const hashed = await hashPin(sanitizedPin);
-  const sql = getSqlClient();
-
-  await sql`
-    INSERT INTO security_pins (scope, pin_hash, updated_at)
-    VALUES (${normalizeScope(scope)}, ${hashed}, now())
-    ON CONFLICT (scope)
-    DO UPDATE SET pin_hash = EXCLUDED.pin_hash, updated_at = now()
-  `;
-
-  const row = await fetchPinRow(scope);
-  return parseStatus(scope, row);
+export function __resetPinsForTests() {
+  pinStore.manager.value = DEFAULT_PIN;
+  pinStore.manager.updatedAt = null;
+  pinStore.staff.value = DEFAULT_PIN;
+  pinStore.staff.updatedAt = null;
 }

@@ -9,7 +9,7 @@ export default async function ConfiguracionPage() {
   let staffMembers = [] as Awaited<ReturnType<typeof listStaffMembers>>;
   let pinStatuses = [] as Awaited<ReturnType<typeof getSecurityPinStatuses>>;
   let loadError: string | null = null;
-  let managementUnlocked = false;
+  let managerUnlocked = false;
 
   try {
     staffMembers = await listStaffMembers();
@@ -25,11 +25,11 @@ export default async function ConfiguracionPage() {
     console.error("No se pudieron obtener los PIN de seguridad", error);
     pinStatuses = [
       { scope: "staff", isSet: false, updatedAt: null },
-      { scope: "management", isSet: false, updatedAt: null },
+      { scope: "manager", isSet: false, updatedAt: null },
     ];
   }
 
-  managementUnlocked = await hasValidPinSession("management");
+  managerUnlocked = await hasValidPinSession("manager");
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white">
@@ -53,7 +53,7 @@ export default async function ConfiguracionPage() {
           initialStaff={staffMembers}
           staffError={loadError}
           pinStatuses={pinStatuses}
-          hasManagementSession={managementUnlocked}
+          hasManagerSession={managerUnlocked}
         />
       </main>
     </div>
