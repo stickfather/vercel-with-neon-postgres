@@ -25,11 +25,24 @@ type PinsRow = {
   manager_pin_hash: string | null;
   staff_pin_hash: string | null;
   updated_at: Date | string | null;
-  force_default?: boolean | null;
 };
 
+function looksLikeBcrypt(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^\$2[aby]\$\d{2}\$[./0-9A-Za-z]{53}$/.test(trimmed);
+}
+
+function looksLikePlainPin(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^\d{4,8}$/.test(trimmed);
+}
+
 function hasStoredPinValue(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+  return looksLikeBcrypt(value) || looksLikePlainPin(value);
 }
 
 function sanitizePin(pin: string): string {
@@ -71,12 +84,6 @@ async function verifyHash(pin: string, hash: string | null | undefined): Promise
   return rows[0]?.ok === true;
 }
 
-function looksLikeBcrypt(hash: unknown): boolean {
-  if (typeof hash !== "string") return false;
-  const trimmed = hash.trim();
-  return /^\$2[aby]\$\d{2}\$[./0-9A-Za-z]{53}$/.test(trimmed);
-}
-
 function parseUpdatedAt(value: Date | string | null | undefined): string | null {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "string") return value;
@@ -92,22 +99,15 @@ async function ensureStorage() {
       manager_pin_hash text,
       staff_pin_hash text,
       updated_at timestamptz DEFAULT now(),
-      force_default boolean DEFAULT true
+      force_default boolean DEFAULT false
     )
   `;
   await sql`ALTER TABLE security_pins ALTER COLUMN manager_pin_hash DROP NOT NULL`;
   await sql`ALTER TABLE security_pins ALTER COLUMN staff_pin_hash DROP NOT NULL`;
-  await sql`ALTER TABLE security_pins ADD COLUMN IF NOT EXISTS force_default boolean DEFAULT true`;
-  await sql`ALTER TABLE security_pins ALTER COLUMN force_default SET DEFAULT true`;
+  await sql`ALTER TABLE security_pins ADD COLUMN IF NOT EXISTS force_default boolean DEFAULT false`;
+  await sql`ALTER TABLE security_pins ALTER COLUMN force_default SET DEFAULT false`;
   await sql`INSERT INTO security_pins (id) VALUES (${PIN_ROW_ID}) ON CONFLICT (id) DO NOTHING`;
   await sql`DELETE FROM security_pins WHERE id <> ${PIN_ROW_ID}`;
-  await sql`
-    UPDATE security_pins
-    SET force_default = true
-    WHERE id = ${PIN_ROW_ID}
-      AND force_default IS DISTINCT FROM true
-  `;
-  await applyForcedDefaultPins(sql);
   await seedDefaultPinsIfMissing(sql);
 }
 
@@ -123,42 +123,66 @@ async function fetchPinsRowRaw(sql = getSqlClient()): Promise<PinsRow | undefine
 }
 
 async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow | null> {
+  await ensurePgcrypto(sql);
   const rows = normalizeRows<SqlRow>(await sql`
     UPDATE security_pins
     SET
-      staff_pin_hash = COALESCE(
-        NULLIF(btrim(staff_pin_hash), ''),
-        crypt(${DEFAULT_PIN}, gen_salt('bf', 12))
-      ),
-      manager_pin_hash = COALESCE(
-        NULLIF(btrim(manager_pin_hash), ''),
-        crypt(${DEFAULT_PIN}, gen_salt('bf', 12))
-      ),
-      updated_at = now(),
+      staff_pin_hash = CASE
+        WHEN staff_pin_hash IS NULL
+          OR btrim(staff_pin_hash) = ''
+          OR NOT (
+            staff_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
+            OR staff_pin_hash ~ '^\\d{4,8}$'
+          )
+        THEN crypt(${DEFAULT_PIN}, gen_salt('bf', 12))
+        ELSE staff_pin_hash
+      END,
+      manager_pin_hash = CASE
+        WHEN manager_pin_hash IS NULL
+          OR btrim(manager_pin_hash) = ''
+          OR NOT (
+            manager_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
+            OR manager_pin_hash ~ '^\\d{4,8}$'
+          )
+        THEN crypt(${DEFAULT_PIN}, gen_salt('bf', 12))
+        ELSE manager_pin_hash
+      END,
+      updated_at = CASE
+        WHEN (
+          staff_pin_hash IS NULL
+          OR btrim(staff_pin_hash) = ''
+          OR NOT (
+            staff_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
+            OR staff_pin_hash ~ '^\\d{4,8}$'
+          )
+        )
+        OR (
+          manager_pin_hash IS NULL
+          OR btrim(manager_pin_hash) = ''
+          OR NOT (
+            manager_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
+            OR manager_pin_hash ~ '^\\d{4,8}$'
+          )
+        )
+        THEN now()
+        ELSE updated_at
+      END,
       force_default = false
     WHERE id = ${PIN_ROW_ID}
       AND (
         staff_pin_hash IS NULL
         OR btrim(staff_pin_hash) = ''
+        OR NOT (
+          staff_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
+          OR staff_pin_hash ~ '^\\d{4,8}$'
+        )
         OR manager_pin_hash IS NULL
         OR btrim(manager_pin_hash) = ''
+        OR NOT (
+          manager_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
+          OR manager_pin_hash ~ '^\\d{4,8}$'
+        )
       )
-    RETURNING manager_pin_hash, staff_pin_hash, updated_at
-  `);
-
-  return (rows[0] as PinsRow | undefined) ?? null;
-}
-
-async function applyForcedDefaultPins(sql = getSqlClient()): Promise<PinsRow | null> {
-  const rows = normalizeRows<SqlRow>(await sql`
-    UPDATE security_pins
-    SET
-      staff_pin_hash = crypt(${DEFAULT_PIN}, gen_salt('bf', 12)),
-      manager_pin_hash = crypt(${DEFAULT_PIN}, gen_salt('bf', 12)),
-      updated_at = now(),
-      force_default = false
-    WHERE id = ${PIN_ROW_ID}
-      AND COALESCE(force_default, true) = true
     RETURNING manager_pin_hash, staff_pin_hash, updated_at
   `);
 
@@ -228,7 +252,7 @@ export async function verifySecurityPin(scope: PinScope, pin: string): Promise<b
   const column = COLUMN_BY_SCOPE[scope];
   const rawValue = row?.[column];
 
-  if (typeof rawValue !== "string" || !rawValue.trim()) {
+  if (!hasStoredPinValue(rawValue)) {
     if (sanitized === DEFAULT_PIN) {
       await updateSecurityPin(scope, sanitized);
       return true;
@@ -236,11 +260,13 @@ export async function verifySecurityPin(scope: PinScope, pin: string): Promise<b
     return false;
   }
 
-  if (looksLikeBcrypt(rawValue)) {
-    return verifyHash(sanitized, rawValue);
+  const stored = rawValue.trim();
+
+  if (looksLikeBcrypt(stored)) {
+    return verifyHash(sanitized, stored);
   }
 
-  if (rawValue.trim() === sanitized) {
+  if (stored === sanitized) {
     await updateSecurityPin(scope, sanitized);
     return true;
   }
