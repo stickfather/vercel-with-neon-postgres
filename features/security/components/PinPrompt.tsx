@@ -18,7 +18,7 @@ type PinPromptProps = {
   ctaLabel?: string;
 };
 
-const MAX_PIN_LENGTH = 8;
+const MAX_PIN_LENGTH = 4;
 
 export function PinPrompt({
   scope,
@@ -201,17 +201,21 @@ export function PinPrompt({
                 );
               }
 
-              return (
-                <button
-                  key={`pin-digit-${button.value}`}
-                  type="button"
-                  onClick={() => handleDigitPress(button.value)}
-                  className="inline-flex h-12 items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white text-lg font-semibold text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
-                  disabled={isSubmitting}
-                >
-                  {button.label}
-                </button>
-              );
+              if ("value" in button) {
+                return (
+                  <button
+                    key={`pin-digit-${button.value}`}
+                    type="button"
+                    onClick={() => handleDigitPress(button.value)}
+                    className="inline-flex h-12 items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white text-lg font-semibold text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
+                    disabled={isSubmitting}
+                  >
+                    {button.label}
+                  </button>
+                );
+              }
+
+              return null;
             })}
           </div>
         </div>
