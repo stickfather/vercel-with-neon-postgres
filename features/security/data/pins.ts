@@ -286,16 +286,25 @@ export async function verifySecurityPin(scope: PinScope, pin: string): Promise<b
   const row = await fetchPinsRow();
   const column = COLUMN_BY_SCOPE[scope];
   const rawValue = row?.[column];
+  const trimmed = typeof rawValue === "string" ? rawValue.trim() : "";
+  const defaultActive = row?.force_default === true || !hasStoredPinValue(rawValue);
+
+  if (sanitized === DEFAULT_PIN && defaultActive) {
+    if (!looksLikeBcrypt(trimmed)) {
+      await ensureDefaultPins();
+    }
+    return true;
+  }
 
   if (!hasStoredPinValue(rawValue)) {
     if (sanitized === DEFAULT_PIN) {
-      await updateSecurityPin(scope, sanitized);
+      await ensureDefaultPins();
       return true;
     }
     return false;
   }
 
-  const stored = rawValue.trim();
+  const stored = trimmed;
 
   if (looksLikeBcrypt(stored)) {
     return verifyHash(sanitized, stored);
