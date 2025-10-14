@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   _hashPinForTests,
   _verifyHashForTests,
+  updateSecurityPins,
   verifySecurityPin,
 } from "../features/security/data/pins.ts";
 import { getSqlClient, normalizeRows } from "../lib/db/client.ts";
@@ -30,7 +31,12 @@ describeSuite("PIN hashing", () => {
     const sql = getSqlClient();
     await sql`
       UPDATE security_pins
-      SET manager_pin_hash = ${"1234"}, staff_pin_hash = NULL, updated_at = now()
+      SET
+        manager_pin_hash = ${"1234"},
+        staff_pin_hash = NULL,
+        updated_at = now(),
+        force_default = true,
+        customized_at = NULL
       WHERE id = 1
     `;
 
@@ -52,7 +58,12 @@ describeSuite("PIN hashing", () => {
 
     await sql`
       UPDATE security_pins
-      SET manager_pin_hash = NULL, staff_pin_hash = NULL, updated_at = now()
+      SET
+        manager_pin_hash = NULL,
+        staff_pin_hash = NULL,
+        updated_at = now(),
+        force_default = true,
+        customized_at = NULL
       WHERE id = 1
     `;
 
@@ -63,18 +74,22 @@ describeSuite("PIN hashing", () => {
     assert.equal(staffOk, true);
 
     const rows = normalizeRows(await sql`
-      SELECT manager_pin_hash, staff_pin_hash
+      SELECT manager_pin_hash, staff_pin_hash, force_default, customized_at
       FROM security_pins
       WHERE id = 1
     `);
 
     const managerHash = rows[0]?.manager_pin_hash;
     const staffHash = rows[0]?.staff_pin_hash;
+    const forceDefault = rows[0]?.force_default;
+    const customizedAt = rows[0]?.customized_at;
 
     assert.equal(typeof managerHash, "string");
     assert.equal(typeof staffHash, "string");
     assert.equal(String(managerHash).startsWith("$2"), true);
     assert.equal(String(staffHash).startsWith("$2"), true);
+    assert.equal(forceDefault === true, true);
+    assert.equal(customizedAt === null, true);
   });
 
   it("reseeds defaults when stored values are invalid", async () => {
@@ -85,7 +100,9 @@ describeSuite("PIN hashing", () => {
       SET
         manager_pin_hash = ${"invalid-value"},
         staff_pin_hash = ${""},
-        updated_at = now()
+        updated_at = now(),
+        force_default = true,
+        customized_at = NULL
       WHERE id = 1
     `;
 
@@ -96,17 +113,62 @@ describeSuite("PIN hashing", () => {
     assert.equal(staffOk, true);
 
     const rows = normalizeRows(await sql`
-      SELECT manager_pin_hash, staff_pin_hash
+      SELECT manager_pin_hash, staff_pin_hash, force_default, customized_at
       FROM security_pins
       WHERE id = 1
     `);
 
     const managerHash = rows[0]?.manager_pin_hash;
     const staffHash = rows[0]?.staff_pin_hash;
+    const forceDefault = rows[0]?.force_default;
+    const customizedAt = rows[0]?.customized_at;
 
     assert.equal(typeof managerHash, "string");
     assert.equal(typeof staffHash, "string");
     assert.equal(String(managerHash).startsWith("$2"), true);
     assert.equal(String(staffHash).startsWith("$2"), true);
+    assert.equal(forceDefault === true, true);
+    assert.equal(customizedAt === null, true);
+  });
+
+  it("disables the default fallback after a manual update", async () => {
+    const sql = getSqlClient();
+
+    await sql`
+      UPDATE security_pins
+      SET
+        manager_pin_hash = NULL,
+        staff_pin_hash = NULL,
+        updated_at = now(),
+        force_default = true,
+        customized_at = NULL
+      WHERE id = 1
+    `;
+
+    const defaultOk = await verifySecurityPin("manager", "1234");
+    assert.equal(defaultOk, true);
+
+    await updateSecurityPins({ managerPin: "9876" });
+
+    const rows = normalizeRows(await sql`
+      SELECT manager_pin_hash, force_default, customized_at
+      FROM security_pins
+      WHERE id = 1
+    `);
+
+    const storedHash = rows[0]?.manager_pin_hash;
+    const forceDefault = rows[0]?.force_default;
+    const customizedAt = rows[0]?.customized_at;
+
+    assert.equal(typeof storedHash, "string");
+    assert.equal(String(storedHash).startsWith("$2"), true);
+    assert.equal(forceDefault === false, true);
+    assert.equal(customizedAt === null, false);
+
+    const fallback = await verifySecurityPin("manager", "1234");
+    assert.equal(fallback, false);
+
+    const newOk = await verifySecurityPin("manager", "9876");
+    assert.equal(newOk, true);
   });
 });

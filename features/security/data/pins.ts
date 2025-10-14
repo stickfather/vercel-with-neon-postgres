@@ -25,6 +25,8 @@ type PinsRow = {
   manager_pin_hash: string | null;
   staff_pin_hash: string | null;
   updated_at: Date | string | null;
+  force_default: boolean | null;
+  customized_at: Date | string | null;
 };
 
 function looksLikeBcrypt(value: unknown): value is string {
@@ -99,21 +101,40 @@ async function ensureStorage() {
       manager_pin_hash text,
       staff_pin_hash text,
       updated_at timestamptz DEFAULT now(),
-      force_default boolean DEFAULT false
+      force_default boolean DEFAULT true,
+      customized_at timestamptz
     )
   `;
   await sql`ALTER TABLE security_pins ALTER COLUMN manager_pin_hash DROP NOT NULL`;
   await sql`ALTER TABLE security_pins ALTER COLUMN staff_pin_hash DROP NOT NULL`;
-  await sql`ALTER TABLE security_pins ADD COLUMN IF NOT EXISTS force_default boolean DEFAULT false`;
-  await sql`ALTER TABLE security_pins ALTER COLUMN force_default SET DEFAULT false`;
-  await sql`INSERT INTO security_pins (id) VALUES (${PIN_ROW_ID}) ON CONFLICT (id) DO NOTHING`;
+  await sql`ALTER TABLE security_pins ADD COLUMN IF NOT EXISTS force_default boolean DEFAULT true`;
+  await sql`ALTER TABLE security_pins ALTER COLUMN force_default SET DEFAULT true`;
+  await sql`ALTER TABLE security_pins ADD COLUMN IF NOT EXISTS customized_at timestamptz`;
+  await sql`
+    INSERT INTO security_pins (id, manager_pin_hash, staff_pin_hash, force_default, customized_at)
+    VALUES (
+      ${PIN_ROW_ID},
+      crypt(${DEFAULT_PIN}, gen_salt('bf', 12)),
+      crypt(${DEFAULT_PIN}, gen_salt('bf', 12)),
+      true,
+      NULL
+    )
+    ON CONFLICT (id) DO NOTHING
+  `;
   await sql`DELETE FROM security_pins WHERE id <> ${PIN_ROW_ID}`;
-  await seedDefaultPinsIfMissing(sql);
+  await sql`
+    UPDATE security_pins
+    SET force_default = true
+    WHERE id = ${PIN_ROW_ID}
+      AND customized_at IS NULL
+      AND force_default IS DISTINCT FROM true
+  `;
+  await ensureDefaultPins(sql);
 }
 
 async function fetchPinsRowRaw(sql = getSqlClient()): Promise<PinsRow | undefined> {
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT manager_pin_hash, staff_pin_hash, updated_at
+    SELECT manager_pin_hash, staff_pin_hash, updated_at, force_default, customized_at
     FROM security_pins
     WHERE id = ${PIN_ROW_ID}
     LIMIT 1
@@ -122,13 +143,14 @@ async function fetchPinsRowRaw(sql = getSqlClient()): Promise<PinsRow | undefine
   return rows[0] as PinsRow | undefined;
 }
 
-async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow | null> {
+async function ensureDefaultPins(sql = getSqlClient()): Promise<PinsRow | null> {
   await ensurePgcrypto(sql);
   const rows = normalizeRows<SqlRow>(await sql`
     UPDATE security_pins
     SET
       staff_pin_hash = CASE
-        WHEN staff_pin_hash IS NULL
+        WHEN force_default IS TRUE
+          OR staff_pin_hash IS NULL
           OR btrim(staff_pin_hash) = ''
           OR NOT (
             staff_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
@@ -138,7 +160,8 @@ async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow |
         ELSE staff_pin_hash
       END,
       manager_pin_hash = CASE
-        WHEN manager_pin_hash IS NULL
+        WHEN force_default IS TRUE
+          OR manager_pin_hash IS NULL
           OR btrim(manager_pin_hash) = ''
           OR NOT (
             manager_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
@@ -149,7 +172,8 @@ async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow |
       END,
       updated_at = CASE
         WHEN (
-          staff_pin_hash IS NULL
+          force_default IS TRUE
+          OR staff_pin_hash IS NULL
           OR btrim(staff_pin_hash) = ''
           OR NOT (
             staff_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
@@ -157,7 +181,8 @@ async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow |
           )
         )
         OR (
-          manager_pin_hash IS NULL
+          force_default IS TRUE
+          OR manager_pin_hash IS NULL
           OR btrim(manager_pin_hash) = ''
           OR NOT (
             manager_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
@@ -167,10 +192,14 @@ async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow |
         THEN now()
         ELSE updated_at
       END,
-      force_default = false
+      force_default = CASE
+        WHEN force_default IS TRUE THEN true
+        ELSE force_default
+      END
     WHERE id = ${PIN_ROW_ID}
       AND (
-        staff_pin_hash IS NULL
+        force_default IS TRUE
+        OR staff_pin_hash IS NULL
         OR btrim(staff_pin_hash) = ''
         OR NOT (
           staff_pin_hash ~ '^\\$2[aby]\\$\\d{2}\\$[./0-9A-Za-z]{53}$'
@@ -183,7 +212,7 @@ async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow |
           OR manager_pin_hash ~ '^\\d{4,8}$'
         )
       )
-    RETURNING manager_pin_hash, staff_pin_hash, updated_at
+    RETURNING manager_pin_hash, staff_pin_hash, updated_at, force_default, customized_at
   `);
 
   return (rows[0] as PinsRow | undefined) ?? null;
@@ -194,10 +223,14 @@ async function fetchPinsRow(): Promise<PinsRow> {
   let row = await fetchPinsRowRaw(sql);
 
   if (!row) {
-    await seedDefaultPinsIfMissing(sql);
+    await ensureDefaultPins(sql);
     row = await fetchPinsRowRaw(sql);
-  } else if (!hasStoredPinValue(row.staff_pin_hash) || !hasStoredPinValue(row.manager_pin_hash)) {
-    const seeded = await seedDefaultPinsIfMissing(sql);
+  } else if (
+    row.force_default === true ||
+    !hasStoredPinValue(row.staff_pin_hash) ||
+    !hasStoredPinValue(row.manager_pin_hash)
+  ) {
+    const seeded = await ensureDefaultPins(sql);
     if (seeded) {
       row = seeded;
     } else {
@@ -210,6 +243,8 @@ async function fetchPinsRow(): Promise<PinsRow> {
       manager_pin_hash: null,
       staff_pin_hash: null,
       updated_at: null,
+      force_default: null,
+      customized_at: null,
     }
   );
 }
@@ -329,7 +364,8 @@ export async function updateSecurityPins({
       staff_pin_hash = COALESCE(EXCLUDED.staff_pin_hash, security_pins.staff_pin_hash),
       manager_pin_hash = COALESCE(EXCLUDED.manager_pin_hash, security_pins.manager_pin_hash),
       updated_at = now(),
-      force_default = false
+      force_default = false,
+      customized_at = now()
   `;
 }
 
