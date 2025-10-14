@@ -66,7 +66,7 @@ async function verifyHash(pin: string, hash: string | null | undefined): Promise
   return rows[0]?.ok === true;
 }
 
-function looksLikeBcrypt(hash: unknown): hash is string {
+function looksLikeBcrypt(hash: unknown): boolean {
   if (typeof hash !== "string") return false;
   const trimmed = hash.trim();
   return /^\$2[aby]\$\d{2}\$[./0-9A-Za-z]{53}$/.test(trimmed);
