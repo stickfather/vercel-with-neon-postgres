@@ -70,6 +70,10 @@ export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
   ];
 }
 
+export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
+  return pinStore[scope].value.length > 0;
+}
+
 export async function updateSecurityPins({
   staffPin,
   managerPin,
