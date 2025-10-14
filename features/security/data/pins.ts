@@ -48,9 +48,8 @@ async function ensurePgcrypto(sql = getSqlClient()) {
   }
 }
 
-async function hashPin(pin: string): Promise<string> {
-  await ensurePgcrypto();
-  const sql = getSqlClient();
+async function hashPin(pin: string, sql = getSqlClient()): Promise<string> {
+  await ensurePgcrypto(sql);
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT crypt(${pin}, gen_salt('bf', 12)) AS hash
   `);
@@ -98,6 +97,7 @@ async function ensureStorage() {
   await sql`ALTER TABLE security_pins ALTER COLUMN staff_pin_hash DROP NOT NULL`;
   await sql`INSERT INTO security_pins (id) VALUES (${PIN_ROW_ID}) ON CONFLICT (id) DO NOTHING`;
   await sql`DELETE FROM security_pins WHERE id <> ${PIN_ROW_ID}`;
+  await seedDefaultPinsIfMissing(sql);
 }
 
 async function fetchPinsRowRaw(): Promise<PinsRow | undefined> {
@@ -138,6 +138,45 @@ async function ensureDefaultPins(row: PinsRow): Promise<PinsRow> {
   }
 
   return row;
+}
+
+async function seedDefaultPinsIfMissing(sql = getSqlClient()) {
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT manager_pin_hash, staff_pin_hash
+    FROM security_pins
+    WHERE id = ${PIN_ROW_ID}
+    LIMIT 1
+  `);
+
+  const row = rows[0] as PinsRow | undefined;
+  const needsStaff = !hasStoredPinValue(row?.staff_pin_hash);
+  const needsManager = !hasStoredPinValue(row?.manager_pin_hash);
+
+  if (!needsStaff && !needsManager) {
+    return;
+  }
+
+  const staffHash = needsStaff ? await hashPin(DEFAULT_PIN, sql) : null;
+  const managerHash = needsManager ? await hashPin(DEFAULT_PIN, sql) : null;
+  const shouldTouchTimestamp = needsStaff || needsManager;
+
+  await sql`
+    UPDATE security_pins
+    SET
+      staff_pin_hash = CASE
+        WHEN ${needsStaff} THEN ${staffHash}
+        ELSE staff_pin_hash
+      END,
+      manager_pin_hash = CASE
+        WHEN ${needsManager} THEN ${managerHash}
+        ELSE manager_pin_hash
+      END,
+      updated_at = CASE
+        WHEN ${shouldTouchTimestamp} THEN now()
+        ELSE updated_at
+      END
+    WHERE id = ${PIN_ROW_ID}
+  `;
 }
 
 async function fetchPinsRow(): Promise<PinsRow> {
@@ -234,12 +273,12 @@ export async function updateSecurityPins({
 
   if (typeof staffPin === "string") {
     const sanitized = sanitizePin(staffPin);
-    staffHash = await hashPin(sanitized);
+    staffHash = await hashPin(sanitized, sql);
   }
 
   if (typeof managerPin === "string") {
     const sanitized = sanitizePin(managerPin);
-    managerHash = await hashPin(sanitized);
+    managerHash = await hashPin(sanitized, sql);
   }
 
   if (staffHash === null && managerHash === null) {
