@@ -52,7 +52,7 @@ describeSuite("PIN hashing", () => {
 
     await sql`
       UPDATE security_pins
-      SET manager_pin_hash = NULL, staff_pin_hash = NULL, updated_at = now()
+      SET manager_pin_hash = NULL, staff_pin_hash = NULL, updated_at = now(), force_default = false
       WHERE id = 1
     `;
 
@@ -75,5 +75,40 @@ describeSuite("PIN hashing", () => {
     assert.equal(typeof staffHash, "string");
     assert.equal(String(managerHash).startsWith("$2"), true);
     assert.equal(String(staffHash).startsWith("$2"), true);
+  });
+
+  it("forces default PINs when requested", async () => {
+    const sql = getSqlClient();
+
+    const customHash = await _hashPinForTests("5678");
+
+    await sql`
+      UPDATE security_pins
+      SET
+        manager_pin_hash = ${customHash},
+        staff_pin_hash = ${customHash},
+        force_default = true,
+        updated_at = now()
+      WHERE id = 1
+    `;
+
+    const ok = await verifySecurityPin("manager", "1234");
+    assert.equal(ok, true);
+
+    const rows = normalizeRows(await sql`
+      SELECT manager_pin_hash, staff_pin_hash, force_default
+      FROM security_pins
+      WHERE id = 1
+    `);
+
+    const managerHash = rows[0]?.manager_pin_hash;
+    const staffHash = rows[0]?.staff_pin_hash;
+    const forceDefault = rows[0]?.force_default;
+
+    assert.equal(typeof managerHash, "string");
+    assert.equal(typeof staffHash, "string");
+    assert.equal(String(managerHash).startsWith("$2"), true);
+    assert.equal(String(staffHash).startsWith("$2"), true);
+    assert.equal(forceDefault, false);
   });
 });

@@ -25,6 +25,7 @@ type PinsRow = {
   manager_pin_hash: string | null;
   staff_pin_hash: string | null;
   updated_at: Date | string | null;
+  force_default?: boolean | null;
 };
 
 function hasStoredPinValue(value: unknown): value is string {
@@ -90,13 +91,23 @@ async function ensureStorage() {
       id bigserial PRIMARY KEY,
       manager_pin_hash text,
       staff_pin_hash text,
-      updated_at timestamptz DEFAULT now()
+      updated_at timestamptz DEFAULT now(),
+      force_default boolean DEFAULT true
     )
   `;
   await sql`ALTER TABLE security_pins ALTER COLUMN manager_pin_hash DROP NOT NULL`;
   await sql`ALTER TABLE security_pins ALTER COLUMN staff_pin_hash DROP NOT NULL`;
+  await sql`ALTER TABLE security_pins ADD COLUMN IF NOT EXISTS force_default boolean DEFAULT true`;
+  await sql`ALTER TABLE security_pins ALTER COLUMN force_default SET DEFAULT true`;
   await sql`INSERT INTO security_pins (id) VALUES (${PIN_ROW_ID}) ON CONFLICT (id) DO NOTHING`;
   await sql`DELETE FROM security_pins WHERE id <> ${PIN_ROW_ID}`;
+  await sql`
+    UPDATE security_pins
+    SET force_default = true
+    WHERE id = ${PIN_ROW_ID}
+      AND force_default IS DISTINCT FROM true
+  `;
+  await applyForcedDefaultPins(sql);
   await seedDefaultPinsIfMissing(sql);
 }
 
@@ -123,7 +134,8 @@ async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow |
         NULLIF(btrim(manager_pin_hash), ''),
         crypt(${DEFAULT_PIN}, gen_salt('bf', 12))
       ),
-      updated_at = now()
+      updated_at = now(),
+      force_default = false
     WHERE id = ${PIN_ROW_ID}
       AND (
         staff_pin_hash IS NULL
@@ -131,6 +143,22 @@ async function seedDefaultPinsIfMissing(sql = getSqlClient()): Promise<PinsRow |
         OR manager_pin_hash IS NULL
         OR btrim(manager_pin_hash) = ''
       )
+    RETURNING manager_pin_hash, staff_pin_hash, updated_at
+  `);
+
+  return (rows[0] as PinsRow | undefined) ?? null;
+}
+
+async function applyForcedDefaultPins(sql = getSqlClient()): Promise<PinsRow | null> {
+  const rows = normalizeRows<SqlRow>(await sql`
+    UPDATE security_pins
+    SET
+      staff_pin_hash = crypt(${DEFAULT_PIN}, gen_salt('bf', 12)),
+      manager_pin_hash = crypt(${DEFAULT_PIN}, gen_salt('bf', 12)),
+      updated_at = now(),
+      force_default = false
+    WHERE id = ${PIN_ROW_ID}
+      AND COALESCE(force_default, true) = true
     RETURNING manager_pin_hash, staff_pin_hash, updated_at
   `);
 
@@ -274,7 +302,8 @@ export async function updateSecurityPins({
     SET
       staff_pin_hash = COALESCE(EXCLUDED.staff_pin_hash, security_pins.staff_pin_hash),
       manager_pin_hash = COALESCE(EXCLUDED.manager_pin_hash, security_pins.manager_pin_hash),
-      updated_at = now()
+      updated_at = now(),
+      force_default = false
   `;
 }
 
