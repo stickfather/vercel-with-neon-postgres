@@ -51,12 +51,17 @@ class BaseSchema<T> {
     this.parser = parser;
   }
 
-  parse(input: unknown): T {
-    const ctx = createContext();
+  parseWithContext(input: unknown, ctx: ParseContext): T {
     const value = this.parser(input, ctx);
     for (const refine of this.refinements) {
       refine(value, ctx);
     }
+    return value;
+  }
+
+  parse(input: unknown): T {
+    const ctx = createContext();
+    const value = this.parseWithContext(input, ctx);
     if (ctx.issues.length) {
       throw new ZodError(ctx.issues);
     }
@@ -89,35 +94,26 @@ class BaseSchema<T> {
   }
 
   optional(): BaseSchema<T | undefined> {
+    const base = this;
     return new BaseSchema<T | undefined>((input, ctx) => {
       if (input === undefined) return undefined;
-      const result = this.parser(input, ctx);
-      for (const refine of this.refinements) {
-        refine(result, ctx);
-      }
-      return result;
+      return base.parseWithContext(input, ctx);
     });
   }
 
   nullable(): BaseSchema<T | null> {
+    const base = this;
     return new BaseSchema<T | null>((input, ctx) => {
       if (input === null) return null;
-      const result = this.parser(input, ctx);
-      for (const refine of this.refinements) {
-        refine(result, ctx);
-      }
-      return result;
+      return base.parseWithContext(input, ctx);
     });
   }
 
   default(value: T): BaseSchema<T> {
+    const base = this;
     return new BaseSchema<T>((input, ctx) => {
       if (input === undefined) return value;
-      const result = this.parser(input, ctx);
-      for (const refine of this.refinements) {
-        refine(result, ctx);
-      }
-      return result;
+      return base.parseWithContext(input, ctx);
     });
   }
 
@@ -247,10 +243,7 @@ class ZodArray<T> extends BaseSchema<T[]> {
       const result: T[] = [];
       input.forEach((value, index) => {
         const childCtx = ctx.child(index);
-        const parsed = this.element.parser(value, childCtx);
-        for (const refine of this.element.refinements) {
-          refine(parsed, childCtx);
-        }
+        const parsed = this.element.parseWithContext(value, childCtx);
         result.push(parsed);
       });
       return result;
@@ -276,10 +269,7 @@ class ZodObject<S extends Shape> extends BaseSchema<InferredShape<S>> {
         const schema = shape[key];
         const childCtx = ctx.child(key);
         const value = (input as Record<string, unknown>)[key];
-        const parsed = schema.parser(value, childCtx);
-        for (const refine of schema.refinements) {
-          refine(parsed, childCtx);
-        }
+        const parsed = schema.parseWithContext(value, childCtx);
         result[key] = parsed;
       }
       return result as InferredShape<S>;

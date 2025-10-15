@@ -11,6 +11,14 @@ import type {
 
 export type SqlClientLike = ReturnType<typeof getSqlClient>;
 
+type TransactionCapableSqlClient = SqlClientLike & {
+  begin<T>(callback: (sql: SqlClientLike) => Promise<T>): Promise<T>;
+};
+
+function isTransactionCapableSqlClient(sql: SqlClientLike): sql is TransactionCapableSqlClient {
+  return typeof (sql as TransactionCapableSqlClient).begin === "function";
+}
+
 export class HttpError extends Error {
   status: number;
 
@@ -456,6 +464,9 @@ export async function overrideAndApprove(
 ): Promise<void> {
   const sql = ensureSqlClient(sqlClient);
   await ensureStaffExists(sql, payload.staffId);
+  if (!isTransactionCapableSqlClient(sql)) {
+    throw new Error("SQL client does not support transactions");
+  }
   await sql.begin(async (transaction) => {
     if (payload.deletions.length) {
       await transaction`
