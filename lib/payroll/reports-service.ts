@@ -68,16 +68,40 @@ export function roundMinutesToHours(minutes: number): number {
   return Math.round((safeMinutes / 60) * 100) / 100;
 }
 
+function formatDateOnly(value: Date): string {
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    value.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
+function toDateOnly(value: unknown): string | null {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return formatDateOnly(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) return null;
+    if (ISO_DATE_REGEX.test(trimmed)) {
+      return trimmed;
+    }
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      return formatDateOnly(parsed);
+    }
+  }
+
+  return null;
+}
+
 function enumerateDays(start: string, end: string): string[] {
   if (start > end) return [];
   const days: string[] = [];
   let current = new Date(`${start}T00:00:00Z`);
   const target = new Date(`${end}T00:00:00Z`);
   while (current.getTime() <= target.getTime()) {
-    const year = current.getUTCFullYear();
-    const month = String(current.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(current.getUTCDate()).padStart(2, "0");
-    days.push(`${year}-${month}-${day}`);
+    days.push(formatDateOnly(current));
     current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
   }
   return days;
@@ -357,8 +381,8 @@ export async function getPayrollMatrix(
   for (const row of rows) {
     const staffId = Number(row["staff_id"]);
     if (!Number.isFinite(staffId)) continue;
-    const workDate = String(row["work_date"] ?? "");
-    if (!ISO_DATE_REGEX.test(workDate)) continue;
+    const workDate = toDateOnly(row["work_date"]);
+    if (!workDate) continue;
     const approved = toBoolean(row["approved"]);
     const approvedHoursRaw = toOptionalNumber(row["approved_hours"]);
     const approvedHoursMinutes =

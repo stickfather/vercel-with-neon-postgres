@@ -282,6 +282,41 @@ describe("payroll integration", () => {
     assert.equal(benRow.cells[1].hours, 3);
     assert.equal(benRow.cells[1].approvedHours, null);
   });
+
+  it("normalizes matrix work dates regardless of driver shape", async () => {
+    const { sql } = createMockSqlClient([
+      {
+        match: /staff_day_matrix_local_v/,
+        rows: [
+          {
+            staff_id: 7,
+            staff_name: "Fecha",
+            work_date: new Date("2025-10-01T00:00:00Z"),
+            total_hours: 1,
+            approved_hours: null,
+            horas_mostrar: 1,
+            approved: false,
+          },
+          {
+            staff_id: 7,
+            staff_name: "Fecha",
+            work_date: "2025-10-02T05:00:00.000Z",
+            total_hours: 2,
+            approved_hours: null,
+            horas_mostrar: 2,
+            approved: false,
+          },
+        ],
+      },
+    ]);
+
+    const matrix = await getPayrollMatrix({ start: "2025-10-01", end: "2025-10-02" }, sql);
+    assert.deepEqual(matrix.days, ["2025-10-01", "2025-10-02"]);
+    assert.equal(matrix.rows.length, 1);
+    const onlyRow = matrix.rows[0];
+    assert.equal(onlyRow.cells[0].date, "2025-10-01");
+    assert.equal(onlyRow.cells[1].date, "2025-10-02");
+  });
 });
 
 it("throws HttpError when staff missing in approveDay", async () => {
