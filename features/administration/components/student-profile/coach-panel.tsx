@@ -16,6 +16,7 @@ type CoachPanelProps = {
 };
 
 type LessonSession = CoachPanelLessonSessionEntry;
+type LessonJourneyItem = CoachPanelLessonJourneyEntry & { isExam?: boolean };
 
 const HEATMAP_DAYS = 30;
 
@@ -154,7 +155,7 @@ function LessonDrawer({
   error,
   onClose,
 }: {
-  lesson: CoachPanelLessonJourneyEntry | null;
+  lesson: LessonJourneyItem | null;
   sessions: LessonSession[];
   status: "idle" | "loading" | "ready" | "error";
   error: string | null;
@@ -164,7 +165,10 @@ function LessonDrawer({
     return null;
   }
 
-  const lessonLabel = [lesson.level, lesson.seq != null ? `Lección ${lesson.seq}` : null]
+  const lessonLabel = [
+    lesson.level,
+    lesson.isExam ? "Examen" : lesson.seq != null ? `Lección ${lesson.seq}` : null,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -182,7 +186,9 @@ function LessonDrawer({
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-teal">Detalle de lección</span>
             <h3 className="mt-2 text-2xl font-bold text-brand-deep">{lessonLabel || "Lección"}</h3>
             <p className="text-sm text-brand-ink-muted">
-              Últimas tres sesiones registradas para esta lección.
+              {lesson.isExam
+                ? "Últimas sesiones registradas antes del examen."
+                : "Últimas tres sesiones registradas para esta lección."}
             </p>
           </div>
           <button
@@ -236,7 +242,7 @@ function LessonDrawer({
 }
 
 export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
-  const [drawerLesson, setDrawerLesson] = useState<CoachPanelLessonJourneyEntry | null>(null);
+  const [drawerLesson, setDrawerLesson] = useState<LessonJourneyItem | null>(null);
   const [drawerSessions, setDrawerSessions] = useState<LessonSession[]>([]);
   const [drawerStatus, setDrawerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [drawerError, setDrawerError] = useState<string | null>(null);
@@ -261,6 +267,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const controller = new AbortController();
     setDrawerStatus("loading");
     setDrawerError(null);
+    setDrawerSessions([]);
 
     fetch(
       `/api/students/${studentId}/sessions/by-lesson/${drawerLesson.lessonId}?limit=3`,
@@ -294,10 +301,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     };
   }, [drawerLesson, studentId]);
 
-  const heatmapCells = useMemo(
-    () => buildHeatmapCells(data?.engagement.heatmap ?? [], HEATMAP_DAYS),
-    [data?.engagement.heatmap],
-  );
+  const heatmapCells = useMemo(() => {
+    const entries = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
+    return buildHeatmapCells(entries, HEATMAP_DAYS);
+  }, [data?.engagement?.heatmap]);
   const heatmapMaxMinutes = useMemo(
     () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
     [heatmapCells],
@@ -328,6 +335,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
+  const leiTrendSource = Array.isArray(engagement.lei?.trend) ? engagement.lei.trend : [];
 
   const lessonElements: ReactElement[] = [];
   let lastLevel: string | null = null;
@@ -343,28 +351,34 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       );
     }
 
+    const nextLessonLevel = journeyLessons[index + 1]?.level ?? null;
+    const isExamBubble = Boolean(lesson.level) && lesson.level !== nextLessonLevel;
     const isCompleted = lesson.completed || (currentGlobalSeq != null && lesson.lessonGlobalSeq != null && lesson.lessonGlobalSeq < currentGlobalSeq);
     const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
+    const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
 
     lessonElements.push(
       <button
         type="button"
         key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
-        onClick={() => setDrawerLesson(lesson)}
+        onClick={() => setDrawerLesson({ ...lesson, isExam: isExamBubble })}
         className={cx(
-          "relative flex h-14 w-14 items-center justify-center rounded-full border-2 text-sm font-semibold transition",
+          "relative flex items-center justify-center rounded-full border-2 font-semibold transition",
+          isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
           isCurrent
             ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
             : isCompleted
               ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
               : "border-brand-teal/50 bg-white text-brand-deep hover:-translate-y-[1px]",
         )}
-        title={`Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()}
+        title={isExamBubble
+          ? `Examen · ${lesson.level ?? ""}`.trim()
+          : `Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()}
       >
         {isCurrent ? (
           <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
         ) : null}
-        <span>{lesson.seq ?? "?"}</span>
+        <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
       </button>,
     );
   });
@@ -462,7 +476,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             </p>
           </div>
           <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <Sparkline data={engagement.lei.trend} />
+            <Sparkline data={leiTrendSource} />
           </div>
         </div>
       </section>
