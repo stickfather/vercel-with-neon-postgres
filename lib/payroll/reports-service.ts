@@ -315,6 +315,7 @@ export const SetMonthPaidSchema = z.object({
   paidAt: z
     .string()
     .trim()
+    .nullable()
     .optional()
     .transform((value) => (value && value.length ? value : undefined)),
   amountPaid: z.number().optional(),

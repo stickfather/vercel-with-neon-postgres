@@ -90,6 +90,16 @@ describe("payroll reports schemas", () => {
     assert.equal(parsed.reference, undefined);
     assert.equal(parsed.paidBy, "Laura");
   });
+
+  it("accepts null paidAt values when clearing the payment date", () => {
+    const parsed = SetMonthPaidSchema.parse({
+      staffId: 2,
+      month: "2025-11-01",
+      paid: false,
+      paidAt: null,
+    });
+    assert.equal(parsed.paidAt, undefined);
+  });
 });
 
 describe("roundMinutesToHours", () => {
