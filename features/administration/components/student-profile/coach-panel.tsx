@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
@@ -133,7 +133,7 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
-function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): JSX.Element {
+function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement {
   if (!data.length) {
     return (
       <div className="flex h-24 w-full flex-col items-center justify-center rounded-2xl bg-white/70 text-sm text-brand-ink-muted">
@@ -196,7 +196,7 @@ function LessonDrawer({
   status: "idle" | "loading" | "ready" | "error";
   error: string | null;
   onClose: () => void;
-}): JSX.Element | null {
+}): ReactElement | null {
   if (!lesson) {
     return null;
   }
@@ -370,7 +370,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
 
-  const lessonElements: JSX.Element[] = [];
+  const lessonElements: ReactElement[] = [];
   let lastLevel: string | null = null;
   journeyLessons.forEach((lesson, index) => {
     if (lesson.level && lesson.level !== lastLevel) {
