@@ -1578,6 +1578,9 @@ export async function listStudentRecentSessions(
   return rows
     .map((row) => {
       const payload = toJsonRecord(row);
+      if (!payload) {
+        return null;
+      }
       const attendanceId = normalizeInteger(payload.attendance_id);
       const checkIn = extractString(payload, ["checkin_local", "check_in"]);
       if (!attendanceId || !checkIn) {
