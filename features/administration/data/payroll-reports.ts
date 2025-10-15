@@ -6,6 +6,12 @@ import {
   SqlRow,
   TIMEZONE,
 } from "@/lib/db/client";
+import {
+  DaySessionsQuerySchema as ReportsDaySessionsSchema,
+  getDaySessions as getPayrollDaySessions,
+  parseWithSchema as parsePayrollSchema,
+} from "@/lib/payroll/reports-service";
+import type { DaySession as ReportsDaySession } from "@/types/payroll";
 
 type SqlClient = ReturnType<typeof getSqlClient>;
 
@@ -712,101 +718,21 @@ export async function fetchDaySessions({
 }): Promise<DaySession[]> {
   noStore();
   const sql = getSqlClient();
-  const normalizedWorkDate = ensureWorkDate(workDate);
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.staff_day_sessions_local_v
-    WHERE staff_id = ${staffId}::bigint
-      AND work_date = ${normalizedWorkDate}::date
-    ORDER BY checkin_time NULLS LAST, checkout_time NULLS LAST
-  `);
-
-  return rows.map((row) => {
-    // Use readRowValue for flexible column name matching to support various database schemas
-    // This handles case-insensitive matching and column name variations
-    const sessionId = Number(
-      readRowValue(row, [
-        "session_id",
-        "session_record_id",
-        "attendance_id",
-        "id",
-      ]) ?? NaN,
-    );
-    const checkinTime = coerceString(
-      readRowValue(row, [
-        "checkin_local",
-        "local_checkin",
-        "check_in_local",
-        "checkin_time",
-        "check_in_time",
-        "checkin",
-        "start_time",
-      ]),
-    );
-    const checkoutTime = coerceString(
-      readRowValue(row, [
-        "checkout_local",
-        "local_checkout",
-        "check_out_local",
-        "checkout_time",
-        "check_out_time",
-        "checkout",
-        "end_time",
-      ]),
-    );
-
-    const minutesValue =
-      toInteger(
-        readRowValue(row, [
-          "minutes",
-          "total_minutes",
-          "duration_minutes",
-          "session_minutes",
-          "minutes_logged",
-        ]),
-      ) ?? null;
-
-    const hoursDirect = toOptionalNumber(
-      readRowValue(row, [
-        "total_hours",
-        "hours",
-        "horas_mostrar",
-        "hours_display",
-        "horas",
-      ]),
-      2,
-    );
-
-    let hoursValue =
-      hoursDirect != null
-        ? hoursDirect
-        : minutesValue != null
-          ? minutesToHours(minutesValue)
-          : 0;
-
-    if (!Number.isFinite(hoursValue)) {
-      hoursValue = 0;
-    }
-
-    if ((!minutesValue || hoursValue === 0) && checkinTime && checkoutTime) {
-      try {
-        const minutes = computeDurationMinutes(checkinTime, checkoutTime);
-        hoursValue = minutesToHours(minutes);
-      } catch (error) {
-        console.warn("No se pudo calcular la duración de la sesión", error);
-        hoursValue = 0;
-      }
-    }
-
-    return {
-      sessionId: Number.isFinite(sessionId) ? sessionId : null,
-      staffId: Number(readRowValue(row, ["staff_id", "staffid", "staff"]) ?? staffId),
-      workDate,
-      checkinTime,
-      checkoutTime,
-      hours: Number(hoursValue.toFixed(2)),
-    };
+  const params = parsePayrollSchema(ReportsDaySessionsSchema, {
+    staffId,
+    date: workDate,
   });
+  const sessions = await getPayrollDaySessions(params, sql);
+
+  return sessions.map((session: ReportsDaySession) => ({
+    sessionId:
+      Number.isFinite(session.sessionId) && session.sessionId > 0 ? session.sessionId : null,
+    staffId: params.staffId,
+    workDate: params.date,
+    checkinTime: session.checkinTimeLocal,
+    checkoutTime: session.checkoutTimeLocal,
+    hours: session.hours,
+  }));
 }
 
 function ensureWorkDate(value: string): string {
