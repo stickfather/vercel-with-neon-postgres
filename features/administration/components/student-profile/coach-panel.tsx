@@ -116,6 +116,26 @@ function formatHoursPerWeek(hours: number | null | undefined): string {
   return `${formatDecimal(weekly, digits)} h`;
 }
 
+function normalizePercentValue(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) {
+    return null;
+  }
+  const raw = Math.abs(value) <= 1 ? value * 100 : value;
+  if (!Number.isFinite(raw)) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, raw));
+}
+
+function formatPercent(value: number | null | undefined, digits = 1): string {
+  const normalized = normalizePercentValue(value);
+  if (normalized == null) {
+    return "—";
+  }
+  const fractionDigits = normalized >= 10 ? Math.min(digits, 1) : digits;
+  return `${formatDecimal(normalized, fractionDigits)}%`;
+}
+
 function getOnPaceStatus(data: StudentCoachPanelSummary) {
   const forecast = data.forecastMonthsToFinish;
   const hasForecast = forecast != null && Number.isFinite(forecast);
@@ -566,6 +586,20 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             </article>
           </div>
 
+          <LifetimeOverviewCard data={data} />
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-white/80 bg-white/90 px-5 py-3 text-xs uppercase tracking-wide text-brand-ink-muted">
+            <span className="font-semibold text-brand-deep">
+              Min/día (prom. 30d): {formatInteger(data.avgSessionMinutes30d)}
+            </span>
+            <span className="font-semibold text-brand-deep">
+              Días activos/sem (prom. 30d): {formatWeeklyDays(data.weeklyActiveDays)}
+            </span>
+            <span className="font-semibold text-brand-deep">
+              {formatLastSessionSummary(data.lastSessionDaysAgo)}
+            </span>
+          </div>
+
           {/* Study trend & lesson progression */}
           <div className="grid gap-6 xl:grid-cols-2">
             <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/90 px-5 py-5 shadow-sm">
@@ -644,6 +678,109 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           </section>
         </>
       )}
+    </section>
+  );
+}
+
+type LifetimeOverviewCardProps = {
+  data: StudentCoachPanelSummary;
+};
+
+function LifetimeOverviewCard({ data }: LifetimeOverviewCardProps) {
+  const progressPercent = normalizePercentValue(data.journeyProgressPct);
+  const completed = data.journeyCompletedLessons;
+  const total = data.journeyTotalLessons;
+  const expectedLessons =
+    data.targetLph != null && data.totalHoursLifetime != null
+      ? Math.round(data.targetLph * data.totalHoursLifetime)
+      : null;
+  const gap =
+    completed != null && expectedLessons != null ? completed - expectedLessons : null;
+  const gapTone =
+    gap == null ? "text-brand-ink-muted" : gap >= 0 ? "text-emerald-600" : "text-rose-600";
+  const gapLabel =
+    gap == null ? "—" : gap > 0 ? `+${formatInteger(gap)}` : formatInteger(gap);
+  const scaleMax = Math.max(expectedLessons ?? 0, completed ?? 0, 1);
+  const actualPercent = completed != null ? clampPercent((completed / scaleMax) * 100) : 0;
+  const expectedPercent = expectedLessons != null ? clampPercent((expectedLessons / scaleMax) * 100) : 0;
+  const planBarTone = gap == null ? "bg-brand-teal-soft/70" : gap >= 0 ? "bg-emerald-400" : "bg-rose-400";
+
+  return (
+    <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-brand-deep">Desde el inicio</h3>
+          <p className="text-sm text-brand-ink-muted">Tu progreso desde el primer día.</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-full bg-brand-teal-soft/60 px-3 py-1 text-xs font-semibold text-brand-teal">
+          <span>{data.journeyMinLevel ?? "Inicio"}</span>
+          <span className="text-brand-ink-muted">→</span>
+          <span>{data.journeyMaxLevel ?? "Meta"}</span>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold text-brand-deep">
+          <span>
+            Avance:
+            {" "}
+            {completed != null && total != null
+              ? `${formatInteger(completed)} / ${formatInteger(total)} lecciones`
+              : completed != null
+                ? `${formatInteger(completed)} lecciones completadas`
+                : "Sin datos"}
+          </span>
+          <span className="text-brand-ink-muted">{formatPercent(progressPercent)}</span>
+        </div>
+        <div className="relative h-2 overflow-hidden rounded-full bg-brand-deep-soft/20" aria-hidden>
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-brand-teal"
+            style={{ width: `${progressPercent ?? 0}%` }}
+          />
+        </div>
+        <span className="text-xs text-brand-ink-muted">
+          Ruta prevista: {data.journeyMinLevel ?? "Inicio"} → {data.journeyMaxLevel ?? "Meta"}
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-1 rounded-xl border border-brand-deep-soft/40 bg-white/80 px-4 py-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">Horas</span>
+          <span className="text-lg font-semibold text-brand-deep">{formatHours(data.totalHoursLifetime)}</span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-xl border border-brand-deep-soft/40 bg-white/80 px-4 py-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">Días activos</span>
+          <span className="text-lg font-semibold text-brand-deep">{formatInteger(data.totalActiveDaysLifetime)}</span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-xl border border-brand-deep-soft/40 bg-white/80 px-4 py-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">LEI global</span>
+          <span className="text-lg font-semibold text-brand-deep">{formatDecimal(data.leiGlobalLifetime, 2)}</span>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-brand-deep-soft/40 bg-white/80 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+          <span>Progreso vs plan (desde el inicio)</span>
+          <span className={gapTone}>Brecha: {gapLabel}</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-brand-ink-muted">
+          <span>Esperado: {formatInteger(expectedLessons)}</span>
+          <span>Real: {formatInteger(completed)}</span>
+        </div>
+        <div className="relative h-2 overflow-hidden rounded-full bg-brand-deep-soft/30">
+          <div
+            className={`absolute inset-y-0 left-0 rounded-full ${planBarTone}`}
+            style={{ width: `${actualPercent}%` }}
+          />
+          <div
+            className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-brand-deep"
+            style={{ left: `${expectedPercent}%` }}
+          />
+        </div>
+        <p className="text-[11px] text-brand-ink-muted">
+          Si la barra supera la marca, el estudiante va adelantado al plan histórico.
+        </p>
+      </div>
     </section>
   );
 }
@@ -731,6 +868,9 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
   const completedFromPlan = plan?.lessonsCompleted ?? null;
   const remainingForTotal = plan?.lessonsRemaining ?? data.lessonsRemaining ?? null;
   const levelSegments = plan?.levelSegments ?? [];
+  const journeyPercent = normalizePercentValue(data.journeyProgressPct);
+  const journeyCompleted = data.journeyCompletedLessons;
+  const journeyTotal = data.journeyTotalLessons;
   const totalLessons =
     plan?.lessonsTotal ??
     (completedFromPlan != null && remainingForTotal != null
@@ -798,6 +938,28 @@ function LessonProgressCard({ data }: LessonProgressCardProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2 rounded-xl border border-brand-deep-soft/30 bg-white/70 px-4 py-3">
+        <div className="flex items-center justify-between text-xs uppercase tracking-wide text-brand-ink-muted">
+          <span>{data.journeyMinLevel ?? plan?.plannedLevelMin ?? "Inicio"}</span>
+          <span>{formatPercent(journeyPercent)}</span>
+          <span>{data.journeyMaxLevel ?? plan?.plannedLevelMax ?? "Meta"}</span>
+        </div>
+        <div className="relative h-2 overflow-hidden rounded-full bg-brand-deep-soft/40">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-brand-teal-soft/80"
+            style={{ width: `${journeyPercent ?? 0}%` }}
+            aria-hidden
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between text-xs text-brand-ink-muted">
+          <span>Ruta completa</span>
+          <span>
+            {journeyCompleted != null && journeyTotal != null
+              ? `${formatInteger(journeyCompleted)} / ${formatInteger(journeyTotal)} lecciones`
+              : "Sin datos"}
+          </span>
+        </div>
+      </div>
       <div className="flex items-center justify-between text-sm text-brand-ink-muted">
         <span>{plan?.plannedLevelMin ?? "Nivel inicial"}</span>
         <span>{plan?.plannedLevelMax ?? "Nivel meta"}</span>
@@ -940,11 +1102,39 @@ function RiskCard({ data }: RiskCardProps) {
   }
   riskFlags.push(formatLastSessionSummary(data.lastSessionDaysAgo));
 
+  const reasonChips: string[] = [];
+  if (data.onPace === false) {
+    reasonChips.push("Fuera de ritmo");
+  }
+  if (data.riskInactive14d) {
+    reasonChips.push("Inactivo ≥14d");
+  }
+  if (data.riskStall) {
+    const repeats = data.repeatsAtLast != null ? formatInteger(data.repeatsAtLast) : "—";
+    reasonChips.push(`Estancado (repeticiones: ${repeats})`);
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 ${badge.tone}`}>
         <span className={`text-sm font-semibold ${badge.className}`}>{badge.label}</span>
         <span className="text-xs text-brand-ink-muted">{badge.description}</span>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {reasonChips.length
+            ? reasonChips.map((chip) => (
+                <span
+                  key={chip}
+                  className="rounded-full bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep"
+                >
+                  {chip}
+                </span>
+              ))
+            : (
+              <span className="rounded-full bg-white/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Sin alertas
+              </span>
+            )}
+        </div>
       </div>
       <div className="rounded-2xl border border-brand-deep-soft/40 bg-white/70 p-4">
         <div className="flex items-center justify-between text-sm font-semibold text-brand-deep">

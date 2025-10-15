@@ -1047,6 +1047,14 @@ export type StudentCoachPanelSummary = {
   lessonsRemaining: number | null;
   forecastMonthsToFinish: number | null;
   targetLph: number | null;
+  journeyCompletedLessons: number | null;
+  journeyTotalLessons: number | null;
+  journeyProgressPct: number | null;
+  totalHoursLifetime: number | null;
+  totalActiveDaysLifetime: number | null;
+  leiGlobalLifetime: number | null;
+  journeyMinLevel: string | null;
+  journeyMaxLevel: string | null;
   lastSessionDaysAgo: number | null;
   repeatsAtLast: number | null;
   riskStall: boolean | null;
@@ -1830,6 +1838,50 @@ export async function getStudentCoachPanelSummary(
       "refreshed_at",
     ]) ?? null;
 
+  const journeyCompletedLessons = extractNumber(panelPayload, [
+    "journey_completed_lessons",
+    "completed_lessons_lifetime",
+    "lessons_completed_lifetime",
+  ]);
+  const journeyTotalLessons = extractNumber(panelPayload, [
+    "journey_total_lessons",
+    "total_lessons_lifetime",
+    "lessons_total_lifetime",
+  ]);
+  const journeyProgressPct = extractNumber(panelPayload, [
+    "journey_progress_pct",
+    "journey_progress_percent",
+    "journey_progress_percentage",
+  ]);
+  const totalHoursLifetime =
+    extractNumber(panelPayload, [
+      "total_hours_lifetime",
+      "hours_lifetime",
+      "lifetime_hours",
+    ]) ?? null;
+  const totalActiveDaysLifetime = extractNumber(panelPayload, [
+    "total_active_days_lifetime",
+    "active_days_lifetime",
+    "lifetime_active_days",
+  ]);
+  const leiGlobalLifetime = extractNumber(panelPayload, [
+    "lei_global_lifetime",
+    "lifetime_lei",
+    "lei_lifetime",
+  ]);
+  const journeyMinLevel =
+    extractString(panelPayload, [
+      "journey_min_level",
+      "planned_level_min",
+      "journey_level_min",
+    ]) ?? lessonPlanSnapshot?.plannedLevelMin ?? null;
+  const journeyMaxLevel =
+    extractString(panelPayload, [
+      "journey_max_level",
+      "planned_level_max",
+      "journey_level_max",
+    ]) ?? lessonPlanSnapshot?.plannedLevelMax ?? null;
+
   return {
     studentId: studentIdValue,
     fullName:
@@ -1873,6 +1925,14 @@ export async function getStudentCoachPanelSummary(
     targetLph:
       extractNumber(panelPayload, ["target_lph", "target_lei", "lei_target"]) ??
       extractNumber(configPayload, ["target_lph", "target_lei"]),
+    journeyCompletedLessons,
+    journeyTotalLessons,
+    journeyProgressPct,
+    totalHoursLifetime,
+    totalActiveDaysLifetime,
+    leiGlobalLifetime,
+    journeyMinLevel,
+    journeyMaxLevel,
     lastSessionDaysAgo: extractNumber(panelPayload, [
       "days_since_last",
       "days_since_last_session",
