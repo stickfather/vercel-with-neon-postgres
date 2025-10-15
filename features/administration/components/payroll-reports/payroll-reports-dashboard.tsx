@@ -303,61 +303,6 @@ function toIsoDateOnly(value: string | null | undefined): string | null {
   return zoned;
 }
 
-function normalizePaidAtInput(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed.length) {
-    return null;
-  }
-
-  const isoDirect = toIsoDateOnly(trimmed);
-  if (isoDirect) {
-    return isoDirect;
-  }
-
-  const dmyMatch = trimmed.match(/^(\d{1,2})([\/.\-])(\d{1,2})\2(\d{4})$/);
-  if (dmyMatch) {
-    const day = Number(dmyMatch[1]);
-    const month = Number(dmyMatch[3]);
-    const year = Number(dmyMatch[4]);
-    if (
-      Number.isFinite(day) &&
-      Number.isFinite(month) &&
-      Number.isFinite(year) &&
-      month >= 1 &&
-      month <= 12 &&
-      day >= 1 &&
-      day <= 31
-    ) {
-      const candidate = new Date(Date.UTC(year, month - 1, day));
-      if (
-        !Number.isNaN(candidate.getTime()) &&
-        candidate.getUTCFullYear() === year &&
-        candidate.getUTCMonth() + 1 === month &&
-        candidate.getUTCDate() === day
-      ) {
-        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      }
-    }
-    return null;
-  }
-
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-  const zoned = toTimeZoneDateString(parsed);
-  return zoned;
-}
-
-function formatPaidAtDisplay(value: string | null | undefined): string {
-  const iso = toIsoDateOnly(value);
-  if (!iso) {
-    return "";
-  }
-  const [year, month, day] = iso.split("-");
-  return `${day}/${month}/${year}`;
-}
-
 function generateSessionKey(prefix: string): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     try {
@@ -580,7 +525,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setPaidAtDrafts((previous) => {
       const next: Record<number, string> = {};
       monthStatusRows.forEach((row) => {
-        next[row.staffId] = formatPaidAtDisplay(row.paidAt);
+        const isoValue = toIsoDateOnly(row.paidAt);
+        next[row.staffId] = isoValue ?? "";
       });
 
       const previousEntries = Object.entries(previous);
@@ -1752,7 +1698,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                             const paidValue = monthStatus?.paid ?? false;
                             const paidAtIsoValue = toIsoDateOnly(monthStatus?.paidAt ?? null);
                             const paidAtInputValue =
-                              paidAtDrafts[row.staffId] ?? formatPaidAtDisplay(monthStatus?.paidAt);
+                              paidAtDrafts[row.staffId] ?? (paidAtIsoValue ?? "");
                             const isStatusSaving = Boolean(monthStatusSaving[row.staffId]);
                             const statusError = monthStatusErrors[row.staffId] ?? null;
 
@@ -1825,9 +1771,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 <td className="px-2 py-1 text-center text-brand-ink-muted">
                                   <div className="flex flex-col items-center gap-1">
                                     <input
-                                      type="text"
-                                      inputMode="numeric"
-                                      placeholder="dd/mm/aaaa"
+                                      type="date"
                                       value={paidAtInputValue}
                                       onChange={(event) => {
                                         const { value } = event.target;
@@ -1839,14 +1783,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                           ...previous,
                                           [row.staffId]: null,
                                         }));
-                                      }}
-                                      onBlur={(event) => {
-                                        const rawValue = event.target.value.trim();
-                                        if (!rawValue.length) {
-                                          setPaidAtDrafts((previous) => ({
-                                            ...previous,
-                                            [row.staffId]: "",
-                                          }));
+
+                                        if (!value.length) {
                                           if (paidAtIsoValue) {
                                             void updateMonthStatus(row.staffId, monthStatus, {
                                               paid: paidValue,
@@ -1856,35 +1794,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                           return;
                                         }
 
-                                        const normalized = normalizePaidAtInput(rawValue);
-                                        if (!normalized) {
-                                          setMonthStatusErrors((previous) => ({
-                                            ...previous,
-                                            [row.staffId]:
-                                              "Ingresa la fecha en formato DD/MM/AAAA o AAAA-MM-DD.",
-                                          }));
+                                        if (value === paidAtIsoValue) {
                                           return;
                                         }
 
-                                        if (normalized === paidAtIsoValue) {
-                                          setPaidAtDrafts((previous) => ({
-                                            ...previous,
-                                            [row.staffId]: formatPaidAtDisplay(normalized),
-                                          }));
-                                          return;
-                                        }
-
-                                        setPaidAtDrafts((previous) => ({
-                                          ...previous,
-                                          [row.staffId]: formatPaidAtDisplay(normalized),
-                                        }));
                                         void updateMonthStatus(row.staffId, monthStatus, {
                                           paid: paidValue,
-                                          paidAt: normalized,
+                                          paidAt: value,
                                         });
                                       }}
                                       disabled={isStatusSaving}
-                                      className="w-full max-w-[112px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="w-full max-w-[140px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
                                     />
                                     {isStatusSaving ? (
                                       <span className="text-[10px] text-brand-ink-muted">Guardando…</span>
