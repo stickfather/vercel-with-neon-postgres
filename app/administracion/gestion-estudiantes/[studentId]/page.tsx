@@ -13,6 +13,7 @@ import {
   listStudentExams,
   listStudentInstructivos,
   getStudentCoachPanelSummary,
+  listStudentAttendanceHistory,
 } from "@/features/administration/data/student-profile";
 import { getStudentManagementEntry } from "@/features/administration/data/students";
 
@@ -31,6 +32,11 @@ type CoachPanelData = {
   error: string | null;
 };
 
+type AttendanceHistoryData = {
+  entries: Awaited<ReturnType<typeof listStudentAttendanceHistory>>;
+  error: string | null;
+};
+
 const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
   basicDetails: null,
   paymentSchedule: [],
@@ -41,6 +47,11 @@ const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
 
 const COACH_PANEL_FALLBACK: CoachPanelData = {
   summary: null,
+  error: null,
+};
+
+const ATTENDANCE_HISTORY_FALLBACK: AttendanceHistoryData = {
+  entries: [],
   error: null,
 };
 
@@ -139,6 +150,23 @@ async function loadCoachPanelData(studentId: number): Promise<CoachPanelData> {
   }
 }
 
+async function loadAttendanceHistory(studentId: number): Promise<AttendanceHistoryData> {
+  noStore();
+  try {
+    const entries = await listStudentAttendanceHistory(studentId);
+    return {
+      entries,
+      error: null,
+    };
+  } catch (error) {
+    console.error("Failed to load student attendance history", error);
+    return {
+      ...ATTENDANCE_HISTORY_FALLBACK,
+      error: "No se pudo cargar el historial de asistencia. Intenta nuevamente más tarde.",
+    };
+  }
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -183,9 +211,10 @@ export default async function StudentProfilePage({
     );
   }
 
-  const [primaryData, coachPanelData] = await Promise.all([
+  const [primaryData, coachPanelData, attendanceData] = await Promise.all([
     loadPrimaryProfileData(studentId),
     loadCoachPanelData(studentId),
+    loadAttendanceHistory(studentId),
   ]);
 
   // If student doesn't exist, show not-found page
@@ -277,16 +306,18 @@ export default async function StudentProfilePage({
         </header>
 
         <div className="flex flex-col gap-8 pb-10">
-          <StudentProfileTabs
-            studentId={studentId}
-            basicDetails={basicDetails}
-            paymentSchedule={primaryData.paymentSchedule}
-            exams={primaryData.exams}
-            instructivos={primaryData.instructivos}
-            notes={primaryData.notes}
-            coachSummary={coachPanelData.summary}
-            coachError={coachPanelData.error}
-          />
+        <StudentProfileTabs
+          studentId={studentId}
+          basicDetails={basicDetails}
+          paymentSchedule={primaryData.paymentSchedule}
+          exams={primaryData.exams}
+          instructivos={primaryData.instructivos}
+          notes={primaryData.notes}
+          coachSummary={coachPanelData.summary}
+          coachError={coachPanelData.error}
+          attendanceHistory={attendanceData.entries}
+          attendanceError={attendanceData.error}
+        />
         </div>
       </main>
     </div>

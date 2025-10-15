@@ -5,6 +5,7 @@ import { useId, useMemo, useState, type ReactNode } from "react";
 import {
   BasicDetailsPanel,
 } from "@/features/administration/components/student-profile/basic-details-panel";
+import { AttendanceHistoryPanel } from "@/features/administration/components/student-profile/attendance-history-panel";
 import { CoachPanel } from "@/features/administration/components/student-profile/coach-panel";
 import {
   ExamsPanel,
@@ -24,12 +25,14 @@ import type {
   StudentExam,
   StudentInstructivo,
   StudentNote,
+  StudentAttendanceHistoryEntry,
   StudentPaymentScheduleEntry,
 } from "@/features/administration/data/student-profile";
 
 const TAB_ORDER = [
   "datos-basicos",
   "panel-del-coach",
+  "historial-asistencia",
   "cronograma-de-pagos",
   "examenes",
   "instructivos",
@@ -39,6 +42,7 @@ const TAB_ORDER = [
 const TAB_LABELS: Record<(typeof TAB_ORDER)[number], string> = {
   "datos-basicos": "Datos básicos",
   "panel-del-coach": "Panel del coach",
+  "historial-asistencia": "Historial de asistencia",
   "cronograma-de-pagos": "Cronograma de pagos",
   examenes: "Exámenes",
   instructivos: "Instructivos",
@@ -54,6 +58,8 @@ type StudentProfileTabsProps = {
   notes: StudentNote[];
   coachSummary: StudentCoachPanelSummary | null;
   coachError?: string | null;
+  attendanceHistory: StudentAttendanceHistoryEntry[];
+  attendanceError?: string | null;
 };
 
 type TabContentConfig = {
@@ -71,6 +77,8 @@ export function StudentProfileTabs({
   notes,
   coachSummary,
   coachError,
+  attendanceHistory,
+  attendanceError,
 }: StudentProfileTabsProps) {
   const baseId = useId();
   const tabConfigs = useMemo<TabContentConfig[]>(
@@ -89,6 +97,16 @@ export function StudentProfileTabs({
         value: "panel-del-coach",
         label: TAB_LABELS["panel-del-coach"],
         content: <CoachPanel data={coachSummary} errorMessage={coachError} />,
+      },
+      {
+        value: "historial-asistencia",
+        label: TAB_LABELS["historial-asistencia"],
+        content: (
+          <AttendanceHistoryPanel
+            entries={attendanceHistory}
+            errorMessage={attendanceError}
+          />
+        ),
       },
       {
         value: "cronograma-de-pagos",
@@ -125,6 +143,8 @@ export function StudentProfileTabs({
       basicDetails,
       coachError,
       coachSummary,
+      attendanceError,
+      attendanceHistory,
       exams,
       instructivos,
       notes,
