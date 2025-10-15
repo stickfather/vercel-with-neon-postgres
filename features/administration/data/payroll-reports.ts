@@ -13,6 +13,7 @@ export type MatrixCell = {
   date: string;
   hours: number;
   approved: boolean;
+  approvedHours: number | null;
 };
 
 export type MatrixRow = {
@@ -657,19 +658,21 @@ export async function fetchPayrollMatrix({
       2,
     );
 
-    const hoursForDisplay =
-      approved && approvedHours != null
-        ? approvedHours
-        : horasMostrar ?? totalHours ?? approvedHours ?? 0;
+    const safeApprovedHours =
+      typeof approvedHours === "number" && Number.isFinite(approvedHours)
+        ? Math.max(0, Number(approvedHours.toFixed(2)))
+        : null;
+    const baseHours = horasMostrar ?? totalHours ?? safeApprovedHours ?? 0;
     const safeHours =
-      typeof hoursForDisplay === "number" && Number.isFinite(hoursForDisplay)
-        ? Math.max(0, Number(hoursForDisplay.toFixed(2)))
+      typeof baseHours === "number" && Number.isFinite(baseHours)
+        ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
       hours: safeHours,
       approved,
+      approvedHours: safeApprovedHours,
     });
   }
 
@@ -679,7 +682,7 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, approved: false };
+      return { date: day, hours: 0, approved: false, approvedHours: null };
     });
 
     matrixRows.push({

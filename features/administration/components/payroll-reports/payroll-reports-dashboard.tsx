@@ -34,6 +34,7 @@ type SelectedCell = {
   staffName: string;
   workDate: string;
   hours: number;
+  approvedHours: number | null;
   approved: MatrixCell["approved"];
 };
 
@@ -1059,7 +1060,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         staffId: row.staffId,
         staffName: resolveStaffName(row),
         workDate: cell.date,
-        hours: cell.hours,
+        hours: cell.approved && cell.approvedHours != null ? cell.approvedHours : cell.hours,
+        approvedHours: cell.approvedHours,
         approved: cell.approved,
       });
       setSessionsLoading(true);
@@ -1769,24 +1771,30 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     </span>
                                   </div>
                                 </th>
-                                {row.cells.map((cell) => (
-                                  <td key={cell.date} className="px-1 py-1 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => openModal(row, cell)}
-                                      className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
-                                        cell.approved
-                                          ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                          : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500"
-                                      } ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
-                                      style={{ minWidth: `${effectiveCellWidth}px` }}
-                                    >
-                                      <span className="whitespace-nowrap">
-                                        {hoursFormatter.format(cell.hours)}
-                                      </span>
-                                    </button>
-                                  </td>
-                                ))}
+                                {row.cells.map((cell) => {
+                                  const cellHours =
+                                    cell.approved && cell.approvedHours != null
+                                      ? cell.approvedHours
+                                      : cell.hours;
+                                  return (
+                                    <td key={cell.date} className="px-1 py-1 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => openModal(row, cell)}
+                                        className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                          cell.approved
+                                            ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
+                                            : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500"
+                                        } ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
+                                        style={{ minWidth: `${effectiveCellWidth}px` }}
+                                      >
+                                        <span className="whitespace-nowrap">
+                                          {hoursFormatter.format(cellHours)}
+                                        </span>
+                                      </button>
+                                    </td>
+                                  );
+                                })}
                                 <td className="px-2 py-1 text-right font-semibold text-brand-deep">
                                   {toCurrency(monthSummary?.approvedAmount ?? null)}
                                 </td>

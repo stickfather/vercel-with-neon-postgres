@@ -31,7 +31,7 @@ export async function PinGate({
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-[#fef5ee] via-white to-[#e9f9f4] px-6 py-16">
+    <div className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-slate-900/30 px-4 py-10 backdrop-blur-sm">
       <PinPrompt
         scope={scope}
         title={title}
