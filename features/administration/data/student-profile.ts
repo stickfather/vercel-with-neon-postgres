@@ -1604,25 +1604,53 @@ export async function listStudentRecentSessions(
 
 export async function listStudentLessonSessions(
   studentId: number,
-  lessonId: number,
+  lesson: { lessonId?: number | null; lessonGlobalSeq?: number | null },
   limit = 3,
 ): Promise<CoachPanelLessonSessionEntry[]> {
   noStore();
   const sql = getSqlClient();
   const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 3;
+  const normalizedLessonId =
+    lesson.lessonId != null && Number.isFinite(lesson.lessonId)
+      ? Math.trunc(lesson.lessonId)
+      : null;
+  const normalizedGlobalSeq =
+    lesson.lessonGlobalSeq != null && Number.isFinite(lesson.lessonGlobalSeq)
+      ? Math.trunc(lesson.lessonGlobalSeq)
+      : null;
+
+  if (normalizedLessonId == null && normalizedGlobalSeq == null) {
+    return [];
+  }
+
   const rows = await safeQuery(
-    sql`
-      SELECT attendance_id,
-             session_minutes,
-             checkin_local,
-             checkout_local
-      FROM mart.student_sessions_v
-      WHERE student_id = ${studentId}::bigint
-        AND lesson_id = ${lessonId}::bigint
-      ORDER BY checkin_local DESC
-      LIMIT ${normalizedLimit}::int
-    `,
-    "mart.student_sessions_v_by_lesson",
+    normalizedLessonId != null
+      ? sql`
+          SELECT attendance_id,
+                 session_minutes,
+                 checkin_local,
+                 checkout_local
+          FROM mart.student_sessions_v
+          WHERE student_id = ${studentId}::bigint
+            AND lesson_id = ${normalizedLessonId}::bigint
+          ORDER BY checkin_local DESC
+          LIMIT ${normalizedLimit}::int
+        `
+      : sql`
+          SELECT s.attendance_id,
+                 s.session_minutes,
+                 s.checkin_local,
+                 s.checkout_local
+          FROM mart.student_sessions_v s
+          JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
+          WHERE s.student_id = ${studentId}::bigint
+            AND lg.lesson_global_seq = ${normalizedGlobalSeq}::int
+          ORDER BY s.checkin_local DESC
+          LIMIT ${normalizedLimit}::int
+        `,
+    normalizedLessonId != null
+      ? "mart.student_sessions_v_by_lesson"
+      : "mart.student_sessions_v_by_global_seq",
   );
 
   return rows

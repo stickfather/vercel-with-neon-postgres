@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
@@ -246,8 +246,42 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const [drawerSessions, setDrawerSessions] = useState<LessonSession[]>([]);
   const [drawerStatus, setDrawerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  const sessionsCacheRef = useRef(new Map<string, LessonSession[]>());
 
   const studentId = data?.profileHeader.studentId ?? null;
+  const recentActivity = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
+
+  const heatmapBase = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
+  const heatmapSource = useMemo(() => {
+    if (heatmapBase.length) {
+      return heatmapBase;
+    }
+    if (!recentActivity.length) {
+      return [];
+    }
+    const totals = new Map<string, number>();
+    recentActivity.forEach((session) => {
+      const checkIn = session.checkIn;
+      if (!checkIn) {
+        return;
+      }
+      const date = checkIn.slice(0, 10);
+      if (!date) {
+        return;
+      }
+      const minutes =
+        session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)
+          ? Math.max(0, session.sessionMinutes)
+          : 0;
+      totals.set(date, (totals.get(date) ?? 0) + minutes);
+    });
+    return Array.from(totals.entries())
+      .map(([date, minutes]) => ({
+        date,
+        minutes: Math.max(0, Math.trunc(minutes)),
+      }))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }, [heatmapBase, recentActivity]);
 
   useEffect(() => {
     if (!drawerLesson) {
@@ -256,10 +290,29 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       setDrawerError(null);
       return;
     }
-    if (!studentId || drawerLesson.lessonId == null) {
+    if (!studentId) {
       setDrawerStatus("error");
       setDrawerSessions([]);
       setDrawerError("No se pudo identificar la lección seleccionada.");
+      return;
+    }
+
+    const lessonId = drawerLesson.lessonId ?? null;
+    const lessonGlobalSeq = drawerLesson.lessonGlobalSeq ?? null;
+
+    if (lessonId == null && lessonGlobalSeq == null) {
+      setDrawerStatus("error");
+      setDrawerSessions([]);
+      setDrawerError("La lección no cuenta con un identificador válido.");
+      return;
+    }
+
+    const cacheKey = lessonId != null ? `lesson:${lessonId}` : `global:${lessonGlobalSeq}`;
+    const cachedSessions = sessionsCacheRef.current.get(cacheKey);
+    if (cachedSessions) {
+      setDrawerSessions(cachedSessions);
+      setDrawerStatus("ready");
+      setDrawerError(null);
       return;
     }
 
@@ -269,8 +322,14 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     setDrawerError(null);
     setDrawerSessions([]);
 
+    const searchParams = new URLSearchParams();
+    searchParams.set("limit", "3");
+    if (lessonId == null && lessonGlobalSeq != null) {
+      searchParams.set("lessonGlobalSeq", String(lessonGlobalSeq));
+    }
+
     fetch(
-      `/api/students/${studentId}/sessions/by-lesson/${drawerLesson.lessonId}?limit=3`,
+      `/api/students/${studentId}/sessions/by-lesson/${lessonId ?? "global"}?${searchParams.toString()}`,
       { cache: "no-store", signal: controller.signal },
     )
       .then((response) => {
@@ -283,7 +342,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         if (cancelled) {
           return;
         }
-        setDrawerSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+        const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+        sessionsCacheRef.current.set(cacheKey, sessions);
+        setDrawerSessions(sessions);
         setDrawerStatus("ready");
       })
       .catch((error) => {
@@ -301,7 +362,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     };
   }, [drawerLesson, studentId]);
 
-  const heatmapSource = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
   const heatmapCells = useMemo(() => buildHeatmapCells(heatmapSource, HEATMAP_DAYS), [heatmapSource]);
   const heatmapMaxMinutes = useMemo(
     () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
@@ -313,8 +373,79 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     totalHours30d: null,
     avgSessionMinutes30d: null,
   };
-  const leiTrendSource = Array.isArray(data?.engagement?.lei?.trend) ? data.engagement.lei.trend : [];
-  const lei30dPlan = data?.engagement?.lei?.lei30dPlan ?? null;
+  const leiTrendBase = Array.isArray(data?.engagement?.lei?.trend) ? data.engagement.lei.trend : [];
+  const leiTrendSource = useMemo(() => {
+    if (leiTrendBase.length) {
+      return leiTrendBase;
+    }
+    if (!recentActivity.length) {
+      return [];
+    }
+    const lessonsByDate = new Map<string, number>();
+    recentActivity.forEach((session) => {
+      const checkIn = session.checkIn;
+      const globalSeq = session.lessonGlobalSeq;
+      if (!checkIn || globalSeq == null || !Number.isFinite(globalSeq)) {
+        return;
+      }
+      const date = checkIn.slice(0, 10);
+      if (!date) {
+        return;
+      }
+      const normalized = Math.trunc(globalSeq);
+      const existing = lessonsByDate.get(date);
+      lessonsByDate.set(date, existing == null ? normalized : Math.max(existing, normalized));
+    });
+    const sortedDates = Array.from(lessonsByDate.keys()).sort();
+    let previousMax: number | null = null;
+    return sortedDates.map((date) => {
+      const dayMax = lessonsByDate.get(date) ?? 0;
+      const normalizedDayMax = Number.isFinite(dayMax) ? dayMax : 0;
+      const gained = previousMax == null ? 0 : Math.max(0, normalizedDayMax - previousMax);
+      previousMax = previousMax == null ? normalizedDayMax : Math.max(previousMax, normalizedDayMax);
+      return { date, lessonsGained: gained } satisfies CoachPanelLeiTrendEntry;
+    });
+  }, [leiTrendBase, recentActivity]);
+  const lei30dPlan = useMemo(() => {
+    const rawValue = data?.engagement?.lei?.lei30dPlan;
+    if (rawValue != null && Number.isFinite(rawValue)) {
+      return rawValue;
+    }
+    if (!recentActivity.length) {
+      return null;
+    }
+    const totalMinutes = recentActivity.reduce((sum, session) => {
+      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
+        return sum + Math.max(0, session.sessionMinutes);
+      }
+      return sum;
+    }, 0);
+    if (totalMinutes <= 0) {
+      return null;
+    }
+    let minSeq: number | null = null;
+    let maxSeq: number | null = null;
+    recentActivity.forEach((session) => {
+      if (session.lessonGlobalSeq == null || !Number.isFinite(session.lessonGlobalSeq)) {
+        return;
+      }
+      const normalized = Math.trunc(session.lessonGlobalSeq);
+      if (minSeq == null || normalized < minSeq) {
+        minSeq = normalized;
+      }
+      if (maxSeq == null || normalized > maxSeq) {
+        maxSeq = normalized;
+      }
+    });
+    if (minSeq == null || maxSeq == null || maxSeq <= minSeq) {
+      return 0;
+    }
+    const hours = totalMinutes / 60;
+    if (hours <= 0) {
+      return null;
+    }
+    return (maxSeq - minSeq) / hours;
+  }, [data?.engagement?.lei?.lei30dPlan, recentActivity]);
 
   if (errorMessage) {
     return (

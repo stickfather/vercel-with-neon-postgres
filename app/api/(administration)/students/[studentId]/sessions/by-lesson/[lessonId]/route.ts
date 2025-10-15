@@ -4,7 +4,10 @@ import { listStudentLessonSessions } from "@/features/administration/data/studen
 
 export const dynamic = "force-dynamic";
 
-function normalizeId(value: string): number | null {
+function normalizeId(value: string | null): number | null {
+  if (value == null) {
+    return null;
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -28,15 +31,20 @@ export async function GET(
   const studentId = normalizeId(resolvedParams.studentId);
   const lessonId = normalizeId(resolvedParams.lessonId);
 
-  if (studentId == null || lessonId == null) {
+  const { searchParams } = new URL(request.url);
+  const limit = normalizeLimit(searchParams.get("limit"));
+  const lessonGlobalSeq = normalizeId(searchParams.get("lessonGlobalSeq"));
+
+  if (studentId == null || (lessonId == null && lessonGlobalSeq == null)) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const limit = normalizeLimit(searchParams.get("limit"));
-
   try {
-    const sessions = await listStudentLessonSessions(studentId, lessonId, limit);
+    const sessions = await listStudentLessonSessions(
+      studentId,
+      { lessonId, lessonGlobalSeq },
+      limit,
+    );
     return NextResponse.json(
       { sessions },
       {
