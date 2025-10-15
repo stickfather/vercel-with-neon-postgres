@@ -592,8 +592,20 @@ export async function getMonthSummary(
     const approvedHours = Number(approvedHoursRaw.toFixed(2));
     const hourlyWageRaw = toOptionalNumber(row["hourly_wage"]) ?? 0;
     const hourlyWage = Number(hourlyWageRaw.toFixed(2));
-    const approvedAmount = Number((approvedHours * hourlyWage).toFixed(2));
+    const approvedAmountRaw = toOptionalNumber(row["approved_amount"]);
+    const computedApprovedAmount = Number((approvedHours * hourlyWage).toFixed(2));
+    const approvedAmount =
+      approvedAmountRaw != null
+        ? Number(approvedAmountRaw.toFixed(2))
+        : computedApprovedAmount;
     const amountPaidRaw = toOptionalNumber(row["amount_paid"]);
+    const paidAtValue = row["paid_at"];
+    const paidAt =
+      paidAtValue == null
+        ? null
+        : paidAtValue instanceof Date
+          ? paidAtValue.toISOString()
+          : String(paidAtValue);
     return {
       staffId: Number(row["staff_id"] ?? 0),
       staffName: normalizeStaffName(row["staff_name"]),
@@ -602,7 +614,7 @@ export async function getMonthSummary(
       hourlyWage,
       approvedAmount,
       paid: toBoolean(row["paid"]),
-      paidAt: row["paid_at"] ? String(row["paid_at"]) : null,
+      paidAt,
       amountPaid: amountPaidRaw != null ? Number(amountPaidRaw.toFixed(2)) : null,
       reference: normalizeStaffName(row["reference"]),
       paidBy: normalizeStaffName(row["paid_by"]),

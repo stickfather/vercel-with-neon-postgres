@@ -227,6 +227,37 @@ describe("payroll integration", () => {
     assert.equal(rows[0].approvedAmount, 58.75);
   });
 
+  it("uses approved amount from the month summary view when provided", async () => {
+    const { sql } = createMockSqlClient([
+      {
+        match: /payroll_month_summary_v/,
+        rows: [
+          {
+            staff_id: 7,
+            staff_name: "Beatriz",
+            month: "2025-10-01",
+            approved_hours_month: 9.5,
+            hourly_wage: 4.75,
+            approved_amount: 73.43,
+            paid: true,
+            paid_at: "2025-11-02T10:15:00Z",
+            amount_paid: 73.43,
+            reference: "dep-123",
+            paid_by: "Ana",
+          },
+        ],
+      },
+    ]);
+
+    const rows = await getMonthSummary({ month: "2025-10-01" }, sql);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].approvedHours, 9.5);
+    assert.equal(rows[0].hourlyWage, 4.75);
+    assert.equal(rows[0].approvedAmount, 73.43);
+    assert.equal(rows[0].amountPaid, 73.43);
+    assert.equal(rows[0].paidAt, "2025-11-02T10:15:00Z");
+  });
+
   it("smoke test: deterministic matrix totals", async () => {
     const { sql } = createMockSqlClient([
       {

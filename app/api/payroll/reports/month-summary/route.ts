@@ -43,7 +43,10 @@ export async function GET(request: Request) {
 
   try {
     const summary = await getMonthSummary(params);
-    return NextResponse.json(summary, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { rows: summary },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return errorResponse(error);
   }
