@@ -1029,6 +1029,16 @@ export type SessionDurationTargets = {
   longMinutes: number | null;
 };
 
+export type StudentAttendanceHistoryEntry = {
+  id: number;
+  checkInTime: string;
+  checkOutTime: string | null;
+  lessonLabel: string | null;
+  levelCode: string | null;
+  lessonSequence: number | null;
+  durationMinutes: number | null;
+};
+
 export type StudentCoachPanelSummary = {
   studentId: number;
   fullName: string | null;
@@ -2196,6 +2206,67 @@ export async function getStudentAttendanceStats(
     lessonChanges: normalizeInteger(lessonChanges),
     lessonsPerWeek: normalizeNumber(lessonsPerWeek),
   };
+}
+
+export async function listStudentAttendanceHistory(
+  studentId: number,
+  limit = 60,
+): Promise<StudentAttendanceHistoryEntry[]> {
+  noStore();
+  const sql = getSqlClient();
+
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.trunc(limit), 200) : 60;
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      sa.id,
+      sa.checkin_time,
+      sa.checkout_time,
+      l.lesson AS lesson_label,
+      l.level AS level_code,
+      l.seq AS lesson_seq,
+      EXTRACT(EPOCH FROM (sa.checkout_time - sa.checkin_time)) / 60 AS duration_minutes
+    FROM student_attendance sa
+    LEFT JOIN lessons l ON l.id = sa.lesson_id
+    WHERE sa.student_id = ${studentId}::bigint
+    ORDER BY sa.checkin_time DESC
+    LIMIT ${safeLimit}
+  `);
+
+  return rows
+    .map((row) => {
+      const id = Number(row.id);
+      const checkIn = row.checkin_time as string | null;
+      if (!Number.isFinite(id) || !checkIn) {
+        return null;
+      }
+
+      const rawDuration =
+        row.duration_minutes == null
+          ? null
+          : typeof row.duration_minutes === "number"
+            ? row.duration_minutes
+            : Number(row.duration_minutes);
+
+      return {
+        id,
+        checkInTime: checkIn,
+        checkOutTime: (row.checkout_time as string | null) ?? null,
+        lessonLabel: (row.lesson_label as string | null) ?? null,
+        levelCode: (row.level_code as string | null) ?? null,
+        lessonSequence:
+          row.lesson_seq == null
+            ? null
+            : typeof row.lesson_seq === "number"
+              ? Math.trunc(row.lesson_seq)
+              : Math.trunc(Number(row.lesson_seq)),
+        durationMinutes:
+          rawDuration != null && Number.isFinite(rawDuration)
+            ? Math.max(0, rawDuration)
+            : null,
+      } satisfies StudentAttendanceHistoryEntry;
+    })
+    .filter((entry): entry is StudentAttendanceHistoryEntry => Boolean(entry));
 }
 
 export async function getStudentProgressEvents(

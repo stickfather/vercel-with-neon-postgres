@@ -26,6 +26,13 @@ function formatInteger(value: number | null | undefined): string {
   }).format(Math.round(value));
 }
 
+function formatHours(value: number | null | undefined, digits = 1): string {
+  if (value == null || !Number.isFinite(value)) {
+    return "—";
+  }
+  return `${formatDecimal(value, digits)} h`;
+}
+
 function normalizePercentValue(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value)) {
     return null;
@@ -75,6 +82,96 @@ function formatDateLabel(date: string): string {
 type StudyTrendChartProps = {
   entries: StudentCoachPanelSummary["dailyStudy"];
 };
+
+type LessonEffortPoint = {
+  lessonNumber: number;
+  hours: number | null;
+  hasData: boolean;
+  isCompleted: boolean;
+};
+
+function buildLessonEffortSeries(
+  data: StudentCoachPanelSummary,
+): LessonEffortPoint[] | null {
+  const totalLessons =
+    data.journeyTotalLessons ??
+    data.lessonPlan?.lessonsTotal ??
+    (data.lessonPlan?.levelSegments.length
+      ? data.lessonPlan.levelSegments[data.lessonPlan.levelSegments.length - 1]?.endIndex ?? null
+      : null);
+
+  if (totalLessons == null || !Number.isFinite(totalLessons) || totalLessons <= 0) {
+    return null;
+  }
+
+  const completedCandidate =
+    data.journeyCompletedLessons ??
+    data.lessonPlan?.lessonsCompleted ??
+    (data.lessonPlan?.currentLessonIndex != null
+      ? Math.max(data.lessonPlan.currentLessonIndex - 1, 0)
+      : null);
+
+  const completedLessons = Math.max(
+    0,
+    Math.min(
+      Math.trunc(totalLessons),
+      completedCandidate != null && Number.isFinite(completedCandidate)
+        ? Math.trunc(completedCandidate)
+        : 0,
+    ),
+  );
+
+  const baseSeries: LessonEffortPoint[] = Array.from(
+    { length: Math.trunc(totalLessons) },
+    (_, index) => ({
+      lessonNumber: index + 1,
+      hours: null,
+      hasData: false,
+      isCompleted: index + 1 <= completedLessons,
+    }),
+  );
+
+  if (completedLessons === 0) {
+    return baseSeries;
+  }
+
+  const dailyEntries = data.dailyStudy
+    .slice()
+    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
+    .map((entry) => {
+      const hours =
+        entry.hours != null && Number.isFinite(entry.hours)
+          ? entry.hours
+          : entry.minutes != null && Number.isFinite(entry.minutes)
+            ? entry.minutes / 60
+            : 0;
+      return { hours, date: entry.date };
+    })
+    .filter((entry) => entry.hours > 0);
+
+  if (!dailyEntries.length) {
+    return baseSeries;
+  }
+
+  const buckets = Array.from({ length: completedLessons }, () => 0);
+
+  dailyEntries.forEach((entry, index) => {
+    const fraction = (index + 0.5) / dailyEntries.length;
+    const rawIndex = Math.floor(fraction * completedLessons);
+    const bucketIndex = Math.min(completedLessons - 1, Math.max(0, rawIndex));
+    buckets[bucketIndex] += entry.hours;
+  });
+
+  buckets.forEach((hours, index) => {
+    if (!Number.isFinite(hours)) {
+      return;
+    }
+    baseSeries[index].hours = hours;
+    baseSeries[index].hasData = hours > 0;
+  });
+
+  return baseSeries;
+}
 
 function StudyTrendChart({ entries }: StudyTrendChartProps) {
   if (!entries.length) {
@@ -156,11 +253,81 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   const journeyMinLevel = data.journeyMinLevel ?? data.lessonPlan?.plannedLevelMin ?? "—";
   const journeyMaxLevel = data.journeyMaxLevel ?? data.lessonPlan?.plannedLevelMax ?? "—";
-  const journeyPercent = normalizePercentValue(data.journeyProgressPct) ?? 0;
+  const journeyPercent = normalizePercentValue(data.journeyProgressPct);
   const journeyLessonsLabel =
     data.journeyCompletedLessons != null && data.journeyTotalLessons != null
       ? `${formatInteger(data.journeyCompletedLessons)} / ${formatInteger(data.journeyTotalLessons)} lecciones`
       : "Sin datos";
+
+  const lessonEffortSeries = buildLessonEffortSeries(data);
+  const lessonPlan = data.lessonPlan;
+  const levelSegments = lessonPlan?.levelSegments ?? [];
+  const totalLessonsInJourney =
+    lessonEffortSeries?.length ??
+    data.journeyTotalLessons ??
+    lessonPlan?.lessonsTotal ??
+    null;
+
+  const completedLessonsRaw =
+    data.journeyCompletedLessons ??
+    lessonPlan?.lessonsCompleted ??
+    (lessonPlan?.currentLessonIndex != null
+      ? Math.max(lessonPlan.currentLessonIndex - 1, 0)
+      : null);
+
+  const completedLessonsCount =
+    totalLessonsInJourney != null && Number.isFinite(totalLessonsInJourney)
+      ? Math.max(
+          0,
+          Math.min(
+            Math.trunc(totalLessonsInJourney),
+            completedLessonsRaw != null && Number.isFinite(completedLessonsRaw)
+              ? Math.trunc(completedLessonsRaw)
+              : 0,
+          ),
+        )
+      : completedLessonsRaw != null && Number.isFinite(completedLessonsRaw)
+        ? Math.max(0, Math.trunc(completedLessonsRaw))
+        : 0;
+
+  const progressPercent =
+    totalLessonsInJourney && totalLessonsInJourney > 0
+      ? Math.min(100, Math.max(0, (completedLessonsCount / totalLessonsInJourney) * 100))
+      : journeyPercent ?? 0;
+
+  const currentPercent =
+    totalLessonsInJourney &&
+    lessonPlan?.currentLessonIndex != null &&
+    Number.isFinite(lessonPlan.currentLessonIndex) &&
+    totalLessonsInJourney > 0
+      ? Math.min(100, Math.max(0, (lessonPlan.currentLessonIndex / totalLessonsInJourney) * 100))
+      : progressPercent;
+
+  const recordedHoursTotal =
+    lessonEffortSeries?.reduce(
+      (sum, point) => sum + (point.hasData && point.hours != null ? point.hours : 0),
+      0,
+    ) ?? 0;
+
+  const lessonsWithRecordedHours =
+    lessonEffortSeries?.filter((point) => point.hasData && point.hours != null).length ?? 0;
+
+  const averageHoursPerLesson =
+    lessonsWithRecordedHours > 0 ? recordedHoursTotal / lessonsWithRecordedHours : null;
+
+  const maxRecordedHours =
+    lessonEffortSeries && lessonEffortSeries.length
+      ? lessonEffortSeries.reduce((max, point) => {
+          if (!point.hasData || point.hours == null) {
+            return max;
+          }
+          return point.hours > max ? point.hours : max;
+        }, 0)
+      : 0;
+
+  const journeyPercentWidth = journeyPercent ?? progressPercent ?? 0;
+
+  const journeyProgressLabel = formatPercent(data.journeyProgressPct);
 
   const lifetimeMetrics = [
     {
@@ -333,32 +500,116 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
+      <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-brand-deep">Trayectoria completa</h3>
           <span className="text-sm text-brand-ink-muted">{journeyMinLevel} → {journeyMaxLevel}</span>
         </div>
-        <div className="relative h-4 overflow-hidden rounded-full bg-brand-deep-soft/30">
-          <div
-            className="absolute inset-y-0 left-0 rounded-full bg-brand-teal-soft/80"
-            style={{ width: `${journeyPercent}%` }}
-            aria-hidden
-          />
-          <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-brand-deep">
-            {journeyLessonsLabel}
+        {lessonEffortSeries ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-brand-ink-muted">
+              <span>{journeyMinLevel} · Inicio del plan</span>
+              <span>{journeyMaxLevel} · Meta planificada</span>
+            </div>
+            <div className="px-3">
+              <div className="relative h-36 overflow-hidden rounded-xl border border-brand-deep-soft/40 bg-white/85">
+                <div className="absolute inset-0 bg-gradient-to-r from-brand-deep-soft/20 via-white/20 to-white/60" aria-hidden />
+                <div
+                  className="absolute inset-y-0 left-0 bg-brand-teal-soft/30"
+                  style={{ width: `${journeyPercentWidth}%` }}
+                  aria-hidden
+                />
+                {levelSegments.map((segment) => (
+                  <div
+                    key={`${segment.levelCode ?? segment.levelLabel ?? "nivel"}-${segment.startIndex}`}
+                    className="pointer-events-none absolute inset-y-0 border-r border-white/60"
+                    style={{ left: `${segment.endPercent}%` }}
+                    aria-hidden
+                  />
+                ))}
+                <div className="absolute inset-x-0 bottom-0 top-0 flex items-end gap-[1px] pb-4 pt-6">
+                  {lessonEffortSeries.map((point) => {
+                    const safeMax = maxRecordedHours > 0 ? maxRecordedHours : 1;
+                    const baseHeight = point.hasData
+                      ? Math.max(10, ((point.hours ?? 0) / safeMax) * 100)
+                      : point.isCompleted
+                        ? 8
+                        : 4;
+                    const barClass = point.hasData
+                      ? "bg-gradient-to-t from-brand-teal/40 via-brand-teal/70 to-brand-teal"
+                      : point.isCompleted
+                        ? "bg-brand-deep-soft/70"
+                        : "bg-brand-deep-soft/30";
+                    const title = point.hasData
+                      ? `Lección ${point.lessonNumber}: ${formatHours(
+                          point.hours,
+                          point.hours != null && point.hours >= 10 ? 0 : 1,
+                        )} dedicadas`
+                      : point.isCompleted
+                        ? `Lección ${point.lessonNumber}: sin horas registradas recientemente`
+                        : `Lección ${point.lessonNumber}: pendiente`;
+                    return (
+                      <div
+                        key={`lesson-${point.lessonNumber}`}
+                        className={`flex-1 rounded-t-full ${barClass}`}
+                        style={{ height: `${baseHeight}%`, minWidth: "2px" }}
+                        title={title}
+                      />
+                    );
+                  })}
+                </div>
+                {totalLessonsInJourney ? (
+                  <div
+                    className="pointer-events-none absolute -top-2 h-5 w-5 -translate-x-1/2 rounded-full border-2 border-white bg-brand-deep shadow"
+                    style={{ left: `${currentPercent}%` }}
+                    title={
+                      lessonPlan?.currentLessonLabel ??
+                      (lessonPlan?.currentLessonIndex != null
+                        ? `Lección ${formatInteger(lessonPlan.currentLessonIndex)}`
+                        : "Lección actual")
+                    }
+                  />
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-brand-ink-muted">
+              <span className="font-semibold text-brand-deep">{journeyLessonsLabel}</span>
+              <span>{journeyProgressLabel} completado</span>
+              <span>
+                Horas registradas: {formatHours(recordedHoursTotal, recordedHoursTotal >= 10 ? 0 : 1)}
+                {" · "}
+                {averageHoursPerLesson != null
+                  ? `≈ ${formatHours(
+                      averageHoursPerLesson,
+                      averageHoursPerLesson >= 10 ? 0 : 1,
+                    )} por lección`
+                  : "Sin registro por lección"}
+              </span>
+            </div>
+            <p className="text-xs text-brand-ink-muted">
+              Horas aproximadas dedicadas por lección completada según los minutos registrados en este recorrido. El nivel
+              inicial comienza en la primera lección planificada y concluye en la última lección del nivel objetivo.
+            </p>
           </div>
-        </div>
-        <div className="flex justify-between text-xs text-brand-ink-muted">
-          <span>
-            {journeyMinLevel}
-            <span className="text-brand-ink-muted/70"> · Primera lección planificada</span>
-          </span>
-          <span>
-            {journeyMaxLevel}
-            <span className="text-brand-ink-muted/70"> · Última lección planificada</span>
-          </span>
-        </div>
-        <p className="text-xs text-brand-ink-muted">Tu avance desde el primer día hasta tu nivel objetivo.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="relative h-4 overflow-hidden rounded-full bg-brand-deep-soft/30">
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-brand-teal-soft/80"
+                style={{ width: `${journeyPercentWidth}%` }}
+                aria-hidden
+              />
+            </div>
+            <div className="flex justify-between text-xs text-brand-ink-muted">
+              <span>{journeyMinLevel}</span>
+              <span>{journeyMaxLevel}</span>
+            </div>
+            <p className="text-xs text-brand-ink-muted">
+              No contamos con datos de estudio suficientes para graficar por lección, pero aquí se muestra tu avance total
+              dentro del plan.
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
