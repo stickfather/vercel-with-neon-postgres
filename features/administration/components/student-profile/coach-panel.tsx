@@ -301,14 +301,20 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     };
   }, [drawerLesson, studentId]);
 
-  const heatmapCells = useMemo(() => {
-    const entries = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
-    return buildHeatmapCells(entries, HEATMAP_DAYS);
-  }, [data?.engagement?.heatmap]);
+  const heatmapSource = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
+  const heatmapCells = useMemo(() => buildHeatmapCells(heatmapSource, HEATMAP_DAYS), [heatmapSource]);
   const heatmapMaxMinutes = useMemo(
     () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
     [heatmapCells],
   );
+  const engagementStats = data?.engagement?.stats ?? {
+    daysActive30d: null,
+    totalMinutes30d: null,
+    totalHours30d: null,
+    avgSessionMinutes30d: null,
+  };
+  const leiTrendSource = Array.isArray(data?.engagement?.lei?.trend) ? data.engagement.lei.trend : [];
+  const lei30dPlan = data?.engagement?.lei?.lei30dPlan ?? null;
 
   if (errorMessage) {
     return (
@@ -331,11 +337,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     );
   }
 
-  const { profileHeader, lessonJourney, engagement, paceForecast } = data;
+  const { profileHeader, lessonJourney, paceForecast } = data;
 
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
-  const leiTrendSource = Array.isArray(engagement.lei?.trend) ? engagement.lei.trend : [];
 
   const lessonElements: ReactElement[] = [];
   let lastLevel: string | null = null;
@@ -428,16 +433,16 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
               <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
               <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagement.stats.daysActive30d)}
+                {formatNumber(engagementStats.daysActive30d)}
               </p>
             </div>
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
               <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
               <p className="mt-2 text-xl font-bold text-brand-deep">
                 {formatNumber(
-                  engagement.stats.totalHours30d ??
-                    (engagement.stats.totalMinutes30d != null
-                      ? engagement.stats.totalMinutes30d / 60
+                  engagementStats.totalHours30d ??
+                    (engagementStats.totalMinutes30d != null
+                      ? engagementStats.totalMinutes30d / 60
                       : null),
                   { maximumFractionDigits: 1 },
                 )}
@@ -446,7 +451,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
               <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
               <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagement.stats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
+                {formatNumber(engagementStats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
               </p>
             </div>
           </div>
@@ -472,7 +477,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
             <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
             <p className="mt-2 text-4xl font-black text-brand-deep">
-              {formatNumber(engagement.lei.lei30dPlan, { maximumFractionDigits: 2 })}
+              {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
             </p>
           </div>
           <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
