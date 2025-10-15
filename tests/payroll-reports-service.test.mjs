@@ -222,6 +222,7 @@ describe("payroll integration", () => {
 
     const rows = await getMonthSummary({ month: "2025-10-01" }, sql);
     assert.equal(rows.length, 1);
+    assert.equal(rows[0].month, "2025-10-01");
     assert.equal(rows[0].approvedHours, 11.75);
     assert.equal(rows[0].hourlyWage, 5);
     assert.equal(rows[0].approvedAmount, 58.75);
@@ -251,11 +252,39 @@ describe("payroll integration", () => {
 
     const rows = await getMonthSummary({ month: "2025-10-01" }, sql);
     assert.equal(rows.length, 1);
+    assert.equal(rows[0].month, "2025-10-01");
     assert.equal(rows[0].approvedHours, 9.5);
     assert.equal(rows[0].hourlyWage, 4.75);
     assert.equal(rows[0].approvedAmount, 73.43);
     assert.equal(rows[0].amountPaid, 73.43);
     assert.equal(rows[0].paidAt, "2025-11-02T10:15:00Z");
+  });
+
+  it("normalizes month values with timestamps", async () => {
+    const { sql } = createMockSqlClient([
+      {
+        match: /payroll_month_summary_v/,
+        rows: [
+          {
+            staff_id: 8,
+            staff_name: "Carlos",
+            month: new Date("2025-10-01T00:00:00.000Z"),
+            approved_hours_month: 5,
+            hourly_wage: 3.5,
+            approved_amount: 17.5,
+            paid: false,
+            paid_at: null,
+            amount_paid: null,
+            reference: null,
+            paid_by: null,
+          },
+        ],
+      },
+    ]);
+
+    const rows = await getMonthSummary({ month: "2025-10-01" }, sql);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].month, "2025-10-01");
   });
 
   it("smoke test: deterministic matrix totals", async () => {

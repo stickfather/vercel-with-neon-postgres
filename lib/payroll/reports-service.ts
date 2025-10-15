@@ -350,6 +350,31 @@ function normalizeStaffName(value: unknown): string | null {
   return null;
 }
 
+function normalizeMonthDate(value: unknown, fallback: string): string {
+  if (value instanceof Date) {
+    const iso = value.toISOString();
+    return iso.slice(0, 10);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length) {
+      const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+      }
+
+      const parsed = new Date(trimmed);
+      if (!Number.isNaN(parsed.getTime())) {
+        const iso = parsed.toISOString();
+        return iso.slice(0, 10);
+      }
+    }
+  }
+
+  return fallback;
+}
+
 type SchemaInput<TSchema extends BaseSchema<any>> = TSchema extends BaseSchema<infer U> ? U : never;
 
 export async function getPayrollMatrix(
@@ -606,10 +631,11 @@ export async function getMonthSummary(
         : paidAtValue instanceof Date
           ? paidAtValue.toISOString()
           : String(paidAtValue);
+    const monthValue = normalizeMonthDate(row["month"], params.month);
     return {
       staffId: Number(row["staff_id"] ?? 0),
       staffName: normalizeStaffName(row["staff_name"]),
-      month: String(row["month"] ?? params.month),
+      month: monthValue,
       approvedHours,
       hourlyWage,
       approvedAmount,
