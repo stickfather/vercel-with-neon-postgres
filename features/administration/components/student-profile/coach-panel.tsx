@@ -71,43 +71,6 @@ function formatDate(iso: string | null | undefined, withTime = false): string {
   return formatter.format(parsed);
 }
 
-function formatRelativeTime(iso: string | null | undefined): string {
-  if (!iso) {
-    return "—";
-  }
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) {
-    return "—";
-  }
-  const now = Date.now();
-  const diffMs = now - parsed;
-  const diffMinutes = Math.round(diffMs / 60000);
-  if (diffMinutes < 1) {
-    return "Justo ahora";
-  }
-  if (diffMinutes < 60) {
-    return `Hace ${diffMinutes} min`;
-  }
-  const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) {
-    return `Hace ${diffHours} h`;
-  }
-  const diffDays = Math.round(diffHours / 24);
-  if (diffDays < 7) {
-    return `Hace ${diffDays} d`;
-  }
-  const diffWeeks = Math.round(diffDays / 7);
-  if (diffWeeks < 5) {
-    return `Hace ${diffWeeks} sem`;
-  }
-  const diffMonths = Math.round(diffDays / 30);
-  if (diffMonths < 12) {
-    return `Hace ${diffMonths} mes${diffMonths === 1 ? "" : "es"}`;
-  }
-  const diffYears = Math.round(diffDays / 365);
-  return `Hace ${diffYears} año${diffYears === 1 ? "" : "s"}`;
-}
-
 function buildHeatmapCells(
   entries: CoachPanelEngagementHeatmapEntry[],
   days: number,
@@ -361,11 +324,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     );
   }
 
-  const { profileHeader, lessonJourney, engagement, paceForecast, recentActivity } = data;
-
-  const planBadge = profileHeader.planLevelMin || profileHeader.planLevelMax
-    ? `${profileHeader.planLevelMin ?? "?"} → ${profileHeader.planLevelMax ?? "?"}`
-    : "Plan personalizado";
+  const { profileHeader, lessonJourney, engagement, paceForecast } = data;
 
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
@@ -424,97 +383,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   return (
     <div className="relative flex flex-col gap-10">
-      <section className="relative overflow-hidden rounded-[32px] border border-white/60 bg-gradient-to-r from-[#fff7ec] via-white to-[#e0f6ef] p-8 shadow-[0_32px_96px_rgba(15,23,42,0.16)]">
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
-            <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full border-4 border-white bg-brand-deep-soft shadow-[0_24px_48px_rgba(15,23,42,0.2)]">
-              {profileHeader.profileImageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={profileHeader.profileImageUrl}
-                  alt={profileHeader.fullName ?? "Foto del estudiante"}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-brand-deep">
-                  {(profileHeader.fullName ?? "?").slice(0, 1).toUpperCase()}
-                </div>
-              )}
-            </div>
-            <div className="flex flex-col gap-4">
-              <div>
-                <h2 className="text-3xl font-black text-brand-deep sm:text-4xl">
-                  {profileHeader.fullName ?? "Estudiante"}
-                </h2>
-                <p className="text-sm text-brand-ink-muted">ID {profileHeader.studentId}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <span className="inline-flex items-center rounded-full bg-brand-teal-soft px-4 py-1 text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">
-                  {planBadge}
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {profileHeader.inactive14d ? (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-red-700">
-                      Inactivo 14 d
-                    </span>
-                  ) : null}
-                  {profileHeader.stall ? (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-amber-700">
-                      Stall
-                    </span>
-                  ) : null}
-                  {profileHeader.onPacePlan ? (
-                    <span
-                      className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-emerald-700"
-                      title="forecast ≤ 6 mo"
-                    >
-                      On pace
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="grid w-full gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                Progreso del plan
-              </p>
-              <p className="mt-2 text-2xl font-bold text-brand-deep">{formatPercent(profileHeader.planProgressPct, 0)}</p>
-              <p className="text-sm text-brand-ink-muted">
-                Completadas {formatNumber(profileHeader.completedLessonsInPlan)} de {formatNumber(profileHeader.totalLessonsInPlan)} lecciones
-              </p>
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-brand-teal-soft">
-                <div
-                  className="h-full rounded-full bg-brand-teal"
-                  style={{ width: `${Math.min(100, Math.max(0, profileHeader.planProgressPct ?? 0))}%` }}
-                />
-              </div>
-            </div>
-            <div className="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                Nivel actual
-              </p>
-              <p className="mt-2 text-2xl font-bold text-brand-deep">
-                {profileHeader.currentLevel ?? "—"}
-              </p>
-              <p className="text-sm text-brand-ink-muted">
-                {formatPercent(profileHeader.currentLevelProgressPct, 0)} completado
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                Última actividad
-              </p>
-              <p className="mt-2 text-2xl font-bold text-brand-deep">
-                {formatRelativeTime(profileHeader.lastSeenDate)}
-              </p>
-              <p className="text-sm text-brand-ink-muted">{formatDate(profileHeader.lastSeenDate, true)}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -644,44 +512,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 : ""}
             </p>
           </div>
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-4">
-        <div>
-          <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Actividad reciente</span>
-          <h4 className="mt-2 text-xl font-bold text-brand-deep">Últimas sesiones</h4>
-        </div>
-        <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-          {recentActivity.length === 0 ? (
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-6 text-center text-sm text-brand-ink-muted">
-              Aún no registramos sesiones recientes.
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-4">
-              {recentActivity.map((entry) => {
-                const lessonLabel = [entry.level, entry.seq != null ? `Lección ${entry.seq}` : null]
-                  .filter(Boolean)
-                  .join(" · ");
-                return (
-                  <li
-                    key={entry.attendanceId}
-                    className="flex flex-col gap-2 rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm font-semibold text-brand-deep">{formatDate(entry.checkIn, true)}</span>
-                      <span className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">
-                        {lessonLabel || "Lección"}
-                      </span>
-                    </div>
-                    <div className="text-sm font-semibold text-brand-deep">
-                      {formatDuration(entry.sessionMinutes)}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
         </div>
       </section>
 
