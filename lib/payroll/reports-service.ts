@@ -445,7 +445,6 @@ export async function getDaySessions(
         session_id,
         checkin_local,
         checkout_local,
-        minutes,
         session_minutes,
         total_hours
       FROM public.staff_day_sessions_local_v
@@ -456,10 +455,7 @@ export async function getDaySessions(
   );
 
   return rows.map((row) => {
-    let minutes = toOptionalNumber(row["minutes"]);
-    if (minutes == null) {
-      minutes = toOptionalNumber(row["session_minutes"]);
-    }
+    let minutes = toOptionalNumber(row["session_minutes"]);
     if (minutes == null) {
       const totalHours = toOptionalNumber(row["total_hours"]);
       if (totalHours != null) {
