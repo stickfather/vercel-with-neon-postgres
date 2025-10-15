@@ -1,688 +1,527 @@
 "use client";
 
-import type { StudentCoachPanelSummary } from "@/features/administration/data/student-profile";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
+
+import type {
+  CoachPanelEngagementHeatmapEntry,
+  CoachPanelLessonJourneyEntry,
+  CoachPanelLessonSessionEntry,
+  CoachPanelLeiTrendEntry,
+  StudentCoachPanelSummary,
+} from "@/features/administration/data/student-profile";
 
 type CoachPanelProps = {
   data: StudentCoachPanelSummary | null;
   errorMessage?: string | null;
 };
 
-function formatDecimal(value: number | null | undefined, digits = 1): string {
-  if (value == null || !Number.isFinite(value)) {
-    return "—";
-  }
-  return new Intl.NumberFormat("es-EC", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(value);
+type LessonSession = CoachPanelLessonSessionEntry;
+
+const HEATMAP_DAYS = 30;
+
+function cx(...classes: Array<string | null | undefined | false>): string {
+  return classes.filter(Boolean).join(" ");
 }
 
-function formatInteger(value: number | null | undefined): string {
+function formatNumber(
+  value: number | null | undefined,
+  options: Intl.NumberFormatOptions = {},
+): string {
   if (value == null || !Number.isFinite(value)) {
     return "—";
   }
   return new Intl.NumberFormat("es-EC", {
     maximumFractionDigits: 0,
-  }).format(Math.round(value));
+    ...options,
+  }).format(value);
 }
 
-function formatHours(value: number | null | undefined, digits = 1): string {
+function formatPercent(value: number | null | undefined, digits = 0): string {
   if (value == null || !Number.isFinite(value)) {
     return "—";
   }
-  return `${formatDecimal(value, digits)} h`;
+  const normalized = Math.abs(value) <= 1 ? value * 100 : value;
+  const safe = Math.min(100, Math.max(0, normalized));
+  return `${formatNumber(safe, { maximumFractionDigits: digits })}%`;
 }
 
-function normalizePercentValue(value: number | null | undefined): number | null {
-  if (value == null || !Number.isFinite(value)) {
-    return null;
-  }
-  const raw = Math.abs(value) <= 1 ? value * 100 : value;
-  if (!Number.isFinite(raw)) {
-    return null;
-  }
-  return Math.min(100, Math.max(0, raw));
-}
-
-function formatPercent(value: number | null | undefined, digits = 1): string {
-  const normalized = normalizePercentValue(value);
-  if (normalized == null) {
+function formatDuration(minutes: number | null | undefined): string {
+  if (minutes == null || !Number.isFinite(minutes)) {
     return "—";
   }
-  const fractionDigits = normalized >= 10 ? Math.min(digits, 1) : digits;
-  return `${formatDecimal(normalized, fractionDigits)}%`;
+  const hours = minutes / 60;
+  if (hours >= 1.5) {
+    return `${formatNumber(hours, { maximumFractionDigits: 1 })} h`;
+  }
+  return `${formatNumber(minutes, { maximumFractionDigits: 0 })} min`;
 }
 
-function formatUpdatedAt(date: string | null | undefined): string {
-  if (!date) {
+function formatDate(iso: string | null | undefined, withTime = false): string {
+  if (!iso) {
     return "—";
   }
-  const parsed = Date.parse(date);
+  const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) {
-    return date;
+    return "—";
   }
-  return new Intl.DateTimeFormat("es-EC", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(parsed);
-}
-
-function formatDateLabel(date: string): string {
-  const parsed = Date.parse(date);
-  if (Number.isNaN(parsed)) {
-    return date;
-  }
-  return new Intl.DateTimeFormat("es-EC", {
-    month: "short",
-    day: "numeric",
-  }).format(parsed);
-}
-
-type StudyTrendChartProps = {
-  entries: StudentCoachPanelSummary["dailyStudy"];
-};
-
-type LessonEffortPoint = {
-  lessonNumber: number;
-  hours: number | null;
-  hasData: boolean;
-  isCompleted: boolean;
-};
-
-function buildLessonEffortSeries(
-  data: StudentCoachPanelSummary,
-): LessonEffortPoint[] | null {
-  const totalLessons =
-    data.journeyTotalLessons ??
-    data.lessonPlan?.lessonsTotal ??
-    (data.lessonPlan?.levelSegments.length
-      ? data.lessonPlan.levelSegments[data.lessonPlan.levelSegments.length - 1]?.endIndex ?? null
-      : null);
-
-  if (totalLessons == null || !Number.isFinite(totalLessons) || totalLessons <= 0) {
-    return null;
-  }
-
-  const completedCandidate =
-    data.journeyCompletedLessons ??
-    data.lessonPlan?.lessonsCompleted ??
-    (data.lessonPlan?.currentLessonIndex != null
-      ? Math.max(data.lessonPlan.currentLessonIndex - 1, 0)
-      : null);
-
-  const completedLessons = Math.max(
-    0,
-    Math.min(
-      Math.trunc(totalLessons),
-      completedCandidate != null && Number.isFinite(completedCandidate)
-        ? Math.trunc(completedCandidate)
-        : 0,
-    ),
+  const formatter = new Intl.DateTimeFormat("es-EC", withTime
+    ? { dateStyle: "medium", timeStyle: "short" }
+    : { dateStyle: "medium" },
   );
-
-  const baseSeries: LessonEffortPoint[] = Array.from(
-    { length: Math.trunc(totalLessons) },
-    (_, index) => ({
-      lessonNumber: index + 1,
-      hours: null,
-      hasData: false,
-      isCompleted: index + 1 <= completedLessons,
-    }),
-  );
-
-  if (completedLessons === 0) {
-    return baseSeries;
-  }
-
-  const dailyEntries = data.dailyStudy
-    .slice()
-    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
-    .map((entry) => {
-      const hours =
-        entry.hours != null && Number.isFinite(entry.hours)
-          ? entry.hours
-          : entry.minutes != null && Number.isFinite(entry.minutes)
-            ? entry.minutes / 60
-            : 0;
-      return { hours, date: entry.date };
-    })
-    .filter((entry) => entry.hours > 0);
-
-  if (!dailyEntries.length) {
-    return baseSeries;
-  }
-
-  const buckets = Array.from({ length: completedLessons }, () => 0);
-
-  dailyEntries.forEach((entry, index) => {
-    const fraction = (index + 0.5) / dailyEntries.length;
-    const rawIndex = Math.floor(fraction * completedLessons);
-    const bucketIndex = Math.min(completedLessons - 1, Math.max(0, rawIndex));
-    buckets[bucketIndex] += entry.hours;
-  });
-
-  buckets.forEach((hours, index) => {
-    if (!Number.isFinite(hours)) {
-      return;
-    }
-    baseSeries[index].hours = hours;
-    baseSeries[index].hasData = hours > 0;
-  });
-
-  return baseSeries;
+  return formatter.format(parsed);
 }
 
-function StudyTrendChart({ entries }: StudyTrendChartProps) {
-  if (!entries.length) {
+function buildHeatmapCells(
+  entries: CoachPanelEngagementHeatmapEntry[],
+  days: number,
+): CoachPanelEngagementHeatmapEntry[] {
+  const map = new Map(entries.map((entry) => [entry.date, entry.minutes]));
+  const result: CoachPanelEngagementHeatmapEntry[] = [];
+  const today = new Date();
+  for (let index = days - 1; index >= 0; index -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - index);
+    const iso = date.toISOString().slice(0, 10);
+    result.push({ date: iso, minutes: map.get(iso) ?? 0 });
+  }
+  return result;
+}
+
+function heatmapColor(minutes: number, maxMinutes: number): string {
+  if (maxMinutes <= 0 || minutes <= 0) {
+    return "rgba(0, 191, 166, 0.08)";
+  }
+  const intensity = Math.min(1, minutes / maxMinutes);
+  const alpha = 0.18 + intensity * 0.55;
+  return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
+}
+
+function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement {
+  if (!data.length) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-brand-ink-muted">
-        <span className="text-base font-semibold text-brand-deep">Aún no hay sesiones recientes.</span>
-        <span>¡Vamos a practicar!</span>
+      <div className="flex h-24 w-full flex-col items-center justify-center rounded-2xl bg-white/70 text-sm text-brand-ink-muted">
+        <span>No hay movimientos recientes.</span>
       </div>
     );
   }
 
-  const points = entries
-    .slice()
-    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
-    .map((entry) => ({
-      date: entry.date,
-      minutes:
-        entry.minutes != null && Number.isFinite(entry.minutes)
-          ? entry.minutes
-          : entry.hours * 60,
-    }));
+  const width = 160;
+  const height = 64;
+  const maxValue = data.reduce((max, entry) => (entry.lessonsGained > max ? entry.lessonsGained : max), 0);
+  const safeMax = maxValue > 0 ? maxValue : 1;
+  const step = data.length > 1 ? width / (data.length - 1) : width;
+  const padding = 6;
 
-  const maxMinutes = points.reduce((max, point) => (point.minutes > max ? point.minutes : max), 0);
-  const safeMax = maxMinutes > 0 ? maxMinutes : 60;
+  const points = data.map((entry, index) => {
+    const x = index * step;
+    const y = height - padding - (entry.lessonsGained / safeMax) * (height - padding * 2);
+    return `${x},${Math.max(padding, Math.min(height - padding, y))}`;
+  });
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="relative flex-1 overflow-hidden rounded-xl border border-brand-deep-soft/40 bg-white/80">
-        <div className="absolute inset-0 flex items-end gap-[6px] px-3 pb-3 pt-6">
-          {points.map((point) => {
-            const height = Math.max(4, (point.minutes / safeMax) * 100);
-            return (
-              <div
-                key={`${point.date}-${point.minutes}`}
-                className="flex-1 rounded-t-xl bg-gradient-to-t from-brand-teal/40 via-brand-teal/70 to-brand-teal"
-                style={{ height: `${height}%` }}
-                title={`${formatDateLabel(point.date)} · ${formatInteger(point.minutes)} minutos`}
-              />
-            );
-          })}
+    <svg
+      className="h-24 w-full"
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label="Tendencia de eficiencia"
+    >
+      <defs>
+        <linearGradient id="lei-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#0b9e8f" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#0b9e8f" stopOpacity="0.05" />
+        </linearGradient>
+      </defs>
+      <polyline
+        fill="none"
+        stroke="#0b9e8f"
+        strokeWidth="3"
+        strokeLinecap="round"
+        points={points.join(" ")}
+      />
+      <polyline
+        fill="url(#lei-gradient)"
+        stroke="none"
+        points={`0,${height} ${points.join(" ")} ${width},${height}`}
+      />
+    </svg>
+  );
+}
+
+function LessonDrawer({
+  lesson,
+  sessions,
+  status,
+  error,
+  onClose,
+}: {
+  lesson: CoachPanelLessonJourneyEntry | null;
+  sessions: LessonSession[];
+  status: "idle" | "loading" | "ready" | "error";
+  error: string | null;
+  onClose: () => void;
+}): ReactElement | null {
+  if (!lesson) {
+    return null;
+  }
+
+  const lessonLabel = [lesson.level, lesson.seq != null ? `Lección ${lesson.seq}` : null]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/20 backdrop-blur-sm">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        aria-label="Cerrar detalle de lección"
+        onClick={onClose}
+      />
+      <aside className="relative flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto bg-white p-8 shadow-[0_28px_80px_rgba(15,23,42,0.18)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-teal">Detalle de lección</span>
+            <h3 className="mt-2 text-2xl font-bold text-brand-deep">{lessonLabel || "Lección"}</h3>
+            <p className="text-sm text-brand-ink-muted">
+              Últimas tres sesiones registradas para esta lección.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white text-brand-ink-muted transition hover:-translate-y-[1px] hover:text-brand-deep"
+            aria-label="Cerrar"
+          >
+            ×
+          </button>
         </div>
-      </div>
-      <div className="mt-3 flex justify-between text-[11px] uppercase tracking-wide text-brand-ink-muted">
-        <span>{formatDateLabel(points[0].date)}</span>
-        <span>{formatDateLabel(points[points.length - 1].date)}</span>
-      </div>
-      <p className="mt-3 text-xs text-brand-ink-muted">Cada punto representa el tiempo total estudiado ese día.</p>
+        <div className="flex flex-col gap-4">
+          {status === "loading" ? (
+            <div className="flex h-32 flex-col items-center justify-center gap-2 text-brand-ink-muted">
+              <span className="h-12 w-12 animate-spin rounded-full border-4 border-brand-teal/30 border-t-brand-teal" />
+              <span className="text-sm">Cargando sesiones…</span>
+            </div>
+          ) : null}
+          {status === "error" ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700">
+              {error ?? "No se pudo cargar la información de la lección."}
+            </div>
+          ) : null}
+          {status === "ready" && sessions.length === 0 ? (
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-deep-soft/40 p-4 text-sm text-brand-ink-muted">
+              No hay sesiones registradas para esta lección.
+            </div>
+          ) : null}
+          {status === "ready" && sessions.length > 0 ? (
+            <ul className="flex flex-col gap-3">
+              {sessions.map((session) => (
+                <li
+                  key={session.attendanceId}
+                  className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 shadow-sm"
+                >
+                  <p className="text-sm font-semibold text-brand-deep">
+                    {formatDate(session.checkIn, true)}
+                  </p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.25em] text-brand-ink-muted">
+                    Duración
+                  </p>
+                  <p className="text-sm text-brand-ink-muted">{formatDuration(session.sessionMinutes)}</p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </aside>
     </div>
   );
 }
 
 export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
-  const updatedLabel = formatUpdatedAt(data?.latestActivityDate ?? null);
+  const [drawerLesson, setDrawerLesson] = useState<CoachPanelLessonJourneyEntry | null>(null);
+  const [drawerSessions, setDrawerSessions] = useState<LessonSession[]>([]);
+  const [drawerStatus, setDrawerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [drawerError, setDrawerError] = useState<string | null>(null);
 
-  if (!data) {
+  const studentId = data?.profileHeader.studentId ?? null;
+
+  useEffect(() => {
+    if (!drawerLesson) {
+      setDrawerStatus("idle");
+      setDrawerSessions([]);
+      setDrawerError(null);
+      return;
+    }
+    if (!studentId || drawerLesson.lessonId == null) {
+      setDrawerStatus("error");
+      setDrawerSessions([]);
+      setDrawerError("No se pudo identificar la lección seleccionada.");
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setDrawerStatus("loading");
+    setDrawerError(null);
+
+    fetch(
+      `/api/students/${studentId}/sessions/by-lesson/${drawerLesson.lessonId}?limit=3`,
+      { cache: "no-store", signal: controller.signal },
+    )
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Request failed");
+        }
+        return response.json();
+      })
+      .then((payload: { sessions?: LessonSession[] }) => {
+        if (cancelled) {
+          return;
+        }
+        setDrawerSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+        setDrawerStatus("ready");
+      })
+      .catch((error) => {
+        if (cancelled || error?.name === "AbortError") {
+          return;
+        }
+        setDrawerStatus("error");
+        setDrawerSessions([]);
+        setDrawerError("No se pudo cargar el historial de la lección.");
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [drawerLesson, studentId]);
+
+  const heatmapCells = useMemo(
+    () => buildHeatmapCells(data?.engagement.heatmap ?? [], HEATMAP_DAYS),
+    [data?.engagement.heatmap],
+  );
+  const heatmapMaxMinutes = useMemo(
+    () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
+    [heatmapCells],
+  );
+
+  if (errorMessage) {
     return (
-      <section className="flex h-full flex-col gap-6 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 text-brand-deep shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h2 className="text-2xl font-bold text-brand-deep">Panel del coach</h2>
-            <p className="text-sm text-brand-ink-muted">Visión general de esfuerzo, constancia y progreso.</p>
-            <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-              Datos actualizados al: {updatedLabel}
-            </span>
-            {errorMessage ? (
-              <p className="text-sm font-medium text-rose-600">{errorMessage}</p>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex flex-1 flex-col items-start justify-center gap-3 rounded-2xl border border-dashed border-brand-ink-muted/30 bg-white/70 px-6 py-10">
-          <span className="text-lg font-semibold text-brand-deep">Sin actividad reciente</span>
-          <p className="max-w-md text-sm text-brand-ink-muted">
-            No encontramos registros recientes de esfuerzo o progreso en los últimos 30 días para este estudiante.
-          </p>
-        </div>
-      </section>
+      <div className="rounded-3xl border border-red-100 bg-red-50/80 p-8 text-red-700 shadow-sm">
+        {errorMessage}
+      </div>
     );
   }
 
-  const journeyMinLevel = data.journeyMinLevel ?? data.lessonPlan?.plannedLevelMin ?? "—";
-  const journeyMaxLevel = data.journeyMaxLevel ?? data.lessonPlan?.plannedLevelMax ?? "—";
-  const journeyPercent = normalizePercentValue(data.journeyProgressPct);
-  const journeyLessonsLabel =
-    data.journeyCompletedLessons != null && data.journeyTotalLessons != null
-      ? `${formatInteger(data.journeyCompletedLessons)} / ${formatInteger(data.journeyTotalLessons)} lecciones`
-      : "Sin datos";
+  if (!data) {
+    return (
+      <div className="rounded-3xl border border-brand-ink-muted/10 bg-white/90 p-10 text-center shadow-sm">
+        <p className="text-lg font-semibold text-brand-deep">
+          No hay información del panel del coach para este estudiante.
+        </p>
+        <p className="mt-2 text-sm text-brand-ink-muted">
+          Aún no registramos actividad reciente. ¡Anima al estudiante a retomar sus sesiones!
+        </p>
+      </div>
+    );
+  }
 
-  const lessonEffortSeries = buildLessonEffortSeries(data);
-  const lessonPlan = data.lessonPlan;
-  const levelSegments = lessonPlan?.levelSegments ?? [];
-  const totalLessonsInJourney =
-    lessonEffortSeries?.length ??
-    data.journeyTotalLessons ??
-    lessonPlan?.lessonsTotal ??
-    null;
+  const { profileHeader, lessonJourney, engagement, paceForecast } = data;
 
-  const completedLessonsRaw =
-    data.journeyCompletedLessons ??
-    lessonPlan?.lessonsCompleted ??
-    (lessonPlan?.currentLessonIndex != null
-      ? Math.max(lessonPlan.currentLessonIndex - 1, 0)
-      : null);
+  const journeyLessons = lessonJourney.lessons;
+  const currentGlobalSeq = lessonJourney.currentPosition ?? null;
 
-  const completedLessonsCount =
-    totalLessonsInJourney != null && Number.isFinite(totalLessonsInJourney)
-      ? Math.max(
-          0,
-          Math.min(
-            Math.trunc(totalLessonsInJourney),
-            completedLessonsRaw != null && Number.isFinite(completedLessonsRaw)
-              ? Math.trunc(completedLessonsRaw)
-              : 0,
-          ),
-        )
-      : completedLessonsRaw != null && Number.isFinite(completedLessonsRaw)
-        ? Math.max(0, Math.trunc(completedLessonsRaw))
-        : 0;
+  const lessonElements: ReactElement[] = [];
+  let lastLevel: string | null = null;
+  journeyLessons.forEach((lesson, index) => {
+    if (lesson.level && lesson.level !== lastLevel) {
+      lastLevel = lesson.level;
+      lessonElements.push(
+        <div key={`level-${lesson.level}-${index}`} className="flex flex-col items-center gap-2 pr-4">
+          <span className="rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-brand-teal">
+            {lesson.level}
+          </span>
+        </div>,
+      );
+    }
 
-  const progressPercent =
-    totalLessonsInJourney && totalLessonsInJourney > 0
-      ? Math.min(100, Math.max(0, (completedLessonsCount / totalLessonsInJourney) * 100))
-      : journeyPercent ?? 0;
+    const isCompleted = lesson.completed || (currentGlobalSeq != null && lesson.lessonGlobalSeq != null && lesson.lessonGlobalSeq < currentGlobalSeq);
+    const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
 
-  const currentPercent =
-    totalLessonsInJourney &&
-    lessonPlan?.currentLessonIndex != null &&
-    Number.isFinite(lessonPlan.currentLessonIndex) &&
-    totalLessonsInJourney > 0
-      ? Math.min(100, Math.max(0, (lessonPlan.currentLessonIndex / totalLessonsInJourney) * 100))
-      : progressPercent;
+    lessonElements.push(
+      <button
+        type="button"
+        key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
+        onClick={() => setDrawerLesson(lesson)}
+        className={cx(
+          "relative flex h-14 w-14 items-center justify-center rounded-full border-2 text-sm font-semibold transition",
+          isCurrent
+            ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
+            : isCompleted
+              ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
+              : "border-brand-teal/50 bg-white text-brand-deep hover:-translate-y-[1px]",
+        )}
+        title={`Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()}
+      >
+        {isCurrent ? (
+          <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
+        ) : null}
+        <span>{lesson.seq ?? "?"}</span>
+      </button>,
+    );
+  });
 
-  const recordedHoursTotal =
-    lessonEffortSeries?.reduce(
-      (sum, point) => sum + (point.hasData && point.hours != null ? point.hours : 0),
-      0,
-    ) ?? 0;
+  const paceForecastLabel = paceForecast.forecastMonthsToFinishPlan != null
+    ? `${formatNumber(paceForecast.forecastMonthsToFinishPlan, { maximumFractionDigits: 1 })} meses`
+    : "Sin pronóstico";
 
-  const lessonsWithRecordedHours =
-    lessonEffortSeries?.filter((point) => point.hasData && point.hours != null).length ?? 0;
+  const gaugePercent = paceForecast.forecastMonthsToFinishPlan != null && paceForecast.forecastMonthsToFinishPlan > 0
+    ? Math.min(1, paceForecast.forecastMonthsToFinishPlan / 12) * 100
+    : null;
 
-  const averageHoursPerLesson =
-    lessonsWithRecordedHours > 0 ? recordedHoursTotal / lessonsWithRecordedHours : null;
-
-  const maxRecordedHours =
-    lessonEffortSeries && lessonEffortSeries.length
-      ? lessonEffortSeries.reduce((max, point) => {
-          if (!point.hasData || point.hours == null) {
-            return max;
-          }
-          return point.hours > max ? point.hours : max;
-        }, 0)
-      : 0;
-
-  const journeyPercentWidth = journeyPercent ?? progressPercent ?? 0;
-
-  const journeyProgressLabel = formatPercent(data.journeyProgressPct);
-
-  const lifetimeMetrics = [
-    {
-      key: "planned-level",
-      label: "Nivel planificado",
-      value: `${journeyMinLevel} → ${journeyMaxLevel}`,
-      helper: "Inicio y meta de tu recorrido actual.",
-    },
-    {
-      key: "progress",
-      label: "Avance total",
-      value: formatPercent(data.journeyProgressPct),
-      helper: "Porcentaje del plan completado.",
-    },
-    {
-      key: "lessons",
-      label: "Lecciones completadas",
-      value: journeyLessonsLabel,
-      helper: "Lecciones terminadas del recorrido planificado.",
-    },
-    {
-      key: "hours",
-      label: "Horas acumuladas",
-      value:
-        data.totalHoursLifetime != null && Number.isFinite(data.totalHoursLifetime)
-          ? `${formatDecimal(data.totalHoursLifetime, 1)} h`
-          : "—",
-      helper: "Total de horas dedicadas desde el inicio.",
-    },
-    {
-      key: "days",
-      label: "Días activos",
-      value: formatInteger(data.totalActiveDaysLifetime),
-      helper: "Días en los que asististe a sesiones.",
-    },
-    {
-      key: "lei",
-      label: "LEI global",
-      value: formatDecimal(data.leiGlobalLifetime, 2),
-      helper: "Lecciones por hora acumuladas.",
-    },
-  ];
-
-  const ritmoMetrics = [
-    {
-      key: "lei-30d",
-      label: "LEI (30d)",
-      value: formatDecimal(data.lei30d, 2),
-      helper: "Lecciones ganadas por hora este mes.",
-    },
-    {
-      key: "lei-ratio",
-      label: "Ratio (LEI/Objetivo)",
-      value: data.leiRatio != null && Number.isFinite(data.leiRatio)
-        ? `${formatInteger(data.leiRatio * 100)}%`
-        : "—",
-      helper: "Porcentaje del objetivo de eficiencia alcanzado.",
-    },
-    {
-      key: "hours-30d",
-      label: "Horas (30d)",
-      value:
-        data.hours30d != null && Number.isFinite(data.hours30d)
-          ? `${formatDecimal(data.hours30d, data.hours30d >= 10 ? 0 : 1)} h`
-          : "—",
-      helper: "Total de horas estudiadas este mes.",
-    },
-    {
-      key: "days-30d",
-      label: "Días activos (30d)",
-      value: formatInteger(data.daysActive30d),
-      helper: "Días con actividad en los últimos 30 días.",
-    },
-  ];
-
-  const forecastLabel =
-    data.forecastMonthsToFinish != null && Number.isFinite(data.forecastMonthsToFinish)
-      ? `${formatDecimal(data.forecastMonthsToFinish, data.forecastMonthsToFinish >= 10 ? 0 : 1)} meses`
-      : "Sin dato";
-
-  const riskBadges = [
-    {
-      key: "forecast",
-      label: "Meses estimados",
-      value: forecastLabel,
-      tone: "border-sky-200 bg-sky-50 text-sky-700",
-      title: "Tiempo estimado para alcanzar tu nivel objetivo máximo.",
-    },
-    {
-      key: "on-pace",
-      label: "Ritmo vs plan",
-      value:
-        data.onPace == null ? "Dato insuficiente" : data.onPace ? "En ritmo" : "Fuera de ritmo",
-      tone:
-        data.onPace == null
-          ? "border-slate-200 bg-slate-50 text-slate-700"
-          : data.onPace
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-rose-200 bg-rose-50 text-rose-700",
-      title: "Indica si tu progreso coincide con el plan establecido.",
-    },
-    {
-      key: "stall",
-      label: "Estancamiento",
-      value: data.riskStall ? "En revisión" : "Sin alerta",
-      tone: data.riskStall
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : "border-emerald-200 bg-emerald-50 text-emerald-700",
-      title: "Señala si hubo una pausa prolongada en el avance.",
-    },
-    {
-      key: "inactive",
-      label: "Inactividad 14d",
-      value: data.riskInactive14d ? "Sí" : "No",
-      tone: data.riskInactive14d
-        ? "border-rose-200 bg-rose-50 text-rose-700"
-        : "border-emerald-200 bg-emerald-50 text-emerald-700",
-      title: "Informa si no hubo registro de estudio por 14 días o más.",
-    },
-    {
-      key: "repeats",
-      label: "Lecciones repetidas",
-      value: formatInteger(data.repeatsAtLast),
-      tone:
-        data.repeatsAtLast != null && data.repeatsAtLast > 0
-          ? "border-amber-200 bg-amber-50 text-amber-700"
-          : "border-slate-200 bg-slate-50 text-slate-700",
-      title: "Número de lecciones repetidas en la última revisión.",
-    },
-  ];
+  const gaugeBackground = gaugePercent == null
+    ? "conic-gradient(#e2e8f0 0deg, #e2e8f0 360deg)"
+    : `conic-gradient(#0b9e8f ${gaugePercent * 3.6}deg, #e2e8f0 ${gaugePercent * 3.6}deg 360deg)`;
 
   return (
-    <section className="flex h-full flex-col gap-6 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 text-brand-deep shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-2xl font-bold text-brand-deep">Panel del coach</h2>
-          <p className="text-sm text-brand-ink-muted">Visión general de esfuerzo, constancia y progreso.</p>
-          <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-            Datos actualizados al: {updatedLabel}
-          </span>
-          {errorMessage ? (
-            <p className="text-sm font-medium text-rose-600">{errorMessage}</p>
-          ) : null}
-        </div>
-        <span className="inline-flex items-center gap-2 rounded-full bg-brand-teal-soft/60 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-teal">
-          <span>Nivel {data.levelCode ?? "—"}</span>
-          <span className="text-brand-ink-muted">·</span>
-          <span>Lección {formatInteger(data.lessonSeq)}</span>
-        </span>
-      </div>
-
-      <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
+    <div className="relative flex flex-col gap-10">
+      <section className="space-y-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-brand-deep">Desde el inicio</h3>
-          <span className="text-sm text-brand-ink-muted">Resumen del recorrido completo</span>
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Panel del coach</span>
+            <h3 className="mt-2 text-2xl font-bold text-brand-deep">Recorrido de lecciones</h3>
+          </div>
+          <p className="text-sm text-brand-ink-muted">
+            Tap en cualquier lección para ver sus últimas sesiones.
+          </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {lifetimeMetrics.map((metric) => (
-            <article
-              key={metric.key}
-              className="flex flex-col gap-2 rounded-xl border border-brand-deep-soft/40 bg-white/80 p-4"
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                {metric.label}
-              </span>
-              <span className="text-2xl font-bold text-brand-deep">{metric.value}</span>
-              <span className="text-[11px] text-brand-ink-muted">{metric.helper}</span>
-            </article>
-          ))}
+        <div className="overflow-x-auto pb-2">
+          <div className="flex items-center gap-3">
+            {lessonElements.length ? lessonElements : (
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-6 py-4 text-sm text-brand-ink-muted shadow-sm">
+                No hay lecciones planificadas.
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
-      <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-brand-deep">Trayectoria completa</h3>
-          <span className="text-sm text-brand-ink-muted">{journeyMinLevel} → {journeyMaxLevel}</span>
-        </div>
-        {lessonEffortSeries ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-brand-ink-muted">
-              <span>{journeyMinLevel} · Inicio del plan</span>
-              <span>{journeyMaxLevel} · Meta planificada</span>
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
+            <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
+              <p className="mt-2 text-xl font-bold text-brand-deep">
+                {formatNumber(engagement.stats.daysActive30d)}
+              </p>
             </div>
-            <div className="px-3">
-              <div className="relative h-36 overflow-hidden rounded-xl border border-brand-deep-soft/40 bg-white/85">
-                <div className="absolute inset-0 bg-gradient-to-r from-brand-deep-soft/20 via-white/20 to-white/60" aria-hidden />
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
+              <p className="mt-2 text-xl font-bold text-brand-deep">
+                {formatNumber(
+                  engagement.stats.totalHours30d ??
+                    (engagement.stats.totalMinutes30d != null
+                      ? engagement.stats.totalMinutes30d / 60
+                      : null),
+                  { maximumFractionDigits: 1 },
+                )}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
+              <p className="mt-2 text-xl font-bold text-brand-deep">
+                {formatNumber(engagement.stats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
+              </p>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
+            <div className="mt-3 grid grid-cols-10 gap-2">
+              {heatmapCells.map((cell) => (
                 <div
-                  className="absolute inset-y-0 left-0 bg-brand-teal-soft/30"
-                  style={{ width: `${journeyPercentWidth}%` }}
-                  aria-hidden
+                  key={cell.date}
+                  className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
+                  style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
+                  title={`${formatDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
                 />
-                {levelSegments.map((segment) => (
-                  <div
-                    key={`${segment.levelCode ?? segment.levelLabel ?? "nivel"}-${segment.startIndex}`}
-                    className="pointer-events-none absolute inset-y-0 border-r border-white/60"
-                    style={{ left: `${segment.endPercent}%` }}
-                    aria-hidden
-                  />
-                ))}
-                <div className="absolute inset-x-0 bottom-0 top-0 flex items-end gap-[1px] pb-4 pt-6">
-                  {lessonEffortSeries.map((point) => {
-                    const safeMax = maxRecordedHours > 0 ? maxRecordedHours : 1;
-                    const baseHeight = point.hasData
-                      ? Math.max(10, ((point.hours ?? 0) / safeMax) * 100)
-                      : point.isCompleted
-                        ? 8
-                        : 4;
-                    const barClass = point.hasData
-                      ? "bg-gradient-to-t from-brand-teal/40 via-brand-teal/70 to-brand-teal"
-                      : point.isCompleted
-                        ? "bg-brand-deep-soft/70"
-                        : "bg-brand-deep-soft/30";
-                    const title = point.hasData
-                      ? `Lección ${point.lessonNumber}: ${formatHours(
-                          point.hours,
-                          point.hours != null && point.hours >= 10 ? 0 : 1,
-                        )} dedicadas`
-                      : point.isCompleted
-                        ? `Lección ${point.lessonNumber}: sin horas registradas recientemente`
-                        : `Lección ${point.lessonNumber}: pendiente`;
-                    return (
-                      <div
-                        key={`lesson-${point.lessonNumber}`}
-                        className={`flex-1 rounded-t-full ${barClass}`}
-                        style={{ height: `${baseHeight}%`, minWidth: "2px" }}
-                        title={title}
-                      />
-                    );
-                  })}
-                </div>
-                {totalLessonsInJourney ? (
-                  <div
-                    className="pointer-events-none absolute -top-2 h-5 w-5 -translate-x-1/2 rounded-full border-2 border-white bg-brand-deep shadow"
-                    style={{ left: `${currentPercent}%` }}
-                    title={
-                      lessonPlan?.currentLessonLabel ??
-                      (lessonPlan?.currentLessonIndex != null
-                        ? `Lección ${formatInteger(lessonPlan.currentLessonIndex)}`
-                        : "Lección actual")
-                    }
-                  />
-                ) : null}
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">LEI 30 días</span>
+            <h4 className="text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
+          </div>
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
+            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
+            <p className="mt-2 text-4xl font-black text-brand-deep">
+              {formatNumber(engagement.lei.lei30dPlan, { maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
+            <Sparkline data={engagement.lei.trend} />
+          </div>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Pace & forecast</span>
+          <h4 className="text-xl font-bold text-brand-deep">Pronóstico del plan</h4>
+        </div>
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="flex items-center gap-4">
+            <div
+              className="flex h-32 w-32 items-center justify-center rounded-full border border-white/70 bg-white shadow-inner"
+              style={{ background: gaugeBackground }}
+            >
+              <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white text-center shadow">
+                <span className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Forecast</span>
+                <span className="mt-1 text-xl font-bold text-brand-deep">{paceForecastLabel}</span>
               </div>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-brand-ink-muted">
-              <span className="font-semibold text-brand-deep">{journeyLessonsLabel}</span>
-              <span>{journeyProgressLabel} completado</span>
-              <span>
-                Horas registradas: {formatHours(recordedHoursTotal, recordedHoursTotal >= 10 ? 0 : 1)}
-                {" · "}
-                {averageHoursPerLesson != null
-                  ? `≈ ${formatHours(
-                      averageHoursPerLesson,
-                      averageHoursPerLesson >= 10 ? 0 : 1,
-                    )} por lección`
-                  : "Sin registro por lección"}
-              </span>
+            <div className="flex flex-col gap-3 text-sm text-brand-ink-muted">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Lecciones restantes</p>
+                <p className="text-lg font-semibold text-brand-deep">
+                  {formatNumber(paceForecast.lessonsRemaining)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Progreso del plan</p>
+                <p className="text-lg font-semibold text-brand-deep">
+                  {formatPercent(paceForecast.planProgressPct, 0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Estado</p>
+                <p className="text-lg font-semibold text-brand-deep">
+                  {profileHeader.onPacePlan ? "En ritmo" : "Requiere atención"}
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-brand-ink-muted">
-              Horas aproximadas dedicadas por lección completada según los minutos registrados en este recorrido. El nivel
-              inicial comienza en la primera lección planificada y concluye en la última lección del nivel objetivo.
+          </div>
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5">
+            <p className="text-sm text-brand-ink-muted">
+              Mantener una velocidad de finalización menor o igual a seis meses asegura que el estudiante aproveche su plan.
+              {paceForecast.forecastMonthsToFinishPlan != null
+                ? ` Con el ritmo actual terminaría en aproximadamente ${paceForecastLabel}.`
+                : ""}
             </p>
           </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <div className="relative h-4 overflow-hidden rounded-full bg-brand-deep-soft/30">
-              <div
-                className="absolute inset-y-0 left-0 rounded-full bg-brand-teal-soft/80"
-                style={{ width: `${journeyPercentWidth}%` }}
-                aria-hidden
-              />
-            </div>
-            <div className="flex justify-between text-xs text-brand-ink-muted">
-              <span>{journeyMinLevel}</span>
-              <span>{journeyMaxLevel}</span>
-            </div>
-            <p className="text-xs text-brand-ink-muted">
-              No contamos con datos de estudio suficientes para graficar por lección, pero aquí se muestra tu avance total
-              dentro del plan.
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-brand-deep">Ritmo actual</h3>
-          <span className="text-sm text-brand-ink-muted">Indicadores de los últimos 30 días</span>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {ritmoMetrics.map((metric) => (
-            <article
-              key={metric.key}
-              className="flex flex-col gap-2 rounded-xl border border-brand-deep-soft/40 bg-white/80 p-4"
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                {metric.label}
-              </span>
-              <span className="text-2xl font-bold text-brand-deep">{metric.value}</span>
-              <span className="text-[11px] text-brand-ink-muted">{metric.helper}</span>
-            </article>
-          ))}
-        </div>
-        <p className="text-xs text-brand-ink-muted">Basado en tu actividad de los últimos 30 días.</p>
-      </section>
-
-      <section className="flex flex-col gap-3 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-brand-deep">Pronóstico y riesgos</h3>
-          <span className="text-sm text-brand-ink-muted">Alertas para ajustar el acompañamiento</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {riskBadges.map((badge) => (
-            <span
-              key={badge.key}
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${badge.tone}`}
-              title={badge.title}
-            >
-              <span className="uppercase tracking-wide">{badge.label}</span>
-              <span className="text-brand-deep">{badge.value}</span>
-            </span>
-          ))}
         </div>
       </section>
 
-      <section className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/95 px-5 py-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-brand-deep">Estudio diario</h3>
-          <span className="text-sm text-brand-ink-muted">Últimos 30 días de práctica</span>
-        </div>
-        <StudyTrendChart entries={data.dailyStudy} />
-      </section>
-    </section>
-  );
-}
-
-export function CoachPanelSkeleton() {
-  return (
-    <section className="flex h-full flex-col gap-6 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <span className="h-6 w-48 rounded-full bg-brand-deep-soft/60" />
-          <span className="h-4 w-64 rounded-full bg-brand-deep-soft/40" />
-        </div>
-        <span className="h-8 w-40 rounded-full bg-brand-teal-soft/60" />
-      </div>
-      {Array.from({ length: 5 }).map((_, index) => (
-        <div
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
-          className="h-32 rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm"
-        >
-          <span className="block h-full w-full rounded-xl bg-brand-deep-soft/40" />
-        </div>
-      ))}
-    </section>
+      <LessonDrawer
+        lesson={drawerLesson}
+        sessions={drawerSessions}
+        status={drawerStatus}
+        error={drawerError}
+        onClose={() => setDrawerLesson(null)}
+      />
+    </div>
   );
 }
