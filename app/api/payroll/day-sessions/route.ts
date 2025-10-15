@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server.js";
 
 import { fetchDaySessions } from "@/features/administration/data/payroll-reports";
+import { HttpError } from "@/lib/payroll/reports-service";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,12 +37,15 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Error al obtener las sesiones del día", error);
     const message =
-      error instanceof Error
+      error instanceof HttpError
         ? error.message
-        : "No pudimos cargar las sesiones del día.";
+        : error instanceof Error
+          ? error.message
+          : "No pudimos cargar las sesiones del día.";
+    const status = error instanceof HttpError ? error.status : 500;
     return NextResponse.json(
       { error: message },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
+      { status, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
