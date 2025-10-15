@@ -1038,7 +1038,9 @@ export type StudentCoachPanelSummary = {
   lei30d: number | null;
   leiTrendDelta: number | null;
   leiRatio: number | null;
+  minutes30d: number | null;
   hours30d: number | null;
+  daysActive30d: number | null;
   weeklyActiveDays: number | null;
   avgSessionMinutes30d: number | null;
   lessonsGained30d: number | null;
@@ -1053,6 +1055,7 @@ export type StudentCoachPanelSummary = {
   lessonPlan: StudentLessonPlanSnapshot | null;
   dailyStudy: DailyStudyEntry[];
   sessionDurationTargets: SessionDurationTargets;
+  latestActivityDate: string | null;
 };
 
 type JsonRecord = Record<string, unknown> | null | undefined;
@@ -1751,10 +1754,46 @@ export async function getStudentCoachPanelSummary(
     }
   }
 
-  const dailyStudyEntries = dailyRows
+  const panelDailyStudy = (() => {
+    const rawValue = panelPayload?.daily_study ?? panelPayload?.daily_minutes ?? null;
+    if (!rawValue) {
+      return [] as DailyStudyEntry[];
+    }
+
+    const records: JsonRecord[] = [];
+
+    if (Array.isArray(rawValue)) {
+      rawValue.forEach((item) => {
+        const parsed = toJsonRecord(item);
+        if (parsed) {
+          records.push(parsed);
+        }
+      });
+    } else {
+      const parsedJson = toJsonRecord(rawValue);
+      if (parsedJson && Array.isArray(parsedJson.records)) {
+        parsedJson.records.forEach((item) => {
+          const parsed = toJsonRecord(item);
+          if (parsed) {
+            records.push(parsed);
+          }
+        });
+      } else if (parsedJson) {
+        records.push(parsedJson);
+      }
+    }
+
+    return records
+      .map((record) => mapDailyStudy(record))
+      .filter((entry): entry is DailyStudyEntry => Boolean(entry));
+  })();
+
+  const fallbackDailyStudy = dailyRows
     .map((row) => mapDailyStudy(toJsonRecord(row)))
-    .filter((entry): entry is DailyStudyEntry => Boolean(entry))
-    .sort((a, b) => {
+    .filter((entry): entry is DailyStudyEntry => Boolean(entry));
+
+  const dailyStudyEntries = (panelDailyStudy.length ? panelDailyStudy : fallbackDailyStudy).sort(
+    (a, b) => {
       const aTime = Date.parse(a.date);
       const bTime = Date.parse(b.date);
       if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
@@ -1767,7 +1806,29 @@ export async function getStudentCoachPanelSummary(
         return 1;
       }
       return aTime - bTime;
-    });
+    },
+  );
+
+  const targetOptimalMinutes =
+    extractNumber(panelPayload, ["optimal_minutes", "optimal_session_minutes", "target_session_minutes"]) ??
+    extractNumber(configPayload, ["target_session_minutes", "optimal_session_minutes"]);
+
+  const targetShortMinutes =
+    extractNumber(panelPayload, ["short_minutes", "short_session_minutes"]) ??
+    extractNumber(configPayload, ["short_session_minutes", "short_session_threshold"]);
+
+  const targetLongMinutes =
+    extractNumber(panelPayload, ["long_minutes", "long_session_minutes"]) ??
+    extractNumber(configPayload, ["long_session_minutes", "long_session_threshold"]);
+
+  const latestActivityDate =
+    extractString(panelPayload, [
+      "latest_activity_date",
+      "activity_date",
+      "last_activity_date",
+      "updated_at",
+      "refreshed_at",
+    ]) ?? null;
 
   return {
     studentId: studentIdValue,
@@ -1788,7 +1849,9 @@ export async function getStudentCoachPanelSummary(
     lei30d: extractNumber(panelPayload, ["lei_30d"]),
     leiTrendDelta: computedLeiTrend,
     leiRatio: extractNumber(panelPayload, ["lei_ratio"]),
+    minutes30d,
     hours30d,
+    daysActive30d,
     weeklyActiveDays,
     avgSessionMinutes30d: extractNumber(panelPayload, [
       "avg_session_minutes_30d",
@@ -1848,19 +1911,11 @@ export async function getStudentCoachPanelSummary(
     lessonPlan: lessonPlanSnapshot,
     dailyStudy: dailyStudyEntries,
     sessionDurationTargets: {
-      shortMinutes: extractNumber(configPayload, [
-        "short_session_minutes",
-        "short_session_threshold",
-      ]),
-      optimalMinutes: extractNumber(configPayload, [
-        "target_session_minutes",
-        "optimal_session_minutes",
-      ]),
-      longMinutes: extractNumber(configPayload, [
-        "long_session_minutes",
-        "long_session_threshold",
-      ]),
+      shortMinutes: targetShortMinutes,
+      optimalMinutes: targetOptimalMinutes,
+      longMinutes: targetLongMinutes,
     },
+    latestActivityDate,
   };
 }
 
