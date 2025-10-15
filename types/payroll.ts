@@ -2,6 +2,7 @@ export type PayrollMatrixCell = {
   date: string;
   hours: number;
   approved: boolean;
+  approvedHours: number | null;
 };
 
 export type PayrollMatrixRow = {

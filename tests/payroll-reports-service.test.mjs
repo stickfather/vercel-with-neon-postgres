@@ -270,13 +270,17 @@ describe("payroll integration", () => {
     const anaRow = matrix.rows.find((row) => row.staffId === 1);
     assert(anaRow);
     assert.equal(anaRow.cells[0].hours, 1.5);
+    assert.equal(anaRow.cells[0].approvedHours, null);
     assert.equal(anaRow.cells[1].hours, 2.25);
     assert(anaRow.cells[1].approved);
+    assert.equal(anaRow.cells[1].approvedHours, 2.25);
 
     const benRow = matrix.rows.find((row) => row.staffId === 2);
     assert(benRow);
     assert.equal(benRow.cells[0].hours, 0);
+    assert.equal(benRow.cells[0].approvedHours, null);
     assert.equal(benRow.cells[1].hours, 3);
+    assert.equal(benRow.cells[1].approvedHours, null);
   });
 });
 

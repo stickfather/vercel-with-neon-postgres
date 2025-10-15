@@ -360,7 +360,13 @@ export async function getPayrollMatrix(
     const workDate = String(row["work_date"] ?? "");
     if (!ISO_DATE_REGEX.test(workDate)) continue;
     const approved = toBoolean(row["approved"]);
-    const approvedHours = toOptionalNumber(row["approved_hours"]);
+    const approvedHoursRaw = toOptionalNumber(row["approved_hours"]);
+    const approvedHoursMinutes =
+      approvedHoursRaw != null && Number.isFinite(approvedHoursRaw)
+        ? Math.round(approvedHoursRaw * 60)
+        : null;
+    const approvedHours =
+      approvedHoursMinutes != null ? roundMinutesToHours(approvedHoursMinutes) : null;
     const baseHours = approved
       ? approvedHours ?? toOptionalNumber(row["horas_mostrar"]) ?? toOptionalNumber(row["total_hours"]) ?? 0
       : toOptionalNumber(row["horas_mostrar"]) ?? toOptionalNumber(row["total_hours"]) ?? 0;
@@ -377,12 +383,25 @@ export async function getPayrollMatrix(
       });
     }
     const entry = grouped.get(staffId)!;
-    entry.cellMap.set(workDate, { date: workDate, approved, hours });
+    entry.cellMap.set(workDate, {
+      date: workDate,
+      approved,
+      hours,
+      approvedHours,
+    });
   }
 
   const resultRows: PayrollMatrixRow[] = [];
   for (const [, value] of grouped) {
-    const cells = days.map((day) => value.cellMap.get(day) ?? { date: day, hours: 0, approved: false });
+    const cells = days.map(
+      (day) =>
+        value.cellMap.get(day) ?? {
+          date: day,
+          hours: 0,
+          approved: false,
+          approvedHours: null,
+        },
+    );
     resultRows.push({ staffId: value.staffId, staffName: value.staffName, cells });
   }
 
