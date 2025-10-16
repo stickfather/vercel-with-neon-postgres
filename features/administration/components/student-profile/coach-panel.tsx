@@ -1,22 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
-  CoachPanelLessonJourneyEntry,
-  CoachPanelLessonSessionEntry,
-  CoachPanelLeiTrendEntry,
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
+
+import { DonutDaypart } from "./DonutDaypart";
+import { LearnerSpeedChip } from "./LearnerSpeedChip";
 
 type CoachPanelProps = {
   data: StudentCoachPanelSummary | null;
   errorMessage?: string | null;
 };
-
-type LessonSession = CoachPanelLessonSessionEntry;
-type LessonJourneyItem = CoachPanelLessonJourneyEntry & { isExam?: boolean };
 
 const HEATMAP_DAYS = 30;
 
@@ -46,17 +43,6 @@ function formatPercent(value: number | null | undefined, digits = 0): string {
   return `${formatNumber(safe, { maximumFractionDigits: digits })}%`;
 }
 
-function formatDuration(minutes: number | null | undefined): string {
-  if (minutes == null || !Number.isFinite(minutes)) {
-    return "—";
-  }
-  const hours = minutes / 60;
-  if (hours >= 1.5) {
-    return `${formatNumber(hours, { maximumFractionDigits: 1 })} h`;
-  }
-  return `${formatNumber(minutes, { maximumFractionDigits: 0 })} min`;
-}
-
 function formatDate(iso: string | null | undefined, withTime = false): string {
   if (!iso) {
     return "—";
@@ -72,20 +58,6 @@ function formatDate(iso: string | null | undefined, withTime = false): string {
       : { dateStyle: "medium", timeZone: "America/Guayaquil" },
   );
   return formatter.format(parsed);
-}
-
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) {
-    return "—";
-  }
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) {
-    return "—";
-  }
-  return new Intl.DateTimeFormat("es-EC", {
-    timeStyle: "short",
-    timeZone: "America/Guayaquil",
-  }).format(parsed);
 }
 
 function buildHeatmapCells(
@@ -113,177 +85,8 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
-function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement {
-  if (!data.length) {
-    return (
-      <div className="flex h-24 w-full flex-col items-center justify-center rounded-2xl bg-white/70 text-sm text-brand-ink-muted">
-        <span>No hay movimientos recientes.</span>
-      </div>
-    );
-  }
-
-  const width = Math.max(160, Math.min(600, (data.length - 1) * 10 || 160));
-  const height = 64;
-  const maxValue = data.reduce((max, entry) => (entry.leiValue > max ? entry.leiValue : max), 0);
-  const safeMax = maxValue > 0 ? maxValue : 1;
-  const step = data.length > 1 ? width / (data.length - 1) : width;
-  const padding = 6;
-
-  const points = data.map((entry, index) => {
-    const x = index * step;
-    const y = height - padding - (entry.leiValue / safeMax) * (height - padding * 2);
-    return `${x},${Math.max(padding, Math.min(height - padding, y))}`;
-  });
-
-  return (
-    <svg
-      className="h-24 w-full"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="Tendencia de eficiencia"
-    >
-      <defs>
-        <linearGradient id="lei-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#0b9e8f" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#0b9e8f" stopOpacity="0.05" />
-        </linearGradient>
-      </defs>
-      <polyline
-        fill="none"
-        stroke="#0b9e8f"
-        strokeWidth="3"
-        strokeLinecap="round"
-        points={points.join(" ")}
-      />
-      <polyline
-        fill="url(#lei-gradient)"
-        stroke="none"
-        points={`0,${height} ${points.join(" ")} ${width},${height}`}
-      />
-    </svg>
-  );
-}
-
-function LessonDrawer({
-  lesson,
-  sessions,
-  status,
-  error,
-  onClose,
-}: {
-  lesson: LessonJourneyItem | null;
-  sessions: LessonSession[];
-  status: "idle" | "loading" | "ready" | "error";
-  error: string | null;
-  onClose: () => void;
-}): ReactElement | null {
-  if (!lesson) {
-    return null;
-  }
-
-  const lessonLabel = [
-    lesson.level,
-    lesson.isExam ? "Examen" : lesson.seq != null ? `Lección ${lesson.seq}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const drawerTitle = "Últimas sesiones registradas para esta lección.";
-  const drawerSubtitle = lesson.isExam
-    ? "Incluye las sesiones más recientes previas al examen del nivel."
-    : "Se muestran hasta tres sesiones recientes asociadas a esta lección.";
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/20 backdrop-blur-sm">
-      <button
-        type="button"
-        className="absolute inset-0 cursor-default"
-        aria-label="Cerrar detalle de lección"
-        onClick={onClose}
-      />
-      <aside className="relative flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto bg-white p-8 shadow-[0_28px_80px_rgba(15,23,42,0.18)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-teal">Detalle de lección</span>
-            <h3 className="mt-2 text-2xl font-bold text-brand-deep">{lessonLabel || "Lección"}</h3>
-            <p className="mt-3 text-sm font-semibold text-brand-deep">{drawerTitle}</p>
-            <p className="text-sm text-brand-ink-muted">{drawerSubtitle}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white text-brand-ink-muted transition hover:-translate-y-[1px] hover:text-brand-deep"
-            aria-label="Cerrar"
-          >
-            ×
-          </button>
-        </div>
-        <div className="flex flex-col gap-4">
-          {status === "loading" ? (
-            <div className="flex h-32 flex-col items-center justify-center gap-2 text-brand-ink-muted">
-              <span className="h-12 w-12 animate-spin rounded-full border-4 border-brand-teal/30 border-t-brand-teal" />
-              <span className="text-sm">Cargando sesiones…</span>
-            </div>
-          ) : null}
-          {status === "error" ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700">
-              {error ?? "No se pudo cargar la información de la lección."}
-            </div>
-          ) : null}
-          {status === "ready" && sessions.length === 0 ? (
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-deep-soft/40 p-4 text-sm text-brand-ink-muted">
-              No hay sesiones registradas para esta lección.
-            </div>
-          ) : null}
-          {status === "ready" && sessions.length > 0 ? (
-            <div className="overflow-hidden rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory shadow-sm">
-              <table className="min-w-full divide-y divide-brand-ink-muted/10 text-sm">
-                <thead className="bg-white/70 text-xs uppercase tracking-[0.28em] text-brand-ink-muted">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 text-left font-semibold">
-                      Fecha
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left font-semibold">
-                      Inicio
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left font-semibold">
-                      Fin
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-right font-semibold">
-                      Duración
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-ink-muted/10">
-                  {sessions.map((session) => (
-                    <tr key={session.attendanceId} className="odd:bg-white/40">
-                      <td className="px-4 py-3 font-medium text-brand-deep">{formatDate(session.checkIn)}</td>
-                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkIn)}</td>
-                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkOut)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-brand-deep">
-                        {formatDuration(session.sessionMinutes)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </div>
-      </aside>
-    </div>
-  );
-}
 
 export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
-  const [drawerLesson, setDrawerLesson] = useState<LessonJourneyItem | null>(null);
-  const [drawerSessions, setDrawerSessions] = useState<LessonSession[]>([]);
-  const [drawerStatus, setDrawerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [drawerError, setDrawerError] = useState<string | null>(null);
-  const sessionsCacheRef = useRef(new Map<string, LessonSession[]>());
-
-  const studentId = data?.profileHeader.studentId ?? null;
   const recentActivity = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
 
   const heatmapBase = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
@@ -318,91 +121,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }, [heatmapBase, recentActivity]);
 
-  useEffect(() => {
-    if (!drawerLesson) {
-      setDrawerStatus("idle");
-      setDrawerSessions([]);
-      setDrawerError(null);
-      return;
-    }
-    if (!studentId) {
-      setDrawerStatus("error");
-      setDrawerSessions([]);
-      setDrawerError("No se pudo identificar la lección seleccionada.");
-      return;
-    }
-
-    const lessonId = drawerLesson.lessonId ?? null;
-    const lessonGlobalSeq = drawerLesson.lessonGlobalSeq ?? null;
-
-    if (lessonId == null && lessonGlobalSeq == null) {
-      setDrawerStatus("error");
-      setDrawerSessions([]);
-      setDrawerError("La lección no cuenta con un identificador válido.");
-      return;
-    }
-
-    const cacheKey = lessonId != null ? `lesson:${lessonId}` : `global:${lessonGlobalSeq}`;
-    const cachedSessions = sessionsCacheRef.current.get(cacheKey);
-    if (cachedSessions) {
-      setDrawerSessions(cachedSessions);
-      setDrawerStatus("ready");
-      setDrawerError(null);
-      return;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    setDrawerStatus("loading");
-    setDrawerError(null);
-    setDrawerSessions([]);
-
-    const searchParams = new URLSearchParams();
-    searchParams.set("limit", "3");
-    if (lessonGlobalSeq != null) {
-      searchParams.set("lessonGlobalSeq", String(lessonGlobalSeq));
-    }
-    if (drawerLesson.level) {
-      searchParams.set("level", drawerLesson.level);
-    }
-    if (drawerLesson.seq != null) {
-      searchParams.set("seq", String(drawerLesson.seq));
-    }
-
-    fetch(
-      `/api/students/${studentId}/sessions/by-lesson/${lessonId ?? "global"}?${searchParams.toString()}`,
-      { cache: "no-store", signal: controller.signal },
-    )
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Request failed");
-        }
-        return response.json();
-      })
-      .then((payload: { sessions?: LessonSession[] }) => {
-        if (cancelled) {
-          return;
-        }
-        const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
-        sessionsCacheRef.current.set(cacheKey, sessions);
-        setDrawerSessions(sessions);
-        setDrawerStatus("ready");
-      })
-      .catch((error) => {
-        if (cancelled || error?.name === "AbortError") {
-          return;
-        }
-        setDrawerStatus("error");
-        setDrawerSessions([]);
-        setDrawerError("No se pudo cargar el historial de la lección.");
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [drawerLesson, studentId]);
-
   const heatmapCells = useMemo(() => buildHeatmapCells(heatmapSource, HEATMAP_DAYS), [heatmapSource]);
   const heatmapMaxMinutes = useMemo(
     () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
@@ -414,56 +132,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     totalHours30d: null,
     avgSessionMinutes30d: null,
   };
-  const leiTrendBase = Array.isArray(data?.engagement?.lei?.trend) ? data.engagement.lei.trend : [];
-  const leiTrendSource = useMemo(() => {
-    if (leiTrendBase.length) {
-      return leiTrendBase;
-    }
-    if (!recentActivity.length) {
-      return [];
-    }
-    const aggregates = new Map<
-      string,
-      { maxSeq: number | null; minutes: number }
-    >();
-    recentActivity.forEach((session) => {
-      const checkIn = session.checkIn;
-      if (!checkIn) {
-        return;
-      }
-      const date = checkIn.slice(0, 10);
-      if (!date) {
-        return;
-      }
-      const entry = aggregates.get(date) ?? { maxSeq: null, minutes: 0 };
-      if (session.lessonGlobalSeq != null && Number.isFinite(session.lessonGlobalSeq)) {
-        const normalized = Math.max(0, Math.trunc(session.lessonGlobalSeq));
-        entry.maxSeq = entry.maxSeq == null ? normalized : Math.max(entry.maxSeq, normalized);
-      }
-      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
-        entry.minutes += Math.max(0, session.sessionMinutes);
-      }
-      aggregates.set(date, entry);
-    });
-    const sortedDates = Array.from(aggregates.keys()).sort();
-    let previousMax: number | null = null;
-    return sortedDates.map((date) => {
-      const metrics = aggregates.get(date);
-      const dayMax = metrics?.maxSeq != null ? metrics.maxSeq : previousMax ?? 0;
-      const minutes = metrics?.minutes ?? 0;
-      const gained = previousMax == null ? dayMax : Math.max(0, dayMax - previousMax);
-      const hours = minutes / 60;
-      const leiValue = hours > 0 ? gained / hours : 0;
-      previousMax = previousMax == null ? dayMax : Math.max(previousMax, dayMax);
-      return {
-        date,
-        lessonsGained: gained,
-        cumulativeLessons: previousMax ?? dayMax,
-        minutesStudied: Math.max(0, Math.round(minutes)),
-        leiValue: Number.isFinite(leiValue) ? leiValue : 0,
-      } satisfies CoachPanelLeiTrendEntry;
-    });
-  }, [leiTrendBase, recentActivity]);
   const lei30dPlan = useMemo(() => {
     const rawValue = data?.engagement?.lei?.lei30dPlan;
     if (rawValue != null && Number.isFinite(rawValue)) {
@@ -528,6 +196,19 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   const { profileHeader, lessonJourney, paceForecast } = data;
 
+  const daypartData = Array.isArray(data.engagement.daypart30d)
+    ? data.engagement.daypart30d
+    : [];
+  const learnerSpeed = data.learnerSpeed;
+
+  const planLevelsLabel = [profileHeader.planLevelMin, profileHeader.planLevelMax]
+    .filter(Boolean)
+    .join(" – ");
+  const resolvedPlanLevels = planLevelsLabel.length ? planLevelsLabel : "—";
+  const currentLevelLabel = profileHeader.currentLevel ?? "—";
+  const planProgressLabel = formatPercent(profileHeader.planProgressPct, 0);
+  const lastSeenLabel = formatDate(profileHeader.lastSeenDate, true);
+
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
 
@@ -552,18 +233,16 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
 
     lessonElements.push(
-      <button
-        type="button"
+      <div
         key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
-        onClick={() => setDrawerLesson({ ...lesson, isExam: isExamBubble })}
         className={cx(
-          "relative flex items-center justify-center rounded-full border-2 font-semibold transition",
+          "relative flex items-center justify-center rounded-full border-2 font-semibold",
           isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
           isCurrent
             ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
             : isCompleted
               ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
-              : "border-brand-teal/50 bg-white text-brand-deep hover:-translate-y-[1px]",
+              : "border-brand-teal/50 bg-white text-brand-deep",
         )}
         title={isExamBubble
           ? `Examen · ${lesson.level ?? ""}`.trim()
@@ -573,7 +252,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
         ) : null}
         <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
-      </button>,
+      </div>,
     );
   });
 
@@ -591,6 +270,37 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   return (
     <div className="relative flex flex-col gap-10">
+      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-2xl">
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Perfil del plan</span>
+            <h3 className="mt-2 text-2xl font-bold text-brand-deep">Indicadores principales</h3>
+            <p className="text-sm text-brand-ink-muted">
+              Seguimiento del avance del estudiante y contexto de velocidad de aprendizaje.
+            </p>
+          </div>
+          <LearnerSpeedChip s={learnerSpeed} />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
+            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Nivel actual</p>
+            <p className="mt-2 text-xl font-bold text-brand-deep">{currentLevelLabel}</p>
+          </div>
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
+            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Plan de niveles</p>
+            <p className="mt-2 text-xl font-bold text-brand-deep">{resolvedPlanLevels}</p>
+          </div>
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
+            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Progreso del plan</p>
+            <p className="mt-2 text-xl font-bold text-brand-deep">{planProgressLabel}</p>
+          </div>
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
+            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Última actividad</p>
+            <p className="mt-2 text-xl font-bold text-brand-deep">{lastSeenLabel}</p>
+          </div>
+        </div>
+      </section>
+
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -598,7 +308,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <h3 className="mt-2 text-2xl font-bold text-brand-deep">Recorrido de lecciones</h3>
           </div>
           <p className="text-sm text-brand-ink-muted">
-            Tap en cualquier lección para ver sus últimas sesiones.
+            Vista general del recorrido planificado y el progreso alcanzado.
           </p>
         </div>
         <div className="overflow-x-auto pb-2">
@@ -645,6 +355,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             </div>
           </div>
           <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">When they study (30 días)</p>
+            <div className="mt-3 rounded-2xl border border-brand-ink-muted/10 bg-white/80 p-4">
+              <DonutDaypart data={daypartData} />
+            </div>
+          </div>
+          <div>
             <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
             <div className="mt-3 grid grid-cols-10 gap-2">
               {heatmapCells.map((cell) => (
@@ -669,8 +385,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
             </p>
           </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <Sparkline data={leiTrendSource} />
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-sm text-brand-ink-muted">
+            El LEI sintetiza cuántas lecciones avanza el estudiante por hora de práctica registrada.
           </div>
         </div>
       </section>
@@ -722,14 +438,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           </div>
         </div>
       </section>
-
-      <LessonDrawer
-        lesson={drawerLesson}
-        sessions={drawerSessions}
-        status={drawerStatus}
-        error={drawerError}
-        onClose={() => setDrawerLesson(null)}
-      />
     </div>
   );
 }

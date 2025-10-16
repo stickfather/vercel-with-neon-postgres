@@ -1176,7 +1176,30 @@ export type CoachPanelEngagement = {
     lei30dPlan: number | null;
     trend: CoachPanelLeiTrendEntry[];
   };
+  daypart30d: DaypartRow[];
 };
+
+export type DaypartRow = {
+  daypart: "Morning" | "Afternoon" | "Evening" | "Night";
+  minutes: number;
+};
+
+export type LearnerSpeed = {
+  learner_speed_label: "Slow" | "Normal" | "Fast" | null;
+  speed_index_iqr: number | null;
+  lei_30d_plan: number | null;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  cohort_n: number | null;
+};
+
+const DAYPART_SEQUENCE: ReadonlyArray<DaypartRow["daypart"]> = [
+  "Morning",
+  "Afternoon",
+  "Evening",
+  "Night",
+];
 
 export type CoachPanelPaceForecast = {
   forecastMonthsToFinishPlan: number | null;
@@ -1221,6 +1244,7 @@ export type StudentCoachPanelSummary = {
   engagement: CoachPanelEngagement;
   paceForecast: CoachPanelPaceForecast;
   recentActivity: CoachPanelRecentActivityEntry[];
+  learnerSpeed: LearnerSpeed;
 };
 
 type CoachPanelOverview = {
@@ -1743,6 +1767,123 @@ export async function listStudentRecentSessions(
   return buildRecentActivityFromSessions(sessions, limit);
 }
 
+const LEARNER_SPEED_LABEL_MAP: Record<string, LearnerSpeed["learner_speed_label"]> = {
+  slow: "Slow",
+  lento: "Slow",
+  normal: "Normal",
+  fast: "Fast",
+  rapido: "Fast",
+  rápido: "Fast",
+};
+
+export async function listStudentDaypart30d(studentId: number): Promise<DaypartRow[]> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT daypart, minutes
+      FROM mart.student_daypart_30d_v
+      WHERE student_id = ${studentId}::bigint
+      ORDER BY CASE daypart
+        WHEN 'Morning' THEN 1
+        WHEN 'Afternoon' THEN 2
+        WHEN 'Evening' THEN 3
+        WHEN 'Night' THEN 4
+        ELSE 5
+      END
+    `,
+    "mart.student_daypart_30d_v",
+  );
+
+  const minutesByDaypart = new Map<DaypartRow["daypart"], number>();
+
+  rows.forEach((row) => {
+    const record = toJsonRecord(row);
+    if (!record) {
+      return;
+    }
+    const rawDaypart = extractString(record, ["daypart"]);
+    if (!rawDaypart) {
+      return;
+    }
+
+    const normalizedDaypart = DAYPART_SEQUENCE.find(
+      (candidate) => candidate.toLowerCase() === rawDaypart.trim().toLowerCase(),
+    );
+
+    if (!normalizedDaypart) {
+      return;
+    }
+
+    const minutes = extractNumber(record, ["minutes"]);
+    const safeMinutes =
+      minutes != null && Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0;
+
+    minutesByDaypart.set(normalizedDaypart, safeMinutes);
+  });
+
+  return DAYPART_SEQUENCE.map((daypart) => ({
+    daypart,
+    minutes: minutesByDaypart.get(daypart) ?? 0,
+  }));
+}
+
+export async function getStudentLearnerSpeed(studentId: number): Promise<LearnerSpeed> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT learner_speed_label, speed_index_iqr, lei_30d_plan, p25, p50, p75, mean_lei, cohort_n
+      FROM mart.student_learner_speed_v
+      WHERE student_id = ${studentId}::bigint
+      LIMIT 1
+    `,
+    "mart.student_learner_speed_v",
+  );
+
+  const defaults: LearnerSpeed = {
+    learner_speed_label: null,
+    speed_index_iqr: null,
+    lei_30d_plan: null,
+    p25: null,
+    p50: null,
+    p75: null,
+    cohort_n: null,
+  };
+
+  if (!rows.length) {
+    return defaults;
+  }
+
+  const payload = toJsonRecord(rows[0]);
+  if (!payload) {
+    return defaults;
+  }
+
+  const rawLabel = extractString(payload, ["learner_speed_label"]);
+  const normalizedLabel = rawLabel
+    ? LEARNER_SPEED_LABEL_MAP[rawLabel.trim().toLowerCase()] ?? null
+    : null;
+
+  const speedIndex = extractNumber(payload, ["speed_index_iqr"]);
+  const leiPlan =
+    extractNumber(payload, ["lei_30d_plan"]) ?? extractNumber(payload, ["mean_lei"]);
+  const cohortRaw = extractNumber(payload, ["cohort_n"]);
+
+  return {
+    learner_speed_label: normalizedLabel,
+    speed_index_iqr: speedIndex != null && Number.isFinite(speedIndex) ? speedIndex : null,
+    lei_30d_plan: leiPlan != null && Number.isFinite(leiPlan) ? leiPlan : null,
+    p25: extractNumber(payload, ["p25"]),
+    p50: extractNumber(payload, ["p50"]),
+    p75: extractNumber(payload, ["p75"]),
+    cohort_n:
+      cohortRaw != null && Number.isFinite(cohortRaw) ? Math.max(0, Math.round(cohortRaw)) : null,
+  };
+}
+
 export async function listStudentLessonSessions(
   studentId: number,
   lesson: {
@@ -2121,6 +2262,8 @@ export async function getStudentCoachPanelSummary(
     heatmap,
     leiTrend,
     recentActivity,
+    daypart30d,
+    learnerSpeed,
   ] = await Promise.all([
     getStudentCoachPanelProfileHeader(studentId),
     listStudentCoachPlanLessons(studentId),
@@ -2128,6 +2271,8 @@ export async function getStudentCoachPanelSummary(
     listStudentEngagementHeatmap(studentId, 30),
     listStudentLeiTrend(studentId, null),
     listStudentRecentSessions(studentId, 10),
+    listStudentDaypart30d(studentId),
+    getStudentLearnerSpeed(studentId),
   ]);
 
   if (!overview) {
@@ -2146,6 +2291,7 @@ export async function getStudentCoachPanelSummary(
       lei30dPlan: overview.lei30dPlan,
       trend: leiTrend,
     },
+    daypart30d,
   };
 
   const paceForecast: CoachPanelPaceForecast = {
@@ -2163,6 +2309,7 @@ export async function getStudentCoachPanelSummary(
     engagement,
     paceForecast,
     recentActivity,
+    learnerSpeed,
   };
 }
 export type StudentProgressStats = {
