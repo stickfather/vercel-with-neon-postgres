@@ -1759,7 +1759,7 @@ export async function listStudentLessonSessions(
     ? Math.max(1, Math.min(10, Math.trunc(limit)))
     : 3;
 
-  const lessonId = await resolveLessonIdForCoachPanel(sql, lesson);
+  const lessonId = await resolveLessonIdForCoachPanel(sql, studentId, lesson);
   const normalizedLevel = normalizeLessonLevel(lesson.level);
 
   let rows: SqlRow[] = [];
@@ -1769,8 +1769,8 @@ export async function listStudentLessonSessions(
       sql`
         SELECT attendance_id, checkin_local, checkout_local, session_minutes
         FROM mart.student_last_sessions_by_lesson_v
-        WHERE student_id = ${studentId}::bigint
-          AND lesson_id = ${lessonId}::bigint
+        WHERE student_id = ${studentId}
+          AND lesson_id = ${lessonId}
         ORDER BY checkin_local DESC
         LIMIT ${normalizedLimit}::int
       `,
@@ -1783,7 +1783,7 @@ export async function listStudentLessonSessions(
       sql`
         SELECT attendance_id, checkin_local, checkout_local, session_minutes
         FROM mart.student_last_sessions_by_level_v
-        WHERE student_id = ${studentId}::bigint
+        WHERE student_id = ${studentId}
           AND level = ${normalizedLevel}
         ORDER BY checkin_local DESC
         LIMIT ${normalizedLimit}::int
@@ -1845,6 +1845,7 @@ export async function listStudentLessonSessions(
 
 async function resolveLessonIdForCoachPanel(
   sql: ReturnType<typeof getSqlClient>,
+  studentId: number,
   lesson: {
     lessonId?: number | null;
     lessonGlobalSeq?: number | null;
@@ -1868,13 +1869,57 @@ async function resolveLessonIdForCoachPanel(
       ? Math.trunc(lesson.lessonGlobalSeq)
       : null;
 
+  if (normalizedGlobalSeq != null) {
+    const rows = await safeQuery(
+      sql`
+        SELECT lesson_id
+        FROM mart.student_plan_lessons_with_status_v
+        WHERE student_id = ${studentId}
+          AND lesson_global_seq = ${normalizedGlobalSeq}
+        LIMIT 1
+      `,
+      "mart.student_plan_lessons_with_status_v",
+    );
+
+    if (rows.length) {
+      const payload = toJsonRecord(rows[0]);
+      const lessonId = extractNumber(payload, ["lesson_id"]);
+      if (lessonId != null && Number.isFinite(lessonId)) {
+        return Math.trunc(lessonId);
+      }
+    }
+  }
+
+  if (normalizedLevel && normalizedSeq != null) {
+    const rows = await safeQuery(
+      sql`
+        SELECT lesson_id
+        FROM mart.student_plan_lessons_with_status_v
+        WHERE student_id = ${studentId}
+          AND level = ${normalizedLevel}
+          AND seq = ${normalizedSeq}
+        ORDER BY lesson_global_seq
+        LIMIT 1
+      `,
+      "mart.student_plan_lessons_with_status_v",
+    );
+
+    if (rows.length) {
+      const payload = toJsonRecord(rows[0]);
+      const lessonId = extractNumber(payload, ["lesson_id"]);
+      if (lessonId != null && Number.isFinite(lessonId)) {
+        return Math.trunc(lessonId);
+      }
+    }
+  }
+
   if (normalizedLevel && normalizedSeq != null) {
     const rows = await safeQuery(
       sql`
         SELECT lesson_id
         FROM mart.lesson_lookup_v
         WHERE level = ${normalizedLevel}
-          AND seq = ${normalizedSeq}::int
+          AND seq = ${normalizedSeq}
         ORDER BY lesson_global_seq
         LIMIT 1
       `,
@@ -1895,7 +1940,7 @@ async function resolveLessonIdForCoachPanel(
       sql`
         SELECT lesson_id
         FROM mart.lesson_lookup_v
-        WHERE lesson_global_seq = ${normalizedGlobalSeq}::int
+        WHERE lesson_global_seq = ${normalizedGlobalSeq}
         LIMIT 1
       `,
       "mart.lesson_lookup_v",
@@ -1923,32 +1968,47 @@ async function fetchCoachPanelSessions(
     ? Math.max(1, Math.min(2000, Math.trunc(limit)))
     : 400;
 
-  const rows = await safeQuery(
-    sql`
-      SELECT
-        sa.id AS attendance_id,
-        sa.lesson_id,
-        sa.checkin_time,
-        sa.checkout_time,
-        EXTRACT(
-          EPOCH FROM (
-            COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time
-          )
-        ) / 60 AS session_minutes,
-        lg.level,
-        lg.seq,
-        lg.lesson_global_seq
-      FROM student_attendance sa
-      LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
-      WHERE sa.student_id = ${studentId}::bigint
-        AND sa.checkin_time IS NOT NULL
-      ORDER BY sa.checkin_time DESC
-      LIMIT ${normalizedLimit}::int
-    `,
-    "student_attendance_recent_for_coach_panel",
-  );
+  const [lessonRows, levelRows] = await Promise.all([
+    safeQuery(
+      sql`
+        SELECT
+          attendance_id,
+          lesson_id,
+          checkin_local,
+          checkout_local,
+          session_minutes,
+          level,
+          seq,
+          lesson_global_seq
+        FROM mart.student_last_sessions_by_lesson_v
+        WHERE student_id = ${studentId}
+        ORDER BY checkin_local DESC
+        LIMIT ${normalizedLimit}::int
+      `,
+      "mart.student_last_sessions_by_lesson_v_recent",
+    ),
+    safeQuery(
+      sql`
+        SELECT
+          attendance_id,
+          lesson_id,
+          checkin_local,
+          checkout_local,
+          session_minutes,
+          level,
+          seq,
+          lesson_global_seq
+        FROM mart.student_last_sessions_by_level_v
+        WHERE student_id = ${studentId}
+        ORDER BY checkin_local DESC
+        LIMIT ${normalizedLimit}::int
+      `,
+      "mart.student_last_sessions_by_level_v_recent",
+    ),
+  ]);
 
-  const snapshots: CoachPanelSessionSnapshot[] = [];
+  const rows = [...lessonRows, ...levelRows];
+  const snapshotsMap = new Map<string, CoachPanelSessionSnapshot>();
 
   rows.forEach((row) => {
     const payload = toJsonRecord(row);
@@ -1958,8 +2018,13 @@ async function fetchCoachPanelSessions(
 
     const attendanceId = normalizeInteger(payload.attendance_id);
     const lessonId = extractNumber(payload, ["lesson_id"]);
-    const checkInRaw = extractString(payload, ["checkin_time", "checkin"]);
-    if (!attendanceId || !checkInRaw) {
+    const checkInRaw = extractString(payload, [
+      "checkin_local",
+      "check_in_local",
+      "checkin",
+      "check_in",
+    ]);
+    if (!checkInRaw) {
       return;
     }
 
@@ -1968,7 +2033,12 @@ async function fetchCoachPanelSessions(
       return;
     }
 
-    const checkOutRaw = extractString(payload, ["checkout_time", "checkout"]);
+    const checkOutRaw = extractString(payload, [
+      "checkout_local",
+      "check_out_local",
+      "checkout",
+      "check_out",
+    ]);
     const checkOutDate = checkOutRaw ? parseDateTime(checkOutRaw) : null;
 
     const rawMinutes = extractNumber(payload, ["session_minutes", "minutes"]);
@@ -1983,8 +2053,16 @@ async function fetchCoachPanelSessions(
       ? Math.max(0, Math.round(computedMinutes))
       : 0;
 
-    snapshots.push({
-      attendanceId,
+    const resolvedAttendanceId =
+      attendanceId ??
+      (() => {
+        const timestamp = checkInDate.getTime();
+        return Number.isFinite(timestamp) ? Math.trunc(Math.abs(timestamp)) : null;
+      })() ??
+      snapshotsMap.size + 1;
+
+    const snapshot: CoachPanelSessionSnapshot = {
+      attendanceId: resolvedAttendanceId,
       lessonId: lessonId != null && Number.isFinite(lessonId) ? Math.trunc(lessonId) : null,
       checkInIso: toIsoString(checkInDate),
       checkOutIso: checkOutDate ? toIsoString(checkOutDate) : null,
@@ -1993,9 +2071,23 @@ async function fetchCoachPanelSessions(
       level: extractString(payload, ["level", "level_code", "lesson_level"]),
       seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
       lessonGlobalSeq: extractNumber(payload, ["lesson_global_seq", "global_seq"]),
-    });
+    };
+
+    const keyParts = [
+      snapshot.attendanceId != null ? `id:${snapshot.attendanceId}` : null,
+      snapshot.checkInIso ? `check:${snapshot.checkInIso}` : null,
+      snapshot.lessonId != null ? `lesson:${snapshot.lessonId}` : null,
+    ].filter(Boolean);
+    const key = keyParts.join("|") || `idx:${snapshotsMap.size}`;
+
+    const existing = snapshotsMap.get(key);
+    if (!existing || existing.checkInIso < snapshot.checkInIso) {
+      snapshotsMap.set(key, snapshot);
+    }
   });
 
+  const snapshots = Array.from(snapshotsMap.values());
+  snapshots.sort((a, b) => b.checkInIso.localeCompare(a.checkInIso));
   return snapshots;
 }
 
