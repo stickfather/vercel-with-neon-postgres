@@ -1604,53 +1604,55 @@ async function fetchCoachPanelSessions(
     "student_attendance_recent_for_coach_panel",
   );
 
-  return rows
-    .map((row) => {
-      const payload = toJsonRecord(row);
-      if (!payload) {
-        return null;
-      }
+  const snapshots: CoachPanelSessionSnapshot[] = [];
 
-      const attendanceId = normalizeInteger(payload.attendance_id);
-      const lessonId = extractNumber(payload, ["lesson_id"]);
-      const checkInRaw = extractString(payload, ["checkin_time", "checkin"]);
-      if (!attendanceId || !checkInRaw) {
-        return null;
-      }
+  rows.forEach((row) => {
+    const payload = toJsonRecord(row);
+    if (!payload) {
+      return;
+    }
 
-      const checkInDate = parseDateTime(checkInRaw);
-      if (!checkInDate) {
-        return null;
-      }
+    const attendanceId = normalizeInteger(payload.attendance_id);
+    const lessonId = extractNumber(payload, ["lesson_id"]);
+    const checkInRaw = extractString(payload, ["checkin_time", "checkin"]);
+    if (!attendanceId || !checkInRaw) {
+      return;
+    }
 
-      const checkOutRaw = extractString(payload, ["checkout_time", "checkout"]);
-      const checkOutDate = checkOutRaw ? parseDateTime(checkOutRaw) : null;
+    const checkInDate = parseDateTime(checkInRaw);
+    if (!checkInDate) {
+      return;
+    }
 
-      const rawMinutes = extractNumber(payload, ["session_minutes", "minutes"]);
-      const computedMinutes =
-        rawMinutes != null && Number.isFinite(rawMinutes)
-          ? rawMinutes
-          : checkOutDate
-            ? (checkOutDate.getTime() - checkInDate.getTime()) / 60000
-            : 0;
+    const checkOutRaw = extractString(payload, ["checkout_time", "checkout"]);
+    const checkOutDate = checkOutRaw ? parseDateTime(checkOutRaw) : null;
 
-      const normalizedMinutes = Number.isFinite(computedMinutes)
-        ? Math.max(0, Math.round(computedMinutes))
-        : 0;
+    const rawMinutes = extractNumber(payload, ["session_minutes", "minutes"]);
+    const computedMinutes =
+      rawMinutes != null && Number.isFinite(rawMinutes)
+        ? rawMinutes
+        : checkOutDate
+          ? (checkOutDate.getTime() - checkInDate.getTime()) / 60000
+          : 0;
 
-      return {
-        attendanceId,
-        lessonId: lessonId != null && Number.isFinite(lessonId) ? Math.trunc(lessonId) : null,
-        checkInIso: toIsoString(checkInDate),
-        checkOutIso: checkOutDate ? toIsoString(checkOutDate) : null,
-        localDay: formatGuayaquilDay(checkInDate),
-        sessionMinutes: normalizedMinutes,
-        level: extractString(payload, ["level", "level_code", "lesson_level"]),
-        seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
-        lessonGlobalSeq: extractNumber(payload, ["lesson_global_seq", "global_seq"]),
-      } satisfies CoachPanelSessionSnapshot;
-    })
-    .filter((entry): entry is CoachPanelSessionSnapshot => Boolean(entry));
+    const normalizedMinutes = Number.isFinite(computedMinutes)
+      ? Math.max(0, Math.round(computedMinutes))
+      : 0;
+
+    snapshots.push({
+      attendanceId,
+      lessonId: lessonId != null && Number.isFinite(lessonId) ? Math.trunc(lessonId) : null,
+      checkInIso: toIsoString(checkInDate),
+      checkOutIso: checkOutDate ? toIsoString(checkOutDate) : null,
+      localDay: formatGuayaquilDay(checkInDate),
+      sessionMinutes: normalizedMinutes,
+      level: extractString(payload, ["level", "level_code", "lesson_level"]),
+      seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
+      lessonGlobalSeq: extractNumber(payload, ["lesson_global_seq", "global_seq"]),
+    });
+  });
+
+  return snapshots;
 }
 
 function buildEngagementHeatmapFromSessions(
