@@ -1472,14 +1472,18 @@ export async function listStudentEngagementHeatmap(
   const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
   const rows = await safeQuery(
     sql`
-      WITH s AS (
-        SELECT checkin_local::date AS d, session_minutes
-        FROM mart.student_sessions_v
-        WHERE student_id = ${studentId}::bigint
-          AND checkin_local::date >= CURRENT_DATE - ${normalizedDays}::int * INTERVAL '1 day'
+      WITH localized AS (
+        SELECT
+          timezone('America/Guayaquil', s.checkin_local) AS local_checkin,
+          s.session_minutes
+        FROM mart.student_sessions_v s
+        WHERE s.student_id = ${studentId}::bigint
+          AND timezone('America/Guayaquil', s.checkin_local)::date >= (
+            timezone('America/Guayaquil', now())::date - ${normalizedDays}::int * INTERVAL '1 day'
+          )
       )
-      SELECT d, SUM(session_minutes)::int AS minutes
-      FROM s
+      SELECT local_checkin::date AS d, COALESCE(SUM(session_minutes), 0)::int AS minutes
+      FROM localized
       GROUP BY d
       ORDER BY d
     `,
@@ -1509,14 +1513,19 @@ export async function listStudentLeiTrend(
   const rows = await safeQuery(
     sql`
       WITH day_max AS (
-        SELECT date_trunc('day', s.checkin_local)::date AS d,
+        SELECT date_trunc('day', timezone('America/Guayaquil', s.checkin_local))::date AS d,
                MAX(lg.lesson_global_seq) AS day_max_seq
         FROM mart.student_sessions_v s
         JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
-        JOIN mart.student_plan_scope_v ps
-             ON lg.level_rank BETWEEN ps.min_rank AND ps.max_rank
+        LEFT JOIN mart.student_plan_scope_v ps ON ps.student_id = s.student_id
         WHERE s.student_id = ${studentId}::bigint
-          AND s.checkin_local::date >= CURRENT_DATE - ${normalizedDays}::int * INTERVAL '1 day'
+          AND (
+            ps.student_id IS NULL
+            OR lg.level_rank >= ps.min_rank
+          )
+          AND timezone('America/Guayaquil', s.checkin_local)::date >= (
+            timezone('America/Guayaquil', now())::date - ${normalizedDays}::int * INTERVAL '1 day'
+          )
         GROUP BY d
       ),
       deltas AS (
@@ -1653,7 +1662,32 @@ export async function listStudentLessonSessions(
       : "mart.student_sessions_v_by_global_seq",
   );
 
-  return rows
+  let effectiveRows = rows;
+
+  if (normalizedLessonId != null && !effectiveRows.length) {
+    effectiveRows = await safeQuery(
+      sql`
+        SELECT s.attendance_id,
+               s.session_minutes,
+               s.checkin_local,
+               s.checkout_local
+        FROM mart.student_sessions_v s
+        JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
+        WHERE s.student_id = ${studentId}::bigint
+          AND lg.level = (
+            SELECT level
+            FROM mart.lessons_global_v
+            WHERE lesson_id = ${normalizedLessonId}::bigint
+            LIMIT 1
+          )
+        ORDER BY s.checkin_local DESC
+        LIMIT ${normalizedLimit}::int
+      `,
+      "mart.student_sessions_v_by_lesson_level_fallback",
+    );
+  }
+
+  return effectiveRows
     .map((row) => {
       const payload = toJsonRecord(row);
       if (!payload) {
