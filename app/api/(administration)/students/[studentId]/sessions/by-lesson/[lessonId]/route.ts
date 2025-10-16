@@ -34,15 +34,16 @@ export async function GET(
   const { searchParams } = new URL(request.url);
   const limit = normalizeLimit(searchParams.get("limit"));
   const lessonGlobalSeq = normalizeId(searchParams.get("lessonGlobalSeq"));
+  const level = searchParams.get("level");
 
-  if (studentId == null || (lessonId == null && lessonGlobalSeq == null)) {
+  if (studentId == null || (lessonId == null && lessonGlobalSeq == null && !level)) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
   }
 
   try {
     const sessions = await listStudentLessonSessions(
       studentId,
-      { lessonId, lessonGlobalSeq },
+      { lessonId, lessonGlobalSeq, level },
       limit,
     );
     return NextResponse.json(

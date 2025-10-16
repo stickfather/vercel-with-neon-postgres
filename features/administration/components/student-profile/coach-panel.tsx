@@ -324,8 +324,11 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
     const searchParams = new URLSearchParams();
     searchParams.set("limit", "3");
-    if (lessonId == null && lessonGlobalSeq != null) {
+    if (lessonGlobalSeq != null) {
       searchParams.set("lessonGlobalSeq", String(lessonGlobalSeq));
+    }
+    if (drawerLesson.level) {
+      searchParams.set("level", drawerLesson.level);
     }
 
     fetch(
