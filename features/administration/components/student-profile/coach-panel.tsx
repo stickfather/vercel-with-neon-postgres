@@ -330,6 +330,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     if (drawerLesson.level) {
       searchParams.set("level", drawerLesson.level);
     }
+    if (drawerLesson.seq != null) {
+      searchParams.set("seq", String(drawerLesson.seq));
+    }
 
     fetch(
       `/api/students/${studentId}/sessions/by-lesson/${lessonId ?? "global"}?${searchParams.toString()}`,

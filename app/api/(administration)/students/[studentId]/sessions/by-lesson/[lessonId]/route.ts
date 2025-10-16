@@ -35,6 +35,7 @@ export async function GET(
   const limit = normalizeLimit(searchParams.get("limit"));
   const lessonGlobalSeq = normalizeId(searchParams.get("lessonGlobalSeq"));
   const level = searchParams.get("level");
+  const seq = normalizeId(searchParams.get("seq"));
 
   if (studentId == null || (lessonId == null && lessonGlobalSeq == null && !level)) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
@@ -43,7 +44,7 @@ export async function GET(
   try {
     const sessions = await listStudentLessonSessions(
       studentId,
-      { lessonId, lessonGlobalSeq, level },
+      { lessonId, lessonGlobalSeq, level, seq },
       limit,
     );
     return NextResponse.json(
