@@ -7,8 +7,7 @@ import type {
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
 
-import { DonutDaypart } from "./DonutDaypart";
-import { LearnerSpeedChip } from "./LearnerSpeedChip";
+import { StudyHoursHistogram } from "./StudyHoursHistogram";
 
 type CoachPanelProps = {
   data: StudentCoachPanelSummary | null;
@@ -85,6 +84,36 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
+const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
+  Fast: "Rápido",
+  Normal: "Normal",
+  Slow: "Lento",
+};
+
+const SPEED_LABEL_TONE: Record<"Fast" | "Normal" | "Slow", string> = {
+  Fast: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  Normal: "bg-slate-50 text-slate-700 border border-slate-200",
+  Slow: "bg-rose-50 text-rose-700 border border-rose-200",
+};
+
+function resolveSpeedTone(
+  label: string | null | undefined,
+): string {
+  if (!label) {
+    return "bg-slate-50 text-slate-400 border border-slate-200";
+  }
+  const normalized = label as "Fast" | "Normal" | "Slow";
+  return SPEED_LABEL_TONE[normalized] ?? "bg-slate-50 text-slate-400 border border-slate-200";
+}
+
+function translateSpeedLabel(label: string | null | undefined): string {
+  if (!label) {
+    return "Sin datos suficientes";
+  }
+  const normalized = label as "Fast" | "Normal" | "Slow";
+  return SPEED_LABEL_TEXT[normalized] ?? "Sin datos";
+}
+
 
 export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const recentActivity = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
@@ -132,46 +161,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     totalHours30d: null,
     avgSessionMinutes30d: null,
   };
-  const lei30dPlan = useMemo(() => {
-    const rawValue = data?.engagement?.lei?.lei30dPlan;
-    if (rawValue != null && Number.isFinite(rawValue)) {
-      return rawValue;
-    }
-    if (!recentActivity.length) {
-      return null;
-    }
-    const totalMinutes = recentActivity.reduce((sum, session) => {
-      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
-        return sum + Math.max(0, session.sessionMinutes);
-      }
-      return sum;
-    }, 0);
-    if (totalMinutes <= 0) {
-      return null;
-    }
-    let minSeq: number | null = null;
-    let maxSeq: number | null = null;
-    recentActivity.forEach((session) => {
-      if (session.lessonGlobalSeq == null || !Number.isFinite(session.lessonGlobalSeq)) {
-        return;
-      }
-      const normalized = Math.trunc(session.lessonGlobalSeq);
-      if (minSeq == null || normalized < minSeq) {
-        minSeq = normalized;
-      }
-      if (maxSeq == null || normalized > maxSeq) {
-        maxSeq = normalized;
-      }
-    });
-    if (minSeq == null || maxSeq == null || maxSeq <= minSeq) {
-      return 0;
-    }
-    const hours = totalMinutes / 60;
-    if (hours <= 0) {
-      return null;
-    }
-    return (maxSeq - minSeq) / hours;
-  }, [data?.engagement?.lei?.lei30dPlan, recentActivity]);
+  const lei30dPlan = data.learnerSpeed.lei30dPlan;
 
   if (errorMessage) {
     return (
@@ -195,19 +185,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   }
 
   const { profileHeader, lessonJourney, paceForecast } = data;
-
-  const daypartData = Array.isArray(data.engagement.daypart30d)
-    ? data.engagement.daypart30d
-    : [];
-  const learnerSpeed = data.learnerSpeed;
-
-  const planLevelsLabel = [profileHeader.planLevelMin, profileHeader.planLevelMax]
-    .filter(Boolean)
-    .join(" – ");
-  const resolvedPlanLevels = planLevelsLabel.length ? planLevelsLabel : "—";
-  const currentLevelLabel = profileHeader.currentLevel ?? "—";
-  const planProgressLabel = formatPercent(profileHeader.planProgressPct, 0);
-  const lastSeenLabel = formatDate(profileHeader.lastSeenDate, true);
 
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
@@ -268,39 +245,37 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     ? "conic-gradient(#e2e8f0 0deg, #e2e8f0 360deg)"
     : `conic-gradient(#0b9e8f ${gaugePercent * 3.6}deg, #e2e8f0 ${gaugePercent * 3.6}deg 360deg)`;
 
+  const learnerSpeedLabel = data.learnerSpeed.label;
+  const learnerSpeedTone = resolveSpeedTone(learnerSpeedLabel);
+  const learnerSpeedText = translateSpeedLabel(learnerSpeedLabel);
+
+  const rankPosition = data.leiRank.position;
+  const rankCohort = data.leiRank.cohortSize;
+  const rankPercent = data.leiRank.topPercent;
+
+  const rankPieces: string[] = [];
+  if (rankPosition != null) {
+    const base = formatNumber(rankPosition);
+    if (rankCohort != null) {
+      rankPieces.push(`Posición: ${base} de ${formatNumber(rankCohort)}`);
+    } else {
+      rankPieces.push(`Posición: ${base}`);
+    }
+  } else if (rankCohort != null) {
+    rankPieces.push(`Cohorte: ${formatNumber(rankCohort)} estudiantes`);
+  }
+
+  if (rankPercent != null && Number.isFinite(rankPercent)) {
+    const normalizedPercent = formatPercent(rankPercent, 0);
+    rankPieces.push(`Top ${normalizedPercent} del centro`);
+  }
+
+  const rankBadgeText = rankPieces.length ? rankPieces.join(" • ") : "Sin ranking disponible";
+  const rankBadgeTitle =
+    "Calculado usando todos los estudiantes activos (≥120 min/últimos 30 días).";
+
   return (
     <div className="relative flex flex-col gap-10">
-      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-2xl">
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Perfil del plan</span>
-            <h3 className="mt-2 text-2xl font-bold text-brand-deep">Indicadores principales</h3>
-            <p className="text-sm text-brand-ink-muted">
-              Seguimiento del avance del estudiante y contexto de velocidad de aprendizaje.
-            </p>
-          </div>
-          <LearnerSpeedChip s={learnerSpeed} />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Nivel actual</p>
-            <p className="mt-2 text-xl font-bold text-brand-deep">{currentLevelLabel}</p>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Plan de niveles</p>
-            <p className="mt-2 text-xl font-bold text-brand-deep">{resolvedPlanLevels}</p>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Progreso del plan</p>
-            <p className="mt-2 text-xl font-bold text-brand-deep">{planProgressLabel}</p>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Última actividad</p>
-            <p className="mt-2 text-xl font-bold text-brand-deep">{lastSeenLabel}</p>
-          </div>
-        </div>
-      </section>
-
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -327,6 +302,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
             <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
+            <p className="mt-1 text-sm text-brand-ink-muted">
+              Muestra la frecuencia y duración de las sesiones recientes.
+            </p>
           </div>
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
@@ -355,12 +333,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             </div>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">When they study (30 días)</p>
-            <div className="mt-3 rounded-2xl border border-brand-ink-muted/10 bg-white/80 p-4">
-              <DonutDaypart data={daypartData} />
-            </div>
-          </div>
-          <div>
             <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
             <div className="mt-3 grid grid-cols-10 gap-2">
               {heatmapCells.map((cell) => (
@@ -372,22 +344,65 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 />
               ))}
             </div>
+            <p className="mt-3 text-xs text-brand-ink-muted">
+              Intensidad de minutos estudiados cada día durante los últimos 30 días.
+            </p>
           </div>
         </div>
         <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">LEI Histórico</span>
-            <h4 className="text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
-            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
-            <p className="mt-2 text-4xl font-black text-brand-deep">
-              {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Eficiencia 30 días</span>
+            <h4 className="mt-2 text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
+            <p className="mt-1 text-sm text-brand-ink-muted">
+              Mide la velocidad (LEI) y el ritmo comparado con el resto del centro.
             </p>
           </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-sm text-brand-ink-muted">
-            El LEI sintetiza cuántas lecciones avanza el estudiante por hora de práctica registrada.
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
+              <p className="mt-2 text-4xl font-black text-brand-deep">
+                {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div className="h-px w-full bg-brand-ink-muted/10" />
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div
+                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${learnerSpeedTone}`}
+                >
+                  Ritmo de aprendizaje: {learnerSpeedText}
+                </div>
+                <div
+                  className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-3 py-1 text-xs font-medium text-brand-deep"
+                  title={rankBadgeTitle}
+                >
+                  {rankBadgeText}
+                </div>
+              </div>
+              <p className="text-xs text-brand-ink-muted">
+                Comparado con todos los estudiantes activos del centro en los últimos 30 días.
+              </p>
+            </div>
           </div>
+          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-sm text-brand-ink-muted">
+            <p>El índice LEI proviene del mart.student_learner_speed_v y resume el avance por hora.</p>
+            <p className="mt-2">
+              El ranking usa percentiles de mart.student_lei_rank_30d_v para contextualizar el desempeño.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Hábitos</span>
+          <h4 className="mt-2 text-xl font-bold text-brand-deep">Horas de estudio (últimos 30 días)</h4>
+          <p className="mt-1 text-sm text-brand-ink-muted">
+            Indica a qué horas estudia más el estudiante para detectar consistencia y oportunidades.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 p-4">
+          <StudyHoursHistogram data={data.studyHistogram.hourly} summary={data.studyHistogram.summary} />
         </div>
       </section>
 

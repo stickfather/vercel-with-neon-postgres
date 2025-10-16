@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server.js";
 
-import { getStudentLearnerSpeedSummary } from "@/features/administration/data/student-profile";
+import { listStudentHourlyStudy30d } from "@/features/administration/data/student-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export async function GET(
   }
 
   try {
-    const payload = await getStudentLearnerSpeedSummary(studentId);
+    const payload = await listStudentHourlyStudy30d(studentId);
 
     return NextResponse.json(payload, {
       headers: {
@@ -29,9 +29,9 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Error fetching student learner speed", error);
+    console.error("Error fetching student hourly study distribution", error);
     return NextResponse.json(
-      { error: "No se pudo obtener la velocidad de aprendizaje." },
+      { error: "No se pudo obtener la distribución horaria." },
       { status: 500 },
     );
   }
