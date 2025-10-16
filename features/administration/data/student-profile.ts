@@ -1472,20 +1472,14 @@ export async function listStudentEngagementHeatmap(
   const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
   const rows = await safeQuery(
     sql`
-      WITH localized AS (
-        SELECT
-          (s.checkin_local AT TIME ZONE 'America/Guayaquil')::date AS local_day,
-          s.session_minutes
-        FROM mart.student_sessions_v s
-        WHERE s.student_id = ${studentId}::bigint
-          AND (s.checkin_local AT TIME ZONE 'America/Guayaquil')::date >= (
-            (now() AT TIME ZONE 'America/Guayaquil')::date - GREATEST(${normalizedDays}::int - 1, 0)
-          )
-      )
-      SELECT local_day AS d, COALESCE(SUM(session_minutes), 0)::int AS minutes
-      FROM localized
-      GROUP BY d
-      ORDER BY d
+      SELECT
+        s.checkin_local::date AS d,
+        COALESCE(SUM(s.session_minutes), 0)::int AS minutes
+      FROM mart.student_sessions_v s
+      WHERE s.student_id = ${studentId}::bigint
+        AND s.checkin_local::date >= (current_date - GREATEST(${normalizedDays}::int - 1, 0))
+      GROUP BY s.checkin_local::date
+      ORDER BY s.checkin_local::date
     `,
     "mart.student_sessions_v_heatmap",
   );
@@ -1513,19 +1507,12 @@ export async function listStudentLeiTrend(
   const rows = await safeQuery(
     sql`
       WITH day_max AS (
-        SELECT date_trunc('day', s.checkin_local AT TIME ZONE 'America/Guayaquil')::date AS d,
+        SELECT date_trunc('day', s.checkin_local)::date AS d,
                MAX(lg.lesson_global_seq) AS day_max_seq
         FROM mart.student_sessions_v s
         JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
-        LEFT JOIN mart.student_plan_scope_v ps ON ps.student_id = s.student_id
         WHERE s.student_id = ${studentId}::bigint
-          AND (
-            ps.student_id IS NULL
-            OR lg.level_rank >= ps.min_rank
-          )
-          AND (s.checkin_local AT TIME ZONE 'America/Guayaquil')::date >= (
-            (now() AT TIME ZONE 'America/Guayaquil')::date - GREATEST(${normalizedDays}::int - 1, 0)
-          )
+          AND s.checkin_local::date >= (current_date - GREATEST(${normalizedDays}::int - 1, 0))
         GROUP BY d
       ),
       deltas AS (
@@ -1631,9 +1618,7 @@ export async function listStudentLessonSessions(
     lesson.lessonGlobalSeq != null && Number.isFinite(lesson.lessonGlobalSeq)
       ? Math.trunc(lesson.lessonGlobalSeq)
       : null;
-  const normalizedLevel = normalizeString(lesson.level);
-
-  if (normalizedLessonId == null && normalizedGlobalSeq == null && !normalizedLevel) {
+  if (normalizedLessonId == null && normalizedGlobalSeq == null) {
     return [];
   }
 
@@ -1675,51 +1660,19 @@ export async function listStudentLessonSessions(
   let effectiveRows = rows;
 
   if (!effectiveRows.length) {
-    let fallbackLevel = normalizedLevel;
-
-    if (!fallbackLevel && normalizedLessonId != null) {
-      const levelRows = await safeQuery(
-        sql`
-          SELECT level
-          FROM mart.lessons_global_v
-          WHERE lesson_id = ${normalizedLessonId}::bigint
-          LIMIT 1
-        `,
-        "mart.lessons_global_v_level_lookup",
-      );
-      fallbackLevel = extractString(toJsonRecord(levelRows[0] ?? null), ["level", "level_code"]);
-    }
-
-    if (!fallbackLevel && normalizedGlobalSeq != null) {
-      const levelRows = await safeQuery(
-        sql`
-          SELECT level
-          FROM mart.lessons_global_v
-          WHERE lesson_global_seq = ${normalizedGlobalSeq}::int
-          LIMIT 1
-        `,
-        "mart.lessons_global_v_level_from_seq",
-      );
-      fallbackLevel = extractString(toJsonRecord(levelRows[0] ?? null), ["level", "level_code"]);
-    }
-
-    if (fallbackLevel) {
-      effectiveRows = await safeQuery(
-        sql`
-          SELECT s.attendance_id,
-                 s.session_minutes,
-                 s.checkin_local,
-                 s.checkout_local
-          FROM mart.student_sessions_v s
-          JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
-          WHERE s.student_id = ${studentId}::bigint
-            AND lg.level = ${fallbackLevel}
-          ORDER BY s.checkin_local DESC
-          LIMIT ${normalizedLimit}::int
-        `,
-        "mart.student_sessions_v_by_level_fallback",
-      );
-    }
+    effectiveRows = await safeQuery(
+      sql`
+        SELECT s.attendance_id,
+               s.session_minutes,
+               s.checkin_local,
+               s.checkout_local
+        FROM mart.student_sessions_v s
+        WHERE s.student_id = ${studentId}::bigint
+        ORDER BY s.checkin_local DESC
+        LIMIT ${normalizedLimit}::int
+      `,
+      "mart.student_sessions_v_recent_fallback",
+    );
   }
 
   return effectiveRows
