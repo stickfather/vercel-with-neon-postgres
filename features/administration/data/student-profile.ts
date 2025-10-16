@@ -952,6 +952,50 @@ function normalizeString(value: unknown): string | null {
   return null;
 }
 
+function parseDateTime(value: unknown): Date | null {
+  if (value == null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
+  }
+  if (typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === "string") {
+    let candidate = value.trim();
+    if (!candidate) {
+      return null;
+    }
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$/.test(candidate)) {
+      candidate = candidate.replace(" ", "T");
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(candidate)) {
+      candidate = `${candidate}:00`;
+    }
+    if (/([+-]\d{2})(\d{2})$/.test(candidate)) {
+      candidate = candidate.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(candidate) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(candidate)) {
+      candidate = `${candidate}-05:00`;
+    }
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function formatGuayaquilDay(date: Date): string {
+  return GUAYAQUIL_DAY_FORMATTER.format(date);
+}
+
+function toIsoString(date: Date): string {
+  return date.toISOString();
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -1085,6 +1129,18 @@ export type CoachPanelLessonSessionEntry = {
   checkOut: string | null;
 };
 
+type CoachPanelSessionSnapshot = {
+  attendanceId: number;
+  lessonId: number | null;
+  checkInIso: string;
+  checkOutIso: string | null;
+  localDay: string | null;
+  sessionMinutes: number;
+  level: string | null;
+  seq: number | null;
+  lessonGlobalSeq: number | null;
+};
+
 export type StudentCoachPanelSummary = {
   profileHeader: CoachPanelProfileHeader;
   lessonJourney: CoachPanelLessonJourney;
@@ -1103,6 +1159,15 @@ type CoachPanelOverview = {
 };
 
 type JsonRecord = Record<string, unknown> | null | undefined;
+
+const GUAYAQUIL_TIMEZONE = "America/Guayaquil";
+
+const GUAYAQUIL_DAY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: GUAYAQUIL_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 function toJsonRecord(value: unknown): JsonRecord {
   if (value == null) {
@@ -1468,44 +1533,8 @@ export async function listStudentEngagementHeatmap(
   days = 30,
 ): Promise<CoachPanelEngagementHeatmapEntry[]> {
   noStore();
-  const sql = getSqlClient();
-  const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
-  const rows = await safeQuery(
-    sql`
-      WITH bounds AS (
-        SELECT timezone('America/Guayaquil', now())::date AS today
-      ),
-      normalized AS (
-        SELECT
-          timezone('America/Guayaquil', s.checkin_local)::date AS local_day,
-          COALESCE(s.session_minutes, 0)::int AS minutes
-        FROM mart.student_sessions_v s, bounds b
-        WHERE s.student_id = ${studentId}::bigint
-          AND s.checkin_local IS NOT NULL
-          AND timezone('America/Guayaquil', s.checkin_local)::date >= (
-            b.today - GREATEST(${normalizedDays}::int - 1, 0)
-          )
-      )
-      SELECT local_day AS d, SUM(minutes)::int AS minutes
-      FROM normalized
-      WHERE local_day IS NOT NULL
-      GROUP BY local_day
-      ORDER BY local_day
-    `,
-    "mart.student_sessions_v_heatmap",
-  );
-
-  return rows
-    .map((row) => {
-      const payload = toJsonRecord(row);
-      const date = extractString(payload, ["d", "date"]);
-      const minutes = extractNumber(payload, ["minutes", "total_minutes"]);
-      if (!date || minutes == null || !Number.isFinite(minutes)) {
-        return null;
-      }
-      return { date, minutes: Math.max(0, Math.trunc(minutes)) } satisfies CoachPanelEngagementHeatmapEntry;
-    })
-    .filter((entry): entry is CoachPanelEngagementHeatmapEntry => Boolean(entry));
+  const sessions = await fetchCoachPanelSessions(studentId, Math.max(days * 8, 120));
+  return buildEngagementHeatmapFromSessions(sessions, days);
 }
 
 export async function listStudentLeiTrend(
@@ -1513,61 +1542,8 @@ export async function listStudentLeiTrend(
   days = 30,
 ): Promise<CoachPanelLeiTrendEntry[]> {
   noStore();
-  const sql = getSqlClient();
-  const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
-  const rows = await safeQuery(
-    sql`
-      WITH bounds AS (
-        SELECT timezone('America/Guayaquil', now())::date AS today
-      ),
-      daily_progress AS (
-        SELECT
-          timezone('America/Guayaquil', s.checkin_local)::date AS d,
-          lg.lesson_global_seq
-        FROM mart.student_sessions_v s
-        JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
-        JOIN bounds b ON TRUE
-        WHERE s.student_id = ${studentId}::bigint
-          AND s.checkin_local IS NOT NULL
-          AND timezone('America/Guayaquil', s.checkin_local)::date >= (
-            b.today - GREATEST(${normalizedDays}::int - 1, 0)
-          )
-      ),
-      day_max AS (
-        SELECT d, MAX(lesson_global_seq) AS day_max_seq
-        FROM daily_progress
-        WHERE d IS NOT NULL
-        GROUP BY d
-      ),
-      deltas AS (
-        SELECT d, day_max_seq - LAG(day_max_seq) OVER (ORDER BY d) AS delta
-        FROM day_max
-      )
-      SELECT d, COALESCE(GREATEST(delta, 0), 0)::int AS lessons_gained
-      FROM deltas
-      ORDER BY d
-    `,
-    "mart.student_sessions_v_lei_trend",
-  );
-
-  return rows
-    .map((row) => {
-      const payload = toJsonRecord(row);
-      const date = extractString(payload, ["d", "date"]);
-      const lessonsGained = extractNumber(payload, [
-        "lessons_gained",
-        "lessons",
-        "delta",
-      ]);
-      if (!date || lessonsGained == null || !Number.isFinite(lessonsGained)) {
-        return null;
-      }
-      return {
-        date,
-        lessonsGained: Math.max(0, Math.trunc(lessonsGained)),
-      } satisfies CoachPanelLeiTrendEntry;
-    })
-    .filter((entry): entry is CoachPanelLeiTrendEntry => Boolean(entry));
+  const sessions = await fetchCoachPanelSessions(studentId, Math.max(days * 8, 120));
+  return buildLeiTrendFromSessions(sessions, days);
 }
 
 export async function listStudentRecentSessions(
@@ -1575,51 +1551,8 @@ export async function listStudentRecentSessions(
   limit = 10,
 ): Promise<CoachPanelRecentActivityEntry[]> {
   noStore();
-  const sql = getSqlClient();
-  const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 10;
-  const rows = await safeQuery(
-    sql`
-      SELECT s.attendance_id,
-             s.session_minutes,
-             s.checkin_local,
-             s.checkout_local,
-             lg.level,
-             lg.seq,
-             lg.lesson_global_seq
-      FROM mart.student_sessions_v s
-      LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
-      WHERE s.student_id = ${studentId}::bigint
-      ORDER BY s.checkin_local DESC
-      LIMIT ${normalizedLimit}::int
-    `,
-    "mart.student_sessions_v_recent",
-  );
-
-  return rows
-    .map((row) => {
-      const payload = toJsonRecord(row);
-      if (!payload) {
-        return null;
-      }
-      const attendanceId = normalizeInteger(payload.attendance_id);
-      const checkIn = extractString(payload, ["checkin_local", "check_in"]);
-      if (!attendanceId || !checkIn) {
-        return null;
-      }
-      const sessionMinutes = extractNumber(payload, ["session_minutes", "minutes"]);
-      return {
-        attendanceId,
-        sessionMinutes: sessionMinutes != null && Number.isFinite(sessionMinutes)
-          ? Math.max(0, sessionMinutes)
-          : null,
-        checkIn,
-        checkOut: extractString(payload, ["checkout_local", "check_out"]),
-        level: extractString(payload, ["level", "lesson_level"]),
-        seq: extractNumber(payload, ["seq", "lesson_seq"]),
-        lessonGlobalSeq: extractNumber(payload, ["lesson_global_seq"]),
-      } satisfies CoachPanelRecentActivityEntry;
-    })
-    .filter((entry): entry is CoachPanelRecentActivityEntry => Boolean(entry));
+  const sessions = await fetchCoachPanelSessions(studentId, Math.max(limit * 6, 120));
+  return buildRecentActivityFromSessions(sessions, limit);
 }
 
 export async function listStudentLessonSessions(
@@ -1632,121 +1565,237 @@ export async function listStudentLessonSessions(
   limit = 3,
 ): Promise<CoachPanelLessonSessionEntry[]> {
   noStore();
+  const sessions = await fetchCoachPanelSessions(studentId, Math.max(limit * 12, 180));
+  return selectLessonSessionsFromSnapshots(sessions, lesson, limit);
+}
+
+async function fetchCoachPanelSessions(
+  studentId: number,
+  limit = 400,
+): Promise<CoachPanelSessionSnapshot[]> {
+  noStore();
   const sql = getSqlClient();
-  const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 3;
-  const normalizedLessonId =
-    lesson.lessonId != null && Number.isFinite(lesson.lessonId)
-      ? Math.trunc(lesson.lessonId)
-      : null;
-  const normalizedGlobalSeq =
-    lesson.lessonGlobalSeq != null && Number.isFinite(lesson.lessonGlobalSeq)
-      ? Math.trunc(lesson.lessonGlobalSeq)
-      : null;
-  const normalizedLevel =
-    lesson.level && typeof lesson.level === "string"
-      ? lesson.level.trim()
-      : null;
-  const hasLevel = normalizedLevel != null && normalizedLevel.length > 0;
+  const normalizedLimit = Number.isFinite(limit)
+    ? Math.max(1, Math.min(600, Math.trunc(limit)))
+    : 400;
 
-  if (normalizedLessonId == null && normalizedGlobalSeq == null && !hasLevel) {
-    return [];
-  }
+  const rows = await safeQuery(
+    sql`
+      SELECT
+        sa.id AS attendance_id,
+        sa.lesson_id,
+        sa.checkin_time,
+        sa.checkout_time,
+        EXTRACT(
+          EPOCH FROM (
+            COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time
+          )
+        ) / 60 AS session_minutes,
+        lg.level,
+        lg.seq,
+        lg.lesson_global_seq
+      FROM student_attendance sa
+      LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
+      WHERE sa.student_id = ${studentId}::bigint
+        AND sa.checkin_time IS NOT NULL
+      ORDER BY sa.checkin_time DESC
+      LIMIT ${normalizedLimit}::int
+    `,
+    "student_attendance_recent_for_coach_panel",
+  );
 
-  let rows: SqlRow[] = [];
-
-  if (normalizedLessonId != null) {
-    rows = await safeQuery(
-      sql`
-        SELECT attendance_id,
-               session_minutes,
-               checkin_local,
-               checkout_local
-        FROM mart.student_sessions_v
-        WHERE student_id = ${studentId}::bigint
-          AND lesson_id = ${normalizedLessonId}::bigint
-        ORDER BY checkin_local DESC
-        LIMIT ${normalizedLimit}::int
-      `,
-      "mart.student_sessions_v_by_lesson",
-    );
-  }
-
-  if (!rows.length && normalizedGlobalSeq != null) {
-    rows = await safeQuery(
-      sql`
-        SELECT s.attendance_id,
-               s.session_minutes,
-               s.checkin_local,
-               s.checkout_local
-        FROM mart.student_sessions_v s
-        JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
-        WHERE s.student_id = ${studentId}::bigint
-          AND lg.lesson_global_seq = ${normalizedGlobalSeq}::int
-        ORDER BY s.checkin_local DESC
-        LIMIT ${normalizedLimit}::int
-      `,
-      "mart.student_sessions_v_by_global_seq",
-    );
-  }
-
-  if (!rows.length && hasLevel) {
-    rows = await safeQuery(
-      sql`
-        SELECT s.attendance_id,
-               s.session_minutes,
-               s.checkin_local,
-               s.checkout_local
-        FROM mart.student_sessions_v s
-        JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
-        WHERE s.student_id = ${studentId}::bigint
-          AND UPPER(lg.level) = UPPER(${normalizedLevel})
-        ORDER BY s.checkin_local DESC
-        LIMIT ${normalizedLimit}::int
-      `,
-      "mart.student_sessions_v_by_level",
-    );
-  }
-
-  let effectiveRows = rows;
-
-  if (!effectiveRows.length) {
-    effectiveRows = await safeQuery(
-      sql`
-        SELECT s.attendance_id,
-               s.session_minutes,
-               s.checkin_local,
-               s.checkout_local
-        FROM mart.student_sessions_v s
-        WHERE s.student_id = ${studentId}::bigint
-        ORDER BY s.checkin_local DESC
-        LIMIT ${normalizedLimit}::int
-      `,
-      "mart.student_sessions_v_recent_fallback",
-    );
-  }
-
-  return effectiveRows
+  return rows
     .map((row) => {
       const payload = toJsonRecord(row);
       if (!payload) {
         return null;
       }
+
       const attendanceId = normalizeInteger(payload.attendance_id);
-      const checkIn = extractString(payload, ["checkin_local", "check_in"]);
-      if (!attendanceId || !checkIn) {
+      const lessonId = extractNumber(payload, ["lesson_id"]);
+      const checkInRaw = extractString(payload, ["checkin_time", "checkin"]);
+      if (!attendanceId || !checkInRaw) {
         return null;
       }
-      const sessionMinutes = extractNumber(payload, ["session_minutes", "minutes"]);
+
+      const checkInDate = parseDateTime(checkInRaw);
+      if (!checkInDate) {
+        return null;
+      }
+
+      const checkOutRaw = extractString(payload, ["checkout_time", "checkout"]);
+      const checkOutDate = checkOutRaw ? parseDateTime(checkOutRaw) : null;
+
+      const rawMinutes = extractNumber(payload, ["session_minutes", "minutes"]);
+      const computedMinutes =
+        rawMinutes != null && Number.isFinite(rawMinutes)
+          ? rawMinutes
+          : checkOutDate
+            ? (checkOutDate.getTime() - checkInDate.getTime()) / 60000
+            : 0;
+
+      const normalizedMinutes = Number.isFinite(computedMinutes)
+        ? Math.max(0, Math.round(computedMinutes))
+        : 0;
+
       return {
         attendanceId,
-        sessionMinutes: sessionMinutes != null && Number.isFinite(sessionMinutes)
-          ? Math.max(0, sessionMinutes)
-          : null,
-        checkIn,
-        checkOut: extractString(payload, ["checkout_local", "check_out"]),
-      } satisfies CoachPanelLessonSessionEntry;
+        lessonId: lessonId != null && Number.isFinite(lessonId) ? Math.trunc(lessonId) : null,
+        checkInIso: toIsoString(checkInDate),
+        checkOutIso: checkOutDate ? toIsoString(checkOutDate) : null,
+        localDay: formatGuayaquilDay(checkInDate),
+        sessionMinutes: normalizedMinutes,
+        level: extractString(payload, ["level", "level_code", "lesson_level"]),
+        seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
+        lessonGlobalSeq: extractNumber(payload, ["lesson_global_seq", "global_seq"]),
+      } satisfies CoachPanelSessionSnapshot;
     })
-    .filter((entry): entry is CoachPanelLessonSessionEntry => Boolean(entry));
+    .filter((entry): entry is CoachPanelSessionSnapshot => Boolean(entry));
+}
+
+function buildEngagementHeatmapFromSessions(
+  sessions: CoachPanelSessionSnapshot[],
+  days: number,
+): CoachPanelEngagementHeatmapEntry[] {
+  const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
+  const dayKeys: string[] = [];
+  const daySet = new Set<string>();
+  const reference = new Date();
+  for (let index = normalizedDays - 1; index >= 0; index -= 1) {
+    const cursor = new Date(reference);
+    cursor.setDate(reference.getDate() - index);
+    const key = formatGuayaquilDay(cursor);
+    dayKeys.push(key);
+    daySet.add(key);
+  }
+
+  const minutesByDay = new Map<string, number>();
+  sessions.forEach((session) => {
+    if (!session.localDay || !daySet.has(session.localDay)) {
+      return;
+    }
+    const current = minutesByDay.get(session.localDay) ?? 0;
+    minutesByDay.set(session.localDay, current + session.sessionMinutes);
+  });
+
+  return dayKeys.map((date) => ({
+    date,
+    minutes: Math.max(0, Math.round(minutesByDay.get(date) ?? 0)),
+  }));
+}
+
+function buildLeiTrendFromSessions(
+  sessions: CoachPanelSessionSnapshot[],
+  days: number,
+): CoachPanelLeiTrendEntry[] {
+  const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
+  const dayKeys: string[] = [];
+  const reference = new Date();
+  for (let index = normalizedDays - 1; index >= 0; index -= 1) {
+    const cursor = new Date(reference);
+    cursor.setDate(reference.getDate() - index);
+    dayKeys.push(formatGuayaquilDay(cursor));
+  }
+
+  const dayMaxSeq = new Map<string, number>();
+  sessions.forEach((session) => {
+    if (!session.localDay || session.lessonGlobalSeq == null) {
+      return;
+    }
+    const normalizedSeq = Math.trunc(session.lessonGlobalSeq);
+    const existing = dayMaxSeq.get(session.localDay);
+    if (existing == null || normalizedSeq > existing) {
+      dayMaxSeq.set(session.localDay, normalizedSeq);
+    }
+  });
+
+  let previousMax: number | null = null;
+  return dayKeys.map((date) => {
+    const dayValue = dayMaxSeq.get(date);
+    if (dayValue == null) {
+      return { date, lessonsGained: 0 } satisfies CoachPanelLeiTrendEntry;
+    }
+    const delta = previousMax == null ? 0 : Math.max(0, dayValue - previousMax);
+    previousMax = previousMax == null ? dayValue : Math.max(previousMax, dayValue);
+    return { date, lessonsGained: delta } satisfies CoachPanelLeiTrendEntry;
+  });
+}
+
+function buildRecentActivityFromSessions(
+  sessions: CoachPanelSessionSnapshot[],
+  limit: number,
+): CoachPanelRecentActivityEntry[] {
+  const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 10;
+  return sessions.slice(0, normalizedLimit).map((session) => ({
+    attendanceId: session.attendanceId,
+    sessionMinutes: Number.isFinite(session.sessionMinutes)
+      ? session.sessionMinutes
+      : null,
+    checkIn: session.checkInIso,
+    checkOut: session.checkOutIso,
+    level: session.level,
+    seq: session.seq,
+    lessonGlobalSeq: session.lessonGlobalSeq,
+  }));
+}
+
+function selectLessonSessionsFromSnapshots(
+  sessions: CoachPanelSessionSnapshot[],
+  lesson: {
+    lessonId?: number | null;
+    lessonGlobalSeq?: number | null;
+    level?: string | null;
+  },
+  limit: number,
+): CoachPanelLessonSessionEntry[] {
+  const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 3;
+  const lessonId =
+    lesson.lessonId != null && Number.isFinite(lesson.lessonId)
+      ? Math.trunc(lesson.lessonId)
+      : null;
+  const globalSeq =
+    lesson.lessonGlobalSeq != null && Number.isFinite(lesson.lessonGlobalSeq)
+      ? Math.trunc(lesson.lessonGlobalSeq)
+      : null;
+  const level =
+    lesson.level && typeof lesson.level === "string"
+      ? lesson.level.trim().toUpperCase()
+      : null;
+
+  const strategies: CoachPanelSessionSnapshot[][] = [];
+  if (lessonId != null) {
+    strategies.push(sessions.filter((session) => session.lessonId === lessonId));
+  }
+  if (globalSeq != null) {
+    strategies.push(
+      sessions.filter(
+        (session) => session.lessonGlobalSeq != null && Math.trunc(session.lessonGlobalSeq) === globalSeq,
+      ),
+    );
+  }
+  if (level) {
+    strategies.push(
+      sessions.filter((session) => session.level && session.level.trim().toUpperCase() === level),
+    );
+  }
+  strategies.push(sessions);
+
+  let selected: CoachPanelSessionSnapshot[] = [];
+  for (const candidate of strategies) {
+    if (candidate.length) {
+      selected = candidate;
+      break;
+    }
+  }
+
+  return selected.slice(0, normalizedLimit).map((session) => ({
+    attendanceId: session.attendanceId,
+    sessionMinutes: Number.isFinite(session.sessionMinutes)
+      ? session.sessionMinutes
+      : null,
+    checkIn: session.checkInIso,
+    checkOut: session.checkOutIso,
+  }));
 }
 
 export async function getStudentCoachPanelSummary(
@@ -1754,19 +1803,22 @@ export async function getStudentCoachPanelSummary(
 ): Promise<StudentCoachPanelSummary | null> {
   noStore();
 
-  const [overview, lessons, currentPosition, heatmap, leiTrend, recentActivity] =
-    await Promise.all([
-      getStudentCoachPanelProfileHeader(studentId),
-      listStudentCoachPlanLessons(studentId),
-      getStudentCoachPlanPosition(studentId),
-      listStudentEngagementHeatmap(studentId, 30),
-      listStudentLeiTrend(studentId, 30),
-      listStudentRecentSessions(studentId, 10),
-    ]);
+  const sessionsPromise = fetchCoachPanelSessions(studentId, 400);
+
+  const [overview, lessons, currentPosition, sessions] = await Promise.all([
+    getStudentCoachPanelProfileHeader(studentId),
+    listStudentCoachPlanLessons(studentId),
+    getStudentCoachPlanPosition(studentId),
+    sessionsPromise,
+  ]);
 
   if (!overview) {
     return null;
   }
+
+  const heatmap = buildEngagementHeatmapFromSessions(sessions, 30);
+  const leiTrend = buildLeiTrendFromSessions(sessions, 30);
+  const recentActivity = buildRecentActivityFromSessions(sessions, 10);
 
   const lessonJourney: CoachPanelLessonJourney = {
     lessons,
