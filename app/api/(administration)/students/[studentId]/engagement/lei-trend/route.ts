@@ -9,15 +9,15 @@ function normalizeStudentId(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeDays(value: string | null): number {
-  if (!value) {
-    return 30;
+function normalizeDays(value: string | null): number | null {
+  if (!value || value.toLowerCase() === "all") {
+    return null;
   }
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
-    return 30;
+    return null;
   }
-  return Math.max(1, Math.min(180, Math.trunc(parsed)));
+  return Math.max(1, Math.min(720, Math.trunc(parsed)));
 }
 
 export async function GET(

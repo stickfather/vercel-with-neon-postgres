@@ -4,12 +4,10 @@ import { listStudentLessonSessions } from "@/features/administration/data/studen
 
 export const dynamic = "force-dynamic";
 
-function normalizeStudentId(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function normalizeLessonId(value: string): number | null {
+function normalizeId(value: string | null): number | null {
+  if (value == null) {
+    return null;
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -27,25 +25,28 @@ function normalizeLimit(value: string | null, fallback = 3): number {
 
 export async function GET(
   request: Request,
-  {
-    params,
-  }: {
-    params: Promise<{ studentId: string; lessonId: string }>;
-  },
+  { params }: { params: Promise<{ studentId: string; lessonId: string }> },
 ) {
   const resolvedParams = await params;
-  const studentId = normalizeStudentId(resolvedParams.studentId);
-  const lessonId = normalizeLessonId(resolvedParams.lessonId);
-
-  if (studentId == null || lessonId == null) {
-    return NextResponse.json({ error: "Identificadores inválidos." }, { status: 400 });
-  }
+  const studentId = normalizeId(resolvedParams.studentId);
+  const lessonId = normalizeId(resolvedParams.lessonId);
 
   const { searchParams } = new URL(request.url);
   const limit = normalizeLimit(searchParams.get("limit"));
+  const lessonGlobalSeq = normalizeId(searchParams.get("lessonGlobalSeq"));
+  const level = searchParams.get("level");
+  const seq = normalizeId(searchParams.get("seq"));
+
+  if (studentId == null || (lessonId == null && lessonGlobalSeq == null && !level)) {
+    return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
+  }
 
   try {
-    const sessions = await listStudentLessonSessions(studentId, lessonId, limit);
+    const sessions = await listStudentLessonSessions(
+      studentId,
+      { lessonId, lessonGlobalSeq, level, seq },
+      limit,
+    );
     return NextResponse.json(
       { sessions },
       {
@@ -55,9 +56,9 @@ export async function GET(
       },
     );
   } catch (error) {
-    console.error("Error fetching sessions by lesson", error);
+    console.error("Error fetching student lesson sessions", error);
     return NextResponse.json(
-      { error: "No se pudo obtener el detalle de sesiones." },
+      { error: "No se pudo obtener el historial de la lección." },
       { status: 500 },
     );
   }

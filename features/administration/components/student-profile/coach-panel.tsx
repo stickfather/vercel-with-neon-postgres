@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
@@ -16,6 +16,7 @@ type CoachPanelProps = {
 };
 
 type LessonSession = CoachPanelLessonSessionEntry;
+type LessonJourneyItem = CoachPanelLessonJourneyEntry & { isExam?: boolean };
 
 const HEATMAP_DAYS = 30;
 
@@ -64,11 +65,27 @@ function formatDate(iso: string | null | undefined, withTime = false): string {
   if (Number.isNaN(parsed)) {
     return "—";
   }
-  const formatter = new Intl.DateTimeFormat("es-EC", withTime
-    ? { dateStyle: "medium", timeStyle: "short" }
-    : { dateStyle: "medium" },
+  const formatter = new Intl.DateTimeFormat(
+    "es-EC",
+    withTime
+      ? { dateStyle: "medium", timeStyle: "short", timeZone: "America/Guayaquil" }
+      : { dateStyle: "medium", timeZone: "America/Guayaquil" },
   );
   return formatter.format(parsed);
+}
+
+function formatTime(iso: string | null | undefined): string {
+  if (!iso) {
+    return "—";
+  }
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) {
+    return "—";
+  }
+  return new Intl.DateTimeFormat("es-EC", {
+    timeStyle: "short",
+    timeZone: "America/Guayaquil",
+  }).format(parsed);
 }
 
 function buildHeatmapCells(
@@ -105,16 +122,16 @@ function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement 
     );
   }
 
-  const width = 160;
+  const width = Math.max(160, Math.min(600, (data.length - 1) * 10 || 160));
   const height = 64;
-  const maxValue = data.reduce((max, entry) => (entry.lessonsGained > max ? entry.lessonsGained : max), 0);
+  const maxValue = data.reduce((max, entry) => (entry.leiValue > max ? entry.leiValue : max), 0);
   const safeMax = maxValue > 0 ? maxValue : 1;
   const step = data.length > 1 ? width / (data.length - 1) : width;
   const padding = 6;
 
   const points = data.map((entry, index) => {
     const x = index * step;
-    const y = height - padding - (entry.lessonsGained / safeMax) * (height - padding * 2);
+    const y = height - padding - (entry.leiValue / safeMax) * (height - padding * 2);
     return `${x},${Math.max(padding, Math.min(height - padding, y))}`;
   });
 
@@ -122,6 +139,7 @@ function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement 
     <svg
       className="h-24 w-full"
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
       role="img"
       aria-label="Tendencia de eficiencia"
     >
@@ -154,7 +172,7 @@ function LessonDrawer({
   error,
   onClose,
 }: {
-  lesson: CoachPanelLessonJourneyEntry | null;
+  lesson: LessonJourneyItem | null;
   sessions: LessonSession[];
   status: "idle" | "loading" | "ready" | "error";
   error: string | null;
@@ -164,9 +182,17 @@ function LessonDrawer({
     return null;
   }
 
-  const lessonLabel = [lesson.level, lesson.seq != null ? `Lección ${lesson.seq}` : null]
+  const lessonLabel = [
+    lesson.level,
+    lesson.isExam ? "Examen" : lesson.seq != null ? `Lección ${lesson.seq}` : null,
+  ]
     .filter(Boolean)
     .join(" · ");
+
+  const drawerTitle = "Últimas sesiones registradas para esta lección.";
+  const drawerSubtitle = lesson.isExam
+    ? "Incluye las sesiones más recientes previas al examen del nivel."
+    : "Se muestran hasta tres sesiones recientes asociadas a esta lección.";
 
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/20 backdrop-blur-sm">
@@ -181,9 +207,8 @@ function LessonDrawer({
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-teal">Detalle de lección</span>
             <h3 className="mt-2 text-2xl font-bold text-brand-deep">{lessonLabel || "Lección"}</h3>
-            <p className="text-sm text-brand-ink-muted">
-              Últimas tres sesiones registradas para esta lección.
-            </p>
+            <p className="mt-3 text-sm font-semibold text-brand-deep">{drawerTitle}</p>
+            <p className="text-sm text-brand-ink-muted">{drawerSubtitle}</p>
           </div>
           <button
             type="button"
@@ -212,22 +237,38 @@ function LessonDrawer({
             </div>
           ) : null}
           {status === "ready" && sessions.length > 0 ? (
-            <ul className="flex flex-col gap-3">
-              {sessions.map((session) => (
-                <li
-                  key={session.attendanceId}
-                  className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 shadow-sm"
-                >
-                  <p className="text-sm font-semibold text-brand-deep">
-                    {formatDate(session.checkIn, true)}
-                  </p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.25em] text-brand-ink-muted">
-                    Duración
-                  </p>
-                  <p className="text-sm text-brand-ink-muted">{formatDuration(session.sessionMinutes)}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-hidden rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory shadow-sm">
+              <table className="min-w-full divide-y divide-brand-ink-muted/10 text-sm">
+                <thead className="bg-white/70 text-xs uppercase tracking-[0.28em] text-brand-ink-muted">
+                  <tr>
+                    <th scope="col" className="px-4 py-3 text-left font-semibold">
+                      Fecha
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-left font-semibold">
+                      Inicio
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-left font-semibold">
+                      Fin
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-right font-semibold">
+                      Duración
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-ink-muted/10">
+                  {sessions.map((session) => (
+                    <tr key={session.attendanceId} className="odd:bg-white/40">
+                      <td className="px-4 py-3 font-medium text-brand-deep">{formatDate(session.checkIn)}</td>
+                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkIn)}</td>
+                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkOut)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-brand-deep">
+                        {formatDuration(session.sessionMinutes)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
         </div>
       </aside>
@@ -236,12 +277,46 @@ function LessonDrawer({
 }
 
 export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
-  const [drawerLesson, setDrawerLesson] = useState<CoachPanelLessonJourneyEntry | null>(null);
+  const [drawerLesson, setDrawerLesson] = useState<LessonJourneyItem | null>(null);
   const [drawerSessions, setDrawerSessions] = useState<LessonSession[]>([]);
   const [drawerStatus, setDrawerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  const sessionsCacheRef = useRef(new Map<string, LessonSession[]>());
 
   const studentId = data?.profileHeader.studentId ?? null;
+  const recentActivity = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
+
+  const heatmapBase = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
+  const heatmapSource = useMemo(() => {
+    if (heatmapBase.length) {
+      return heatmapBase;
+    }
+    if (!recentActivity.length) {
+      return [];
+    }
+    const totals = new Map<string, number>();
+    recentActivity.forEach((session) => {
+      const checkIn = session.checkIn;
+      if (!checkIn) {
+        return;
+      }
+      const date = checkIn.slice(0, 10);
+      if (!date) {
+        return;
+      }
+      const minutes =
+        session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)
+          ? Math.max(0, session.sessionMinutes)
+          : 0;
+      totals.set(date, (totals.get(date) ?? 0) + minutes);
+    });
+    return Array.from(totals.entries())
+      .map(([date, minutes]) => ({
+        date,
+        minutes: Math.max(0, Math.trunc(minutes)),
+      }))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }, [heatmapBase, recentActivity]);
 
   useEffect(() => {
     if (!drawerLesson) {
@@ -250,10 +325,29 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       setDrawerError(null);
       return;
     }
-    if (!studentId || drawerLesson.lessonId == null) {
+    if (!studentId) {
       setDrawerStatus("error");
       setDrawerSessions([]);
       setDrawerError("No se pudo identificar la lección seleccionada.");
+      return;
+    }
+
+    const lessonId = drawerLesson.lessonId ?? null;
+    const lessonGlobalSeq = drawerLesson.lessonGlobalSeq ?? null;
+
+    if (lessonId == null && lessonGlobalSeq == null) {
+      setDrawerStatus("error");
+      setDrawerSessions([]);
+      setDrawerError("La lección no cuenta con un identificador válido.");
+      return;
+    }
+
+    const cacheKey = lessonId != null ? `lesson:${lessonId}` : `global:${lessonGlobalSeq}`;
+    const cachedSessions = sessionsCacheRef.current.get(cacheKey);
+    if (cachedSessions) {
+      setDrawerSessions(cachedSessions);
+      setDrawerStatus("ready");
+      setDrawerError(null);
       return;
     }
 
@@ -261,9 +355,22 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const controller = new AbortController();
     setDrawerStatus("loading");
     setDrawerError(null);
+    setDrawerSessions([]);
+
+    const searchParams = new URLSearchParams();
+    searchParams.set("limit", "3");
+    if (lessonGlobalSeq != null) {
+      searchParams.set("lessonGlobalSeq", String(lessonGlobalSeq));
+    }
+    if (drawerLesson.level) {
+      searchParams.set("level", drawerLesson.level);
+    }
+    if (drawerLesson.seq != null) {
+      searchParams.set("seq", String(drawerLesson.seq));
+    }
 
     fetch(
-      `/api/students/${studentId}/sessions/by-lesson/${drawerLesson.lessonId}?limit=3`,
+      `/api/students/${studentId}/sessions/by-lesson/${lessonId ?? "global"}?${searchParams.toString()}`,
       { cache: "no-store", signal: controller.signal },
     )
       .then((response) => {
@@ -276,7 +383,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         if (cancelled) {
           return;
         }
-        setDrawerSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+        const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+        sessionsCacheRef.current.set(cacheKey, sessions);
+        setDrawerSessions(sessions);
         setDrawerStatus("ready");
       })
       .catch((error) => {
@@ -294,14 +403,107 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     };
   }, [drawerLesson, studentId]);
 
-  const heatmapCells = useMemo(
-    () => buildHeatmapCells(data?.engagement.heatmap ?? [], HEATMAP_DAYS),
-    [data?.engagement.heatmap],
-  );
+  const heatmapCells = useMemo(() => buildHeatmapCells(heatmapSource, HEATMAP_DAYS), [heatmapSource]);
   const heatmapMaxMinutes = useMemo(
     () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
     [heatmapCells],
   );
+  const engagementStats = data?.engagement?.stats ?? {
+    daysActive30d: null,
+    totalMinutes30d: null,
+    totalHours30d: null,
+    avgSessionMinutes30d: null,
+  };
+  const leiTrendBase = Array.isArray(data?.engagement?.lei?.trend) ? data.engagement.lei.trend : [];
+  const leiTrendSource = useMemo(() => {
+    if (leiTrendBase.length) {
+      return leiTrendBase;
+    }
+    if (!recentActivity.length) {
+      return [];
+    }
+    const aggregates = new Map<
+      string,
+      { maxSeq: number | null; minutes: number }
+    >();
+    recentActivity.forEach((session) => {
+      const checkIn = session.checkIn;
+      if (!checkIn) {
+        return;
+      }
+      const date = checkIn.slice(0, 10);
+      if (!date) {
+        return;
+      }
+      const entry = aggregates.get(date) ?? { maxSeq: null, minutes: 0 };
+      if (session.lessonGlobalSeq != null && Number.isFinite(session.lessonGlobalSeq)) {
+        const normalized = Math.max(0, Math.trunc(session.lessonGlobalSeq));
+        entry.maxSeq = entry.maxSeq == null ? normalized : Math.max(entry.maxSeq, normalized);
+      }
+      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
+        entry.minutes += Math.max(0, session.sessionMinutes);
+      }
+      aggregates.set(date, entry);
+    });
+    const sortedDates = Array.from(aggregates.keys()).sort();
+    let previousMax: number | null = null;
+    return sortedDates.map((date) => {
+      const metrics = aggregates.get(date);
+      const dayMax = metrics?.maxSeq != null ? metrics.maxSeq : previousMax ?? 0;
+      const minutes = metrics?.minutes ?? 0;
+      const gained = previousMax == null ? dayMax : Math.max(0, dayMax - previousMax);
+      const hours = minutes / 60;
+      const leiValue = hours > 0 ? gained / hours : 0;
+      previousMax = previousMax == null ? dayMax : Math.max(previousMax, dayMax);
+      return {
+        date,
+        lessonsGained: gained,
+        cumulativeLessons: previousMax ?? dayMax,
+        minutesStudied: Math.max(0, Math.round(minutes)),
+        leiValue: Number.isFinite(leiValue) ? leiValue : 0,
+      } satisfies CoachPanelLeiTrendEntry;
+    });
+  }, [leiTrendBase, recentActivity]);
+  const lei30dPlan = useMemo(() => {
+    const rawValue = data?.engagement?.lei?.lei30dPlan;
+    if (rawValue != null && Number.isFinite(rawValue)) {
+      return rawValue;
+    }
+    if (!recentActivity.length) {
+      return null;
+    }
+    const totalMinutes = recentActivity.reduce((sum, session) => {
+      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
+        return sum + Math.max(0, session.sessionMinutes);
+      }
+      return sum;
+    }, 0);
+    if (totalMinutes <= 0) {
+      return null;
+    }
+    let minSeq: number | null = null;
+    let maxSeq: number | null = null;
+    recentActivity.forEach((session) => {
+      if (session.lessonGlobalSeq == null || !Number.isFinite(session.lessonGlobalSeq)) {
+        return;
+      }
+      const normalized = Math.trunc(session.lessonGlobalSeq);
+      if (minSeq == null || normalized < minSeq) {
+        minSeq = normalized;
+      }
+      if (maxSeq == null || normalized > maxSeq) {
+        maxSeq = normalized;
+      }
+    });
+    if (minSeq == null || maxSeq == null || maxSeq <= minSeq) {
+      return 0;
+    }
+    const hours = totalMinutes / 60;
+    if (hours <= 0) {
+      return null;
+    }
+    return (maxSeq - minSeq) / hours;
+  }, [data?.engagement?.lei?.lei30dPlan, recentActivity]);
 
   if (errorMessage) {
     return (
@@ -324,7 +526,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     );
   }
 
-  const { profileHeader, lessonJourney, engagement, paceForecast } = data;
+  const { profileHeader, lessonJourney, paceForecast } = data;
 
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
@@ -343,28 +545,34 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       );
     }
 
+    const nextLessonLevel = journeyLessons[index + 1]?.level ?? null;
+    const isExamBubble = Boolean(lesson.level) && lesson.level !== nextLessonLevel;
     const isCompleted = lesson.completed || (currentGlobalSeq != null && lesson.lessonGlobalSeq != null && lesson.lessonGlobalSeq < currentGlobalSeq);
     const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
+    const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
 
     lessonElements.push(
       <button
         type="button"
         key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
-        onClick={() => setDrawerLesson(lesson)}
+        onClick={() => setDrawerLesson({ ...lesson, isExam: isExamBubble })}
         className={cx(
-          "relative flex h-14 w-14 items-center justify-center rounded-full border-2 text-sm font-semibold transition",
+          "relative flex items-center justify-center rounded-full border-2 font-semibold transition",
+          isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
           isCurrent
             ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
             : isCompleted
               ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
               : "border-brand-teal/50 bg-white text-brand-deep hover:-translate-y-[1px]",
         )}
-        title={`Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()}
+        title={isExamBubble
+          ? `Examen · ${lesson.level ?? ""}`.trim()
+          : `Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()}
       >
         {isCurrent ? (
           <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
         ) : null}
-        <span>{lesson.seq ?? "?"}</span>
+        <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
       </button>,
     );
   });
@@ -414,16 +622,16 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
               <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
               <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagement.stats.daysActive30d)}
+                {formatNumber(engagementStats.daysActive30d)}
               </p>
             </div>
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
               <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
               <p className="mt-2 text-xl font-bold text-brand-deep">
                 {formatNumber(
-                  engagement.stats.totalHours30d ??
-                    (engagement.stats.totalMinutes30d != null
-                      ? engagement.stats.totalMinutes30d / 60
+                  engagementStats.totalHours30d ??
+                    (engagementStats.totalMinutes30d != null
+                      ? engagementStats.totalMinutes30d / 60
                       : null),
                   { maximumFractionDigits: 1 },
                 )}
@@ -432,7 +640,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
               <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
               <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagement.stats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
+                {formatNumber(engagementStats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
               </p>
             </div>
           </div>
@@ -452,17 +660,17 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
         <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">LEI 30 días</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">LEI Histórico</span>
             <h4 className="text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
           </div>
           <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
             <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
             <p className="mt-2 text-4xl font-black text-brand-deep">
-              {formatNumber(engagement.lei.lei30dPlan, { maximumFractionDigits: 2 })}
+              {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
             </p>
           </div>
           <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <Sparkline data={engagement.lei.trend} />
+            <Sparkline data={leiTrendSource} />
           </div>
         </div>
       </section>
