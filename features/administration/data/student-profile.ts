@@ -1472,14 +1472,25 @@ export async function listStudentEngagementHeatmap(
   const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
   const rows = await safeQuery(
     sql`
-      SELECT
-        s.checkin_local::date AS d,
-        COALESCE(SUM(s.session_minutes), 0)::int AS minutes
-      FROM mart.student_sessions_v s
-      WHERE s.student_id = ${studentId}::bigint
-        AND s.checkin_local::date >= (current_date - GREATEST(${normalizedDays}::int - 1, 0))
-      GROUP BY s.checkin_local::date
-      ORDER BY s.checkin_local::date
+      WITH bounds AS (
+        SELECT timezone('America/Guayaquil', now())::date AS today
+      ),
+      normalized AS (
+        SELECT
+          timezone('America/Guayaquil', s.checkin_local)::date AS local_day,
+          COALESCE(s.session_minutes, 0)::int AS minutes
+        FROM mart.student_sessions_v s, bounds b
+        WHERE s.student_id = ${studentId}::bigint
+          AND s.checkin_local IS NOT NULL
+          AND timezone('America/Guayaquil', s.checkin_local)::date >= (
+            b.today - GREATEST(${normalizedDays}::int - 1, 0)
+          )
+      )
+      SELECT local_day AS d, SUM(minutes)::int AS minutes
+      FROM normalized
+      WHERE local_day IS NOT NULL
+      GROUP BY local_day
+      ORDER BY local_day
     `,
     "mart.student_sessions_v_heatmap",
   );
@@ -1506,13 +1517,26 @@ export async function listStudentLeiTrend(
   const normalizedDays = Number.isFinite(days) ? Math.max(1, Math.trunc(days)) : 30;
   const rows = await safeQuery(
     sql`
-      WITH day_max AS (
-        SELECT date_trunc('day', s.checkin_local)::date AS d,
-               MAX(lg.lesson_global_seq) AS day_max_seq
+      WITH bounds AS (
+        SELECT timezone('America/Guayaquil', now())::date AS today
+      ),
+      daily_progress AS (
+        SELECT
+          timezone('America/Guayaquil', s.checkin_local)::date AS d,
+          lg.lesson_global_seq
         FROM mart.student_sessions_v s
         JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
+        JOIN bounds b ON TRUE
         WHERE s.student_id = ${studentId}::bigint
-          AND s.checkin_local::date >= (current_date - GREATEST(${normalizedDays}::int - 1, 0))
+          AND s.checkin_local IS NOT NULL
+          AND timezone('America/Guayaquil', s.checkin_local)::date >= (
+            b.today - GREATEST(${normalizedDays}::int - 1, 0)
+          )
+      ),
+      day_max AS (
+        SELECT d, MAX(lesson_global_seq) AS day_max_seq
+        FROM daily_progress
+        WHERE d IS NOT NULL
         GROUP BY d
       ),
       deltas AS (
@@ -1618,7 +1642,13 @@ export async function listStudentLessonSessions(
     lesson.lessonGlobalSeq != null && Number.isFinite(lesson.lessonGlobalSeq)
       ? Math.trunc(lesson.lessonGlobalSeq)
       : null;
-  if (normalizedLessonId == null && normalizedGlobalSeq == null) {
+  const normalizedLevel =
+    lesson.level && typeof lesson.level === "string"
+      ? lesson.level.trim()
+      : null;
+  const hasLevel = normalizedLevel != null && normalizedLevel.length > 0;
+
+  if (normalizedLessonId == null && normalizedGlobalSeq == null && !hasLevel) {
     return [];
   }
 
@@ -1639,7 +1669,9 @@ export async function listStudentLessonSessions(
       `,
       "mart.student_sessions_v_by_lesson",
     );
-  } else if (normalizedGlobalSeq != null) {
+  }
+
+  if (!rows.length && normalizedGlobalSeq != null) {
     rows = await safeQuery(
       sql`
         SELECT s.attendance_id,
@@ -1654,6 +1686,24 @@ export async function listStudentLessonSessions(
         LIMIT ${normalizedLimit}::int
       `,
       "mart.student_sessions_v_by_global_seq",
+    );
+  }
+
+  if (!rows.length && hasLevel) {
+    rows = await safeQuery(
+      sql`
+        SELECT s.attendance_id,
+               s.session_minutes,
+               s.checkin_local,
+               s.checkout_local
+        FROM mart.student_sessions_v s
+        JOIN mart.lessons_global_v lg ON lg.lesson_id = s.lesson_id
+        WHERE s.student_id = ${studentId}::bigint
+          AND UPPER(lg.level) = UPPER(${normalizedLevel})
+        ORDER BY s.checkin_local DESC
+        LIMIT ${normalizedLimit}::int
+      `,
+      "mart.student_sessions_v_by_level",
     );
   }
 
