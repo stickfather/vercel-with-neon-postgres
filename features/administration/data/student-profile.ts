@@ -1189,6 +1189,11 @@ export type StudentLeiRank = {
   cohortSize: number | null;
 };
 
+export type DaypartRow = {
+  daypart: "Morning" | "Afternoon" | "Evening" | "Night";
+  minutes: number;
+};
+
 export type HourlyHistogramRow = {
   hourOfDay: number;
   minutes: number;
@@ -1864,6 +1869,72 @@ export async function getStudentLeiRank(studentId: number): Promise<StudentLeiRa
     cohortSize:
       cohortSize != null && Number.isFinite(cohortSize) ? Math.max(0, Math.trunc(cohortSize)) : null,
   };
+}
+
+const DAYPART_LABELS: ReadonlyArray<DaypartRow["daypart"]> = [
+  "Morning",
+  "Afternoon",
+  "Evening",
+  "Night",
+];
+
+const DAYPART_ALIAS: Record<string, DaypartRow["daypart"]> = {
+  morning: "Morning",
+  afternoon: "Afternoon",
+  evening: "Evening",
+  night: "Night",
+  madrugada: "Morning",
+  manana: "Morning",
+  "mañana": "Morning",
+  tarde: "Afternoon",
+  noche: "Night",
+};
+
+export async function listStudentDaypart30d(studentId: number): Promise<DaypartRow[]> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT daypart, minutes
+      FROM mart.student_daypart_30d_v
+      WHERE student_id = ${studentId}::bigint
+    `,
+    "mart.student_daypart_30d_v",
+  );
+
+  const minutesByDaypart = new Map<DaypartRow["daypart"], number>();
+
+  rows.forEach((row) => {
+    const payload = toJsonRecord(row);
+    if (!payload) {
+      return;
+    }
+
+    const rawDaypart = extractString(payload, ["daypart"]);
+    if (!rawDaypart) {
+      return;
+    }
+
+    const normalizedKey = rawDaypart.trim().toLowerCase();
+    const resolvedDaypart =
+      (DAYPART_LABELS as ReadonlyArray<string>).includes(rawDaypart as string)
+        ? (rawDaypart as DaypartRow["daypart"])
+        : DAYPART_ALIAS[normalizedKey];
+
+    if (!resolvedDaypart) {
+      return;
+    }
+
+    const minutes = extractNumber(payload, ["minutes", "total_minutes", "minutes_total"]);
+    const safeMinutes = minutes != null && Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0;
+    minutesByDaypart.set(resolvedDaypart, safeMinutes);
+  });
+
+  return DAYPART_LABELS.map((daypart) => ({
+    daypart,
+    minutes: minutesByDaypart.get(daypart) ?? 0,
+  }));
 }
 
 export async function listStudentHourlyStudy30d(

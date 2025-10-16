@@ -161,7 +161,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     totalHours30d: null,
     avgSessionMinutes30d: null,
   };
-  const lei30dPlan = data.learnerSpeed.lei30dPlan;
+  const lei30dPlan = data?.learnerSpeed?.lei30dPlan ?? null;
 
   if (errorMessage) {
     return (
