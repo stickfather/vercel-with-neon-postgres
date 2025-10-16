@@ -65,11 +65,27 @@ function formatDate(iso: string | null | undefined, withTime = false): string {
   if (Number.isNaN(parsed)) {
     return "—";
   }
-  const formatter = new Intl.DateTimeFormat("es-EC", withTime
-    ? { dateStyle: "medium", timeStyle: "short" }
-    : { dateStyle: "medium" },
+  const formatter = new Intl.DateTimeFormat(
+    "es-EC",
+    withTime
+      ? { dateStyle: "medium", timeStyle: "short", timeZone: "America/Guayaquil" }
+      : { dateStyle: "medium", timeZone: "America/Guayaquil" },
   );
   return formatter.format(parsed);
+}
+
+function formatTime(iso: string | null | undefined): string {
+  if (!iso) {
+    return "—";
+  }
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) {
+    return "—";
+  }
+  return new Intl.DateTimeFormat("es-EC", {
+    timeStyle: "short",
+    timeZone: "America/Guayaquil",
+  }).format(parsed);
 }
 
 function buildHeatmapCells(
@@ -106,16 +122,16 @@ function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement 
     );
   }
 
-  const width = 160;
+  const width = Math.max(160, Math.min(600, (data.length - 1) * 10 || 160));
   const height = 64;
-  const maxValue = data.reduce((max, entry) => (entry.lessonsGained > max ? entry.lessonsGained : max), 0);
+  const maxValue = data.reduce((max, entry) => (entry.leiValue > max ? entry.leiValue : max), 0);
   const safeMax = maxValue > 0 ? maxValue : 1;
   const step = data.length > 1 ? width / (data.length - 1) : width;
   const padding = 6;
 
   const points = data.map((entry, index) => {
     const x = index * step;
-    const y = height - padding - (entry.lessonsGained / safeMax) * (height - padding * 2);
+    const y = height - padding - (entry.leiValue / safeMax) * (height - padding * 2);
     return `${x},${Math.max(padding, Math.min(height - padding, y))}`;
   });
 
@@ -123,6 +139,7 @@ function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement 
     <svg
       className="h-24 w-full"
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
       role="img"
       aria-label="Tendencia de eficiencia"
     >
@@ -172,6 +189,11 @@ function LessonDrawer({
     .filter(Boolean)
     .join(" · ");
 
+  const drawerTitle = "Últimas sesiones registradas para esta lección.";
+  const drawerSubtitle = lesson.isExam
+    ? "Incluye las sesiones más recientes previas al examen del nivel."
+    : "Se muestran hasta tres sesiones recientes asociadas a esta lección.";
+
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/20 backdrop-blur-sm">
       <button
@@ -185,11 +207,8 @@ function LessonDrawer({
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-teal">Detalle de lección</span>
             <h3 className="mt-2 text-2xl font-bold text-brand-deep">{lessonLabel || "Lección"}</h3>
-            <p className="text-sm text-brand-ink-muted">
-              {lesson.isExam
-                ? "Últimas sesiones registradas antes del examen."
-                : "Últimas tres sesiones registradas para esta lección."}
-            </p>
+            <p className="mt-3 text-sm font-semibold text-brand-deep">{drawerTitle}</p>
+            <p className="text-sm text-brand-ink-muted">{drawerSubtitle}</p>
           </div>
           <button
             type="button"
@@ -218,22 +237,38 @@ function LessonDrawer({
             </div>
           ) : null}
           {status === "ready" && sessions.length > 0 ? (
-            <ul className="flex flex-col gap-3">
-              {sessions.map((session) => (
-                <li
-                  key={session.attendanceId}
-                  className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 shadow-sm"
-                >
-                  <p className="text-sm font-semibold text-brand-deep">
-                    {formatDate(session.checkIn, true)}
-                  </p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.25em] text-brand-ink-muted">
-                    Duración
-                  </p>
-                  <p className="text-sm text-brand-ink-muted">{formatDuration(session.sessionMinutes)}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-hidden rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory shadow-sm">
+              <table className="min-w-full divide-y divide-brand-ink-muted/10 text-sm">
+                <thead className="bg-white/70 text-xs uppercase tracking-[0.28em] text-brand-ink-muted">
+                  <tr>
+                    <th scope="col" className="px-4 py-3 text-left font-semibold">
+                      Fecha
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-left font-semibold">
+                      Inicio
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-left font-semibold">
+                      Fin
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-right font-semibold">
+                      Duración
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-ink-muted/10">
+                  {sessions.map((session) => (
+                    <tr key={session.attendanceId} className="odd:bg-white/40">
+                      <td className="px-4 py-3 font-medium text-brand-deep">{formatDate(session.checkIn)}</td>
+                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkIn)}</td>
+                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkOut)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-brand-deep">
+                        {formatDuration(session.sessionMinutes)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
         </div>
       </aside>
@@ -387,29 +422,46 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     if (!recentActivity.length) {
       return [];
     }
-    const lessonsByDate = new Map<string, number>();
+    const aggregates = new Map<
+      string,
+      { maxSeq: number | null; minutes: number }
+    >();
     recentActivity.forEach((session) => {
       const checkIn = session.checkIn;
-      const globalSeq = session.lessonGlobalSeq;
-      if (!checkIn || globalSeq == null || !Number.isFinite(globalSeq)) {
+      if (!checkIn) {
         return;
       }
       const date = checkIn.slice(0, 10);
       if (!date) {
         return;
       }
-      const normalized = Math.trunc(globalSeq);
-      const existing = lessonsByDate.get(date);
-      lessonsByDate.set(date, existing == null ? normalized : Math.max(existing, normalized));
+      const entry = aggregates.get(date) ?? { maxSeq: null, minutes: 0 };
+      if (session.lessonGlobalSeq != null && Number.isFinite(session.lessonGlobalSeq)) {
+        const normalized = Math.max(0, Math.trunc(session.lessonGlobalSeq));
+        entry.maxSeq = entry.maxSeq == null ? normalized : Math.max(entry.maxSeq, normalized);
+      }
+      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
+        entry.minutes += Math.max(0, session.sessionMinutes);
+      }
+      aggregates.set(date, entry);
     });
-    const sortedDates = Array.from(lessonsByDate.keys()).sort();
+    const sortedDates = Array.from(aggregates.keys()).sort();
     let previousMax: number | null = null;
     return sortedDates.map((date) => {
-      const dayMax = lessonsByDate.get(date) ?? 0;
-      const normalizedDayMax = Number.isFinite(dayMax) ? dayMax : 0;
-      const gained = previousMax == null ? 0 : Math.max(0, normalizedDayMax - previousMax);
-      previousMax = previousMax == null ? normalizedDayMax : Math.max(previousMax, normalizedDayMax);
-      return { date, lessonsGained: gained } satisfies CoachPanelLeiTrendEntry;
+      const metrics = aggregates.get(date);
+      const dayMax = metrics?.maxSeq != null ? metrics.maxSeq : previousMax ?? 0;
+      const minutes = metrics?.minutes ?? 0;
+      const gained = previousMax == null ? dayMax : Math.max(0, dayMax - previousMax);
+      const hours = minutes / 60;
+      const leiValue = hours > 0 ? gained / hours : 0;
+      previousMax = previousMax == null ? dayMax : Math.max(previousMax, dayMax);
+      return {
+        date,
+        lessonsGained: gained,
+        cumulativeLessons: previousMax ?? dayMax,
+        minutesStudied: Math.max(0, Math.round(minutes)),
+        leiValue: Number.isFinite(leiValue) ? leiValue : 0,
+      } satisfies CoachPanelLeiTrendEntry;
     });
   }, [leiTrendBase, recentActivity]);
   const lei30dPlan = useMemo(() => {
@@ -608,7 +660,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
         <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">LEI 30 días</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">LEI Histórico</span>
             <h4 className="text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
           </div>
           <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
