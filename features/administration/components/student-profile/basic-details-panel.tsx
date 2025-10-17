@@ -219,7 +219,6 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [isGraduationPending, startGraduationTransition] = useTransition();
   const [toast, setToast] = useState<{
     message: string;
     tone: "success" | "error";
@@ -375,11 +374,29 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       payload[field.key] = sanitizeValue(rawValue, field.type);
     }
 
+    const graduationPayload: Record<string, unknown> = {
+      graduated: graduatedState,
+    };
+
+    if (graduatedState) {
+      if (graduationDate) {
+        graduationPayload.contract_end = graduationDate;
+      } else {
+        graduationPayload.contract_end = null;
+      }
+    } else {
+      graduationPayload.contract_end = graduationDate ? graduationDate : null;
+    }
+
     setError(null);
     setStatusMessage(null);
+    setGraduationError(null);
+    setToast(null);
+    setUsedTodayFallback(graduatedState && !graduationDate);
 
     startTransition(() => {
       void (async () => {
+        let graduationRequested = false;
         try {
           const response = await fetch(
             `/api/students/${studentId}/basic-details`,
@@ -393,7 +410,12 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           const data = await response.json().catch(() => ({}));
 
           if (!response.ok) {
-            throw new Error(data?.error ?? "No se pudo guardar la información.");
+            const message =
+              typeof data?.error === "string"
+                ? data.error
+                : "No se pudo guardar la información.";
+            setError(message);
+            return;
           }
 
           setFormState((previous) => {
@@ -416,80 +438,58 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               hasOverdueInstructive: previous.hasOverdueInstructive ?? previous.instructivoOverdue,
             };
           });
-          setStatusMessage("Cambios guardados correctamente.");
-          router.refresh();
-        } catch (err) {
-          console.error(err);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "No se pudo guardar la información. Inténtalo nuevamente.",
-          );
-        }
-      })();
-    });
-  };
 
-  const handleGraduationSave = () => {
-    if (isGraduationPending) return;
-
-    const payload: Record<string, unknown> = {
-      graduated: graduatedState,
-    };
-
-    if (graduatedState) {
-      if (graduationDate) {
-        payload.contract_end = graduationDate;
-      }
-    } else {
-      payload.contract_end = graduationDate ? graduationDate : null;
-    }
-
-    setGraduationError(null);
-    setUsedTodayFallback(graduatedState && !graduationDate);
-    setToast(null);
-
-    startGraduationTransition(() => {
-      void (async () => {
-        try {
-          const response = await fetch(`/api/students/${studentId}`, {
+          graduationRequested = true;
+          const graduationResponse = await fetch(`/api/students/${studentId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(graduationPayload),
           });
 
-          const data = await response.json().catch(() => ({}));
+          const graduationData = await graduationResponse.json().catch(() => ({}));
 
-          if (!response.ok) {
-            throw new Error(data?.error ?? "No se pudo actualizar el estado.");
+          if (!graduationResponse.ok) {
+            const message =
+              typeof graduationData?.error === "string"
+                ? graduationData.error
+                : "No se pudo actualizar el estado.";
+            setGraduationError(message);
+            setToast({ message, tone: "error" });
+            return;
           }
 
           const nextGraduated =
-            typeof data?.graduated === "boolean"
-              ? data.graduated
+            typeof graduationData?.graduated === "boolean"
+              ? graduationData.graduated
               : graduatedState;
           const rawContractEnd =
-            typeof data?.contract_end === "string"
-              ? data.contract_end
-              : typeof data?.contractEnd === "string"
-                ? data.contractEnd
-                : data?.contract_end === null || data?.contractEnd === null
-                  ? null
-                  : null;
-
+            typeof graduationData?.contract_end === "string"
+              ? graduationData.contract_end
+              : typeof graduationData?.contractEnd === "string"
+                ? graduationData.contractEnd
+                : null;
           const nextContractEnd = rawContractEnd ?? null;
+          const nextStatus =
+            typeof graduationData?.status === "string" && graduationData.status.length
+              ? graduationData.status
+              : null;
 
           setGraduatedState(nextGraduated);
           setGraduationDate(nextContractEnd ?? "");
-          setUsedTodayFallback(false);
+          setUsedTodayFallback(nextGraduated && !nextContractEnd);
+          setGraduationError(null);
+
           setFormState((previous) => {
             if (!previous) return previous;
             return {
               ...previous,
               graduated: nextGraduated,
               contractEnd: nextContractEnd,
+              status: nextStatus ?? previous.status,
             };
           });
+
+          setStatusMessage("Cambios guardados correctamente.");
           setToast({ message: "Estado actualizado.", tone: "success" });
           router.refresh();
         } catch (err) {
@@ -497,9 +497,12 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           const message =
             err instanceof Error
               ? err.message
-              : "No se pudo actualizar el estado. Inténtalo nuevamente.";
-          setGraduationError(message);
+              : "No se pudo guardar la información. Inténtalo nuevamente.";
+          if (graduationRequested) {
+            setGraduationError(message);
+          }
           setToast({ message, tone: "error" });
+          setError(message);
         }
       })();
     });
@@ -689,16 +692,22 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
                   id="basic-graduated"
                   type="checkbox"
                   checked={graduatedState}
-                  disabled={isGraduationPending}
+                  disabled={isPending}
                   onChange={(event) => {
                     const nextChecked = event.target.checked;
                     setGraduatedState(nextChecked);
+                    setFormState((previous) =>
+                      previous ? { ...previous, graduated: nextChecked } : previous,
+                    );
                     setGraduationError(null);
                     if (nextChecked) {
                       if (!graduationDate) {
                         const today = new Date();
                         const iso = today.toISOString().slice(0, 10);
                         setGraduationDate(iso);
+                        setFormState((previous) =>
+                          previous ? { ...previous, contractEnd: iso } : previous,
+                        );
                         setUsedTodayFallback(true);
                       } else {
                         setUsedTodayFallback(false);
@@ -721,33 +730,26 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               <input
                 id="basic-contract-end"
                 type="date"
-                disabled={isGraduationPending}
+                disabled={isPending}
                 value={graduationDate}
                 onChange={(event) => {
                   const nextValue = event.target.value;
                   setGraduationDate(nextValue);
                   setGraduationError(null);
                   setUsedTodayFallback(graduatedState && nextValue === "");
+                  setFormState((previous) =>
+                    previous ? { ...previous, contractEnd: nextValue || null } : previous,
+                  );
                 }}
                 className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
               />
             </label>
           </div>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-col gap-1 text-xs text-brand-ink-muted">
-              {graduatedState && usedTodayFallback ? <span>Se usará la fecha de hoy.</span> : null}
-              {graduationError ? (
-                <span className="font-semibold text-rose-600">{graduationError}</span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={handleGraduationSave}
-              disabled={isGraduationPending}
-              className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isGraduationPending ? "Guardando…" : "Actualizar estado"}
-            </button>
+          <div className="flex flex-col gap-1 text-xs text-brand-ink-muted">
+            {graduatedState && usedTodayFallback ? <span>Se usará la fecha de hoy.</span> : null}
+            {graduationError ? (
+              <span className="font-semibold text-rose-600">{graduationError}</span>
+            ) : null}
           </div>
         </div>
 

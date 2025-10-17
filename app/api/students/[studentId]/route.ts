@@ -97,20 +97,38 @@ export async function PATCH(
 
     if (hasGraduated) {
       const graduated = rawGraduated as boolean;
+      const statusValue = graduated ? "graduado" : "activo";
+
       if (graduated) {
-        await sql`SELECT public.mark_student_graduated(${studentId}::bigint, ${
-          contractEndDate ?? null
-        }::date)`;
-      } else {
-        await sql`SELECT public.unmark_student_graduated(${studentId}::bigint)`;
-        if (hasContractEnd) {
+        if (contractEndDate == null) {
           await sql`
             UPDATE public.students
-            SET contract_end = ${contractEndDate ?? null}::date,
+            SET graduated = true,
+                status = ${statusValue},
+                contract_end = CURRENT_DATE,
+                updated_at = NOW()
+            WHERE id = ${studentId}::bigint
+          `;
+        } else {
+          await sql`
+            UPDATE public.students
+            SET graduated = true,
+                status = ${statusValue},
+                contract_end = ${contractEndDate}::date,
                 updated_at = NOW()
             WHERE id = ${studentId}::bigint
           `;
         }
+      } else {
+        const nextContractEnd = hasContractEnd ? contractEndDate : null;
+        await sql`
+          UPDATE public.students
+          SET graduated = false,
+              status = ${statusValue},
+              contract_end = ${nextContractEnd ?? null}::date,
+              updated_at = NOW()
+          WHERE id = ${studentId}::bigint
+        `;
       }
     } else if (hasContractEnd) {
       await sql`
@@ -132,6 +150,7 @@ export async function PATCH(
     return NextResponse.json({
       graduated: Boolean(updated.graduated),
       contract_end: updated.contractEnd,
+      status: updated.status,
     });
   } catch (error) {
     console.error("Error updating student graduation state", error);
