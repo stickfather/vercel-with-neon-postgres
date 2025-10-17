@@ -73,3 +73,19 @@ To learn more about Next.js, take a look at the following resources:
 ## Deploy on Vercel
 
 Commit and push your code changes to your GitHub repository to automatically trigger a new deployment.
+
+## Panel "Resumen general"
+
+La pestaña **Resumen general** dentro de los informes de gestión consume vistas del esquema `mgmt` en Neon a través de tres endpoints JSON.
+
+- `/api/reports/resumen/header` → `mgmt.gen_header_v`
+- `/api/reports/resumen/level/bands` → `mgmt.gen_level_progress_bands_v`
+- `/api/reports/resumen/level/kpis` → `mgmt.gen_level_kpis_v`
+
+Los datos se tipan en `types/reports.resumen.ts` y se reutilizan tanto en la API como en la interfaz. El panel final se compone de los componentes siguientes:
+
+- `components/reports/resumen/ResumenHeaderTiles.tsx`
+- `components/reports/resumen/ProgressByLevelStacked.tsx`
+- `components/reports/resumen/LevelKpiMatrix.tsx`
+
+Para ver el tablero completo de un vistazo, visita `/reports/resumen-general`.
