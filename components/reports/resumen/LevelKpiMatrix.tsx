@@ -35,7 +35,7 @@ function formatMonths(value: number | null | undefined) {
 
 function getHeatColor(value: number | null | undefined) {
   if (value === null || value === undefined) {
-    return "bg-slate-100";
+    return "bg-slate-100 text-slate-500";
   }
   const normalized = value > 1 ? value / 100 : value;
   if (normalized >= 0.75) return "bg-emerald-100 text-emerald-700";
@@ -62,50 +62,53 @@ export function LevelKpiMatrix({ data }: Props) {
         <h3 className="text-lg font-semibold text-slate-800">Indicadores por nivel</h3>
         <p className="text-sm text-slate-500">Actividad, ritmo y velocidad de avance por nivel.</p>
       </header>
-      <div className="overflow-x-auto">
-        <table className="min-w-full table-fixed border-separate border-spacing-y-2">
-          <thead>
-            <tr className="text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-              <th className="rounded-l-xl bg-slate-100/80 px-4 py-2">Nivel</th>
-              <th className="bg-slate-100/80 px-4 py-2">% activos (30 d)</th>
-              <th className="bg-slate-100/80 px-4 py-2">% en ritmo</th>
-              <th className="bg-slate-100/80 px-4 py-2">LEI mediana</th>
-              <th className="rounded-r-xl bg-slate-100/80 px-4 py-2">Meses p/ terminar</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row) => (
-              <tr
-                key={row.level}
-                className="text-sm font-medium text-slate-700 transition duration-200 hover:translate-x-1"
+      <div className="flex flex-col gap-4">
+        <div className="hidden grid-cols-5 gap-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 sm:grid">
+          <span className="sm:col-span-2">Nivel</span>
+          <span>% activos (30 d)</span>
+          <span>% en ritmo</span>
+          <span>LEI mediana</span>
+          <span>Meses p/ terminar</span>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {data.map((row) => (
+            <div
+              key={row.level}
+              className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm transition duration-200 hover:-translate-y-[1px] sm:grid-cols-5"
+            >
+              <div className="flex items-center gap-3 sm:col-span-2">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">
+                  {row.level}
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Estudiantes</span>
+                  <span className="text-lg font-semibold text-slate-800">{integerFormatter.format(row.students)}</span>
+                </div>
+              </div>
+              <div
+                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-2 text-center text-sm font-semibold ${getHeatColor(row.active_30d_pct)}`}
               >
-                <td className="rounded-l-xl bg-white px-4 py-3 text-slate-800">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-700">
-                      {row.level}
-                    </span>
-                    <div className="flex flex-col">
-                      <span className="text-xs uppercase tracking-wide text-slate-500">Estudiantes</span>
-                      <span className="text-base font-semibold text-slate-800">{integerFormatter.format(row.students)}</span>
-                    </div>
-                  </div>
-                </td>
-                <td className={`bg-white px-4 py-3 text-center font-semibold ${getHeatColor(row.active_30d_pct)}`}>
-                  {formatPercent(row.active_30d_pct)}
-                </td>
-                <td className={`bg-white px-4 py-3 text-center font-semibold ${getHeatColor(row.on_pace_pct)}`}>
-                  {formatPercent(row.on_pace_pct)}
-                </td>
-                <td className="bg-white px-4 py-3 text-center font-semibold text-slate-700">
-                  {formatDecimal(row.median_lei_30d)}
-                </td>
-                <td className="rounded-r-xl bg-white px-4 py-3 text-center font-semibold text-slate-700">
-                  {formatMonths(row.median_months_to_finish)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">Activos 30 d</span>
+                <span className="text-base">{formatPercent(row.active_30d_pct)}</span>
+              </div>
+              <div
+                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-2 text-center text-sm font-semibold ${getHeatColor(row.on_pace_pct)}`}
+              >
+                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">En ritmo</span>
+                <span className="text-base">{formatPercent(row.on_pace_pct)}</span>
+              </div>
+              <div className="flex flex-col items-center justify-center gap-1 rounded-xl bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-700">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">LEI mediana</span>
+                <span className="text-base">{formatDecimal(row.median_lei_30d)}</span>
+              </div>
+              <div className="flex flex-col items-center justify-center gap-1 rounded-xl bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-700">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">Meses</span>
+                <span className="text-base">{formatMonths(row.median_months_to_finish)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

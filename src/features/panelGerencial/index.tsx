@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import FilterRail from "./FilterRail";
 import Tabs, { TabSlug, isValidTabSlug } from "./Tabs";
 import { CardsSkeleton, ChartsSkeleton, FullPanelSkeleton } from "./Skeleton";
 import ErrorState from "./ErrorState";
@@ -9,6 +8,7 @@ import OverviewPanel from "./tabs/Overview/Overview";
 import ProgressPanel from "./tabs/Progress/Progress";
 import EngagementPanel from "./tabs/Engagement/Engagement";
 import RiskPanel from "./tabs/Risk/Risk";
+import FinancesPanel from "./tabs/Finances/Finances";
 import OpsPanel from "./tabs/Ops/Ops";
 import ExamsPanel from "./tabs/Exams/Exams";
 
@@ -76,12 +76,9 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
 
         <Tabs activeTab={activeTab} />
 
-        <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
-          <FilterRail />
-          <section className="flex flex-col gap-6 rounded-3xl border border-brand-ink/5 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-            {content}
-          </section>
-        </div>
+        <section className="flex flex-col gap-6 rounded-3xl border border-brand-ink/5 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+          {content}
+        </section>
       </main>
     </div>
   );
@@ -124,6 +121,12 @@ function renderActiveTab(
             selectedLevel={filters.selectedLevel ?? undefined}
             selectedBand={filters.selectedBand ?? undefined}
           />
+        </Suspense>
+      );
+    case "finances":
+      return (
+        <Suspense fallback={<CardsSkeleton />}>
+          <FinancesPanel />
         </Suspense>
       );
     case "ops":
