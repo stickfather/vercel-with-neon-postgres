@@ -26,6 +26,35 @@ function formatPercent(part: number, total: number) {
   return percentFormatter.format(part / total);
 }
 
+function buildAxisTicks(maxValue: number): number[] {
+  if (maxValue <= 0) {
+    return [0, 1];
+  }
+
+  const desiredTicks = 4;
+  const rawStep = Math.ceil(maxValue / desiredTicks);
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const niceSteps = [1, 2, 5, 10];
+  let step = niceSteps[niceSteps.length - 1] * magnitude;
+
+  for (const candidate of niceSteps) {
+    const candidateStep = candidate * magnitude;
+    if (rawStep <= candidateStep) {
+      step = candidateStep;
+      break;
+    }
+  }
+
+  const ticks: number[] = [];
+  for (let value = 0; value < maxValue; value += step) {
+    ticks.push(value);
+  }
+  if (!ticks.length || ticks[ticks.length - 1] !== maxValue) {
+    ticks.push(maxValue);
+  }
+  return ticks;
+}
+
 type Props = {
   data: LevelStateBreakdown[];
 };
@@ -39,6 +68,10 @@ export function LevelStateStacked({ data }: Props) {
     );
   }
 
+  const maxTotal = Math.max(...data.map((row) => row.total), 0);
+  const normalizedMax = maxTotal > 0 ? maxTotal : 1;
+  const axisTicks = buildAxisTicks(maxTotal);
+
   const legendStates = stateConfig.filter((state) =>
     data.some((row) => row.total > 0 && row[state.key] > 0),
   );
@@ -51,45 +84,82 @@ export function LevelStateStacked({ data }: Props) {
         <h3 className="text-lg font-semibold text-slate-800">Estados de estudiantes por nivel</h3>
         <p className="text-sm text-slate-500">Distribución de estados (activo, pausado, congelado, etc.) por nivel.</p>
       </header>
-      <div className="flex flex-1 flex-col gap-4">
-        {data.map((row) => {
-          const levelLabel =
-            row.level.toLowerCase() === "sin nivel" ? row.level : `Nivel ${row.level}`;
 
-          return (
-            <div key={row.level} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between text-sm font-medium text-slate-700">
-                <span className="font-semibold text-slate-800">{levelLabel}</span>
-                <span className="text-xs uppercase tracking-wide text-slate-500">
-                  {integerFormatter.format(row.total)} estudiantes
-                </span>
-              </div>
-              <div className="flex overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                {stateConfig.map((state) => {
-                  const count = row[state.key];
-                  if (!count) {
-                    return null;
-                  }
-                  const width = row.total ? Math.max((count / row.total) * 100, 0) : 0;
-                  return (
-                    <span
-                      key={state.key}
-                      style={{ width: `${width}%`, backgroundColor: state.color }}
-                      className="relative flex h-8 items-center justify-center text-[11px] font-semibold text-slate-900/80 transition-all duration-200"
-                      title={`${state.label}: ${integerFormatter.format(count)} (${formatPercent(count, row.total)})`}
-                    >
-                      {width >= 14 ? `${formatPercent(count, row.total)} • ${integerFormatter.format(count)}` : null}
-                    </span>
-                  );
-                })}
-              </div>
-              {row.total === 0 ? (
-                <p className="text-xs text-slate-500">Sin estudiantes registrados en este nivel.</p>
-              ) : null}
+      <div className="flex flex-1 flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <div className="flex w-12 flex-col-reverse justify-between text-[11px] font-medium text-slate-500">
+            {axisTicks.map((tick) => (
+              <span key={`tick-${tick}`}>{integerFormatter.format(tick)}</span>
+            ))}
+          </div>
+          <div className="relative flex-1">
+            <div className="absolute inset-0 flex flex-col-reverse justify-between">
+              {axisTicks.map((tick, index) => (
+                <div
+                  key={`line-${tick}`}
+                  className={`w-full ${index === 0 ? "h-[2px] bg-slate-300" : "h-px bg-slate-200/70"}`}
+                />
+              ))}
             </div>
-          );
-        })}
+            <div
+              className="relative grid h-64 gap-4 px-2 pb-6"
+              style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+            >
+              {data.map((row) => {
+                const levelLabel =
+                  row.level.toLowerCase() === "sin nivel" ? row.level : `Nivel ${row.level}`;
+
+                return (
+                  <div key={row.level} className="flex flex-col items-center gap-2 text-center">
+                    <div className="flex h-full w-full flex-col justify-end overflow-hidden rounded-[18px] border border-slate-200 bg-slate-50 shadow-inner">
+                      {row.total === 0 ? (
+                        <div className="flex h-full items-center justify-center px-2 text-[11px] font-medium text-slate-400">
+                          Sin estudiantes
+                        </div>
+                      ) : (
+                        stateConfig.map((state) => {
+                          const count = row[state.key];
+                          if (!count) {
+                            return null;
+                          }
+                          const heightPercent = Math.max((count / normalizedMax) * 100, 0);
+                          const share = row.total ? count / row.total : 0;
+                          const showLabel = heightPercent >= 18 && share >= 0.18;
+                          return (
+                            <div
+                              key={state.key}
+                              style={{
+                                height: `${heightPercent}%`,
+                                minHeight: count > 0 ? "6px" : undefined,
+                                backgroundColor: state.color,
+                              }}
+                              className="relative w-full transition-all duration-200"
+                              title={`${state.label}: ${integerFormatter.format(count)} (${formatPercent(count, row.total)})`}
+                            >
+                              {showLabel ? (
+                                <span className="absolute inset-x-1 bottom-1 rounded-full bg-white/80 px-1.5 text-[10px] font-semibold text-slate-700 shadow">
+                                  {formatPercent(count, row.total)}
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{levelLabel}</span>
+                      <span className="text-[11px] uppercase tracking-wide text-slate-500">
+                        {integerFormatter.format(row.total)} estudiantes
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
+
       <footer className="flex flex-wrap gap-3 text-xs text-slate-600">
         {statesForLegend.map((state) => (
           <div key={state.key} className="flex items-center gap-2">

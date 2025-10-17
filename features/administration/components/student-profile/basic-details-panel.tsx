@@ -227,6 +227,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
   const [graduationError, setGraduationError] = useState<string | null>(null);
   const [graduatedState, setGraduatedState] = useState<boolean>(() => Boolean(details?.graduated));
   const [graduationDate, setGraduationDate] = useState<string>(() => details?.contractEnd ?? "");
+  const [usedTodayFallback, setUsedTodayFallback] = useState<boolean>(false);
 
   useEffect(() => {
     setFormState(details);
@@ -235,6 +236,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
   useEffect(() => {
     setGraduatedState(Boolean(details?.graduated));
     setGraduationDate(details?.contractEnd ?? "");
+    setUsedTodayFallback(false);
   }, [details?.contractEnd, details?.graduated]);
 
   const editableFields = useMemo(
@@ -444,6 +446,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     }
 
     setGraduationError(null);
+    setUsedTodayFallback(graduatedState && !graduationDate);
     setToast(null);
 
     startGraduationTransition(() => {
@@ -478,6 +481,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
 
           setGraduatedState(nextGraduated);
           setGraduationDate(nextContractEnd ?? "");
+          setUsedTodayFallback(false);
           setFormState((previous) => {
             if (!previous) return previous;
             return {
@@ -557,75 +561,6 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
                 Sin banderas activas
               </span>
             )}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-4 rounded-2xl bg-white/95 p-4 shadow-inner">
-          <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-            Estado académico
-          </span>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label
-              htmlFor="basic-graduated"
-              className="flex h-full flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner"
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                Graduado/a
-              </span>
-              <span className="flex items-center justify-between gap-4">
-                <span className="text-sm font-semibold text-brand-deep">
-                  {graduatedState ? "Sí" : "No"}
-                </span>
-                <input
-                  id="basic-graduated"
-                  type="checkbox"
-                  checked={graduatedState}
-                  disabled={isGraduationPending}
-                  onChange={(event) => {
-                    setGraduatedState(event.target.checked);
-                    setGraduationError(null);
-                  }}
-                  className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
-                />
-              </span>
-            </label>
-            <label
-              htmlFor="basic-contract-end"
-              className="flex h-full flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner"
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                Fecha de finalización
-              </span>
-              <input
-                id="basic-contract-end"
-                type="date"
-                disabled={isGraduationPending}
-                value={graduationDate}
-                onChange={(event) => {
-                  setGraduationDate(event.target.value);
-                  setGraduationError(null);
-                }}
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
-              />
-            </label>
-          </div>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-col gap-1 text-xs text-brand-ink-muted">
-              {graduatedState && !graduationDate ? (
-                <span>Se usará la fecha de hoy.</span>
-              ) : null}
-              {graduationError ? (
-                <span className="font-semibold text-rose-600">{graduationError}</span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={handleGraduationSave}
-              disabled={isGraduationPending}
-              className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isGraduationPending ? "Guardando…" : "Actualizar estado"}
-            </button>
           </div>
         </div>
 
@@ -734,14 +669,96 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             );
           })}
         </div>
-      <div className="flex items-center justify-end">
-        <button
-          type="submit"
-          disabled={isPending}
-          className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isPending ? "Guardando…" : "Guardar cambios"}
-        </button>
+        <div className="flex flex-col gap-4 rounded-2xl bg-white/95 p-4 shadow-inner">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+            Estado académico
+          </span>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label
+              htmlFor="basic-graduated"
+              className="flex h-full flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Graduado/a
+              </span>
+              <span className="flex items-center justify-between gap-4">
+                <span className="text-sm font-semibold text-brand-deep">
+                  {graduatedState ? "Sí" : "No"}
+                </span>
+                <input
+                  id="basic-graduated"
+                  type="checkbox"
+                  checked={graduatedState}
+                  disabled={isGraduationPending}
+                  onChange={(event) => {
+                    const nextChecked = event.target.checked;
+                    setGraduatedState(nextChecked);
+                    setGraduationError(null);
+                    if (nextChecked) {
+                      if (!graduationDate) {
+                        const today = new Date();
+                        const iso = today.toISOString().slice(0, 10);
+                        setGraduationDate(iso);
+                        setUsedTodayFallback(true);
+                      } else {
+                        setUsedTodayFallback(false);
+                      }
+                    } else {
+                      setUsedTodayFallback(false);
+                    }
+                  }}
+                  className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
+                />
+              </span>
+            </label>
+            <label
+              htmlFor="basic-contract-end"
+              className="flex h-full flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Fecha de finalización
+              </span>
+              <input
+                id="basic-contract-end"
+                type="date"
+                disabled={isGraduationPending}
+                value={graduationDate}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setGraduationDate(nextValue);
+                  setGraduationError(null);
+                  setUsedTodayFallback(graduatedState && nextValue === "");
+                }}
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+              />
+            </label>
+          </div>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-1 text-xs text-brand-ink-muted">
+              {graduatedState && usedTodayFallback ? <span>Se usará la fecha de hoy.</span> : null}
+              {graduationError ? (
+                <span className="font-semibold text-rose-600">{graduationError}</span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={handleGraduationSave}
+              disabled={isGraduationPending}
+              className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isGraduationPending ? "Guardando…" : "Actualizar estado"}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isPending ? "Guardando…" : "Guardar cambios"}
+          </button>
       </div>
     </form>
     {toast ? (
@@ -771,6 +788,14 @@ export function BasicDetailsPanelSkeleton() {
           ))}
         </div>
       </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
+            <span className="h-3 w-20 rounded-full bg-brand-deep-soft/50" />
+            <span className="h-4 w-full rounded-full bg-brand-deep-soft/40" />
+          </div>
+        ))}
+      </div>
       <div className="flex flex-col gap-4 rounded-2xl bg-white/95 p-4 shadow-inner">
         <span className="h-3 w-32 rounded-full bg-brand-deep-soft/50" />
         <div className="grid gap-4 md:grid-cols-2">
@@ -785,14 +810,6 @@ export function BasicDetailsPanelSkeleton() {
           <span className="h-3 w-40 rounded-full bg-brand-deep-soft/30" />
           <span className="h-8 w-40 rounded-full bg-brand-deep-soft/40" />
         </div>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        {Array.from({ length: 8 }).map((_, index) => (
-          <div key={index} className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
-            <span className="h-3 w-20 rounded-full bg-brand-deep-soft/50" />
-            <span className="h-4 w-full rounded-full bg-brand-deep-soft/40" />
-          </div>
-        ))}
       </div>
     </section>
   );
