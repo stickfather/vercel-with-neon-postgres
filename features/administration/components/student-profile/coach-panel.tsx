@@ -208,27 +208,43 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const isCompleted = lesson.completed || (currentGlobalSeq != null && lesson.lessonGlobalSeq != null && lesson.lessonGlobalSeq < currentGlobalSeq);
     const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
     const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
+    const lessonDaysLabel =
+      lesson.daysInLesson != null
+        ? `${formatNumber(lesson.daysInLesson, { maximumFractionDigits: 0 })} días`
+        : "— días";
+    const lessonHoursLabel =
+      lesson.minutesInLesson != null
+        ? `${formatNumber(lesson.minutesInLesson / 60, { maximumFractionDigits: 1 })} h`
+        : "— h";
 
     lessonElements.push(
-      <div
-        key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
-        className={cx(
-          "relative flex items-center justify-center rounded-full border-2 font-semibold",
-          isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
-          isCurrent
-            ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
-            : isCompleted
-              ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
-              : "border-brand-teal/50 bg-white text-brand-deep",
-        )}
-        title={isExamBubble
-          ? `Examen · ${lesson.level ?? ""}`.trim()
-          : `Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()}
-      >
-        {isCurrent ? (
-          <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
-        ) : null}
-        <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
+      <div key={`lesson-${lesson.lessonGlobalSeq ?? index}`} className="flex flex-col items-center gap-2 text-center">
+        <div
+          className={cx(
+            "relative flex items-center justify-center rounded-full border-2 font-semibold",
+            isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
+            isCurrent
+              ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
+              : isCompleted
+                ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
+                : "border-brand-teal/50 bg-white text-brand-deep",
+          )}
+          title={
+            isExamBubble
+              ? `Examen · ${lesson.level ?? ""}`.trim()
+              : `Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()
+          }
+        >
+          {isCurrent ? (
+            <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
+          ) : null}
+          <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
+        </div>
+        <div className="text-[11px] leading-4 text-brand-ink-muted">
+          <span>{lessonDaysLabel}</span>
+          <span className="mx-1 text-brand-ink-muted/50">•</span>
+          <span>{lessonHoursLabel}</span>
+        </div>
       </div>,
     );
   });
@@ -368,12 +384,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-3">
                 <div
-                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${learnerSpeedTone}`}
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${learnerSpeedTone}`}
                 >
                   Ritmo de aprendizaje: {learnerSpeedText}
                 </div>
                 <div
-                  className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-3 py-1 text-xs font-medium text-brand-deep"
+                  className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-4 py-1.5 text-sm font-semibold text-brand-deep"
                   title={rankBadgeTitle}
                 >
                   {rankBadgeText}
@@ -383,12 +399,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 Comparado con todos los estudiantes activos del centro en los últimos 30 días.
               </p>
             </div>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-sm text-brand-ink-muted">
-            <p>El índice LEI proviene del mart.student_learner_speed_v y resume el avance por hora.</p>
-            <p className="mt-2">
-              El ranking usa percentiles de mart.student_lei_rank_30d_v para contextualizar el desempeño.
-            </p>
           </div>
         </div>
       </section>

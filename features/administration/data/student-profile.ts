@@ -1144,6 +1144,8 @@ export type CoachPanelLessonJourneyEntry = {
   level: string | null;
   seq: number | null;
   completed: boolean;
+  daysInLesson: number | null;
+  minutesInLesson: number | null;
 };
 
 export type CoachPanelLessonJourney = {
@@ -1587,7 +1589,7 @@ export async function listStudentCoachPlanLessons(
   const sql = getSqlClient();
   const rows = await safeQuery(
     sql`
-      SELECT level, seq, lesson_id, completed, lesson_global_seq
+      SELECT *
       FROM mart.student_plan_lessons_with_status_v
       WHERE student_id = ${studentId}::bigint
       ORDER BY lesson_global_seq
@@ -1607,6 +1609,20 @@ export async function listStudentCoachPlanLessons(
         level: extractString(payload, ["level", "level_code"]),
         seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
         completed: determineLessonCompletion(payload),
+        daysInLesson:
+          extractNumber(payload, [
+            "days_in_lesson",
+            "lesson_days",
+            "days_in_level",
+            "study_days",
+          ]) ?? null,
+        minutesInLesson:
+          extractNumber(payload, [
+            "minutes_in_lesson",
+            "lesson_minutes",
+            "total_minutes_in_lesson",
+            "study_minutes",
+          ]) ?? null,
       } satisfies CoachPanelLessonJourneyEntry;
     })
     .filter((entry): entry is CoachPanelLessonJourneyEntry => Boolean(entry));
