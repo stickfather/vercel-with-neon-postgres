@@ -5,6 +5,7 @@ const tabs = [
   { slug: "progress", label: "Progreso & aprendizaje" },
   { slug: "engagement", label: "Compromiso & comportamiento" },
   { slug: "risk", label: "Riesgo & retención" },
+  { slug: "finances", label: "Finanzas" },
   { slug: "ops", label: "Operaciones & personal" },
   { slug: "exams", label: "Exámenes & preparación" },
 ] as const;

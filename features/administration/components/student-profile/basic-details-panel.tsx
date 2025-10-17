@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import type {
   BasicDetailFieldType,
   StudentBasicDetailFieldConfig,
@@ -218,13 +219,30 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [toast, setToast] = useState<{
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+  const [graduationError, setGraduationError] = useState<string | null>(null);
+  const [graduatedState, setGraduatedState] = useState<boolean>(() => Boolean(details?.graduated));
+  const [graduationDate, setGraduationDate] = useState<string>(() => details?.contractEnd ?? "");
+  const [usedTodayFallback, setUsedTodayFallback] = useState<boolean>(false);
 
   useEffect(() => {
     setFormState(details);
   }, [details]);
 
+  useEffect(() => {
+    setGraduatedState(Boolean(details?.graduated));
+    setGraduationDate(details?.contractEnd ?? "");
+    setUsedTodayFallback(false);
+  }, [details?.contractEnd, details?.graduated]);
+
   const editableFields = useMemo(
-    () => STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.editable),
+    () =>
+      STUDENT_BASIC_DETAIL_FIELDS.filter(
+        (field) => field.editable && field.key !== "contractEnd",
+      ),
     [],
   );
 
@@ -246,7 +264,9 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     ];
 
     const fieldMap = new Map(
-      STUDENT_BASIC_DETAIL_FIELDS.filter((field) => field.key !== "status").map((field) => [field.key, field]),
+      STUDENT_BASIC_DETAIL_FIELDS.filter(
+        (field) => field.key !== "status" && field.key !== "contractEnd",
+      ).map((field) => [field.key, field]),
     );
 
     const result: StudentBasicDetailFieldConfig[] = [];
@@ -354,11 +374,29 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       payload[field.key] = sanitizeValue(rawValue, field.type);
     }
 
+    const graduationPayload: Record<string, unknown> = {
+      graduated: graduatedState,
+    };
+
+    if (graduatedState) {
+      if (graduationDate) {
+        graduationPayload.contract_end = graduationDate;
+      } else {
+        graduationPayload.contract_end = null;
+      }
+    } else {
+      graduationPayload.contract_end = graduationDate ? graduationDate : null;
+    }
+
     setError(null);
     setStatusMessage(null);
+    setGraduationError(null);
+    setToast(null);
+    setUsedTodayFallback(graduatedState && !graduationDate);
 
     startTransition(() => {
       void (async () => {
+        let graduationRequested = false;
         try {
           const response = await fetch(
             `/api/students/${studentId}/basic-details`,
@@ -372,7 +410,12 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           const data = await response.json().catch(() => ({}));
 
           if (!response.ok) {
-            throw new Error(data?.error ?? "No se pudo guardar la información.");
+            const message =
+              typeof data?.error === "string"
+                ? data.error
+                : "No se pudo guardar la información.";
+            setError(message);
+            return;
           }
 
           setFormState((previous) => {
@@ -395,15 +438,71 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               hasOverdueInstructive: previous.hasOverdueInstructive ?? previous.instructivoOverdue,
             };
           });
+
+          graduationRequested = true;
+          const graduationResponse = await fetch(`/api/students/${studentId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(graduationPayload),
+          });
+
+          const graduationData = await graduationResponse.json().catch(() => ({}));
+
+          if (!graduationResponse.ok) {
+            const message =
+              typeof graduationData?.error === "string"
+                ? graduationData.error
+                : "No se pudo actualizar el estado.";
+            setGraduationError(message);
+            setToast({ message, tone: "error" });
+            return;
+          }
+
+          const nextGraduated =
+            typeof graduationData?.graduated === "boolean"
+              ? graduationData.graduated
+              : graduatedState;
+          const rawContractEnd =
+            typeof graduationData?.contract_end === "string"
+              ? graduationData.contract_end
+              : typeof graduationData?.contractEnd === "string"
+                ? graduationData.contractEnd
+                : null;
+          const nextContractEnd = rawContractEnd ?? null;
+          const nextStatus =
+            typeof graduationData?.status === "string" && graduationData.status.length
+              ? graduationData.status
+              : null;
+
+          setGraduatedState(nextGraduated);
+          setGraduationDate(nextContractEnd ?? "");
+          setUsedTodayFallback(nextGraduated && !nextContractEnd);
+          setGraduationError(null);
+
+          setFormState((previous) => {
+            if (!previous) return previous;
+            return {
+              ...previous,
+              graduated: nextGraduated,
+              contractEnd: nextContractEnd,
+              status: nextStatus ?? previous.status,
+            };
+          });
+
           setStatusMessage("Cambios guardados correctamente.");
+          setToast({ message: "Estado actualizado.", tone: "success" });
           router.refresh();
         } catch (err) {
           console.error(err);
-          setError(
+          const message =
             err instanceof Error
               ? err.message
-              : "No se pudo guardar la información. Inténtalo nuevamente.",
-          );
+              : "No se pudo guardar la información. Inténtalo nuevamente.";
+          if (graduationRequested) {
+            setGraduationError(message);
+          }
+          setToast({ message, tone: "error" });
+          setError(message);
         }
       })();
     });
@@ -573,6 +672,87 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             );
           })}
         </div>
+        <div className="flex flex-col gap-4 rounded-2xl bg-white/95 p-4 shadow-inner">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+            Estado académico
+          </span>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label
+              htmlFor="basic-graduated"
+              className="flex h-full flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Graduado/a
+              </span>
+              <span className="flex items-center justify-between gap-4">
+                <span className="text-sm font-semibold text-brand-deep">
+                  {graduatedState ? "Sí" : "No"}
+                </span>
+                <input
+                  id="basic-graduated"
+                  type="checkbox"
+                  checked={graduatedState}
+                  disabled={isPending}
+                  onChange={(event) => {
+                    const nextChecked = event.target.checked;
+                    setGraduatedState(nextChecked);
+                    setFormState((previous) =>
+                      previous ? { ...previous, graduated: nextChecked } : previous,
+                    );
+                    setGraduationError(null);
+                    if (nextChecked) {
+                      if (!graduationDate) {
+                        const today = new Date();
+                        const iso = today.toISOString().slice(0, 10);
+                        setGraduationDate(iso);
+                        setFormState((previous) =>
+                          previous ? { ...previous, contractEnd: iso } : previous,
+                        );
+                        setUsedTodayFallback(true);
+                      } else {
+                        setUsedTodayFallback(false);
+                      }
+                    } else {
+                      setUsedTodayFallback(false);
+                    }
+                  }}
+                  className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
+                />
+              </span>
+            </label>
+            <label
+              htmlFor="basic-contract-end"
+              className="flex h-full flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Fecha de finalización
+              </span>
+              <input
+                id="basic-contract-end"
+                type="date"
+                disabled={isPending}
+                value={graduationDate}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setGraduationDate(nextValue);
+                  setGraduationError(null);
+                  setUsedTodayFallback(graduatedState && nextValue === "");
+                  setFormState((previous) =>
+                    previous ? { ...previous, contractEnd: nextValue || null } : previous,
+                  );
+                }}
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+              />
+            </label>
+          </div>
+          <div className="flex flex-col gap-1 text-xs text-brand-ink-muted">
+            {graduatedState && usedTodayFallback ? <span>Se usará la fecha de hoy.</span> : null}
+            {graduationError ? (
+              <span className="font-semibold text-rose-600">{graduationError}</span>
+            ) : null}
+          </div>
+        </div>
+
         <div className="flex items-center justify-end">
           <button
             type="submit"
@@ -581,10 +761,17 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           >
             {isPending ? "Guardando…" : "Guardar cambios"}
           </button>
-        </div>
-      </form>
-    </section>
-  );
+      </div>
+    </form>
+    {toast ? (
+      <EphemeralToast
+        message={toast.message}
+        tone={toast.tone}
+        onDismiss={() => setToast(null)}
+      />
+    ) : null}
+  </section>
+);
 }
 
 export function BasicDetailsPanelSkeleton() {
@@ -610,6 +797,21 @@ export function BasicDetailsPanelSkeleton() {
             <span className="h-4 w-full rounded-full bg-brand-deep-soft/40" />
           </div>
         ))}
+      </div>
+      <div className="flex flex-col gap-4 rounded-2xl bg-white/95 p-4 shadow-inner">
+        <span className="h-3 w-32 rounded-full bg-brand-deep-soft/50" />
+        <div className="grid gap-4 md:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <div key={index} className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
+              <span className="h-3 w-24 rounded-full bg-brand-deep-soft/40" />
+              <span className="h-4 w-full rounded-full bg-brand-deep-soft/30" />
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <span className="h-3 w-40 rounded-full bg-brand-deep-soft/30" />
+          <span className="h-8 w-40 rounded-full bg-brand-deep-soft/40" />
+        </div>
       </div>
     </section>
   );
