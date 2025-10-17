@@ -122,7 +122,7 @@ export function NotesPanel({ studentId, notes }: Props) {
     if (activeRequest) return;
 
     if (!draft.trim()) {
-      setError("La nota no puede estar vacía.");
+      setError("La observación no puede estar vacía.");
       return;
     }
 
@@ -140,10 +140,10 @@ export function NotesPanel({ studentId, notes }: Props) {
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo crear la nota.");
+            throw new Error(payload?.error ?? "No se pudo crear la observación.");
           }
           setItems((previous) => [payload as StudentNote, ...previous]);
-          setMessage("Nota agregada.");
+          setMessage("Observación agregada.");
           closeAddModal();
           router.refresh();
         } catch (err) {
@@ -151,7 +151,7 @@ export function NotesPanel({ studentId, notes }: Props) {
           setError(
             err instanceof Error
               ? err.message
-              : "No se pudo crear la nota. Inténtalo nuevamente.",
+              : "No se pudo crear la observación. Inténtalo nuevamente.",
           );
         } finally {
           setActiveRequest(null);
@@ -165,7 +165,7 @@ export function NotesPanel({ studentId, notes }: Props) {
     if (!editingNote || activeRequest) return;
 
     if (!draft.trim()) {
-      setError("La nota no puede estar vacía.");
+      setError("La observación no puede estar vacía.");
       return;
     }
 
@@ -186,13 +186,13 @@ export function NotesPanel({ studentId, notes }: Props) {
           );
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo actualizar la nota.");
+            throw new Error(payload?.error ?? "No se pudo actualizar la observación.");
           }
           const updatedNote = payload as StudentNote;
           setItems((previous) =>
             previous.map((item) => (item.id === updatedNote.id ? updatedNote : item)),
           );
-          setMessage("Nota actualizada.");
+          setMessage("Observación actualizada.");
           closeEditModal();
           router.refresh();
         } catch (err) {
@@ -200,7 +200,7 @@ export function NotesPanel({ studentId, notes }: Props) {
           setError(
             err instanceof Error
               ? err.message
-              : "No se pudo actualizar la nota. Inténtalo nuevamente.",
+              : "No se pudo actualizar la observación. Inténtalo nuevamente.",
           );
         } finally {
           setActiveRequest(null);
@@ -211,7 +211,7 @@ export function NotesPanel({ studentId, notes }: Props) {
 
   const handleDelete = async (noteId: number) => {
     if (activeRequest) return;
-    const confirmation = globalThis.confirm?.("¿Eliminar esta nota?");
+    const confirmation = globalThis.confirm?.("¿Eliminar esta observación?");
     if (!confirmation) return;
 
     setError(null);
@@ -226,20 +226,20 @@ export function NotesPanel({ studentId, notes }: Props) {
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo eliminar la nota.");
+            throw new Error(payload?.error ?? "No se pudo eliminar la observación.");
           }
           const deletedNote = payload as StudentNote | null;
           setItems((previous) =>
             previous.filter((item) => item.id !== (deletedNote?.id ?? noteId)),
           );
-          setMessage("Nota eliminada.");
+          setMessage("Observación eliminada.");
           router.refresh();
         } catch (err) {
           console.error(err);
           setError(
             err instanceof Error
               ? err.message
-              : "No se pudo eliminar la nota. Inténtalo nuevamente.",
+              : "No se pudo eliminar la observación. Inténtalo nuevamente.",
           );
         } finally {
           setActiveRequest(null);
@@ -251,10 +251,7 @@ export function NotesPanel({ studentId, notes }: Props) {
   return (
     <section className="flex flex-col gap-6 rounded-[32px] border border-white/70 bg-white/92 p-6 shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur">
       <header className="flex flex-col gap-1 text-left">
-        <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
-          Panel 6
-        </span>
-        <h2 className="text-2xl font-bold text-brand-deep">Notas</h2>
+        <h2 className="text-2xl font-bold text-brand-deep">Observaciones</h2>
         <p className="text-sm text-brand-ink-muted">
           Documenta interacciones, acuerdos y seguimientos relevantes para todo el equipo.
         </p>
@@ -277,14 +274,14 @@ export function NotesPanel({ studentId, notes }: Props) {
           onClick={openAddModal}
           className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
         >
-          Agregar nota
+          Agregar observación
         </button>
       </div>
 
       <div className="flex flex-col gap-3">
         {sortedNotes.length === 0 ? (
           <p className="rounded-[28px] border border-dashed border-brand-teal/40 bg-white/95 px-5 py-6 text-center text-sm text-brand-ink-muted">
-            Aún no hay notas registradas. Usa el botón “Agregar nota” para documentar la primera interacción.
+            Aún no hay observaciones registradas. Usa el botón “Agregar observación” para documentar la primera interacción.
           </p>
         ) : (
           sortedNotes.map((note) => (
@@ -322,13 +319,13 @@ export function NotesPanel({ studentId, notes }: Props) {
 
       {isAddOpen && (
         <Modal
-          title="Agregar nota"
+          title="Agregar observación"
           description="Comparte detalles relevantes para el seguimiento académico o administrativo."
           onClose={closeAddModal}
         >
-          <form className="flex flex-col gap-4" onSubmit={handleCreate}>
-            <label className="flex flex-col gap-2 text-left text-sm font-semibold text-brand-deep">
-              Nota
+            <form className="flex flex-col gap-4" onSubmit={handleCreate}>
+              <label className="flex flex-col gap-2 text-left text-sm font-semibold text-brand-deep">
+                Observación
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -360,13 +357,13 @@ export function NotesPanel({ studentId, notes }: Props) {
 
       {editingNote && (
         <Modal
-          title="Editar nota"
+          title="Editar observación"
           description="Actualiza el contenido para mantener al equipo informado."
           onClose={closeEditModal}
         >
           <form className="flex flex-col gap-4" onSubmit={handleUpdate}>
             <label className="flex flex-col gap-2 text-left text-sm font-semibold text-brand-deep">
-              Nota
+              Observación
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}

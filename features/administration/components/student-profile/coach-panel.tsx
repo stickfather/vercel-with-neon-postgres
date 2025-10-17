@@ -1,22 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
-  CoachPanelLessonJourneyEntry,
-  CoachPanelLessonSessionEntry,
-  CoachPanelLeiTrendEntry,
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
+
+import { StudyHoursHistogram } from "./StudyHoursHistogram";
 
 type CoachPanelProps = {
   data: StudentCoachPanelSummary | null;
   errorMessage?: string | null;
 };
-
-type LessonSession = CoachPanelLessonSessionEntry;
-type LessonJourneyItem = CoachPanelLessonJourneyEntry & { isExam?: boolean };
 
 const HEATMAP_DAYS = 30;
 
@@ -46,17 +42,6 @@ function formatPercent(value: number | null | undefined, digits = 0): string {
   return `${formatNumber(safe, { maximumFractionDigits: digits })}%`;
 }
 
-function formatDuration(minutes: number | null | undefined): string {
-  if (minutes == null || !Number.isFinite(minutes)) {
-    return "—";
-  }
-  const hours = minutes / 60;
-  if (hours >= 1.5) {
-    return `${formatNumber(hours, { maximumFractionDigits: 1 })} h`;
-  }
-  return `${formatNumber(minutes, { maximumFractionDigits: 0 })} min`;
-}
-
 function formatDate(iso: string | null | undefined, withTime = false): string {
   if (!iso) {
     return "—";
@@ -72,20 +57,6 @@ function formatDate(iso: string | null | undefined, withTime = false): string {
       : { dateStyle: "medium", timeZone: "America/Guayaquil" },
   );
   return formatter.format(parsed);
-}
-
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) {
-    return "—";
-  }
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) {
-    return "—";
-  }
-  return new Intl.DateTimeFormat("es-EC", {
-    timeStyle: "short",
-    timeZone: "America/Guayaquil",
-  }).format(parsed);
 }
 
 function buildHeatmapCells(
@@ -113,177 +84,38 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
-function Sparkline({ data }: { data: CoachPanelLeiTrendEntry[] }): ReactElement {
-  if (!data.length) {
-    return (
-      <div className="flex h-24 w-full flex-col items-center justify-center rounded-2xl bg-white/70 text-sm text-brand-ink-muted">
-        <span>No hay movimientos recientes.</span>
-      </div>
-    );
+const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
+  Fast: "Rápido",
+  Normal: "Normal",
+  Slow: "Lento",
+};
+
+const SPEED_LABEL_TONE: Record<"Fast" | "Normal" | "Slow", string> = {
+  Fast: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  Normal: "bg-slate-50 text-slate-700 border border-slate-200",
+  Slow: "bg-rose-50 text-rose-700 border border-rose-200",
+};
+
+function resolveSpeedTone(
+  label: string | null | undefined,
+): string {
+  if (!label) {
+    return "bg-slate-50 text-slate-400 border border-slate-200";
   }
-
-  const width = Math.max(160, Math.min(600, (data.length - 1) * 10 || 160));
-  const height = 64;
-  const maxValue = data.reduce((max, entry) => (entry.leiValue > max ? entry.leiValue : max), 0);
-  const safeMax = maxValue > 0 ? maxValue : 1;
-  const step = data.length > 1 ? width / (data.length - 1) : width;
-  const padding = 6;
-
-  const points = data.map((entry, index) => {
-    const x = index * step;
-    const y = height - padding - (entry.leiValue / safeMax) * (height - padding * 2);
-    return `${x},${Math.max(padding, Math.min(height - padding, y))}`;
-  });
-
-  return (
-    <svg
-      className="h-24 w-full"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="Tendencia de eficiencia"
-    >
-      <defs>
-        <linearGradient id="lei-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#0b9e8f" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#0b9e8f" stopOpacity="0.05" />
-        </linearGradient>
-      </defs>
-      <polyline
-        fill="none"
-        stroke="#0b9e8f"
-        strokeWidth="3"
-        strokeLinecap="round"
-        points={points.join(" ")}
-      />
-      <polyline
-        fill="url(#lei-gradient)"
-        stroke="none"
-        points={`0,${height} ${points.join(" ")} ${width},${height}`}
-      />
-    </svg>
-  );
+  const normalized = label as "Fast" | "Normal" | "Slow";
+  return SPEED_LABEL_TONE[normalized] ?? "bg-slate-50 text-slate-400 border border-slate-200";
 }
 
-function LessonDrawer({
-  lesson,
-  sessions,
-  status,
-  error,
-  onClose,
-}: {
-  lesson: LessonJourneyItem | null;
-  sessions: LessonSession[];
-  status: "idle" | "loading" | "ready" | "error";
-  error: string | null;
-  onClose: () => void;
-}): ReactElement | null {
-  if (!lesson) {
-    return null;
+function translateSpeedLabel(label: string | null | undefined): string {
+  if (!label) {
+    return "Sin datos suficientes";
   }
-
-  const lessonLabel = [
-    lesson.level,
-    lesson.isExam ? "Examen" : lesson.seq != null ? `Lección ${lesson.seq}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const drawerTitle = "Últimas sesiones registradas para esta lección.";
-  const drawerSubtitle = lesson.isExam
-    ? "Incluye las sesiones más recientes previas al examen del nivel."
-    : "Se muestran hasta tres sesiones recientes asociadas a esta lección.";
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/20 backdrop-blur-sm">
-      <button
-        type="button"
-        className="absolute inset-0 cursor-default"
-        aria-label="Cerrar detalle de lección"
-        onClick={onClose}
-      />
-      <aside className="relative flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto bg-white p-8 shadow-[0_28px_80px_rgba(15,23,42,0.18)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-teal">Detalle de lección</span>
-            <h3 className="mt-2 text-2xl font-bold text-brand-deep">{lessonLabel || "Lección"}</h3>
-            <p className="mt-3 text-sm font-semibold text-brand-deep">{drawerTitle}</p>
-            <p className="text-sm text-brand-ink-muted">{drawerSubtitle}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white text-brand-ink-muted transition hover:-translate-y-[1px] hover:text-brand-deep"
-            aria-label="Cerrar"
-          >
-            ×
-          </button>
-        </div>
-        <div className="flex flex-col gap-4">
-          {status === "loading" ? (
-            <div className="flex h-32 flex-col items-center justify-center gap-2 text-brand-ink-muted">
-              <span className="h-12 w-12 animate-spin rounded-full border-4 border-brand-teal/30 border-t-brand-teal" />
-              <span className="text-sm">Cargando sesiones…</span>
-            </div>
-          ) : null}
-          {status === "error" ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700">
-              {error ?? "No se pudo cargar la información de la lección."}
-            </div>
-          ) : null}
-          {status === "ready" && sessions.length === 0 ? (
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-deep-soft/40 p-4 text-sm text-brand-ink-muted">
-              No hay sesiones registradas para esta lección.
-            </div>
-          ) : null}
-          {status === "ready" && sessions.length > 0 ? (
-            <div className="overflow-hidden rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory shadow-sm">
-              <table className="min-w-full divide-y divide-brand-ink-muted/10 text-sm">
-                <thead className="bg-white/70 text-xs uppercase tracking-[0.28em] text-brand-ink-muted">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 text-left font-semibold">
-                      Fecha
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left font-semibold">
-                      Inicio
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left font-semibold">
-                      Fin
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-right font-semibold">
-                      Duración
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-ink-muted/10">
-                  {sessions.map((session) => (
-                    <tr key={session.attendanceId} className="odd:bg-white/40">
-                      <td className="px-4 py-3 font-medium text-brand-deep">{formatDate(session.checkIn)}</td>
-                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkIn)}</td>
-                      <td className="px-4 py-3 text-brand-ink-muted">{formatTime(session.checkOut)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-brand-deep">
-                        {formatDuration(session.sessionMinutes)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-        </div>
-      </aside>
-    </div>
-  );
+  const normalized = label as "Fast" | "Normal" | "Slow";
+  return SPEED_LABEL_TEXT[normalized] ?? "Sin datos";
 }
+
 
 export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
-  const [drawerLesson, setDrawerLesson] = useState<LessonJourneyItem | null>(null);
-  const [drawerSessions, setDrawerSessions] = useState<LessonSession[]>([]);
-  const [drawerStatus, setDrawerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [drawerError, setDrawerError] = useState<string | null>(null);
-  const sessionsCacheRef = useRef(new Map<string, LessonSession[]>());
-
-  const studentId = data?.profileHeader.studentId ?? null;
   const recentActivity = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
 
   const heatmapBase = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
@@ -318,91 +150,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }, [heatmapBase, recentActivity]);
 
-  useEffect(() => {
-    if (!drawerLesson) {
-      setDrawerStatus("idle");
-      setDrawerSessions([]);
-      setDrawerError(null);
-      return;
-    }
-    if (!studentId) {
-      setDrawerStatus("error");
-      setDrawerSessions([]);
-      setDrawerError("No se pudo identificar la lección seleccionada.");
-      return;
-    }
-
-    const lessonId = drawerLesson.lessonId ?? null;
-    const lessonGlobalSeq = drawerLesson.lessonGlobalSeq ?? null;
-
-    if (lessonId == null && lessonGlobalSeq == null) {
-      setDrawerStatus("error");
-      setDrawerSessions([]);
-      setDrawerError("La lección no cuenta con un identificador válido.");
-      return;
-    }
-
-    const cacheKey = lessonId != null ? `lesson:${lessonId}` : `global:${lessonGlobalSeq}`;
-    const cachedSessions = sessionsCacheRef.current.get(cacheKey);
-    if (cachedSessions) {
-      setDrawerSessions(cachedSessions);
-      setDrawerStatus("ready");
-      setDrawerError(null);
-      return;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    setDrawerStatus("loading");
-    setDrawerError(null);
-    setDrawerSessions([]);
-
-    const searchParams = new URLSearchParams();
-    searchParams.set("limit", "3");
-    if (lessonGlobalSeq != null) {
-      searchParams.set("lessonGlobalSeq", String(lessonGlobalSeq));
-    }
-    if (drawerLesson.level) {
-      searchParams.set("level", drawerLesson.level);
-    }
-    if (drawerLesson.seq != null) {
-      searchParams.set("seq", String(drawerLesson.seq));
-    }
-
-    fetch(
-      `/api/students/${studentId}/sessions/by-lesson/${lessonId ?? "global"}?${searchParams.toString()}`,
-      { cache: "no-store", signal: controller.signal },
-    )
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Request failed");
-        }
-        return response.json();
-      })
-      .then((payload: { sessions?: LessonSession[] }) => {
-        if (cancelled) {
-          return;
-        }
-        const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
-        sessionsCacheRef.current.set(cacheKey, sessions);
-        setDrawerSessions(sessions);
-        setDrawerStatus("ready");
-      })
-      .catch((error) => {
-        if (cancelled || error?.name === "AbortError") {
-          return;
-        }
-        setDrawerStatus("error");
-        setDrawerSessions([]);
-        setDrawerError("No se pudo cargar el historial de la lección.");
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [drawerLesson, studentId]);
-
   const heatmapCells = useMemo(() => buildHeatmapCells(heatmapSource, HEATMAP_DAYS), [heatmapSource]);
   const heatmapMaxMinutes = useMemo(
     () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
@@ -414,96 +161,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     totalHours30d: null,
     avgSessionMinutes30d: null,
   };
-  const leiTrendBase = Array.isArray(data?.engagement?.lei?.trend) ? data.engagement.lei.trend : [];
-  const leiTrendSource = useMemo(() => {
-    if (leiTrendBase.length) {
-      return leiTrendBase;
-    }
-    if (!recentActivity.length) {
-      return [];
-    }
-    const aggregates = new Map<
-      string,
-      { maxSeq: number | null; minutes: number }
-    >();
-    recentActivity.forEach((session) => {
-      const checkIn = session.checkIn;
-      if (!checkIn) {
-        return;
-      }
-      const date = checkIn.slice(0, 10);
-      if (!date) {
-        return;
-      }
-      const entry = aggregates.get(date) ?? { maxSeq: null, minutes: 0 };
-      if (session.lessonGlobalSeq != null && Number.isFinite(session.lessonGlobalSeq)) {
-        const normalized = Math.max(0, Math.trunc(session.lessonGlobalSeq));
-        entry.maxSeq = entry.maxSeq == null ? normalized : Math.max(entry.maxSeq, normalized);
-      }
-      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
-        entry.minutes += Math.max(0, session.sessionMinutes);
-      }
-      aggregates.set(date, entry);
-    });
-    const sortedDates = Array.from(aggregates.keys()).sort();
-    let previousMax: number | null = null;
-    return sortedDates.map((date) => {
-      const metrics = aggregates.get(date);
-      const dayMax = metrics?.maxSeq != null ? metrics.maxSeq : previousMax ?? 0;
-      const minutes = metrics?.minutes ?? 0;
-      const gained = previousMax == null ? dayMax : Math.max(0, dayMax - previousMax);
-      const hours = minutes / 60;
-      const leiValue = hours > 0 ? gained / hours : 0;
-      previousMax = previousMax == null ? dayMax : Math.max(previousMax, dayMax);
-      return {
-        date,
-        lessonsGained: gained,
-        cumulativeLessons: previousMax ?? dayMax,
-        minutesStudied: Math.max(0, Math.round(minutes)),
-        leiValue: Number.isFinite(leiValue) ? leiValue : 0,
-      } satisfies CoachPanelLeiTrendEntry;
-    });
-  }, [leiTrendBase, recentActivity]);
-  const lei30dPlan = useMemo(() => {
-    const rawValue = data?.engagement?.lei?.lei30dPlan;
-    if (rawValue != null && Number.isFinite(rawValue)) {
-      return rawValue;
-    }
-    if (!recentActivity.length) {
-      return null;
-    }
-    const totalMinutes = recentActivity.reduce((sum, session) => {
-      if (session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)) {
-        return sum + Math.max(0, session.sessionMinutes);
-      }
-      return sum;
-    }, 0);
-    if (totalMinutes <= 0) {
-      return null;
-    }
-    let minSeq: number | null = null;
-    let maxSeq: number | null = null;
-    recentActivity.forEach((session) => {
-      if (session.lessonGlobalSeq == null || !Number.isFinite(session.lessonGlobalSeq)) {
-        return;
-      }
-      const normalized = Math.trunc(session.lessonGlobalSeq);
-      if (minSeq == null || normalized < minSeq) {
-        minSeq = normalized;
-      }
-      if (maxSeq == null || normalized > maxSeq) {
-        maxSeq = normalized;
-      }
-    });
-    if (minSeq == null || maxSeq == null || maxSeq <= minSeq) {
-      return 0;
-    }
-    const hours = totalMinutes / 60;
-    if (hours <= 0) {
-      return null;
-    }
-    return (maxSeq - minSeq) / hours;
-  }, [data?.engagement?.lei?.lei30dPlan, recentActivity]);
+  const lei30dPlan = data?.learnerSpeed?.lei30dPlan ?? null;
 
   if (errorMessage) {
     return (
@@ -550,30 +208,113 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const isCompleted = lesson.completed || (currentGlobalSeq != null && lesson.lessonGlobalSeq != null && lesson.lessonGlobalSeq < currentGlobalSeq);
     const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
     const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
+    const effort = lesson.effort;
+    const showEffortBadges =
+      effort != null &&
+      (effort.isCompletedByPosition ?? true) &&
+      effort.totalHours != null &&
+      Number.isFinite(effort.totalHours) &&
+      effort.totalHours > 0;
+
+    const totalHoursDisplay =
+      showEffortBadges && effort?.totalHours != null
+        ? effort.totalHours.toFixed(1)
+        : null;
+    const calendarDaysDisplay =
+      showEffortBadges &&
+      effort?.calendarDaysBetween != null &&
+      Number.isFinite(effort.calendarDaysBetween)
+        ? formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })
+        : null;
+
+    const tooltipLines: string[] = [];
+    tooltipLines.push(
+      `Nivel ${lesson.level ?? "—"} · Lección ${
+        lesson.seq != null ? formatNumber(lesson.seq, { maximumFractionDigits: 0 }) : "—"
+      }`,
+    );
+
+    if (effort) {
+      tooltipLines.push(
+        `Horas de estudio: ${
+          effort.totalHours != null && Number.isFinite(effort.totalHours)
+            ? effort.totalHours.toFixed(2)
+            : "—"
+        } h`,
+      );
+      tooltipLines.push(
+        `Días entre inicio y fin: ${
+          effort.calendarDaysBetween != null && Number.isFinite(effort.calendarDaysBetween)
+            ? formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })
+            : "—"
+        } d`,
+      );
+      tooltipLines.push(
+        `Sesiones: ${
+          effort.sessionsCount != null && Number.isFinite(effort.sessionsCount)
+            ? formatNumber(effort.sessionsCount, { maximumFractionDigits: 0 })
+            : "—"
+        } · Días activos: ${
+          effort.activeDaysForLesson != null && Number.isFinite(effort.activeDaysForLesson)
+            ? formatNumber(effort.activeDaysForLesson, { maximumFractionDigits: 0 })
+            : "—"
+        }`,
+      );
+      tooltipLines.push(
+        `Primera actividad: ${formatDate(effort.startedOn ?? null)} · Última actividad: ${formatDate(
+          effort.finishedOn ?? null,
+        )}`,
+      );
+    } else {
+      tooltipLines.push("Sin actividad registrada para esta lección.");
+    }
+
+    const lessonTooltip = tooltipLines.join("\n");
 
     lessonElements.push(
-      <button
-        type="button"
+      <div
         key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
-        onClick={() => setDrawerLesson({ ...lesson, isExam: isExamBubble })}
-        className={cx(
-          "relative flex items-center justify-center rounded-full border-2 font-semibold transition",
-          isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
-          isCurrent
-            ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
-            : isCompleted
-              ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
-              : "border-brand-teal/50 bg-white text-brand-deep hover:-translate-y-[1px]",
-        )}
-        title={isExamBubble
-          ? `Examen · ${lesson.level ?? ""}`.trim()
-          : `Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()}
+        className="flex flex-col items-center gap-3 pb-12 text-center"
       >
-        {isCurrent ? (
-          <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
-        ) : null}
-        <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
-      </button>,
+        <div
+          className={cx(
+            "relative flex items-center justify-center rounded-full border-2 font-semibold",
+            isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
+            isCurrent
+              ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
+              : isCompleted
+                ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
+                : "border-brand-teal/50 bg-white text-brand-deep",
+            effort?.isCompletedByPosition
+              ? "ring-2 ring-emerald-300 ring-offset-2 ring-offset-white"
+              : null,
+          )}
+          title={lessonTooltip}
+        >
+          {isCurrent ? (
+            <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
+          ) : null}
+          <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
+          <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
+            {showEffortBadges ? (
+              <>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
+                  <span aria-hidden="true">⌛</span>
+                  {totalHoursDisplay}h
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-medium text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
+                  <span aria-hidden="true">📅</span>
+                  {calendarDaysDisplay ?? "—"}d
+                </span>
+              </>
+            ) : (
+              <span className="inline-flex items-center rounded-full border border-dashed border-brand-ink-muted/40 px-3 py-1 text-[11px] font-medium text-brand-ink-muted/50">
+                —
+              </span>
+            )}
+          </div>
+        </div>
+      </div>,
     );
   });
 
@@ -589,6 +330,35 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     ? "conic-gradient(#e2e8f0 0deg, #e2e8f0 360deg)"
     : `conic-gradient(#0b9e8f ${gaugePercent * 3.6}deg, #e2e8f0 ${gaugePercent * 3.6}deg 360deg)`;
 
+  const learnerSpeedLabel = data.learnerSpeed.label;
+  const learnerSpeedTone = resolveSpeedTone(learnerSpeedLabel);
+  const learnerSpeedText = translateSpeedLabel(learnerSpeedLabel);
+
+  const rankPosition = data.leiRank.position;
+  const rankCohort = data.leiRank.cohortSize;
+  const rankPercent = data.leiRank.topPercent;
+
+  const rankPieces: string[] = [];
+  if (rankPosition != null) {
+    const base = formatNumber(rankPosition);
+    if (rankCohort != null) {
+      rankPieces.push(`Posición: ${base} de ${formatNumber(rankCohort)}`);
+    } else {
+      rankPieces.push(`Posición: ${base}`);
+    }
+  } else if (rankCohort != null) {
+    rankPieces.push(`Cohorte: ${formatNumber(rankCohort)} estudiantes`);
+  }
+
+  if (rankPercent != null && Number.isFinite(rankPercent)) {
+    const normalizedPercent = formatPercent(rankPercent, 0);
+    rankPieces.push(`Top ${normalizedPercent} del centro`);
+  }
+
+  const rankBadgeText = rankPieces.length ? rankPieces.join(" • ") : "Sin ranking disponible";
+  const rankBadgeTitle =
+    "Calculado usando todos los estudiantes activos (≥120 min/últimos 30 días).";
+
   return (
     <div className="relative flex flex-col gap-10">
       <section className="space-y-6">
@@ -598,7 +368,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <h3 className="mt-2 text-2xl font-bold text-brand-deep">Recorrido de lecciones</h3>
           </div>
           <p className="text-sm text-brand-ink-muted">
-            Tap en cualquier lección para ver sus últimas sesiones.
+            Vista general del recorrido planificado y el progreso alcanzado.
           </p>
         </div>
         <div className="overflow-x-auto pb-2">
@@ -617,6 +387,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
             <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
+            <p className="mt-1 text-sm text-brand-ink-muted">
+              Muestra la frecuencia y duración de las sesiones recientes.
+            </p>
           </div>
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
@@ -656,22 +429,59 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 />
               ))}
             </div>
+            <p className="mt-3 text-xs text-brand-ink-muted">
+              Intensidad de minutos estudiados cada día durante los últimos 30 días.
+            </p>
           </div>
         </div>
         <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">LEI Histórico</span>
-            <h4 className="text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
-            <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
-            <p className="mt-2 text-4xl font-black text-brand-deep">
-              {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Eficiencia 30 días</span>
+            <h4 className="mt-2 text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
+            <p className="mt-1 text-sm text-brand-ink-muted">
+              Mide la velocidad (LEI) y el ritmo comparado con el resto del centro.
             </p>
           </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4">
-            <Sparkline data={leiTrendSource} />
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
+              <p className="mt-2 text-4xl font-black text-brand-deep">
+                {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div className="h-px w-full bg-brand-ink-muted/10" />
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${learnerSpeedTone}`}
+                >
+                  Ritmo de aprendizaje: {learnerSpeedText}
+                </div>
+                <div
+                  className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-4 py-1.5 text-sm font-semibold text-brand-deep"
+                  title={rankBadgeTitle}
+                >
+                  {rankBadgeText}
+                </div>
+              </div>
+              <p className="text-xs text-brand-ink-muted">
+                Comparado con todos los estudiantes activos del centro en los últimos 30 días.
+              </p>
+            </div>
           </div>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Hábitos</span>
+          <h4 className="mt-2 text-xl font-bold text-brand-deep">Horas de estudio (últimos 30 días)</h4>
+          <p className="mt-1 text-sm text-brand-ink-muted">
+            Indica a qué horas estudia más el estudiante para detectar consistencia y oportunidades.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 p-4">
+          <StudyHoursHistogram data={data.studyHistogram.hourly} summary={data.studyHistogram.summary} />
         </div>
       </section>
 
@@ -722,14 +532,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           </div>
         </div>
       </section>
-
-      <LessonDrawer
-        lesson={drawerLesson}
-        sessions={drawerSessions}
-        status={drawerStatus}
-        error={drawerError}
-        onClose={() => setDrawerLesson(null)}
-      />
     </div>
   );
 }

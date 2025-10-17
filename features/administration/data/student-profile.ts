@@ -1138,12 +1138,28 @@ export type CoachPanelProfileHeader = {
   forecastMonthsToFinishPlan: number | null;
 };
 
+export type LessonEffortRow = {
+  lessonId: number | null;
+  level: string | null;
+  seq: number | null;
+  totalHours: number | null;
+  calendarDaysBetween: number | null;
+  sessionsCount: number | null;
+  activeDaysForLesson: number | null;
+  startedOn: string | null;
+  finishedOn: string | null;
+  isCompletedByPosition: boolean | null;
+};
+
 export type CoachPanelLessonJourneyEntry = {
   lessonId: number | null;
   lessonGlobalSeq: number | null;
   level: string | null;
   seq: number | null;
   completed: boolean;
+  daysInLesson: number | null;
+  minutesInLesson: number | null;
+  effort: LessonEffortRow | null;
 };
 
 export type CoachPanelLessonJourney = {
@@ -1176,6 +1192,34 @@ export type CoachPanelEngagement = {
     lei30dPlan: number | null;
     trend: CoachPanelLeiTrendEntry[];
   };
+};
+
+export type LearnerSpeedSummary = {
+  label: "Slow" | "Normal" | "Fast" | null;
+  lei30dPlan: number | null;
+};
+
+export type StudentLeiRank = {
+  position: number | null;
+  topPercent: number | null;
+  cohortSize: number | null;
+};
+
+export type DaypartRow = {
+  daypart: "Morning" | "Afternoon" | "Evening" | "Night";
+  minutes: number;
+};
+
+export type HourlyHistogramRow = {
+  hourOfDay: number;
+  minutes: number;
+  sessions: number;
+};
+
+export type StudyActivity30dSummary = {
+  totalMinutes: number | null;
+  activeDays: number | null;
+  activeSessions: number | null;
 };
 
 export type CoachPanelPaceForecast = {
@@ -1221,6 +1265,12 @@ export type StudentCoachPanelSummary = {
   engagement: CoachPanelEngagement;
   paceForecast: CoachPanelPaceForecast;
   recentActivity: CoachPanelRecentActivityEntry[];
+  learnerSpeed: LearnerSpeedSummary;
+  leiRank: StudentLeiRank;
+  studyHistogram: {
+    hourly: HourlyHistogramRow[];
+    summary: StudyActivity30dSummary;
+  };
 };
 
 type CoachPanelOverview = {
@@ -1553,7 +1603,7 @@ export async function listStudentCoachPlanLessons(
   const sql = getSqlClient();
   const rows = await safeQuery(
     sql`
-      SELECT level, seq, lesson_id, completed, lesson_global_seq
+      SELECT *
       FROM mart.student_plan_lessons_with_status_v
       WHERE student_id = ${studentId}::bigint
       ORDER BY lesson_global_seq
@@ -1561,8 +1611,8 @@ export async function listStudentCoachPlanLessons(
     "mart.student_plan_lessons_with_status_v",
   );
 
-  return rows
-    .map((row) => {
+  const entries = rows
+    .map((row): CoachPanelLessonJourneyEntry | null => {
       const payload = toJsonRecord(row);
       if (!payload) {
         return null;
@@ -1573,9 +1623,102 @@ export async function listStudentCoachPlanLessons(
         level: extractString(payload, ["level", "level_code"]),
         seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
         completed: determineLessonCompletion(payload),
+        daysInLesson:
+          extractNumber(payload, [
+            "days_in_lesson",
+            "lesson_days",
+            "days_in_level",
+            "study_days",
+          ]) ?? null,
+        minutesInLesson:
+          extractNumber(payload, [
+            "minutes_in_lesson",
+            "lesson_minutes",
+            "total_minutes_in_lesson",
+            "study_minutes",
+          ]) ?? null,
+        effort: null,
       } satisfies CoachPanelLessonJourneyEntry;
     })
     .filter((entry): entry is CoachPanelLessonJourneyEntry => Boolean(entry));
+
+  return entries;
+}
+
+export async function listStudentPlanLessonEffort(
+  studentId: number,
+): Promise<LessonEffortRow[]> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT
+        level,
+        seq,
+        lesson_id,
+        total_hours,
+        calendar_days_between,
+        sessions_count,
+        active_days_for_lesson,
+        started_on,
+        finished_on,
+        is_completed_by_position
+      FROM mart.student_plan_lesson_effort_v
+      WHERE student_id = ${studentId}::bigint
+      ORDER BY level, seq
+    `,
+    "mart.student_plan_lesson_effort_v",
+  );
+
+  const entries = rows
+    .map((row): LessonEffortRow | null => {
+      const payload = toJsonRecord(row);
+      if (!payload) {
+        return null;
+      }
+
+      return {
+        lessonId: normalizeInteger(payload.lesson_id),
+        level: extractString(payload, ["level", "level_code"]),
+        seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
+        totalHours: extractNumber(payload, ["total_hours", "hours", "study_hours"]),
+        calendarDaysBetween: extractNumber(payload, [
+          "calendar_days_between",
+          "calendar_days",
+        ]),
+        sessionsCount: extractNumber(payload, ["sessions_count", "session_count"]),
+        activeDaysForLesson: extractNumber(payload, [
+          "active_days_for_lesson",
+          "active_days",
+        ]),
+        startedOn: extractString(payload, ["started_on", "first_started_on", "first_activity_on"]),
+        finishedOn: extractString(payload, ["finished_on", "last_finished_on", "last_activity_on"]),
+        isCompletedByPosition: extractBoolean(payload, [
+          "is_completed_by_position",
+          "completed_by_position",
+        ]),
+      } satisfies LessonEffortRow;
+    })
+    .filter((entry): entry is LessonEffortRow => Boolean(entry));
+
+  return entries;
+}
+
+function buildLessonEffortKey(
+  level: string | null | undefined,
+  seq: number | null | undefined,
+): string | null {
+  if (!level || seq == null || !Number.isFinite(seq)) {
+    return null;
+  }
+
+  const normalizedLevel = level.trim().toUpperCase();
+  if (!normalizedLevel.length) {
+    return null;
+  }
+
+  return `${normalizedLevel}-${Math.trunc(seq)}`;
 }
 
 export async function getStudentCoachPlanPosition(
@@ -1741,6 +1884,264 @@ export async function listStudentRecentSessions(
   noStore();
   const sessions = await fetchCoachPanelSessions(studentId, Math.max(limit * 6, 120));
   return buildRecentActivityFromSessions(sessions, limit);
+}
+
+const LEARNER_SPEED_LABEL_MAP: Record<string, LearnerSpeedSummary["label"]> = {
+  slow: "Slow",
+  lento: "Slow",
+  normal: "Normal",
+  fast: "Fast",
+  rapido: "Fast",
+  rápido: "Fast",
+};
+ 
+export async function getStudentLearnerSpeedSummary(
+  studentId: number,
+): Promise<LearnerSpeedSummary> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT learner_speed_label, lei_30d_plan
+      FROM mart.student_learner_speed_v
+      WHERE student_id = ${studentId}::bigint
+      LIMIT 1
+    `,
+    "mart.student_learner_speed_v",
+  );
+
+  const defaults: LearnerSpeedSummary = {
+    label: null,
+    lei30dPlan: null,
+  };
+
+  if (!rows.length) {
+    return defaults;
+  }
+
+  const payload = toJsonRecord(rows[0]);
+  if (!payload) {
+    return defaults;
+  }
+
+  const rawLabel = extractString(payload, ["learner_speed_label"]);
+  const normalizedLabel = rawLabel
+    ? LEARNER_SPEED_LABEL_MAP[rawLabel.trim().toLowerCase()] ?? null
+    : null;
+
+  const leiPlan = extractNumber(payload, ["lei_30d_plan", "mean_lei"]);
+
+  return {
+    label: normalizedLabel,
+    lei30dPlan: leiPlan != null && Number.isFinite(leiPlan) ? leiPlan : null,
+  };
+}
+
+export async function getStudentLeiRank(studentId: number): Promise<StudentLeiRank> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT position, top_percent, cohort_n
+      FROM mart.student_lei_rank_30d_v
+      WHERE student_id = ${studentId}::bigint
+      LIMIT 1
+    `,
+    "mart.student_lei_rank_30d_v",
+  );
+
+  const defaults: StudentLeiRank = {
+    position: null,
+    topPercent: null,
+    cohortSize: null,
+  };
+
+  if (!rows.length) {
+    return defaults;
+  }
+
+  const payload = toJsonRecord(rows[0]);
+  if (!payload) {
+    return defaults;
+  }
+
+  const position = extractNumber(payload, ["position", "rank_position"]);
+  const topPercent = extractNumber(payload, ["top_percent", "top_pct"]);
+  const cohortSize = extractNumber(payload, ["cohort_n", "cohort_size"]);
+
+  return {
+    position: position != null && Number.isFinite(position) ? Math.max(1, Math.trunc(position)) : null,
+    topPercent:
+      topPercent != null && Number.isFinite(topPercent) ? Math.max(0, Math.min(100, topPercent)) : null,
+    cohortSize:
+      cohortSize != null && Number.isFinite(cohortSize) ? Math.max(0, Math.trunc(cohortSize)) : null,
+  };
+}
+
+const DAYPART_LABELS: ReadonlyArray<DaypartRow["daypart"]> = [
+  "Morning",
+  "Afternoon",
+  "Evening",
+  "Night",
+];
+
+const DAYPART_ALIAS: Record<string, DaypartRow["daypart"]> = {
+  morning: "Morning",
+  afternoon: "Afternoon",
+  evening: "Evening",
+  night: "Night",
+  madrugada: "Morning",
+  manana: "Morning",
+  "mañana": "Morning",
+  tarde: "Afternoon",
+  noche: "Night",
+};
+
+export async function listStudentDaypart30d(studentId: number): Promise<DaypartRow[]> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT daypart, minutes
+      FROM mart.student_daypart_30d_v
+      WHERE student_id = ${studentId}::bigint
+    `,
+    "mart.student_daypart_30d_v",
+  );
+
+  const minutesByDaypart = new Map<DaypartRow["daypart"], number>();
+
+  rows.forEach((row) => {
+    const payload = toJsonRecord(row);
+    if (!payload) {
+      return;
+    }
+
+    const rawDaypart = extractString(payload, ["daypart"]);
+    if (!rawDaypart) {
+      return;
+    }
+
+    const normalizedKey = rawDaypart.trim().toLowerCase();
+    const resolvedDaypart =
+      (DAYPART_LABELS as ReadonlyArray<string>).includes(rawDaypart as string)
+        ? (rawDaypart as DaypartRow["daypart"])
+        : DAYPART_ALIAS[normalizedKey];
+
+    if (!resolvedDaypart) {
+      return;
+    }
+
+    const minutes = extractNumber(payload, ["minutes", "total_minutes", "minutes_total"]);
+    const safeMinutes = minutes != null && Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0;
+    minutesByDaypart.set(resolvedDaypart, safeMinutes);
+  });
+
+  return DAYPART_LABELS.map((daypart) => ({
+    daypart,
+    minutes: minutesByDaypart.get(daypart) ?? 0,
+  }));
+}
+
+export async function listStudentHourlyStudy30d(
+  studentId: number,
+): Promise<HourlyHistogramRow[]> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT hour_of_day, sessions, minutes
+      FROM mart.student_hourly_30d_v
+      WHERE student_id = ${studentId}::bigint
+      ORDER BY hour_of_day
+    `,
+    "mart.student_hourly_30d_v",
+  );
+
+  const histogram: HourlyHistogramRow[] = [];
+
+  rows.forEach((row) => {
+    const payload = toJsonRecord(row);
+    if (!payload) {
+      return;
+    }
+
+    const hour = extractNumber(payload, ["hour_of_day", "hour"]);
+    if (hour == null || !Number.isFinite(hour)) {
+      return;
+    }
+
+    const normalizedHour = Math.min(23, Math.max(0, Math.trunc(hour)));
+    const minutes = extractNumber(payload, ["minutes", "minutes_total", "total_minutes"]);
+    const sessions = extractNumber(payload, ["sessions", "session_count"]);
+
+    histogram.push({
+      hourOfDay: normalizedHour,
+      minutes:
+        minutes != null && Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0,
+      sessions:
+        sessions != null && Number.isFinite(sessions) ? Math.max(0, Math.round(sessions)) : 0,
+    });
+  });
+
+  histogram.sort((a, b) => a.hourOfDay - b.hourOfDay);
+  return histogram;
+}
+
+export async function getStudentActivity30dSummary(
+  studentId: number,
+): Promise<StudyActivity30dSummary> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT total_minutes, active_days, active_sessions
+      FROM mart.student_activity_30d_mv
+      WHERE student_id = ${studentId}::bigint
+      LIMIT 1
+    `,
+    "mart.student_activity_30d_mv",
+  );
+
+  const defaults: StudyActivity30dSummary = {
+    totalMinutes: null,
+    activeDays: null,
+    activeSessions: null,
+  };
+
+  if (!rows.length) {
+    return defaults;
+  }
+
+  const payload = toJsonRecord(rows[0]);
+  if (!payload) {
+    return defaults;
+  }
+
+  const totalMinutes = extractNumber(payload, [
+    "total_minutes",
+    "minutes_total",
+    "minutes",
+    "total_min",
+  ]);
+  const activeDays = extractNumber(payload, ["active_days", "days_active"]);
+  const activeSessions = extractNumber(payload, ["active_sessions", "session_days", "sessions"]);
+
+  return {
+    totalMinutes:
+      totalMinutes != null && Number.isFinite(totalMinutes) ? Math.max(0, Math.round(totalMinutes)) : null,
+    activeDays:
+      activeDays != null && Number.isFinite(activeDays) ? Math.max(0, Math.round(activeDays)) : null,
+    activeSessions:
+      activeSessions != null && Number.isFinite(activeSessions)
+        ? Math.max(0, Math.round(activeSessions))
+        : null,
+  };
 }
 
 export async function listStudentLessonSessions(
@@ -2121,6 +2522,11 @@ export async function getStudentCoachPanelSummary(
     heatmap,
     leiTrend,
     recentActivity,
+    learnerSpeed,
+    leiRank,
+    hourlyStudy,
+    activitySummary,
+    lessonEffort,
   ] = await Promise.all([
     getStudentCoachPanelProfileHeader(studentId),
     listStudentCoachPlanLessons(studentId),
@@ -2128,14 +2534,34 @@ export async function getStudentCoachPanelSummary(
     listStudentEngagementHeatmap(studentId, 30),
     listStudentLeiTrend(studentId, null),
     listStudentRecentSessions(studentId, 10),
+    getStudentLearnerSpeedSummary(studentId),
+    getStudentLeiRank(studentId),
+    listStudentHourlyStudy30d(studentId),
+    getStudentActivity30dSummary(studentId),
+    listStudentPlanLessonEffort(studentId),
   ]);
 
   if (!overview) {
     return null;
   }
 
+  const effortMap = new Map<string, LessonEffortRow>();
+  lessonEffort.forEach((effort) => {
+    const key = buildLessonEffortKey(effort.level, effort.seq);
+    if (!key || effortMap.has(key)) {
+      return;
+    }
+    effortMap.set(key, effort);
+  });
+
+  const lessonsWithEffort = lessons.map((lesson) => {
+    const key = buildLessonEffortKey(lesson.level, lesson.seq);
+    const effort = key ? effortMap.get(key) ?? null : null;
+    return { ...lesson, effort } satisfies CoachPanelLessonJourneyEntry;
+  });
+
   const lessonJourney: CoachPanelLessonJourney = {
-    lessons,
+    lessons: lessonsWithEffort,
     currentPosition: currentPosition ?? null,
   };
 
@@ -2163,6 +2589,12 @@ export async function getStudentCoachPanelSummary(
     engagement,
     paceForecast,
     recentActivity,
+    learnerSpeed,
+    leiRank,
+    studyHistogram: {
+      hourly: hourlyStudy,
+      summary: activitySummary,
+    },
   };
 }
 export type StudentProgressStats = {

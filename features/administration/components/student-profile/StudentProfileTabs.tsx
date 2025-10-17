@@ -46,7 +46,7 @@ const TAB_LABELS: Record<(typeof TAB_ORDER)[number], string> = {
   "cronograma-de-pagos": "Cronograma de pagos",
   examenes: "Exámenes",
   instructivos: "Instructivos",
-  notas: "Notas",
+  notas: "Observaciones",
 };
 
 type StudentProfileTabsProps = {
@@ -174,44 +174,36 @@ export function StudentProfileTabs({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="-mx-2 overflow-x-auto pb-2">
-        <div
-          className="mx-2 flex min-w-full items-center gap-2 border-b border-brand-ink-muted/10"
-          role="tablist"
-          aria-label="Perfil del estudiante"
-        >
-          {tabConfigs.map((tab) => {
-            const tabId = `${baseId}-tab-${tab.value}`;
-            const panelId = `${baseId}-panel-${tab.value}`;
-            const isActive = tab.value === activeTab;
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-brand-ink-muted/10 pb-2"
+        role="tablist"
+        aria-label="Perfil del estudiante"
+      >
+        {tabConfigs.map((tab) => {
+          const tabId = `${baseId}-tab-${tab.value}`;
+          const panelId = `${baseId}-panel-${tab.value}`;
+          const isActive = tab.value === activeTab;
 
-            return (
-              <button
-                key={tab.value}
-                id={tabId}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={panelId}
-                tabIndex={isActive ? 0 : -1}
-                onClick={() => handleSelect(tab.value)}
-                className={`relative inline-flex min-w-max items-center justify-center rounded-t-2xl px-4 py-3 text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                  isActive
-                    ? "text-brand-teal"
-                    : "text-brand-ink-muted hover:text-brand-deep"
-                }`}
-              >
-                {tab.label}
-                <span
-                  aria-hidden="true"
-                  className={`absolute inset-x-2 bottom-0 h-1 rounded-full bg-brand-teal transition ${
-                    isActive ? "opacity-100" : "opacity-0"
-                  }`}
-                />
-              </button>
-            );
-          })}
-        </div>
+          return (
+            <button
+              key={tab.value}
+              id={tabId}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={panelId}
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => handleSelect(tab.value)}
+              className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                isActive
+                  ? "bg-brand-teal text-white shadow"
+                  : "bg-white text-brand-ink-muted hover:bg-brand-ivory hover:text-brand-deep"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {tabConfigs.map((tab) => {
