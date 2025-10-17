@@ -208,17 +208,74 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const isCompleted = lesson.completed || (currentGlobalSeq != null && lesson.lessonGlobalSeq != null && lesson.lessonGlobalSeq < currentGlobalSeq);
     const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
     const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
-    const lessonDaysLabel =
-      lesson.daysInLesson != null
-        ? `${formatNumber(lesson.daysInLesson, { maximumFractionDigits: 0 })} días`
-        : "— días";
-    const lessonHoursLabel =
-      lesson.minutesInLesson != null
-        ? `${formatNumber(lesson.minutesInLesson / 60, { maximumFractionDigits: 1 })} h`
-        : "— h";
+    const effort = lesson.effort;
+    const showEffortBadges =
+      effort != null &&
+      (effort.isCompletedByPosition ?? true) &&
+      effort.totalHours != null &&
+      Number.isFinite(effort.totalHours) &&
+      effort.totalHours > 0;
+
+    const totalHoursDisplay =
+      showEffortBadges && effort?.totalHours != null
+        ? effort.totalHours.toFixed(1)
+        : null;
+    const calendarDaysDisplay =
+      showEffortBadges &&
+      effort?.calendarDaysBetween != null &&
+      Number.isFinite(effort.calendarDaysBetween)
+        ? formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })
+        : null;
+
+    const tooltipLines: string[] = [];
+    tooltipLines.push(
+      `Nivel ${lesson.level ?? "—"} · Lección ${
+        lesson.seq != null ? formatNumber(lesson.seq, { maximumFractionDigits: 0 }) : "—"
+      }`,
+    );
+
+    if (effort) {
+      tooltipLines.push(
+        `Horas de estudio: ${
+          effort.totalHours != null && Number.isFinite(effort.totalHours)
+            ? effort.totalHours.toFixed(2)
+            : "—"
+        } h`,
+      );
+      tooltipLines.push(
+        `Días entre inicio y fin: ${
+          effort.calendarDaysBetween != null && Number.isFinite(effort.calendarDaysBetween)
+            ? formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })
+            : "—"
+        } d`,
+      );
+      tooltipLines.push(
+        `Sesiones: ${
+          effort.sessionsCount != null && Number.isFinite(effort.sessionsCount)
+            ? formatNumber(effort.sessionsCount, { maximumFractionDigits: 0 })
+            : "—"
+        } · Días activos: ${
+          effort.activeDaysForLesson != null && Number.isFinite(effort.activeDaysForLesson)
+            ? formatNumber(effort.activeDaysForLesson, { maximumFractionDigits: 0 })
+            : "—"
+        }`,
+      );
+      tooltipLines.push(
+        `Primera actividad: ${formatDate(effort.startedOn ?? null)} · Última actividad: ${formatDate(
+          effort.finishedOn ?? null,
+        )}`,
+      );
+    } else {
+      tooltipLines.push("Sin actividad registrada para esta lección.");
+    }
+
+    const lessonTooltip = tooltipLines.join("\n");
 
     lessonElements.push(
-      <div key={`lesson-${lesson.lessonGlobalSeq ?? index}`} className="flex flex-col items-center gap-2 text-center">
+      <div
+        key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
+        className="flex flex-col items-center gap-3 pb-7 text-center"
+      >
         <div
           className={cx(
             "relative flex items-center justify-center rounded-full border-2 font-semibold",
@@ -228,22 +285,26 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               : isCompleted
                 ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
                 : "border-brand-teal/50 bg-white text-brand-deep",
+            effort?.isCompletedByPosition
+              ? "ring-2 ring-emerald-300 ring-offset-2 ring-offset-white"
+              : null,
           )}
-          title={
-            isExamBubble
-              ? `Examen · ${lesson.level ?? ""}`.trim()
-              : `Lección ${lesson.seq ?? ""} ${lesson.level ?? ""}`.trim()
-          }
+          title={lessonTooltip}
         >
           {isCurrent ? (
             <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
           ) : null}
           <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
-        </div>
-        <div className="text-[11px] leading-4 text-brand-ink-muted">
-          <span>{lessonDaysLabel}</span>
-          <span className="mx-1 text-brand-ink-muted/50">•</span>
-          <span>{lessonHoursLabel}</span>
+          <div className="pointer-events-none absolute -bottom-6 left-1/2 flex -translate-x-1/2 flex-col items-center text-[10px] leading-tight text-brand-ink-muted">
+            {showEffortBadges ? (
+              <>
+                <div className="font-medium">⌛ {totalHoursDisplay}h</div>
+                <div>📅 {calendarDaysDisplay ?? "—"}d</div>
+              </>
+            ) : (
+              <div className="text-brand-ink-muted/40">–</div>
+            )}
+          </div>
         </div>
       </div>,
     );

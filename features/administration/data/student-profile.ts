@@ -1138,6 +1138,19 @@ export type CoachPanelProfileHeader = {
   forecastMonthsToFinishPlan: number | null;
 };
 
+export type LessonEffortRow = {
+  lessonId: number | null;
+  level: string | null;
+  seq: number | null;
+  totalHours: number | null;
+  calendarDaysBetween: number | null;
+  sessionsCount: number | null;
+  activeDaysForLesson: number | null;
+  startedOn: string | null;
+  finishedOn: string | null;
+  isCompletedByPosition: boolean | null;
+};
+
 export type CoachPanelLessonJourneyEntry = {
   lessonId: number | null;
   lessonGlobalSeq: number | null;
@@ -1146,6 +1159,7 @@ export type CoachPanelLessonJourneyEntry = {
   completed: boolean;
   daysInLesson: number | null;
   minutesInLesson: number | null;
+  effort: LessonEffortRow | null;
 };
 
 export type CoachPanelLessonJourney = {
@@ -1597,8 +1611,8 @@ export async function listStudentCoachPlanLessons(
     "mart.student_plan_lessons_with_status_v",
   );
 
-  return rows
-    .map((row) => {
+  const entries = rows
+    .map((row): CoachPanelLessonJourneyEntry | null => {
       const payload = toJsonRecord(row);
       if (!payload) {
         return null;
@@ -1623,9 +1637,88 @@ export async function listStudentCoachPlanLessons(
             "total_minutes_in_lesson",
             "study_minutes",
           ]) ?? null,
+        effort: null,
       } satisfies CoachPanelLessonJourneyEntry;
     })
     .filter((entry): entry is CoachPanelLessonJourneyEntry => Boolean(entry));
+
+  return entries;
+}
+
+export async function listStudentPlanLessonEffort(
+  studentId: number,
+): Promise<LessonEffortRow[]> {
+  noStore();
+  const sql = getSqlClient();
+
+  const rows = await safeQuery(
+    sql`
+      SELECT
+        level,
+        seq,
+        lesson_id,
+        total_hours,
+        calendar_days_between,
+        sessions_count,
+        active_days_for_lesson,
+        started_on,
+        finished_on,
+        is_completed_by_position
+      FROM mart.student_plan_lesson_effort_v
+      WHERE student_id = ${studentId}::bigint
+      ORDER BY level, seq
+    `,
+    "mart.student_plan_lesson_effort_v",
+  );
+
+  const entries = rows
+    .map((row): LessonEffortRow | null => {
+      const payload = toJsonRecord(row);
+      if (!payload) {
+        return null;
+      }
+
+      return {
+        lessonId: normalizeInteger(payload.lesson_id),
+        level: extractString(payload, ["level", "level_code"]),
+        seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
+        totalHours: extractNumber(payload, ["total_hours", "hours", "study_hours"]),
+        calendarDaysBetween: extractNumber(payload, [
+          "calendar_days_between",
+          "calendar_days",
+        ]),
+        sessionsCount: extractNumber(payload, ["sessions_count", "session_count"]),
+        activeDaysForLesson: extractNumber(payload, [
+          "active_days_for_lesson",
+          "active_days",
+        ]),
+        startedOn: extractString(payload, ["started_on", "first_started_on", "first_activity_on"]),
+        finishedOn: extractString(payload, ["finished_on", "last_finished_on", "last_activity_on"]),
+        isCompletedByPosition: extractBoolean(payload, [
+          "is_completed_by_position",
+          "completed_by_position",
+        ]),
+      } satisfies LessonEffortRow;
+    })
+    .filter((entry): entry is LessonEffortRow => Boolean(entry));
+
+  return entries;
+}
+
+function buildLessonEffortKey(
+  level: string | null | undefined,
+  seq: number | null | undefined,
+): string | null {
+  if (!level || seq == null || !Number.isFinite(seq)) {
+    return null;
+  }
+
+  const normalizedLevel = level.trim().toUpperCase();
+  if (!normalizedLevel.length) {
+    return null;
+  }
+
+  return `${normalizedLevel}-${Math.trunc(seq)}`;
 }
 
 export async function getStudentCoachPlanPosition(
@@ -2433,6 +2526,7 @@ export async function getStudentCoachPanelSummary(
     leiRank,
     hourlyStudy,
     activitySummary,
+    lessonEffort,
   ] = await Promise.all([
     getStudentCoachPanelProfileHeader(studentId),
     listStudentCoachPlanLessons(studentId),
@@ -2444,14 +2538,30 @@ export async function getStudentCoachPanelSummary(
     getStudentLeiRank(studentId),
     listStudentHourlyStudy30d(studentId),
     getStudentActivity30dSummary(studentId),
+    listStudentPlanLessonEffort(studentId),
   ]);
 
   if (!overview) {
     return null;
   }
 
+  const effortMap = new Map<string, LessonEffortRow>();
+  lessonEffort.forEach((effort) => {
+    const key = buildLessonEffortKey(effort.level, effort.seq);
+    if (!key || effortMap.has(key)) {
+      return;
+    }
+    effortMap.set(key, effort);
+  });
+
+  const lessonsWithEffort = lessons.map((lesson) => {
+    const key = buildLessonEffortKey(lesson.level, lesson.seq);
+    const effort = key ? effortMap.get(key) ?? null : null;
+    return { ...lesson, effort } satisfies CoachPanelLessonJourneyEntry;
+  });
+
   const lessonJourney: CoachPanelLessonJourney = {
-    lessons,
+    lessons: lessonsWithEffort,
     currentPosition: currentPosition ?? null,
   };
 
