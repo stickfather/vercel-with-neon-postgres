@@ -20,6 +20,7 @@ export type StudentBasicDetails = {
   representativeEmail: string | null;
   contractStart: string | null;
   contractEnd: string | null;
+  graduated: boolean | null;
   frozenStart: string | null;
   frozenEnd: string | null;
   currentLevel: string | null;
@@ -270,6 +271,7 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     representativeEmail: normalizeFieldValue(row.representativeEmail, "text"),
     contractStart: normalizeFieldValue(row.contractStart, "date"),
     contractEnd: normalizeFieldValue(row.contractEnd, "date"),
+    graduated: normalizeFieldValue(row.graduated, "boolean"),
     frozenStart: normalizeFieldValue(row.frozenStart, "date"),
     frozenEnd: normalizeFieldValue(row.frozenEnd, "date"),
     currentLevel: normalizeFieldValue(row.currentLevel, "text"),
@@ -312,6 +314,7 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
       s.has_special_needs                    AS "hasSpecialNeeds",
       s.contract_start                       AS "contractStart",
       s.contract_end                         AS "contractEnd",
+      s.graduated                            AS "graduated",
       s.frozen_start                         AS "frozenStart",
       s.frozen_end                           AS "frozenEnd",
       s.current_level::text                  AS "currentLevel",
@@ -404,6 +407,7 @@ export async function updateStudentBasicDetails(
       s.has_special_needs                    AS "hasSpecialNeeds",
       s.contract_start                       AS "contractStart",
       s.contract_end                         AS "contractEnd",
+      s.graduated                            AS "graduated",
       s.frozen_start                         AS "frozenStart",
       s.frozen_end                           AS "frozenEnd",
       s.current_level::text                  AS "currentLevel",

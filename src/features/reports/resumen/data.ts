@@ -1,6 +1,122 @@
 import { cache } from "react";
-import type { GenHeader, LevelBands, LevelKPI } from "@/types/reports.resumen";
+import { listStudentManagementEntries } from "@/features/administration/data/students";
+import type {
+  GenHeader,
+  LevelBands,
+  LevelKPI,
+  LevelStateBreakdown,
+  LevelStateKey,
+} from "@/types/reports.resumen";
 import { getSqlClient, normalizeRows } from "@/lib/db/client";
+
+const LEVEL_SORT_ORDER = ["PREA1", "A1", "A2", "B1", "B2", "C1", "C2", "C3"];
+
+const STATE_SYNONYMS: Record<LevelStateKey, string[]> = {
+  activo: ["activo", "activos", "active"],
+  inactivo: ["inactivo", "inactivos", "inactive"],
+  en_pausa: ["en_pausa", "en pausa", "paused", "pause", "on_hold", "on hold"],
+  congelado: ["congelado", "congelada", "frozen", "freeze"],
+  progreso_lento: [
+    "progreso_lento",
+    "progreso lento",
+    "slow_progression",
+    "slow progression",
+    "slow",
+  ],
+  ausente: ["ausente", "ausentes", "absent"],
+  graduado: ["graduado", "graduada", "graduated"],
+  retirado: ["retirado", "retirada", "dropout", "dropped"],
+  invalido: ["invalido", "inválido", "invalid"],
+  prospecto: ["prospecto", "prospect"],
+  otros: [],
+};
+
+const LEVEL_STATE_KEYS: LevelStateKey[] = [
+  "activo",
+  "inactivo",
+  "en_pausa",
+  "congelado",
+  "progreso_lento",
+  "ausente",
+  "graduado",
+  "retirado",
+  "invalido",
+  "prospecto",
+  "otros",
+];
+
+type LevelStateCounts = Record<LevelStateKey, number> & { total: number };
+
+const STATE_LOOKUP = new Map<string, LevelStateKey>();
+
+LEVEL_STATE_KEYS.forEach((key) => {
+  if (key !== "otros") {
+    STATE_LOOKUP.set(key, key);
+  }
+  const synonyms = STATE_SYNONYMS[key] ?? [];
+  synonyms.forEach((synonym) => {
+    const slug = slugify(synonym);
+    if (slug.length) {
+      STATE_LOOKUP.set(slug, key);
+    }
+  });
+});
+
+function slugify(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeStateKey(value: string | null | undefined): LevelStateKey {
+  if (!value) return "otros";
+  const slug = slugify(String(value));
+  if (!slug) return "otros";
+  return STATE_LOOKUP.get(slug) ?? "otros";
+}
+
+function normalizeLevelLabel(value: string | null | undefined): string {
+  if (value == null) return "Sin nivel";
+  const trimmed = String(value).trim();
+  if (!trimmed.length) return "Sin nivel";
+  const upper = trimmed.toUpperCase();
+  if (LEVEL_SORT_ORDER.includes(upper)) {
+    return upper;
+  }
+  if (/^[A-Z]\d$/i.test(trimmed)) {
+    return upper;
+  }
+  if (upper === "SIN NIVEL") {
+    return "Sin nivel";
+  }
+  return trimmed;
+}
+
+function getLevelSortValue(level: string) {
+  const upper = level.toUpperCase();
+  const index = LEVEL_SORT_ORDER.indexOf(upper);
+  if (index !== -1) return index;
+  if (upper === "SIN NIVEL") return LEVEL_SORT_ORDER.length + 1;
+  return LEVEL_SORT_ORDER.length + 2;
+}
+
+function compareLevels(a: string, b: string) {
+  const valueA = getLevelSortValue(a);
+  const valueB = getLevelSortValue(b);
+  if (valueA !== valueB) return valueA - valueB;
+  return a.localeCompare(b, "es", { sensitivity: "base" });
+}
+
+function createEmptyCounts(): LevelStateCounts {
+  const counts = { total: 0 } as LevelStateCounts;
+  LEVEL_STATE_KEYS.forEach((key) => {
+    counts[key] = 0;
+  });
+  return counts;
+}
 
 function normalizeNumber(value: unknown): number {
   if (typeof value === "number") return value;
@@ -71,16 +187,66 @@ async function fetchLevelKpis(): Promise<LevelKPI[]> {
   }));
 }
 
+async function fetchLevelStates(): Promise<LevelStateBreakdown[]> {
+  const entries = await listStudentManagementEntries();
+
+  if (!entries.length) {
+    return [];
+  }
+
+  const levelMap = new Map<string, LevelStateCounts>();
+
+  for (const entry of entries) {
+    const levelLabel = normalizeLevelLabel(entry.level);
+    const stateKey = normalizeStateKey(entry.state);
+    const bucket = levelMap.get(levelLabel);
+
+    if (!bucket) {
+      const nextBucket = createEmptyCounts();
+      nextBucket[stateKey] += 1;
+      nextBucket.total += 1;
+      levelMap.set(levelLabel, nextBucket);
+      continue;
+    }
+
+    bucket[stateKey] += 1;
+    bucket.total += 1;
+  }
+
+  return Array.from(levelMap.entries())
+    .sort(([levelA], [levelB]) => compareLevels(levelA, levelB))
+    .map(([level, counts]) => {
+      const breakdown: LevelStateBreakdown = {
+        level,
+        total: counts.total,
+        activo: counts.activo,
+        inactivo: counts.inactivo,
+        en_pausa: counts.en_pausa,
+        congelado: counts.congelado,
+        progreso_lento: counts.progreso_lento,
+        ausente: counts.ausente,
+        graduado: counts.graduado,
+        retirado: counts.retirado,
+        invalido: counts.invalido,
+        prospecto: counts.prospecto,
+        otros: counts.otros,
+      };
+      return breakdown;
+    });
+}
+
 export const getResumenHeader = cache(fetchResumenHeader);
 export const getLevelBands = cache(fetchLevelBands);
 export const getLevelKpis = cache(fetchLevelKpis);
+export const getLevelStates = cache(fetchLevelStates);
 
 export async function getResumenGeneralData() {
-  const [header, bands, kpis] = await Promise.all([
+  const [header, bands, kpis, states] = await Promise.all([
     getResumenHeader(),
     getLevelBands(),
     getLevelKpis(),
+    getLevelStates(),
   ]);
 
-  return { header, bands, kpis };
+  return { header, bands, kpis, states };
 }

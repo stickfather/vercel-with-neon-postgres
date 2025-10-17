@@ -25,3 +25,21 @@ export type LevelKPI = {
   median_lei_30d: number | null;
   median_months_to_finish: number | null;
 };
+
+export type LevelStateKey =
+  | "activo"
+  | "inactivo"
+  | "en_pausa"
+  | "congelado"
+  | "progreso_lento"
+  | "ausente"
+  | "graduado"
+  | "retirado"
+  | "invalido"
+  | "prospecto"
+  | "otros";
+
+export type LevelStateBreakdown = {
+  level: string;
+  total: number;
+} & Record<LevelStateKey, number>;

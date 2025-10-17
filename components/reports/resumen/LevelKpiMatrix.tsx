@@ -43,6 +43,28 @@ function getHeatColor(value: number | null | undefined) {
   return "bg-rose-100 text-rose-700";
 }
 
+function MetricCell({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+}) {
+  const className = tone ?? "bg-slate-50 text-slate-700";
+  return (
+    <div
+      className={`flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-2 text-center text-sm font-semibold ${className}`}
+    >
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">
+        {label}
+      </span>
+      <span className="text-base">{value}</span>
+    </div>
+  );
+}
+
 type Props = {
   data: LevelKPI[];
 };
@@ -63,51 +85,45 @@ export function LevelKpiMatrix({ data }: Props) {
         <p className="text-sm text-slate-500">Actividad, ritmo y velocidad de avance por nivel.</p>
       </header>
       <div className="flex flex-col gap-4">
-        <div className="hidden grid-cols-5 gap-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 sm:grid">
-          <span className="sm:col-span-2">Nivel</span>
-          <span>% activos (30 d)</span>
-          <span>% en ritmo</span>
-          <span>LEI mediana</span>
-          <span>Meses p/ terminar</span>
-        </div>
-
-        <div className="flex flex-col gap-3">
-          {data.map((row) => (
-            <div
-              key={row.level}
-              className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm transition duration-200 hover:-translate-y-[1px] sm:grid-cols-5"
-            >
-              <div className="flex items-center gap-3 sm:col-span-2">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">
-                  {row.level}
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Estudiantes</span>
-                  <span className="text-lg font-semibold text-slate-800">{integerFormatter.format(row.students)}</span>
-                </div>
-              </div>
-              <div
-                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-2 text-center text-sm font-semibold ${getHeatColor(row.active_30d_pct)}`}
-              >
-                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">Activos 30 d</span>
-                <span className="text-base">{formatPercent(row.active_30d_pct)}</span>
-              </div>
-              <div
-                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-3 py-2 text-center text-sm font-semibold ${getHeatColor(row.on_pace_pct)}`}
-              >
-                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">En ritmo</span>
-                <span className="text-base">{formatPercent(row.on_pace_pct)}</span>
-              </div>
-              <div className="flex flex-col items-center justify-center gap-1 rounded-xl bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-700">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">LEI mediana</span>
-                <span className="text-base">{formatDecimal(row.median_lei_30d)}</span>
-              </div>
-              <div className="flex flex-col items-center justify-center gap-1 rounded-xl bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-700">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500/80">Meses</span>
-                <span className="text-base">{formatMonths(row.median_months_to_finish)}</span>
-              </div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[720px] space-y-3">
+            <div className="grid grid-cols-[minmax(180px,1.1fr)_repeat(4,minmax(0,1fr))] gap-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+              <span>Nivel</span>
+              <span>% activos (30 d)</span>
+              <span>% en ritmo</span>
+              <span>LEI mediana</span>
+              <span>Meses p/ terminar</span>
             </div>
-          ))}
+
+            {data.map((row) => (
+              <div
+                key={row.level}
+                className="grid grid-cols-[minmax(180px,1.1fr)_repeat(4,minmax(0,1fr))] items-stretch gap-3 rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm transition duration-200 hover:-translate-y-[1px]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">
+                    {row.level}
+                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">Estudiantes</span>
+                    <span className="text-lg font-semibold text-slate-800">{integerFormatter.format(row.students)}</span>
+                  </div>
+                </div>
+                <MetricCell
+                  label="Activos 30 d"
+                  value={formatPercent(row.active_30d_pct)}
+                  tone={getHeatColor(row.active_30d_pct)}
+                />
+                <MetricCell
+                  label="En ritmo"
+                  value={formatPercent(row.on_pace_pct)}
+                  tone={getHeatColor(row.on_pace_pct)}
+                />
+                <MetricCell label="LEI mediana" value={formatDecimal(row.median_lei_30d)} />
+                <MetricCell label="Meses p/ terminar" value={formatMonths(row.median_months_to_finish)} />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
