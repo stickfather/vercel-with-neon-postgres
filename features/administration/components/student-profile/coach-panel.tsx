@@ -274,7 +274,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     lessonElements.push(
       <div
         key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
-        className="flex flex-col items-center gap-3 pb-7 text-center"
+        className="flex flex-col items-center gap-3 pb-12 text-center"
       >
         <div
           className={cx(
@@ -295,14 +295,22 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
           ) : null}
           <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
-          <div className="pointer-events-none absolute -bottom-6 left-1/2 flex -translate-x-1/2 flex-col items-center text-[10px] leading-tight text-brand-ink-muted">
+          <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
             {showEffortBadges ? (
               <>
-                <div className="font-medium">⌛ {totalHoursDisplay}h</div>
-                <div>📅 {calendarDaysDisplay ?? "—"}d</div>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
+                  <span aria-hidden="true">⌛</span>
+                  {totalHoursDisplay}h
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-medium text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
+                  <span aria-hidden="true">📅</span>
+                  {calendarDaysDisplay ?? "—"}d
+                </span>
               </>
             ) : (
-              <div className="text-brand-ink-muted/40">–</div>
+              <span className="inline-flex items-center rounded-full border border-dashed border-brand-ink-muted/40 px-3 py-1 text-[11px] font-medium text-brand-ink-muted/50">
+                —
+              </span>
             )}
           </div>
         </div>
