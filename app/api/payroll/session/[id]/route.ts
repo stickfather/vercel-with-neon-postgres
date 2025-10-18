@@ -31,7 +31,7 @@ function parseSessionId(param: string | string[] | undefined): number | null {
 
 export async function PUT(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string | string[] | undefined }> },
 ) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
@@ -93,7 +93,7 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string | string[] | undefined }> },
 ) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
