@@ -44,6 +44,11 @@ type SelectedCell = {
 
 type AccessMode = "pending" | "readOnly" | "management";
 
+type ManagerAuthToken = {
+  token: string;
+  expiresAt: number | null;
+};
+
 const STAFF_COLUMN_WIDTH = 94;
 const APPROVED_AMOUNT_COLUMN_WIDTH = 96;
 const PAID_COLUMN_WIDTH = 72;
@@ -184,6 +189,23 @@ type RawMonthSummaryRow = {
   reference?: string | null;
 };
 
+type ApiMatrixRow = {
+  staff_id: number;
+  staff_name: string | null;
+  work_date: string;
+  total_hours: number;
+  approved_hours: number | null;
+  approved: boolean;
+  has_edits: boolean;
+  cell_color: "green" | "yellow" | "orange";
+};
+
+type ApiMatrixResponse = {
+  range: { from: string; to: string };
+  rows: ApiMatrixRow[];
+  amounts_hidden?: boolean;
+};
+
 const currencyFormatter = new Intl.NumberFormat("es-EC", {
   style: "currency",
   currency: "USD",
@@ -208,6 +230,57 @@ function createNoStoreInit(): RequestInit & { next: { revalidate: number } } {
     headers: { "Cache-Control": "no-store" },
     next: { revalidate: 0 },
   };
+}
+
+function enumerateDaysInclusive(from: string, to: string): string[] {
+  const result: string[] = [];
+  const fromMatch = from.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const toMatch = to.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!fromMatch || !toMatch) {
+    return result;
+  }
+
+  let year = Number(fromMatch[1]);
+  let month = Number(fromMatch[2]);
+  let day = Number(fromMatch[3]);
+
+  const toYear = Number(toMatch[1]);
+  const toMonth = Number(toMatch[2]);
+  const toDay = Number(toMatch[3]);
+
+  while (true) {
+    const value = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    result.push(value);
+    if (year === toYear && month === toMonth && day === toDay) {
+      break;
+    }
+    day += 1;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    if (day > daysInMonth) {
+      day = 1;
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+    }
+  }
+
+  return result;
+}
+
+function sanitizeHoursValue(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Number(value.toFixed(2));
+}
+
+function sanitizeOptionalHoursValue(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Number(value.toFixed(2));
 }
 
 function getMonthRange(month: string): { from: string; to: string; endExclusive: string } {
@@ -467,86 +540,114 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [pinSessionActive, setPinSessionActive] = useState(false);
+  const [managerToken, setManagerToken] = useState<ManagerAuthToken | null>(null);
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [amountPopoverStaffId, setAmountPopoverStaffId] = useState<number | null>(null);
-  const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
+  const pinRequestRef = useRef<((value: ManagerAuthToken | null) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
 
   const isManagementMode = accessMode === "management";
   const isReadOnlyMode = accessMode === "readOnly";
 
   const resolvePinRequest = useCallback(
-    (granted: boolean) => {
+    (token: ManagerAuthToken | null) => {
       const resolver = pinRequestRef.current;
       pinRequestRef.current = null;
-      if (granted && pendingAccessMode === "management") {
+      if (token && pendingAccessMode === "management") {
         setAccessMode("management");
       }
-      if (!granted && pendingAccessMode === "management") {
+      if (!token && pendingAccessMode === "management") {
         setAccessMode("pending");
       }
       setPendingAccessMode(null);
       if (resolver) {
-        resolver(granted);
+        resolver(token);
       }
     },
     [pendingAccessMode],
   );
 
-  const waitForPin = useCallback((): Promise<boolean> => {
+  const waitForPin = useCallback((): Promise<ManagerAuthToken | null> => {
     return new Promise((resolve) => {
       pinRequestRef.current = resolve;
       setPinModalOpen(true);
     });
   }, []);
 
-  const ensureManagementAccess = useCallback(async (): Promise<boolean> => {
+  const isTokenValid = useCallback((token: ManagerAuthToken | null): token is ManagerAuthToken => {
+    if (!token) return false;
+    if (token.expiresAt == null) return true;
+    return token.expiresAt > Date.now();
+  }, []);
+
+  const ensureManagementAccess = useCallback(async (): Promise<ManagerAuthToken | null> => {
     if (!isManagementMode) {
       setToast({ message: "Disponible sólo en modo gestión.", tone: "error" });
-      return false;
+      return null;
     }
-    if (pinSessionActive) {
-      return true;
+    if (isTokenValid(managerToken)) {
+      return managerToken;
     }
-    return waitForPin();
-  }, [isManagementMode, pinSessionActive, waitForPin]);
+    const token = await waitForPin();
+    if (token) {
+      setManagerToken(token);
+    }
+    return token;
+  }, [isManagementMode, isTokenValid, managerToken, waitForPin, setToast]);
 
-  const handleUnauthorized = useCallback(async (): Promise<boolean> => {
+  const handleUnauthorized = useCallback(async (): Promise<ManagerAuthToken | null> => {
     if (!isManagementMode) {
-      return false;
+      return null;
     }
-    setPinSessionActive(false);
-    return waitForPin();
+    setManagerToken(null);
+    const token = await waitForPin();
+    if (token) {
+      setManagerToken(token);
+    }
+    return token;
   }, [isManagementMode, waitForPin]);
 
   const performProtectedFetch = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit) => {
-      const allowed = await ensureManagementAccess();
-      if (!allowed) {
+      const token = await ensureManagementAccess();
+      if (!token) {
         throw new Error("PIN de gerencia requerido.");
       }
 
-      let response = await fetch(input, init);
-      if (response.status === 401) {
-        const granted = await handleUnauthorized();
-        if (!granted) {
-          throw new Error("PIN de gerencia requerido.");
-        }
-        response = await fetch(input, init);
-        if (response.status === 401) {
-          setPinSessionActive(false);
-          throw new Error("PIN de gerencia requerido.");
-        }
-      }
+      const headers = new Headers(init?.headers ?? {});
+      headers.set("Authorization", `Bearer ${token.token}`);
 
-      if (response.ok) {
-        setPinSessionActive(true);
+      let response = await fetch(input, { ...init, headers });
+      if (response.status === 401) {
+        const refreshed = await handleUnauthorized();
+        if (!refreshed) {
+          throw new Error("PIN de gerencia requerido.");
+        }
+        const retryHeaders = new Headers(init?.headers ?? {});
+        retryHeaders.set("Authorization", `Bearer ${refreshed.token}`);
+        response = await fetch(input, { ...init, headers: retryHeaders });
+        if (response.status === 401) {
+          setManagerToken(null);
+          throw new Error("PIN de gerencia requerido.");
+        }
+        setManagerToken(refreshed);
+      } else {
+        setManagerToken(token);
       }
 
       return response;
     },
     [ensureManagementAccess, handleUnauthorized],
+  );
+
+  const fetchWithAccess = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (isManagementMode) {
+        return performProtectedFetch(input, init);
+      }
+      return fetch(input, init);
+    },
+    [isManagementMode, performProtectedFetch],
   );
 
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
@@ -760,7 +861,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       console.error("Mes inválido seleccionado", error);
       return { from: selectedMonth, to: selectedMonth, endExclusive: selectedMonth };
     }
-  }, [selectedMonth]);
+  }, [fetchWithAccess, selectedMonth]);
 
   const { from, to } = monthRange;
 
@@ -852,42 +953,103 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         : "El mes seleccionado define el rango cuando no hay fechas manuales.");
 
   const fetchMatrixData = useCallback(async (): Promise<MatrixResponse> => {
-    const params = new URLSearchParams();
-    if (selectedMonth) {
-      params.set("month", selectedMonth);
-    }
-    if (activeStart) {
-      params.set("from", activeStart);
-    }
-    if (activeEnd) {
-      params.set("to", activeEnd);
+    if (!activeStart || !activeEnd) {
+      throw new Error("Debes indicar el rango de fechas.");
     }
 
-    const query = params.toString();
-    const response = await fetch(
-      query.length ? `/api/payroll/matrix?${query}` : "/api/payroll/matrix",
-      createNoStoreInit(),
-    );
+    const params = new URLSearchParams();
+    params.set("from", activeStart);
+    params.set("to", activeEnd);
+
+    const url = `/api/payroll/matrix?${params.toString()}`;
+    const response = await fetchWithAccess(url, createNoStoreInit());
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       const message =
         (body as { error?: string } | null)?.error ?? "Error al obtener la matriz.";
       throw new Error(message);
     }
-    const matrix = (body as MatrixResponse | null) ?? { days: [], rows: [] };
-    return {
-      ...matrix,
-      rows: Array.isArray(matrix.rows)
-        ? [...matrix.rows].sort((a, b) => a.staffId - b.staffId)
-        : [],
-    };
-  }, [activeEnd, activeStart, selectedMonth, usingCustomRange]);
+
+    const apiMatrix = body as ApiMatrixResponse | null;
+    if (!apiMatrix || !apiMatrix.range) {
+      return { days: [], rows: [], amountsHidden: true };
+    }
+
+    const days = enumerateDaysInclusive(apiMatrix.range.from, apiMatrix.range.to);
+
+    const grouped = new Map<
+      number,
+      {
+        staffId: number;
+        staffName?: string | null;
+        cells: Map<string, MatrixCell>;
+      }
+    >();
+
+    for (const entry of apiMatrix.rows ?? []) {
+      const staffId = Number(entry.staff_id);
+      if (!Number.isFinite(staffId)) {
+        continue;
+      }
+      const workDate = typeof entry.work_date === "string" ? entry.work_date : "";
+      if (!workDate) {
+        continue;
+      }
+
+      if (!grouped.has(staffId)) {
+        grouped.set(staffId, {
+          staffId,
+          staffName: entry.staff_name ?? undefined,
+          cells: new Map(),
+        });
+      }
+
+      const rawHours = sanitizeHoursValue(entry.total_hours);
+      const approvedHours = sanitizeOptionalHoursValue(entry.approved_hours);
+
+      grouped.get(staffId)!.cells.set(workDate, {
+        date: workDate,
+        rawHours,
+        approved: Boolean(entry.approved),
+        approvedHours: approvedHours,
+        hasEdits: Boolean(entry.has_edits),
+      });
+    }
+
+    const matrixRows: MatrixRow[] = [];
+
+    for (const [, value] of grouped) {
+      const cells: MatrixCell[] = days.map((day) => {
+        const existing = value.cells.get(day);
+        if (existing) {
+          return existing;
+        }
+        return {
+          date: day,
+          rawHours: 0,
+          approved: false,
+          approvedHours: null,
+          hasEdits: false,
+        };
+      });
+
+      matrixRows.push({
+        staffId: value.staffId,
+        staffName: value.staffName ?? undefined,
+        cells,
+      });
+    }
+
+    matrixRows.sort((a, b) => a.staffId - b.staffId);
+
+    return { days, rows: matrixRows, amountsHidden: Boolean(apiMatrix.amounts_hidden) };
+  }, [activeEnd, activeStart, fetchWithAccess]);
 
   const fetchMonthStatusData = useCallback(
     async (staffId?: number): Promise<PayrollMonthStatusRow[]> => {
       const staffQuery =
         staffId != null ? `&staffId=${encodeURIComponent(String(staffId))}` : "";
-      const response = await fetch(
+      const response = await fetchWithAccess(
         `/api/payroll/month-status?month=${encodeURIComponent(selectedMonth)}${staffQuery}`,
         createNoStoreInit(),
       );
@@ -901,11 +1063,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       const rows = (body as { rows?: PayrollMonthStatusRow[] } | null)?.rows ?? [];
       return [...rows].sort((a, b) => a.staffId - b.staffId);
     },
-    [selectedMonth],
+    [fetchWithAccess, selectedMonth],
   );
 
   const fetchMonthSummaryData = useCallback(async (): Promise<MonthSummaryRow[]> => {
-    const response = await fetch(
+    const response = await fetchWithAccess(
       `/api/payroll/month-summary?month=${encodeURIComponent(selectedMonth)}`,
       createNoStoreInit(),
     );
@@ -1690,6 +1852,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, [amountPopoverStaffId]);
 
   const matrixDays = matrixData?.days ?? [];
+  const hideApprovedAmounts = isReadOnlyMode || Boolean(matrixData?.amountsHidden);
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
   const cellVariant = useMemo(() => {
     if (effectiveCellWidth >= 64) return "relaxed" as const;
@@ -2012,7 +2175,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   );
                                 })}
                                 <td className="relative px-2 py-1 text-right font-semibold text-brand-deep">
-                                  {isReadOnlyMode ? (
+                                  {hideApprovedAmounts ? (
                                     <div
                                       className="relative inline-flex items-center justify-end gap-2"
                                       data-amount-popover-owner={row.staffId}
@@ -2460,7 +2623,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               type="button"
               onClick={() => {
                 setPinModalOpen(false);
-                resolvePinRequest(false);
+                resolvePinRequest(null);
               }}
               className="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white text-lg font-semibold text-brand-ink shadow hover:-translate-y-[1px] hover:bg-brand-teal-soft/40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
               aria-label="Cerrar validación"
@@ -2472,10 +2635,29 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               title="PIN de gerencia requerido"
               description="Confirma el PIN de gerencia para continuar."
               ctaLabel="Validar PIN"
-              onSuccess={() => {
-                setPinSessionActive(true);
+              onSuccess={(result) => {
                 setPinModalOpen(false);
-                resolvePinRequest(true);
+                const tokenValue = result?.token ?? null;
+                if (tokenValue) {
+                  const expiresAtSeconds =
+                    result?.expiresAt ??
+                    (result?.expiresIn != null
+                      ? Math.floor(Date.now() / 1000) + result.expiresIn
+                      : null);
+                  const expiresAt =
+                    typeof expiresAtSeconds === "number"
+                      ? expiresAtSeconds * 1000
+                      : null;
+                  const tokenInfo: ManagerAuthToken = {
+                    token: tokenValue,
+                    expiresAt,
+                  };
+                  setManagerToken(tokenInfo);
+                  resolvePinRequest(tokenInfo);
+                } else {
+                  setManagerToken(null);
+                  resolvePinRequest(null);
+                }
               }}
             />
           </div>

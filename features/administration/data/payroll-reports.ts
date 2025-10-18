@@ -29,9 +29,26 @@ export type MatrixRow = {
   cells: MatrixCell[];
 };
 
+export type PayrollMatrixContractRow = {
+  staffId: number;
+  staffName: string | null;
+  workDate: string;
+  totalHours: number;
+  approvedHours: number | null;
+  approved: boolean;
+  hasEdits: boolean;
+  cellColor: "green" | "yellow" | "orange";
+};
+
+export type PayrollMatrixContract = {
+  range: { from: string; to: string };
+  rows: PayrollMatrixContractRow[];
+};
+
 export type PayrollMatrixResponse = {
   days: string[];
   rows: MatrixRow[];
+  amountsHidden?: boolean;
 };
 
 export type SessionEditDiff = {
@@ -479,10 +496,12 @@ async function applyStaffDayApproval(
   sql: SqlClient,
   staffId: number,
   workDate: string,
+  approved: boolean,
   approvedMinutes: number | null,
+  note: string | null,
 ): Promise<void> {
   const roundedMinutes =
-    approvedMinutes != null && Number.isFinite(approvedMinutes)
+    approved && approvedMinutes != null && Number.isFinite(approvedMinutes)
       ? Math.max(0, Math.round(approvedMinutes))
       : null;
 
@@ -490,10 +509,10 @@ async function applyStaffDayApproval(
     SELECT public.upsert_payroll_day_approval(
       ${staffId}::bigint,
       ${workDate}::date,
-      TRUE,
+      ${approved}::boolean,
       ${roundedMinutes}::integer,
       ${null}::bigint,
-      ${null}::text
+      ${note}::text
     )
   `;
 }
@@ -531,6 +550,7 @@ export async function updatePayrollMonthStatus({
   paidAt,
   amountPaid,
   reference,
+  paidBy,
 }: {
   staffId: number;
   month: string;
@@ -538,6 +558,7 @@ export async function updatePayrollMonthStatus({
   paidAt: string | null;
   amountPaid?: number | null;
   reference?: string | null;
+  paidBy?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedMonth = normalizeMonthInput(month);
@@ -547,6 +568,7 @@ export async function updatePayrollMonthStatus({
       ? Number(Number(amountPaid).toFixed(2))
       : null;
   const referenceValue = reference && reference.trim().length ? reference.trim() : null;
+  const paidByValue = paidBy && paidBy.trim().length ? paidBy.trim() : null;
 
   await sql`
     INSERT INTO public.payroll_month_payments (
@@ -555,7 +577,8 @@ export async function updatePayrollMonthStatus({
       paid,
       paid_at,
       amount_paid,
-      reference
+      reference,
+      paid_by
     )
     VALUES (
       ${staffId}::bigint,
@@ -563,14 +586,16 @@ export async function updatePayrollMonthStatus({
       ${paid}::boolean,
       ${paidAtIso}::timestamptz,
       ${amountValue}::numeric,
-      ${referenceValue}::text
+      ${referenceValue}::text,
+      ${paidByValue}::text
     )
     ON CONFLICT (staff_id, month) DO UPDATE
     SET
       paid = EXCLUDED.paid,
       paid_at = EXCLUDED.paid_at,
       amount_paid = EXCLUDED.amount_paid,
-      reference = EXCLUDED.reference
+      reference = EXCLUDED.reference,
+      paid_by = EXCLUDED.paid_by
   `;
 }
 
@@ -728,6 +753,103 @@ export async function fetchPayrollMatrix({
   matrixRows.sort((a, b) => a.staffId - b.staffId);
 
   return { days, rows: matrixRows };
+}
+
+export async function fetchPayrollMatrixContract({
+  from,
+  to,
+  staffIds,
+}: {
+  from: string;
+  to: string;
+  staffIds?: number[] | null;
+}): Promise<PayrollMatrixContract> {
+  noStore();
+  const sql = getSqlClient();
+  const normalizedFrom = normalizeDateLike(from);
+  const normalizedTo = normalizeDateLike(to);
+
+  if (!normalizedFrom || !normalizedTo) {
+    throw new Error("Debes indicar un rango de fechas válido.");
+  }
+
+  if (normalizedFrom > normalizedTo) {
+    throw new Error(
+      "El rango de fechas es inválido: la fecha inicial debe ser anterior o igual a la final.",
+    );
+  }
+
+  const filteredStaffIds = (staffIds ?? [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0) as number[];
+  const staffParam = filteredStaffIds.length ? filteredStaffIds : null;
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      m.staff_id,
+      sm.full_name AS staff_name,
+      m.work_date,
+      m.total_hours,
+      m.approved_hours,
+      m.approved,
+      m.has_edits,
+      CASE
+        WHEN m.approved THEN 'green'
+        WHEN m.has_edits THEN 'yellow'
+        ELSE 'orange'
+      END AS cell_color
+    FROM public.staff_day_matrix_local_v AS m
+    LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+    WHERE m.work_date BETWEEN ${normalizedFrom}::date AND ${normalizedTo}::date
+      AND (
+        ${staffParam}::bigint[] IS NULL
+        OR m.staff_id = ANY(${staffParam}::bigint[])
+      )
+    ORDER BY m.staff_id, m.work_date
+  `);
+
+  const parsedRows: PayrollMatrixContractRow[] = [];
+
+  for (const row of rows) {
+    const staffId = Number(readRowValue(row, ["staff_id", "staffid"]));
+    if (!Number.isFinite(staffId)) continue;
+
+    const workDate = resolveWorkDateValue(readRowValue(row, ["work_date", "date"]));
+    if (!workDate) continue;
+
+    const approved = toBoolean(readRowValue(row, ["approved", "is_approved"]));
+    const hasEdits = toBoolean(readRowValue(row, ["has_edits", "edited"]));
+    const totalHours =
+      toOptionalNumber(readRowValue(row, ["total_hours", "horas_totales"]), 2) ?? 0;
+    const approvedHours = toOptionalNumber(
+      readRowValue(row, ["approved_hours", "horas_aprobadas"]),
+      2,
+    );
+    const staffName =
+      coerceString(
+        readRowValue(row, ["staff_name", "full_name", "name", "staff"]),
+      ) ?? null;
+
+    const rawCellColor = coerceString(readRowValue(row, ["cell_color", "color"]));
+    const cellColor: "green" | "yellow" | "orange" =
+      rawCellColor === "green" || rawCellColor === "yellow" ? rawCellColor : "orange";
+
+    parsedRows.push({
+      staffId,
+      staffName,
+      workDate,
+      totalHours,
+      approvedHours,
+      approved,
+      hasEdits,
+      cellColor,
+    });
+  }
+
+  return {
+    range: { from: normalizedFrom, to: normalizedTo },
+    rows: parsedRows,
+  };
 }
 
 /**
@@ -956,24 +1078,22 @@ export async function updateStaffDaySession({
   checkoutTime,
 }: {
   sessionId: number;
-  staffId: number;
-  workDate: string;
+  staffId?: number;
+  workDate?: string | null;
   checkinTime: string | null;
   checkoutTime: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
 
-  const normalizedWorkDate = ensureWorkDate(workDate);
   const checkinIso = ensureIsoTime(checkinTime, "entrada");
   const checkoutIso = ensureIsoTime(checkoutTime, "salida");
-  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
-  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
+  let effectiveStaffId = staffId;
+  let effectiveWorkDate = workDate ? ensureWorkDate(workDate) : null;
 
   const existingRows = normalizeRows<SqlRow>(await sql`
-    SELECT checkin_time, checkout_time
+    SELECT staff_id, checkin_time, checkout_time
     FROM staff_attendance
     WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
     LIMIT 1
   `);
 
@@ -981,8 +1101,32 @@ export async function updateStaffDaySession({
     throw new Error("No encontramos la sesión indicada.");
   }
 
+  const existing = existingRows[0];
+  if (!Number.isFinite(effectiveStaffId)) {
+    const existingStaff = Number(readRowValue(existing, ["staff_id", "staffid"]));
+    if (!Number.isFinite(existingStaff)) {
+      throw new Error("No pudimos resolver el colaborador de la sesión.");
+    }
+    effectiveStaffId = existingStaff;
+  }
+
+  if (!effectiveWorkDate) {
+    const fallbackDate =
+      toTimeZoneDayString(readRowValue(existing, ["checkin_time"])) ??
+      toTimeZoneDayString(checkinIso) ??
+      null;
+    if (!fallbackDate) {
+      throw new Error("No pudimos determinar el día de trabajo de la sesión.");
+    }
+    effectiveWorkDate = fallbackDate;
+  }
+
+  const normalizedWorkDate = ensureWorkDate(effectiveWorkDate);
+  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
+  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
+
   await assertNoOverlap(sql, {
-    staffId,
+    staffId: effectiveStaffId!,
     workDate: normalizedWorkDate,
     checkinIso,
     checkoutIso,
@@ -994,19 +1138,18 @@ export async function updateStaffDaySession({
     SET checkin_time = ${checkinIso}::timestamptz,
         checkout_time = ${checkoutIso}::timestamptz
     WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
   `;
 
-  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
+  await invalidateStaffDayApproval(sql, effectiveStaffId!, normalizedWorkDate);
   await logPayrollAuditEvent({
     action: "update_session",
-    staffId,
+    staffId: effectiveStaffId!,
     workDate: normalizedWorkDate,
     sessionId,
     details: {
       before: {
-        checkinTime: existingRows[0].checkin_time,
-        checkoutTime: existingRows[0].checkout_time,
+        checkinTime: existing.checkin_time,
+        checkoutTime: existing.checkout_time,
       },
       after: {
         checkinTime: checkinIso,
@@ -1019,7 +1162,7 @@ export async function updateStaffDaySession({
 
   return {
     sessionId,
-    staffId,
+    staffId: effectiveStaffId!,
     workDate: normalizedWorkDate,
     checkinTime: checkinIso,
     checkoutTime: checkoutIso,
@@ -1029,20 +1172,23 @@ export async function updateStaffDaySession({
 
 export async function createStaffDaySession({
   staffId,
-  workDate,
   checkinTime,
   checkoutTime,
 }: {
   staffId: number;
-  workDate: string;
+  workDate?: string | null;
   checkinTime: string | null;
   checkoutTime: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
-
-  const normalizedWorkDate = ensureWorkDate(workDate);
   const checkinIso = ensureIsoTime(checkinTime, "entrada");
   const checkoutIso = ensureIsoTime(checkoutTime, "salida");
+  const normalizedWorkDate = workDate
+    ? ensureWorkDate(workDate)
+    : toTimeZoneDayString(checkinIso) ?? null;
+  if (!normalizedWorkDate) {
+    throw new Error("Debes indicar un día válido para la sesión.");
+  }
   ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
   const minutes = computeDurationMinutes(checkinIso, checkoutIso);
 
@@ -1092,21 +1238,17 @@ export async function createStaffDaySession({
 
 export async function deleteStaffDaySession({
   sessionId,
-  staffId,
-  workDate,
 }: {
   sessionId: number;
-  staffId: number;
-  workDate: string;
+  staffId?: number;
+  workDate?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
-  const normalizedWorkDate = ensureWorkDate(workDate);
 
   const existingRows = normalizeRows<SqlRow>(await sql`
-    SELECT checkin_time, checkout_time
+    SELECT staff_id, checkin_time, checkout_time
     FROM staff_attendance
     WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
     LIMIT 1
   `);
 
@@ -1114,22 +1256,35 @@ export async function deleteStaffDaySession({
     throw new Error("No encontramos la sesión indicada.");
   }
 
+  const existing = existingRows[0];
+  const resolvedStaffId = Number(readRowValue(existing, ["staff_id", "staffid"]));
+  if (!Number.isFinite(resolvedStaffId)) {
+    throw new Error("No pudimos resolver el colaborador de la sesión.");
+  }
+
+  const resolvedWorkDate = ensureWorkDate(
+    workDate ??
+      toTimeZoneDayString(readRowValue(existing, ["checkin_time"])) ??
+      (() => {
+        throw new Error("No pudimos determinar el día de trabajo de la sesión.");
+      })(),
+  );
+
   await sql`
     DELETE FROM staff_attendance
     WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
   `;
 
-  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
+  await invalidateStaffDayApproval(sql, resolvedStaffId, resolvedWorkDate);
   await logPayrollAuditEvent({
     action: "delete_session",
-    staffId,
-    workDate: normalizedWorkDate,
+    staffId: resolvedStaffId,
+    workDate: resolvedWorkDate,
     sessionId,
     details: {
       removed: {
-        checkinTime: existingRows[0].checkin_time,
-        checkoutTime: existingRows[0].checkout_time,
+        checkinTime: existing.checkin_time,
+        checkoutTime: existing.checkout_time,
       },
       approvalRevoked: true,
     },
@@ -1140,19 +1295,23 @@ export async function deleteStaffDaySession({
 export async function approveStaffDay({
   staffId,
   workDate,
+  approved,
   approvedMinutes,
+  note,
 }: {
   staffId: number;
   workDate: string;
+  approved: boolean;
   approvedMinutes?: number | null;
+  note?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
   let minutes: number | null = null;
 
-  if (approvedMinutes != null && Number.isFinite(approvedMinutes)) {
+  if (approved && approvedMinutes != null && Number.isFinite(approvedMinutes)) {
     minutes = Math.max(0, Math.round(approvedMinutes));
-  } else {
+  } else if (approved) {
     const totals = normalizeRows<{ total_minutes?: unknown }>(await sql`
       SELECT COALESCE(SUM(session_minutes), 0)::integer AS total_minutes
       FROM public.attendance_local_base_v
@@ -1163,12 +1322,12 @@ export async function approveStaffDay({
     minutes = totalMinutes != null ? Math.max(0, totalMinutes) : 0;
   }
 
-  await applyStaffDayApproval(sql, staffId, normalizedWorkDate, minutes);
+  await applyStaffDayApproval(sql, staffId, normalizedWorkDate, approved, minutes, note ?? null);
   await logPayrollAuditEvent({
     action: "approve_day",
     staffId,
     workDate: normalizedWorkDate,
-    details: { approved: true, approvedMinutes: minutes },
+    details: { approved, approvedMinutes: minutes, note: note ?? null },
     sql,
   });
 }
@@ -1321,7 +1480,7 @@ export async function overrideSessionsAndApprove({
     const recalculatedMinutes =
       toInteger(metrics.total_minutes ?? metrics.minutes ?? null) ?? 0;
 
-    await applyStaffDayApproval(sql, staffId, workDate, recalculatedMinutes);
+    await applyStaffDayApproval(sql, staffId, workDate, true, recalculatedMinutes, null);
     await sql`COMMIT`;
   } catch (error) {
     await sql`ROLLBACK`;

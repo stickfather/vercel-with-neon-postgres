@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
 
 import { approveStaffDay } from "@/features/administration/data/payroll-reports";
-import { hasValidPinSession } from "@/lib/security/pin-session";
+import { isManagerAuthorized } from "@/lib/security/manager-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
 type ApproveBody = {
-  staffId?: number;
-  workDate?: string;
-  approvedMinutes?: number | null;
+  staff_id?: number;
+  work_date?: string;
+  approved?: boolean;
+  approved_minutes?: number | null;
+  note?: string | null;
 };
 
 export async function POST(request: Request) {
-  const allowed = await hasValidPinSession("manager");
+  const allowed = isManagerAuthorized(request);
   if (!allowed) {
     return NextResponse.json(
       { error: "PIN de gerencia requerido." },
@@ -32,11 +34,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const staffId = Number(payload.staffId);
-  const workDate = typeof payload.workDate === "string" ? payload.workDate : "";
-  if (!Number.isFinite(staffId) || staffId <= 0 || !workDate.trim().length) {
+  const staffId = Number(payload.staff_id);
+  const workDate = typeof payload.work_date === "string" ? payload.work_date.trim() : "";
+  if (!Number.isFinite(staffId) || staffId <= 0 || !workDate.length) {
     return NextResponse.json(
       { error: "Debes indicar el colaborador y la fecha del día." },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  if (typeof payload.approved !== "boolean") {
+    return NextResponse.json(
+      { error: "Debes indicar si el día queda aprobado." },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -45,7 +54,12 @@ export async function POST(request: Request) {
     await approveStaffDay({
       staffId,
       workDate,
-      approvedMinutes: typeof payload.approvedMinutes === "number" ? payload.approvedMinutes : null,
+      approved: payload.approved,
+      approvedMinutes:
+        typeof payload.approved_minutes === "number" ? payload.approved_minutes : null,
+      note: typeof payload.note === "string" && payload.note.trim().length
+        ? payload.note.trim()
+        : null,
     });
     return NextResponse.json({ ok: true }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

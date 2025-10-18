@@ -9,11 +9,18 @@ type KeypadButton =
   | { label: string; value: string }
   | { label: string; action: "backspace" | "clear" };
 
+type PinVerificationResult = {
+  scope: PinScope;
+  token?: string | null;
+  expiresIn?: number | null;
+  expiresAt?: number | null;
+};
+
 type PinPromptProps = {
   scope: PinScope;
   title: string;
   description: string;
-  onSuccess?: () => void;
+  onSuccess?: (result?: PinVerificationResult) => void;
   className?: string;
   ctaLabel?: string;
 };
@@ -96,6 +103,43 @@ export function PinPrompt({
     setError(null);
 
     try {
+      if (scope === "manager") {
+        const response = await fetch("/api/auth/manager-pin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin: trimmedPin }),
+        });
+
+        const payload = (await response.json().catch(() => ({}))) as {
+          token?: string;
+          role?: string;
+          expires_in?: number;
+          expires_at?: number;
+          error?: string;
+        };
+
+        if (!response.ok || typeof payload?.token !== "string") {
+          throw new Error(payload?.error ?? "El PIN no es correcto.");
+        }
+
+        setPin("");
+        const result: PinVerificationResult = {
+          scope,
+          token: payload.token,
+          expiresIn:
+            typeof payload.expires_in === "number" ? payload.expires_in : null,
+          expiresAt:
+            typeof payload.expires_at === "number" ? payload.expires_at : null,
+        };
+
+        if (onSuccess) {
+          onSuccess(result);
+        } else {
+          router.refresh();
+        }
+        return;
+      }
+
       const response = await fetch("/api/security/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,7 +153,7 @@ export function PinPrompt({
 
       setPin("");
       if (onSuccess) {
-        onSuccess();
+        onSuccess({ scope });
       } else {
         router.refresh();
       }

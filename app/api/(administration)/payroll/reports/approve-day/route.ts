@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await approveStaffDay({ staffId: Number(staffId), workDate });
+    await approveStaffDay({ staffId: Number(staffId), workDate, approved: true });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error al aprobar el día", error);

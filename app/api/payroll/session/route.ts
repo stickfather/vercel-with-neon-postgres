@@ -3,21 +3,20 @@ import { NextResponse } from "next/server";
 import {
   createStaffDaySession,
 } from "@/features/administration/data/payroll-reports";
-import { hasValidPinSession } from "@/lib/security/pin-session";
+import { isManagerAuthorized } from "@/lib/security/manager-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
 type CreateBody = {
-  staffId?: number;
-  workDate?: string;
-  checkinTime?: string | null;
-  checkoutTime?: string | null;
+  staff_id?: number;
+  checkin_time?: string | null;
+  checkout_time?: string | null;
 };
 
 export async function POST(request: Request) {
-  const allowed = await hasValidPinSession("manager");
+  const allowed = isManagerAuthorized(request);
   if (!allowed) {
     return NextResponse.json(
       { error: "PIN de gerencia requerido." },
@@ -35,11 +34,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const staffId = Number(payload.staffId);
-  const workDate = typeof payload.workDate === "string" ? payload.workDate : "";
-  if (!Number.isFinite(staffId) || staffId <= 0 || !workDate.trim().length) {
+  const staffId = Number(payload.staff_id);
+  if (!Number.isFinite(staffId) || staffId <= 0) {
     return NextResponse.json(
-      { error: "Debes indicar el colaborador y la fecha del día." },
+      { error: "Debes indicar el colaborador." },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -47,13 +45,12 @@ export async function POST(request: Request) {
   try {
     const session = await createStaffDaySession({
       staffId,
-      workDate,
-      checkinTime: payload.checkinTime ?? null,
-      checkoutTime: payload.checkoutTime ?? null,
+      checkinTime: payload.checkin_time ?? null,
+      checkoutTime: payload.checkout_time ?? null,
     });
     return NextResponse.json(
-      { session },
-      { status: 200, headers: { "Cache-Control": "no-store" } },
+      { session_id: session.sessionId },
+      { status: 201, headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
     const message =
