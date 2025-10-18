@@ -1,3 +1,4 @@
+import { getSqlClient, normalizeRows, type SqlRow } from "@/lib/db/client";
 import type { PinScope } from "@/lib/security/pin-session";
 
 export type PinStatus = {
@@ -14,8 +15,15 @@ export type SecurityPinsSummary = {
 
 const DEFAULT_PIN = "1234";
 
+type PinRow = {
+  manager_pin?: string | null;
+  staff_pin?: string | null;
+  updated_at?: string | null;
+};
+
 type PinRecord = {
-  value: string;
+  managerPin: string | null;
+  staffPin: string | null;
   updatedAt: string | null;
 };
 
@@ -24,7 +32,7 @@ type PinUpdates = {
   managerPin?: string;
 };
 
-const pinStore: Record<PinScope, PinRecord> = {
+const fallbackPinStore: Record<PinScope, { value: string; updatedAt: string | null }> = {
   staff: { value: DEFAULT_PIN, updatedAt: null },
   manager: { value: DEFAULT_PIN, updatedAt: null },
 };
@@ -37,8 +45,77 @@ function sanitizePin(pin: string): string {
   return trimmed;
 }
 
+function normalizePinValue(value: unknown): string | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  return null;
+}
+
+async function fetchPinRecord(): Promise<PinRecord | null> {
+  try {
+    const sql = getSqlClient();
+    const rows = normalizeRows<PinRow>(
+      await sql`SELECT manager_pin, staff_pin, updated_at FROM public.pins ORDER BY updated_at DESC LIMIT 1`,
+    );
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      managerPin: normalizePinValue(row.manager_pin),
+      staffPin: normalizePinValue(row.staff_pin),
+      updatedAt: normalizePinValue(row.updated_at),
+    };
+  } catch (error) {
+    console.warn("Falling back to in-memory PIN store", error);
+    return null;
+  }
+}
+
+async function getPinRecord(): Promise<PinRecord> {
+  const record = await fetchPinRecord();
+  if (record) {
+    return record;
+  }
+  return {
+    managerPin: fallbackPinStore.manager.value,
+    staffPin: fallbackPinStore.staff.value,
+    updatedAt: null,
+  };
+}
+
+async function savePinRecord({ managerPin, staffPin }: { managerPin: string | null; staffPin: string | null }): Promise<void> {
+  try {
+    const sql = getSqlClient();
+    await sql`
+      INSERT INTO public.pins (id, manager_pin, staff_pin, updated_at)
+      VALUES (1, ${managerPin}::text, ${staffPin}::text, NOW())
+      ON CONFLICT (id) DO UPDATE
+      SET
+        manager_pin = EXCLUDED.manager_pin,
+        staff_pin = EXCLUDED.staff_pin,
+        updated_at = NOW()
+    `;
+  } catch (error) {
+    console.warn("No se pudo persistir el PIN en la base de datos", error);
+    if (managerPin != null) {
+      fallbackPinStore.manager.value = managerPin;
+      fallbackPinStore.manager.updatedAt = new Date().toISOString();
+    }
+    if (staffPin != null) {
+      fallbackPinStore.staff.value = staffPin;
+      fallbackPinStore.staff.updatedAt = new Date().toISOString();
+    }
+  }
+}
+
 function getLatestUpdatedAt(): string | null {
-  const timestamps = Object.values(pinStore)
+  const timestamps = Object.values(fallbackPinStore)
     .map((record) => record.updatedAt)
     .filter((value): value is string => typeof value === "string");
   if (timestamps.length === 0) {
@@ -48,49 +125,45 @@ function getLatestUpdatedAt(): string | null {
 }
 
 export async function getSecurityPinsSummary(): Promise<SecurityPinsSummary> {
+  const record = await getPinRecord();
   return {
-    hasManager: pinStore.manager.value.length > 0,
-    hasStaff: pinStore.staff.value.length > 0,
-    updatedAt: getLatestUpdatedAt(),
+    hasManager: Boolean(record.managerPin && record.managerPin.length > 0),
+    hasStaff: Boolean(record.staffPin && record.staffPin.length > 0),
+    updatedAt: record.updatedAt ?? getLatestUpdatedAt(),
   };
 }
 
 export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
+  const record = await getPinRecord();
   return [
     {
       scope: "manager",
-      isSet: pinStore.manager.value.length > 0,
-      updatedAt: pinStore.manager.updatedAt,
+      isSet: Boolean(record.managerPin && record.managerPin.length > 0),
+      updatedAt: record.updatedAt,
     },
     {
       scope: "staff",
-      isSet: pinStore.staff.value.length > 0,
-      updatedAt: pinStore.staff.updatedAt,
+      isSet: Boolean(record.staffPin && record.staffPin.length > 0),
+      updatedAt: record.updatedAt,
     },
   ];
 }
 
 export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
-  return pinStore[scope].value.length > 0;
+  const record = await getPinRecord();
+  const value = scope === "manager" ? record.managerPin : record.staffPin;
+  return Boolean(value && value.length > 0);
 }
 
 export async function updateSecurityPins({
   staffPin,
   managerPin,
 }: PinUpdates): Promise<void> {
-  const now = new Date().toISOString();
+  const current = await getPinRecord();
+  const nextManager = typeof managerPin === "string" ? sanitizePin(managerPin) : current.managerPin;
+  const nextStaff = typeof staffPin === "string" ? sanitizePin(staffPin) : current.staffPin;
 
-  if (typeof staffPin === "string") {
-    const sanitized = sanitizePin(staffPin);
-    pinStore.staff.value = sanitized;
-    pinStore.staff.updatedAt = now;
-  }
-
-  if (typeof managerPin === "string") {
-    const sanitized = sanitizePin(managerPin);
-    pinStore.manager.value = sanitized;
-    pinStore.manager.updatedAt = now;
-  }
+  await savePinRecord({ managerPin: nextManager, staffPin: nextStaff });
 }
 
 export async function verifySecurityPin(
@@ -99,15 +172,20 @@ export async function verifySecurityPin(
 ): Promise<boolean> {
   try {
     const sanitized = sanitizePin(pin);
-    return pinStore[scope].value === sanitized;
+    const record = await getPinRecord();
+    const stored = scope === "manager" ? record.managerPin : record.staffPin;
+    if (stored) {
+      return stored === sanitized;
+    }
+    return fallbackPinStore[scope].value === sanitized;
   } catch (error) {
     return false;
   }
 }
 
 export function __resetPinsForTests() {
-  pinStore.manager.value = DEFAULT_PIN;
-  pinStore.manager.updatedAt = null;
-  pinStore.staff.value = DEFAULT_PIN;
-  pinStore.staff.updatedAt = null;
+  fallbackPinStore.manager.value = DEFAULT_PIN;
+  fallbackPinStore.manager.updatedAt = null;
+  fallbackPinStore.staff.value = DEFAULT_PIN;
+  fallbackPinStore.staff.updatedAt = null;
 }
