@@ -36,9 +36,10 @@ type SelectedCell = {
   staffId: number;
   staffName: string;
   workDate: string;
-  hours: number;
+  rawHours: number;
   approvedHours: number | null;
   approved: MatrixCell["approved"];
+  hasEdits: MatrixCell["hasEdits"];
 };
 
 type AccessMode = "pending" | "readOnly" | "management";
@@ -461,7 +462,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionRows, setSessionRows] = useState<SessionRow[]>([]);
   const [dayApproval, setDayApproval] = useState<DayApproval | null>(null);
-  const [approvalHoursDraft, setApprovalHoursDraft] = useState<string>("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
@@ -1109,9 +1109,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         staffId: row.staffId,
         staffName: resolveStaffName(row),
         workDate: cell.date,
-        hours: cell.approved && cell.approvedHours != null ? cell.approvedHours : cell.hours,
+        rawHours: cell.rawHours,
         approvedHours: cell.approvedHours,
         approved: cell.approved,
+        hasEdits: cell.hasEdits,
       });
       setSessionsLoading(true);
       setSessionsError(null);
@@ -1132,7 +1133,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setPinModalOpen(false);
     resolvePinRequest(false);
     setDayApproval(null);
-    setApprovalHoursDraft("");
   }, [resolvePinRequest]);
 
   useEffect(() => {
@@ -1159,30 +1159,51 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           setSessionRows(sortSessionRows(buildSessionRows(sessions)));
           setDayApproval(data.approval ?? null);
           const totalMinutesFromSessions = sessions.reduce((accumulator, session) => {
-            const hours = Number(session.hours ?? 0);
-            if (!Number.isFinite(hours) || hours < 0) {
+            const checkinTime = session.checkinTime ? new Date(session.checkinTime).getTime() : NaN;
+            const checkoutTime = session.checkoutTime ? new Date(session.checkoutTime).getTime() : NaN;
+            if (
+              !Number.isFinite(checkinTime) ||
+              !Number.isFinite(checkoutTime) ||
+              checkoutTime <= checkinTime
+            ) {
               return accumulator;
             }
-            return accumulator + Math.round(hours * 60);
+            return accumulator + Math.round((checkoutTime - checkinTime) / 60000);
           }, 0);
-          const effectiveMinutes =
-            data.approval?.approvedMinutes != null
+          const approvedMinutes =
+            typeof data.approval?.approvedMinutes === "number"
               ? Math.max(0, data.approval.approvedMinutes)
-              : totalMinutesFromSessions;
-          setApprovalHoursDraft((effectiveMinutes / 60).toFixed(2));
+              : null;
+          const derivedRawHours = Number((totalMinutesFromSessions / 60).toFixed(2));
+          const derivedApprovedHours =
+            approvedMinutes != null ? Number((approvedMinutes / 60).toFixed(2)) : null;
+          setSelectedCell((previous) => {
+            if (!previous) return previous;
+            if (previous.staffId !== staffId || previous.workDate !== workDate) {
+              return previous;
+            }
+            return {
+              ...previous,
+              rawHours: derivedRawHours,
+              approvedHours: derivedApprovedHours,
+              approved:
+                typeof data.approval?.approved === "boolean"
+                  ? data.approval.approved
+                  : previous.approved,
+            };
+          });
         }
-      } catch (err) {
-        console.error("No se pudieron cargar las sesiones del día", err);
-        if (!cancelled) {
-          const message =
-            err instanceof Error ? err.message : "No se pudieron cargar las sesiones del día.";
-          setSessionsError(message);
-          setDayApproval(null);
-          setApprovalHoursDraft("");
+        } catch (err) {
+          console.error("No se pudieron cargar las sesiones del día", err);
+          if (!cancelled) {
+            const message =
+              err instanceof Error ? err.message : "No se pudieron cargar las sesiones del día.";
+            setSessionsError(message);
+            setDayApproval(null);
+          }
+        } finally {
+          if (!cancelled) setSessionsLoading(false);
         }
-      } finally {
-        if (!cancelled) setSessionsLoading(false);
-      }
     }
 
     void loadSessions();
@@ -1495,11 +1516,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setActionLoading(true);
     setActionError(null);
     try {
-      const hoursValue = Number(approvalHoursDraft.replace(/,/g, "."));
-      if (!Number.isFinite(hoursValue) || hoursValue < 0) {
-        throw new Error("Ingresa un total de horas válido para aprobar.");
+      const hasIncompleteRow = sessionRows.some((row) => computeRowMinutes(row) == null);
+      if (hasIncompleteRow) {
+        throw new Error("Revisa las sesiones antes de aprobar: hay horarios incompletos.");
       }
-      const approvedMinutes = Math.max(0, Math.round(hoursValue * 60));
+
+      if (!Number.isFinite(totalMinutes) || totalMinutes < 0) {
+        throw new Error("No pudimos calcular las horas registradas para este día.");
+      }
+
+      const approvedMinutes = Math.max(0, Math.round(totalMinutes));
 
       const response = await performProtectedFetch("/api/payroll/approve-day", {
         method: "POST",
@@ -1534,6 +1560,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     refreshMonthStatusForStaff,
     refreshMonthSummary,
     selectedCell,
+    sessionRows,
+    totalMinutes,
   ]);
 
   useEffect(() => {
@@ -1664,20 +1692,25 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const totalHours = useMemo(() => Number((totalMinutes / 60).toFixed(2)), [totalMinutes]);
 
-  useEffect(() => {
-    if (!selectedCell || sessionsLoading) return;
-    setSelectedCell((previous) => {
-      if (!previous) return previous;
-      if (Math.abs(previous.hours - totalHours) < 0.01) {
-        return previous;
-      }
-      return { ...previous, hours: totalHours };
-    });
-  }, [selectedCell, sessionsLoading, totalHours]);
-
   const displayHours = sessionsLoading
-    ? selectedCell?.hours ?? totalHours
+    ? selectedCell?.rawHours ?? Number((totalMinutes / 60).toFixed(2))
     : totalHours;
+
+  const minutesFromSelection = selectedCell
+    ? Math.max(0, Math.round(selectedCell.rawHours * 60))
+    : 0;
+  const minutesForApproval = sessionsLoading
+    ? minutesFromSelection
+    : Math.max(0, Math.round(totalMinutes));
+  const hoursForApproval = Number((minutesForApproval / 60).toFixed(2));
+  const approvedMinutesFromServer =
+    typeof dayApproval?.approvedMinutes === "number"
+      ? Math.max(0, dayApproval.approvedMinutes)
+      : null;
+  const approvedHoursFromServer =
+    approvedMinutesFromServer != null
+      ? Number((approvedMinutesFromServer / 60).toFixed(2))
+      : null;
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
@@ -1953,14 +1986,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   </div>
                                 </th>
                                 {row.cells.map((cell) => {
+                                  const hasApprovedValue = cell.approvedHours != null;
                                   const cellHours =
-                                    cell.approved && cell.approvedHours != null
-                                      ? cell.approvedHours
-                                      : cell.hours;
-                                  const cellTone = cell.approved
-                                    ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                    : cell.hasEdits
-                                      ? "border-amber-400 bg-amber-300/90 text-amber-900 hover:bg-amber-300"
+                                    hasApprovedValue && (cell.approved || cell.hasEdits)
+                                      ? cell.approvedHours!
+                                      : cell.rawHours;
+                                  const cellTone = cell.hasEdits
+                                    ? "border-amber-400 bg-amber-300/90 text-amber-900 hover:bg-amber-300"
+                                    : cell.approved
+                                      ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
                                       : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500";
                                   return (
                                     <td key={cell.date} className="px-1 py-1 text-center">
@@ -2376,28 +2410,23 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
             {isManagementMode ? (
               <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                <div className="flex flex-col gap-1 text-sm text-brand-deep">
                   <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                    Horas aprobadas (h)
+                    Horas a aprobar (h)
                   </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.25}
-                    value={approvalHoursDraft}
-                    onChange={(event) => setApprovalHoursDraft(event.target.value)}
-                    className="w-full rounded-2xl border border-brand-ink-muted/30 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                  />
-                </label>
+                  <div className="w-full rounded-2xl border border-brand-ink-muted/30 bg-white px-3 py-2 text-sm font-semibold text-brand-deep shadow">
+                    {hoursFormatter.format(hoursForApproval)} h
+                  </div>
+                </div>
                 {dayApproval?.approvedAt ? (
                   <span className="text-xs text-brand-ink-muted">
-                    Última aprobación: {hoursFormatter.format((dayApproval.approvedMinutes ?? 0) / 60)} h · {formatTimestamp(dayApproval.approvedAt) ?? "—"}
+                    Última aprobación: {hoursFormatter.format(approvedHoursFromServer ?? hoursForApproval)} h · {formatTimestamp(dayApproval.approvedAt) ?? "—"}
                   </span>
                 ) : null}
               </div>
-            ) : dayApproval?.approvedMinutes != null ? (
+            ) : approvedHoursFromServer != null ? (
               <div className="mt-4 rounded-2xl border border-brand-ink-muted/15 bg-brand-deep-soft/30 px-4 py-3 text-xs text-brand-ink-muted">
-                Horas aprobadas: {hoursFormatter.format(dayApproval.approvedMinutes / 60)} h
+                Horas aprobadas: {hoursFormatter.format(approvedHoursFromServer)} h
               </div>
             ) : null}
 

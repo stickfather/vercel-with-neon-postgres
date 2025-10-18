@@ -17,7 +17,7 @@ type SqlClient = ReturnType<typeof getSqlClient>;
 
 export type MatrixCell = {
   date: string;
-  hours: number;
+  rawHours: number;
   approved: boolean;
   approvedHours: number | null;
   hasEdits: boolean;
@@ -695,14 +695,14 @@ export async function fetchPayrollMatrix({
         ? Math.max(0, Number(approvedHours.toFixed(2)))
         : null;
     const baseHours = horasMostrar ?? totalHours ?? safeApprovedHours ?? 0;
-    const safeHours =
+    const safeRawHours =
       typeof baseHours === "number" && Number.isFinite(baseHours)
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
-      hours: safeHours,
+      rawHours: safeRawHours,
       approved,
       approvedHours: safeApprovedHours,
       hasEdits,
@@ -715,7 +715,7 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, approved: false, approvedHours: null, hasEdits: false };
+      return { date: day, rawHours: 0, approved: false, approvedHours: null, hasEdits: false };
     });
 
     matrixRows.push({
