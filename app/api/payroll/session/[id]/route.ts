@@ -31,7 +31,7 @@ function parseSessionId(param: string | string[] | undefined): number | null {
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
@@ -41,7 +41,8 @@ export async function PUT(
     );
   }
 
-  const sessionId = parseSessionId(params?.id);
+  const resolvedParams = await params;
+  const sessionId = parseSessionId(resolvedParams?.id);
   if (!sessionId) {
     return NextResponse.json(
       { error: "Debes indicar la sesión a actualizar." },
@@ -92,7 +93,7 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
@@ -102,7 +103,8 @@ export async function DELETE(
     );
   }
 
-  const sessionId = parseSessionId(params?.id);
+  const resolvedParams = await params;
+  const sessionId = parseSessionId(resolvedParams?.id);
   if (!sessionId) {
     return NextResponse.json(
       { error: "Debes indicar la sesión a eliminar." },
