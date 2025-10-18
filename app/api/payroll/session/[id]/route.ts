@@ -29,7 +29,9 @@ function parseSessionId(param: string | string[] | undefined): number | null {
   return parsed;
 }
 
-export async function PUT(request: Request, { params }: { params: { id?: string } }) {
+type RouteContext = { params: { id: string } };
+
+export async function PUT(request: Request, context: RouteContext) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
@@ -38,7 +40,7 @@ export async function PUT(request: Request, { params }: { params: { id?: string 
     );
   }
 
-  const sessionId = parseSessionId(params.id);
+  const sessionId = parseSessionId(context.params?.id);
   if (!sessionId) {
     return NextResponse.json(
       { error: "Debes indicar la sesión a actualizar." },
@@ -87,7 +89,7 @@ export async function PUT(request: Request, { params }: { params: { id?: string 
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id?: string } }) {
+export async function DELETE(request: Request, context: RouteContext) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
@@ -96,7 +98,7 @@ export async function DELETE(request: Request, { params }: { params: { id?: stri
     );
   }
 
-  const sessionId = parseSessionId(params.id);
+  const sessionId = parseSessionId(context.params?.id);
   if (!sessionId) {
     return NextResponse.json(
       { error: "Debes indicar la sesión a eliminar." },
