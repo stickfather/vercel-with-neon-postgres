@@ -1280,7 +1280,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setSessionsError(null);
       setSessionRows([]);
       setActionError(null);
-      setPinSessionActive(true);
     },
     [resolveStaffName],
   );
@@ -1895,7 +1894,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 type="button"
                 onClick={() => {
                   setAccessMode("readOnly");
-                  setPinSessionActive(false);
                   setPendingAccessMode(null);
                   setPinModalOpen(false);
                 }}
@@ -1907,7 +1905,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 type="button"
                 onClick={() => {
                   setPendingAccessMode("management");
-                  setPinSessionActive(false);
                   void waitForPin();
                 }}
                 className="w-full rounded-full border border-brand-teal bg-brand-teal px-4 py-2 text-sm font-semibold text-white shadow transition hover:-translate-y-[1px] hover:bg-brand-teal/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
@@ -1971,7 +1968,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 onClick={() => {
                   setAmountPopoverStaffId(null);
                   setPendingAccessMode(null);
-                  setPinSessionActive(false);
                   setAccessMode("pending");
                 }}
                 className="inline-flex items-center rounded-full border border-brand-ink-muted/30 px-3 py-1 text-xs font-semibold text-brand-ink-muted shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
