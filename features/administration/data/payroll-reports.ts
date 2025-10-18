@@ -20,6 +20,7 @@ export type MatrixCell = {
   hours: number;
   approved: boolean;
   approvedHours: number | null;
+  hasEdits: boolean;
 };
 
 export type MatrixRow = {
@@ -33,6 +34,17 @@ export type PayrollMatrixResponse = {
   rows: MatrixRow[];
 };
 
+export type SessionEditDiff = {
+  originalCheckin: string | null;
+  originalCheckout: string | null;
+  originalMinutes: number | null;
+  newCheckin: string | null;
+  newCheckout: string | null;
+  newMinutes: number | null;
+  editedByStaffId: number | null;
+  editedAt: string | null;
+};
+
 export type DaySession = {
   sessionId: number | null;
   staffId: number;
@@ -40,6 +52,17 @@ export type DaySession = {
   checkinTime: string | null;
   checkoutTime: string | null;
   hours: number;
+  edits?: SessionEditDiff[];
+};
+
+export type DayApproval = {
+  staffId: number;
+  workDate: string;
+  approved: boolean;
+  approvedMinutes: number | null;
+  approvedByStaffId: number | null;
+  approvedAt: string | null;
+  note: string | null;
 };
 
 export type PayrollMonthStatusRow = {
@@ -464,28 +487,14 @@ async function applyStaffDayApproval(
       : null;
 
   await sql`
-    INSERT INTO payroll_day_approvals (
-      staff_id,
-      work_date,
-      approved,
-      approved_by,
-      approved_at,
-      approved_minutes
-    )
-    VALUES (
+    SELECT public.upsert_payroll_day_approval(
       ${staffId}::bigint,
       ${workDate}::date,
       TRUE,
-      ${null}::varchar,
-      NOW(),
-      ${roundedMinutes}::integer
+      ${roundedMinutes}::integer,
+      ${null}::bigint,
+      ${null}::text
     )
-    ON CONFLICT (staff_id, work_date) DO UPDATE
-    SET
-      approved = EXCLUDED.approved,
-      approved_by = EXCLUDED.approved_by,
-      approved_at = EXCLUDED.approved_at,
-      approved_minutes = EXCLUDED.approved_minutes
   `;
 }
 
@@ -520,33 +529,48 @@ export async function updatePayrollMonthStatus({
   month,
   paid,
   paidAt,
+  amountPaid,
+  reference,
 }: {
   staffId: number;
   month: string;
   paid: boolean;
   paidAt: string | null;
+  amountPaid?: number | null;
+  reference?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedMonth = normalizeMonthInput(month);
   const paidAtIso = paid ? toIsoStartOfDay(paidAt) : null;
+  const amountValue =
+    paid && amountPaid != null && Number.isFinite(amountPaid)
+      ? Number(Number(amountPaid).toFixed(2))
+      : null;
+  const referenceValue = reference && reference.trim().length ? reference.trim() : null;
 
   await sql`
     INSERT INTO public.payroll_month_payments (
       staff_id,
       month,
       paid,
-      paid_at
+      paid_at,
+      amount_paid,
+      reference
     )
     VALUES (
       ${staffId}::bigint,
       date_trunc('month', ${normalizedMonth}::date),
       ${paid}::boolean,
-      ${paidAtIso}::timestamptz
+      ${paidAtIso}::timestamptz,
+      ${amountValue}::numeric,
+      ${referenceValue}::text
     )
     ON CONFLICT (staff_id, month) DO UPDATE
     SET
       paid = EXCLUDED.paid,
-      paid_at = EXCLUDED.paid_at
+      paid_at = EXCLUDED.paid_at,
+      amount_paid = EXCLUDED.amount_paid,
+      reference = EXCLUDED.reference
   `;
 }
 
@@ -594,7 +618,8 @@ export async function fetchPayrollMatrix({
       m.horas_mostrar,
       m.approved,
       m.approved_hours,
-      m.total_hours
+      m.total_hours,
+      m.has_edits
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
     WHERE m.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
@@ -663,6 +688,7 @@ export async function fetchPayrollMatrix({
       readRowValue(row, ["total_hours", "horas_totales", "hours_total"]),
       2,
     );
+    const hasEdits = toBoolean(readRowValue(row, ["has_edits", "has_edits_flag", "edited"]));
 
     const safeApprovedHours =
       typeof approvedHours === "number" && Number.isFinite(approvedHours)
@@ -679,6 +705,7 @@ export async function fetchPayrollMatrix({
       hours: safeHours,
       approved,
       approvedHours: safeApprovedHours,
+      hasEdits,
     });
   }
 
@@ -688,7 +715,7 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, approved: false, approvedHours: null };
+      return { date: day, hours: 0, approved: false, approvedHours: null, hasEdits: false };
     });
 
     matrixRows.push({
@@ -724,7 +751,7 @@ export async function fetchDaySessions({
   });
   const sessions = await getPayrollDaySessions(params, sql);
 
-  return sessions.map((session: ReportsDaySession) => ({
+  const baseSessions = sessions.map((session: ReportsDaySession) => ({
     sessionId:
       Number.isFinite(session.sessionId) && session.sessionId > 0 ? session.sessionId : null,
     staffId: params.staffId,
@@ -732,7 +759,116 @@ export async function fetchDaySessions({
     checkinTime: session.checkinTimeLocal,
     checkoutTime: session.checkoutTimeLocal,
     hours: session.hours,
+    edits: undefined as SessionEditDiff[] | undefined,
   }));
+
+  const sessionIds = baseSessions
+    .map((session) => session.sessionId)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+
+  if (!sessionIds.length) {
+    return baseSessions;
+  }
+
+  const editRows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      attendance_id,
+      original_checkin,
+      original_checkout,
+      original_minutes,
+      new_checkin,
+      new_checkout,
+      new_minutes,
+      edited_by_staff_id,
+      edited_at
+    FROM public.staff_attendance_edits
+    WHERE attendance_id = ANY(${sessionIds}::bigint[])
+    ORDER BY attendance_id, edited_at DESC
+  `);
+
+  const editsBySession = new Map<number, SessionEditDiff[]>();
+
+  for (const row of editRows) {
+    const attendanceId = Number(readRowValue(row, ["attendance_id", "session_id", "attendanceId"]));
+    if (!Number.isFinite(attendanceId) || attendanceId <= 0) {
+      continue;
+    }
+
+    const diff: SessionEditDiff = {
+      originalCheckin: coerceString(readRowValue(row, ["original_checkin", "old_checkin"])),
+      originalCheckout: coerceString(readRowValue(row, ["original_checkout", "old_checkout"])),
+      originalMinutes: toInteger(readRowValue(row, ["original_minutes", "old_minutes"])),
+      newCheckin: coerceString(readRowValue(row, ["new_checkin", "updated_checkin"])),
+      newCheckout: coerceString(readRowValue(row, ["new_checkout", "updated_checkout"])),
+      newMinutes: toInteger(readRowValue(row, ["new_minutes", "updated_minutes"])),
+      editedByStaffId: (() => {
+        const value = readRowValue(row, ["edited_by_staff_id", "edited_by"]);
+        const numeric = typeof value === "number" ? value : Number(value ?? Number.NaN);
+        return Number.isFinite(numeric) ? Number(numeric) : null;
+      })(),
+      editedAt: coerceString(readRowValue(row, ["edited_at", "updated_at"])),
+    };
+
+    const list = editsBySession.get(attendanceId) ?? [];
+    list.push(diff);
+    editsBySession.set(attendanceId, list);
+  }
+
+  return baseSessions.map((session) => {
+    if (session.sessionId && editsBySession.has(session.sessionId)) {
+      return { ...session, edits: editsBySession.get(session.sessionId) };
+    }
+    return session;
+  });
+}
+
+export async function fetchDayApproval({
+  staffId,
+  workDate,
+}: {
+  staffId: number;
+  workDate: string;
+}): Promise<DayApproval | null> {
+  noStore();
+  const sql = getSqlClient();
+  const normalizedWorkDate = ensureWorkDate(workDate);
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      approved,
+      approved_minutes,
+      approved_by_staff_id,
+      approved_at,
+      note
+    FROM public.payroll_day_approvals
+    WHERE staff_id = ${staffId}::bigint
+      AND work_date = ${normalizedWorkDate}::date
+    LIMIT 1
+  `);
+
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const approvedMinutes = toInteger(readRowValue(row, ["approved_minutes", "minutes"]));
+  const approvedByRaw = readRowValue(row, ["approved_by_staff_id", "approved_by"]);
+  const approvedByNumeric =
+    typeof approvedByRaw === "number"
+      ? approvedByRaw
+      : typeof approvedByRaw === "string"
+        ? Number(approvedByRaw)
+        : Number.NaN;
+
+  return {
+    staffId,
+    workDate: normalizedWorkDate,
+    approved: toBoolean(readRowValue(row, ["approved"])),
+    approvedMinutes: approvedMinutes != null ? Math.max(0, approvedMinutes) : null,
+    approvedByStaffId: Number.isFinite(approvedByNumeric) ? Number(approvedByNumeric) : null,
+    approvedAt: coerceString(readRowValue(row, ["approved_at"])),
+    note: coerceString(readRowValue(row, ["note"])),
+  };
 }
 
 function ensureWorkDate(value: string): string {
@@ -1004,18 +1140,35 @@ export async function deleteStaffDaySession({
 export async function approveStaffDay({
   staffId,
   workDate,
+  approvedMinutes,
 }: {
   staffId: number;
   workDate: string;
+  approvedMinutes?: number | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
-  await applyStaffDayApproval(sql, staffId, normalizedWorkDate, null);
+  let minutes: number | null = null;
+
+  if (approvedMinutes != null && Number.isFinite(approvedMinutes)) {
+    minutes = Math.max(0, Math.round(approvedMinutes));
+  } else {
+    const totals = normalizeRows<{ total_minutes?: unknown }>(await sql`
+      SELECT COALESCE(SUM(session_minutes), 0)::integer AS total_minutes
+      FROM public.attendance_local_base_v
+      WHERE staff_id = ${staffId}::bigint
+        AND work_date_local = ${normalizedWorkDate}::date
+    `);
+    const totalMinutes = toInteger(totals[0]?.total_minutes ?? 0);
+    minutes = totalMinutes != null ? Math.max(0, totalMinutes) : 0;
+  }
+
+  await applyStaffDayApproval(sql, staffId, normalizedWorkDate, minutes);
   await logPayrollAuditEvent({
     action: "approve_day",
     staffId,
     workDate: normalizedWorkDate,
-    details: { approved: true },
+    details: { approved: true, approvedMinutes: minutes },
     sql,
   });
 }

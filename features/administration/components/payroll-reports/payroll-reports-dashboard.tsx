@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DaySession,
+  DayApproval,
   MatrixCell,
   MatrixRow,
   PayrollMonthStatusRow,
   PayrollMatrixResponse,
+  SessionEditDiff,
 } from "@/features/administration/data/payroll-reports";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
@@ -20,6 +22,7 @@ type SessionRow = {
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
+  edits: SessionEditDiff[];
   isNew: boolean;
   isEditing: boolean;
   draftCheckin: string;
@@ -37,6 +40,8 @@ type SelectedCell = {
   approvedHours: number | null;
   approved: MatrixCell["approved"];
 };
+
+type AccessMode = "pending" | "readOnly" | "management";
 
 const STAFF_COLUMN_WIDTH = 94;
 const APPROVED_AMOUNT_COLUMN_WIDTH = 96;
@@ -325,6 +330,7 @@ function buildSessionRows(sessions: DaySession[]): SessionRow[] {
     workDate: session.workDate,
     checkinTime: session.checkinTime,
     checkoutTime: session.checkoutTime,
+    edits: Array.isArray(session.edits) ? [...session.edits] : [],
     isNew: false,
     isEditing: false,
     draftCheckin: toLocalInputValue(session.checkinTime),
@@ -343,6 +349,7 @@ function createEmptySessionRow(staffId: number, workDate: string): SessionRow {
     workDate,
     checkinTime: null,
     checkoutTime: null,
+    edits: [],
     isNew: true,
     isEditing: true,
     draftCheckin: "",
@@ -447,27 +454,45 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
 
+  const [accessMode, setAccessMode] = useState<AccessMode>("pending");
+  const [pendingAccessMode, setPendingAccessMode] = useState<AccessMode | null>(null);
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionRows, setSessionRows] = useState<SessionRow[]>([]);
+  const [dayApproval, setDayApproval] = useState<DayApproval | null>(null);
+  const [approvalHoursDraft, setApprovalHoursDraft] = useState<string>("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [pinSessionActive, setPinSessionActive] = useState(true);
+  const [pinSessionActive, setPinSessionActive] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [amountPopoverStaffId, setAmountPopoverStaffId] = useState<number | null>(null);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
 
-  const resolvePinRequest = useCallback((granted: boolean) => {
-    const resolver = pinRequestRef.current;
-    pinRequestRef.current = null;
-    if (resolver) {
-      resolver(granted);
-    }
-  }, []);
+  const isManagementMode = accessMode === "management";
+  const isReadOnlyMode = accessMode === "readOnly";
+
+  const resolvePinRequest = useCallback(
+    (granted: boolean) => {
+      const resolver = pinRequestRef.current;
+      pinRequestRef.current = null;
+      if (granted && pendingAccessMode === "management") {
+        setAccessMode("management");
+      }
+      if (!granted && pendingAccessMode === "management") {
+        setAccessMode("pending");
+      }
+      setPendingAccessMode(null);
+      if (resolver) {
+        resolver(granted);
+      }
+    },
+    [pendingAccessMode],
+  );
 
   const waitForPin = useCallback((): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -477,16 +502,23 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, []);
 
   const ensureManagementAccess = useCallback(async (): Promise<boolean> => {
+    if (!isManagementMode) {
+      setToast({ message: "Disponible sólo en modo gestión.", tone: "error" });
+      return false;
+    }
     if (pinSessionActive) {
       return true;
     }
     return waitForPin();
-  }, [pinSessionActive, waitForPin]);
+  }, [isManagementMode, pinSessionActive, waitForPin]);
 
   const handleUnauthorized = useCallback(async (): Promise<boolean> => {
+    if (!isManagementMode) {
+      return false;
+    }
     setPinSessionActive(false);
     return waitForPin();
-  }, [waitForPin]);
+  }, [isManagementMode, waitForPin]);
 
   const performProtectedFetch = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -608,6 +640,66 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         timeZone: PAYROLL_TIMEZONE,
       }),
     [],
+  );
+
+  const approvalTimestampFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("es-EC", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: PAYROLL_TIMEZONE,
+      }),
+    [],
+  );
+
+  const sessionTimeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("es-EC", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: PAYROLL_TIMEZONE,
+      }),
+    [],
+  );
+
+  const formatSessionTimeLabel = useCallback(
+    (value: string | null): string => {
+      if (!value) return "—";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        return "—";
+      }
+      return sessionTimeFormatter.format(parsed);
+    },
+    [sessionTimeFormatter],
+  );
+
+  const formatEditRange = useCallback(
+    (checkin: string | null, checkout: string | null, minutes: number | null): string => {
+      const startLabel = formatSessionTimeLabel(checkin);
+      const endLabel = formatSessionTimeLabel(checkout);
+      const durationLabel =
+        minutes != null && Number.isFinite(minutes)
+          ? `${hoursFormatter.format(minutes / 60)} h`
+          : "—";
+      return `${startLabel} – ${endLabel} (${durationLabel})`;
+    },
+    [formatSessionTimeLabel, hoursFormatter],
+  );
+
+  const formatTimestamp = useCallback(
+    (value: string | null): string | null => {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        return null;
+      }
+      return approvalTimestampFormatter.format(parsed);
+    },
+    [approvalTimestampFormatter],
   );
 
   const resolveStaffName = useCallback(
@@ -765,17 +857,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       params.set("month", selectedMonth);
     }
     if (activeStart) {
-      params.set("start", activeStart);
+      params.set("from", activeStart);
     }
     if (activeEnd) {
-      params.set("end", activeEnd);
-    }
-    if (usingCustomRange) {
-      params.set("rangeSource", "custom");
+      params.set("to", activeEnd);
     }
 
+    const query = params.toString();
     const response = await fetch(
-      `/api/payroll/reports/matrix?${params.toString()}`,
+      query.length ? `/api/payroll/matrix?${query}` : "/api/payroll/matrix",
       createNoStoreInit(),
     );
     const body = await response.json().catch(() => null);
@@ -798,7 +888,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       const staffQuery =
         staffId != null ? `&staffId=${encodeURIComponent(String(staffId))}` : "";
       const response = await fetch(
-        `/api/payroll/reports/month-status?month=${encodeURIComponent(selectedMonth)}${staffQuery}`,
+        `/api/payroll/month-status?month=${encodeURIComponent(selectedMonth)}${staffQuery}`,
         createNoStoreInit(),
       );
       const body = await response.json().catch(() => null);
@@ -816,7 +906,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const fetchMonthSummaryData = useCallback(async (): Promise<MonthSummaryRow[]> => {
     const response = await fetch(
-      `/api/payroll/reports/month-summary?month=${encodeURIComponent(selectedMonth)}`,
+      `/api/payroll/month-summary?month=${encodeURIComponent(selectedMonth)}`,
       createNoStoreInit(),
     );
     const body = await response.json().catch(() => null);
@@ -958,14 +1048,24 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setMonthStatusErrors((previous) => ({ ...previous, [staffId]: null }));
 
       try {
-        const response = await fetch("/api/payroll/reports/month-status", {
-          method: "PATCH",
+        const amountPaidValue =
+          typeof currentRow?.amountPaid === "number" && Number.isFinite(currentRow.amountPaid)
+            ? currentRow.amountPaid
+            : null;
+        const referenceValue =
+          typeof currentRow?.reference === "string" && currentRow.reference.trim().length
+            ? currentRow.reference.trim()
+            : null;
+        const response = await performProtectedFetch("/api/payroll/month-payment", {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             staffId,
             month: monthValue,
             paid: nextPaid,
             paidAt: nextPaid ? nextPaidAtInput : null,
+            amountPaid: nextPaid ? amountPaidValue : null,
+            reference: nextPaid ? referenceValue : null,
           }),
         });
         const body = await response.json().catch(() => ({}));
@@ -993,12 +1093,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         });
       }
     },
-    [refreshMonthStatusForStaff, selectedMonth],
+    [performProtectedFetch, refreshMonthStatusForStaff, selectedMonth],
   );
 
   useEffect(() => {
+    if (accessMode === "pending") {
+      return;
+    }
     void refreshData();
-  }, [refreshData]);
+  }, [accessMode, refreshData]);
 
   const openModal = useCallback(
     (row: MatrixRow, cell: MatrixCell) => {
@@ -1028,6 +1131,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setActionLoading(false);
     setPinModalOpen(false);
     resolvePinRequest(false);
+    setDayApproval(null);
+    setApprovalHoursDraft("");
   }, [resolvePinRequest]);
 
   useEffect(() => {
@@ -1041,16 +1146,30 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setSessionsError(null);
       try {
         const response = await fetch(
-          `/api/payroll/day-sessions?staff_id=${staffId}&date=${workDate}`,
+          `/api/payroll/day-detail?staffId=${staffId}&date=${workDate}`,
           createNoStoreInit(),
         );
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
           throw new Error((body as { error?: string }).error ?? "No se pudieron cargar las sesiones.");
         }
-        const data = (await response.json()) as { sessions?: DaySession[] };
+        const data = (await response.json()) as { sessions?: DaySession[]; approval?: DayApproval | null };
         if (!cancelled) {
-          setSessionRows(sortSessionRows(buildSessionRows(data.sessions ?? [])));
+          const sessions = data.sessions ?? [];
+          setSessionRows(sortSessionRows(buildSessionRows(sessions)));
+          setDayApproval(data.approval ?? null);
+          const totalMinutesFromSessions = sessions.reduce((accumulator, session) => {
+            const hours = Number(session.hours ?? 0);
+            if (!Number.isFinite(hours) || hours < 0) {
+              return accumulator;
+            }
+            return accumulator + Math.round(hours * 60);
+          }, 0);
+          const effectiveMinutes =
+            data.approval?.approvedMinutes != null
+              ? Math.max(0, data.approval.approvedMinutes)
+              : totalMinutesFromSessions;
+          setApprovalHoursDraft((effectiveMinutes / 60).toFixed(2));
         }
       } catch (err) {
         console.error("No se pudieron cargar las sesiones del día", err);
@@ -1058,6 +1177,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           const message =
             err instanceof Error ? err.message : "No se pudieron cargar las sesiones del día.";
           setSessionsError(message);
+          setDayApproval(null);
+          setApprovalHoursDraft("");
         }
       } finally {
         if (!cancelled) setSessionsLoading(false);
@@ -1175,9 +1296,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
       try {
         const endpoint = target.isNew
-          ? "/api/payroll/reports/day-sessions"
-          : `/api/payroll/reports/day-sessions/${target.sessionId}`;
-        const method = target.isNew ? "POST" : "PATCH";
+          ? "/api/payroll/session"
+          : `/api/payroll/session/${target.sessionId}`;
+        const method = target.isNew ? "POST" : "PUT";
         const response = await performProtectedFetch(endpoint, {
           method,
           headers: { "Content-Type": "application/json" },
@@ -1210,6 +1331,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                     workDate: saved.workDate,
                     checkinTime: saved.checkinTime,
                     checkoutTime: saved.checkoutTime,
+                    edits: Array.isArray(saved.edits) ? [...saved.edits] : [],
                     draftCheckin: toLocalInputValue(saved.checkinTime),
                     draftCheckout: toLocalInputValue(saved.checkoutTime),
                     isNew: false,
@@ -1297,7 +1419,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
       try {
         const response = await performProtectedFetch(
-          `/api/payroll/reports/day-sessions/${target.sessionId}`,
+          `/api/payroll/session/${target.sessionId}`,
           {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
@@ -1307,7 +1429,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             }),
           },
         );
-        const payload = await response.json().catch(() => ({}));
+        const payload =
+          response.status === 204 ? {} : await response.json().catch(() => ({}));
         if (!response.ok) {
           const message = (payload as { error?: string }).error ?? "No se pudo eliminar la sesión.";
           throw new Error(message);
@@ -1372,12 +1495,19 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setActionLoading(true);
     setActionError(null);
     try {
-      const response = await performProtectedFetch("/api/payroll/reports/approve-day", {
+      const hoursValue = Number(approvalHoursDraft.replace(/,/g, "."));
+      if (!Number.isFinite(hoursValue) || hoursValue < 0) {
+        throw new Error("Ingresa un total de horas válido para aprobar.");
+      }
+      const approvedMinutes = Math.max(0, Math.round(hoursValue * 60));
+
+      const response = await performProtectedFetch("/api/payroll/approve-day", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           staffId: selectedCell.staffId,
           workDate: selectedCell.workDate,
+          approvedMinutes,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -1456,6 +1586,50 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     sessionRowsRef.current = sessionRows;
   }, [sessionRows]);
 
+  useEffect(() => {
+    if (accessMode !== "readOnly") {
+      setAmountPopoverStaffId(null);
+    }
+  }, [accessMode]);
+
+  useEffect(() => {
+    setAmountPopoverStaffId(null);
+  }, [matrixData?.rows.length]);
+
+  useEffect(() => {
+    if (amountPopoverStaffId == null) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const ownerId = amountPopoverStaffId;
+      const selector = `[data-amount-popover-owner="${ownerId}"]`;
+      const container = document.querySelector(selector);
+      if (!container) {
+        setAmountPopoverStaffId(null);
+        return;
+      }
+      if (event.target instanceof Node && container.contains(event.target)) {
+        return;
+      }
+      setAmountPopoverStaffId(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAmountPopoverStaffId(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [amountPopoverStaffId]);
+
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
   const cellVariant = useMemo(() => {
@@ -1513,6 +1687,42 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         <div className="absolute bottom-0 left-1/2 h-[420px] w-[120%] -translate-x-1/2 rounded-t-[180px] bg-gradient-to-r from-[#ffeede] via-white to-[#c9f5ed]" />
       </div>
 
+      {accessMode === "pending" ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-10 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[32px] border border-white/70 bg-white p-8 text-center shadow-[0_26px_60px_rgba(15,23,42,0.18)]">
+            <h2 className="text-2xl font-black text-brand-deep">¿Cómo deseas entrar?</h2>
+            <p className="mt-2 text-sm text-brand-ink-muted">
+              Elige el modo de acceso. En modo gestión podrás editar y aprobar.
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setAccessMode("readOnly");
+                  setPinSessionActive(false);
+                  setPendingAccessMode(null);
+                  setPinModalOpen(false);
+                }}
+                className="w-full rounded-full border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm font-semibold text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
+              >
+                Solo lectura
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingAccessMode("management");
+                  setPinSessionActive(false);
+                  void waitForPin();
+                }}
+                className="w-full rounded-full border border-brand-teal bg-brand-teal px-4 py-2 text-sm font-semibold text-white shadow transition hover:-translate-y-[1px] hover:bg-brand-teal/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
+              >
+                Gestión (PIN)
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <main className="relative mx-auto flex w-full max-w-[2000px] flex-1 flex-col gap-10 px-4 py-12 sm:px-6 md:px-10 lg:px-12">
         {toast ? (
           <EphemeralToast
@@ -1550,6 +1760,27 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 className="inline-flex items-center justify-center rounded-full border border-brand-teal-soft bg-brand-teal-soft/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
               >
                 Refrescar datos
+              </button>
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                  isManagementMode
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border border-brand-ink-muted/30 bg-brand-deep-soft/30 text-brand-ink-muted"
+                }`}
+              >
+                {isManagementMode ? "Modo gestión" : "Modo lectura"}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setAmountPopoverStaffId(null);
+                  setPendingAccessMode(null);
+                  setPinSessionActive(false);
+                  setAccessMode("pending");
+                }}
+                className="inline-flex items-center rounded-full border border-brand-ink-muted/30 px-3 py-1 text-xs font-semibold text-brand-ink-muted shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
+              >
+                Cambiar modo
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-brand-ink-muted sm:text-sm">
@@ -1643,6 +1874,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         <span className="h-2 w-2 rounded-full bg-orange-500" />
                         Pendiente
                       </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-900">
+                        <span className="h-2 w-2 rounded-full bg-amber-500" />
+                        Editado
+                      </span>
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-900">
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />
                         Aprobado
@@ -1722,16 +1957,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
+                                  const cellTone = cell.approved
+                                    ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
+                                    : cell.hasEdits
+                                      ? "border-amber-400 bg-amber-300/90 text-amber-900 hover:bg-amber-300"
+                                      : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500";
                                   return (
                                     <td key={cell.date} className="px-1 py-1 text-center">
                                       <button
                                         type="button"
                                         onClick={() => openModal(row, cell)}
-                                        className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
-                                          cell.approved
-                                            ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                            : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500"
-                                        } ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
+                                        className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${cellTone} ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
                                         style={{ minWidth: `${effectiveCellWidth}px` }}
                                       >
                                         <span className="whitespace-nowrap">
@@ -1741,83 +1977,127 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     </td>
                                   );
                                 })}
-                                <td className="px-2 py-1 text-right font-semibold text-brand-deep">
-                                  {toCurrency(monthSummary?.approvedAmount ?? null)}
+                                <td className="relative px-2 py-1 text-right font-semibold text-brand-deep">
+                                  {isReadOnlyMode ? (
+                                    <div
+                                      className="relative inline-flex items-center justify-end gap-2"
+                                      data-amount-popover-owner={row.staffId}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setAmountPopoverStaffId((previous) =>
+                                            previous === row.staffId ? null : row.staffId,
+                                          )
+                                        }
+                                        className="rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-semibold text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
+                                      >
+                                        Ver monto
+                                      </button>
+                                      {amountPopoverStaffId === row.staffId ? (
+                                        <div className="absolute right-0 top-full z-10 mt-2 w-max rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-xs font-semibold text-brand-deep shadow-xl">
+                                          {toCurrency(monthSummary?.approvedAmount ?? null)}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    toCurrency(monthSummary?.approvedAmount ?? null)
+                                  )}
                                 </td>
                                 <td className="px-2 py-1 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (paidValue) {
-                                        setPaidAtDrafts((previous) => ({
-                                          ...previous,
-                                          [row.staffId]: "",
-                                        }));
-                                      }
-                                      void updateMonthStatus(row.staffId, monthStatus, {
-                                        paid: !paidValue,
-                                      });
-                                    }}
-                                    disabled={isStatusSaving}
-                                    className={`inline-flex min-w-[52px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
-                                      paidValue
-                                        ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
-                                        : "border-orange-400 bg-orange-100 text-orange-900 hover:bg-orange-200"
-                                    } ${isStatusSaving ? "opacity-60" : ""}`}
-                                  >
-                                    {paidValue ? "Sí" : "No"}
-                                  </button>
-                                </td>
-                                <td className="px-2 py-1 text-center text-brand-ink-muted">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <input
-                                      type="date"
-                                      value={paidAtInputValue}
-                                      onChange={(event) => {
-                                        const { value } = event.target;
-                                        setPaidAtDrafts((previous) => ({
-                                          ...previous,
-                                          [row.staffId]: value,
-                                        }));
-                                        setMonthStatusErrors((previous) => ({
-                                          ...previous,
-                                          [row.staffId]: null,
-                                        }));
-
-                                        if (!value.length) {
-                                          if (paidAtIsoValue) {
-                                            void updateMonthStatus(row.staffId, monthStatus, {
-                                              paid: paidValue,
-                                              paidAt: null,
-                                            });
-                                          }
-                                          return;
+                                  {isManagementMode ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (paidValue) {
+                                          setPaidAtDrafts((previous) => ({
+                                            ...previous,
+                                            [row.staffId]: "",
+                                          }));
                                         }
-
-                                        if (value === paidAtIsoValue) {
-                                          return;
-                                        }
-
                                         void updateMonthStatus(row.staffId, monthStatus, {
-                                          paid: paidValue,
-                                          paidAt: value,
+                                          paid: !paidValue,
                                         });
                                       }}
                                       disabled={isStatusSaving}
-                                      className="w-full max-w-[140px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
-                                    />
-                                    {isStatusSaving ? (
-                                      <span className="text-[10px] text-brand-ink-muted">Guardando…</span>
-                                    ) : statusError ? (
-                                      <span className="text-[10px] font-medium text-brand-orange">{statusError}</span>
-                                    ) : paidAtIsoValue ? (
-                                      <span className="text-[10px] text-brand-ink-muted">
-                                        {paidDateFormatter.format(new Date(`${paidAtIsoValue}T12:00:00Z`))}
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] text-brand-ink-muted">—</span>
-                                    )}
-                                  </div>
+                                      className={`inline-flex min-w-[52px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
+                                        paidValue
+                                          ? "border-emerald-500 bg-emerald-500/80 text-white hover:bg-emerald-500"
+                                          : "border-orange-400 bg-orange-100 text-orange-900 hover:bg-orange-200"
+                                      } ${isStatusSaving ? "opacity-60" : ""}`}
+                                    >
+                                      {paidValue ? "Sí" : "No"}
+                                    </button>
+                                  ) : (
+                                    <span
+                                      className={`inline-flex min-w-[52px] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                                        paidValue
+                                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                          : "border-orange-200 bg-orange-50 text-orange-700"
+                                      }`}
+                                    >
+                                      {paidValue ? "Sí" : "No"}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1 text-center text-brand-ink-muted">
+                                  {isManagementMode ? (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <input
+                                        type="date"
+                                        value={paidAtInputValue}
+                                        onChange={(event) => {
+                                          const { value } = event.target;
+                                          setPaidAtDrafts((previous) => ({
+                                            ...previous,
+                                            [row.staffId]: value,
+                                          }));
+                                          setMonthStatusErrors((previous) => ({
+                                            ...previous,
+                                            [row.staffId]: null,
+                                          }));
+
+                                          if (!value.length) {
+                                            if (paidAtIsoValue) {
+                                              void updateMonthStatus(row.staffId, monthStatus, {
+                                                paid: paidValue,
+                                                paidAt: null,
+                                              });
+                                            }
+                                            return;
+                                          }
+
+                                          if (value === paidAtIsoValue) {
+                                            return;
+                                          }
+
+                                          void updateMonthStatus(row.staffId, monthStatus, {
+                                            paid: paidValue,
+                                            paidAt: value,
+                                          });
+                                        }}
+                                        disabled={isStatusSaving || !paidValue}
+                                        className="w-full max-w-[140px] rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-[11px] font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                      />
+                                      {isStatusSaving ? (
+                                        <span className="text-[10px] text-brand-ink-muted">Guardando…</span>
+                                      ) : statusError ? (
+                                        <span className="text-[10px] font-medium text-brand-orange">{statusError}</span>
+                                      ) : paidAtIsoValue ? (
+                                        <span className="text-[10px] text-brand-ink-muted">
+                                          {paidDateFormatter.format(new Date(`${paidAtIsoValue}T12:00:00Z`))}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-brand-ink-muted">—</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-brand-ink-muted">
+                                      {paidAtIsoValue
+                                        ? paidDateFormatter.format(new Date(`${paidAtIsoValue}T12:00:00Z`))
+                                        : "—"}
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -1874,17 +2154,29 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   {sessionRows.length ? (
                     sessionRows.map((session, index) => {
                       const editingDisabled =
-                        sessionsLoading || actionLoading || session.pendingAction === "delete";
+                        sessionsLoading
+                        || actionLoading
+                        || !isManagementMode
+                        || session.pendingAction === "delete";
                       const deletingDisabled =
                         sessionsLoading
                         || actionLoading
+                        || !isManagementMode
                         || session.pendingAction === "edit"
                         || session.pendingAction === "create";
                       const inputDisabled =
                         !session.isEditing
                         || session.pendingAction != null
                         || sessionsLoading
-                        || actionLoading;
+                        || actionLoading
+                        || !isManagementMode;
+                      const sortedEdits = session.edits.length
+                        ? [...session.edits].sort((a, b) => {
+                            const aTime = a.editedAt ? new Date(a.editedAt).getTime() : 0;
+                            const bTime = b.editedAt ? new Date(b.editedAt).getTime() : 0;
+                            return bTime - aTime;
+                          })
+                        : [];
 
                       return (
                         <div
@@ -1910,34 +2202,42 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               ) : null}
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleEditClick(session.sessionKey)}
-                                disabled={editingDisabled}
-                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {session.pendingAction === "edit" || session.pendingAction === "create"
-                                  ? "Guardando…"
-                                  : session.isEditing
-                                    ? "Guardar"
-                                    : "Editar"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={addBlankSession}
-                                disabled={sessionsLoading || actionLoading}
-                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                Agregar sesión
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteClick(session.sessionKey)}
-                                disabled={deletingDisabled}
-                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {session.pendingAction === "delete" ? "Eliminando…" : "Eliminar"}
-                              </button>
+                              {isManagementMode ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditClick(session.sessionKey)}
+                                    disabled={editingDisabled}
+                                    className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {session.pendingAction === "edit" || session.pendingAction === "create"
+                                      ? "Guardando…"
+                                      : session.isEditing
+                                        ? "Guardar"
+                                        : "Editar"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={addBlankSession}
+                                    disabled={sessionsLoading || actionLoading}
+                                    className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    Agregar sesión
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteClick(session.sessionKey)}
+                                    disabled={deletingDisabled}
+                                    className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {session.pendingAction === "delete" ? "Eliminando…" : "Eliminar"}
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  Visualización
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="grid gap-4 sm:grid-cols-2">
@@ -1979,6 +2279,57 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               {session.validationError}
                             </p>
                           ) : null}
+                          {sortedEdits.length ? (
+                            <div className="mt-3 space-y-2 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                                Historial de ediciones
+                              </p>
+                              <div className="space-y-3">
+                                {sortedEdits.map((edit, editIndex) => {
+                                  const originalRange = formatEditRange(
+                                    edit.originalCheckin ?? null,
+                                    edit.originalCheckout ?? null,
+                                    edit.originalMinutes ?? null,
+                                  );
+                                  const updatedRange = formatEditRange(
+                                    edit.newCheckin ?? null,
+                                    edit.newCheckout ?? null,
+                                    edit.newMinutes ?? null,
+                                  );
+                                  const editedTimestamp = formatTimestamp(edit.editedAt ?? null);
+                                  const editedByLabel =
+                                    edit.editedByStaffId != null
+                                      ? ` · ID ${edit.editedByStaffId}`
+                                      : "";
+                                  return (
+                                    <div
+                                      key={`${session.sessionKey}-edit-${editIndex}-${edit.editedAt ?? editIndex}`}
+                                      className="space-y-1 border-t border-amber-200 pt-2 first:border-t-0 first:pt-0"
+                                    >
+                                      <div className="font-semibold text-amber-800">
+                                        Original:
+                                        <span className="ml-1 font-medium text-amber-900">
+                                          {originalRange}
+                                        </span>
+                                      </div>
+                                      <div className="font-semibold text-amber-800">
+                                        → Actual:
+                                        <span className="ml-1 font-medium text-amber-900">
+                                          {updatedRange}
+                                        </span>
+                                      </div>
+                                      {editedTimestamp ? (
+                                        <div className="text-[11px] font-medium text-amber-700">
+                                          Editado el {editedTimestamp}
+                                          {editedByLabel}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
                           {session.feedback ? (
                             <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-orange">
                               {session.feedback}
@@ -1999,16 +2350,18 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   ) : (
                     <div className="rounded-3xl border border-brand-ink-muted/20 bg-brand-deep-soft/40 px-5 py-4 text-sm text-brand-ink-muted">
                       <div>No hay sesiones registradas para este día.</div>
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={addBlankSession}
-                          disabled={sessionsLoading || actionLoading}
-                          className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Agregar sesión
-                        </button>
-                      </div>
+                      {isManagementMode ? (
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={addBlankSession}
+                            disabled={sessionsLoading || actionLoading}
+                            className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Agregar sesión
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -2021,22 +2374,51 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               </div>
             ) : null}
 
+            {isManagementMode ? (
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+                    Horas aprobadas (h)
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.25}
+                    value={approvalHoursDraft}
+                    onChange={(event) => setApprovalHoursDraft(event.target.value)}
+                    className="w-full rounded-2xl border border-brand-ink-muted/30 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  />
+                </label>
+                {dayApproval?.approvedAt ? (
+                  <span className="text-xs text-brand-ink-muted">
+                    Última aprobación: {hoursFormatter.format((dayApproval.approvedMinutes ?? 0) / 60)} h · {formatTimestamp(dayApproval.approvedAt) ?? "—"}
+                  </span>
+                ) : null}
+              </div>
+            ) : dayApproval?.approvedMinutes != null ? (
+              <div className="mt-4 rounded-2xl border border-brand-ink-muted/15 bg-brand-deep-soft/30 px-4 py-3 text-xs text-brand-ink-muted">
+                Horas aprobadas: {hoursFormatter.format(dayApproval.approvedMinutes / 60)} h
+              </div>
+            ) : null}
+
             <div className="mt-6 flex flex-wrap justify-end gap-3">
               <button
                 type="button"
                 onClick={closeModal}
                 className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
               >
-                Cancelar
+                {isManagementMode ? "Cancelar" : "Cerrar"}
               </button>
-              <button
-                type="button"
-                onClick={handleApprove}
-                disabled={actionLoading}
-                className="inline-flex items-center justify-center rounded-full border border-emerald-500/50 bg-emerald-500/90 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-emerald-500 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {actionLoading ? "Procesando…" : "Aprobar día"}
-              </button>
+              {isManagementMode ? (
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={actionLoading}
+                  className="inline-flex items-center justify-center rounded-full border border-emerald-500/50 bg-emerald-500/90 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-emerald-500 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {actionLoading ? "Procesando…" : "Aprobar día"}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
