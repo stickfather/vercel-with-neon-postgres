@@ -1239,6 +1239,8 @@ export async function createStaffDaySession({
 
 export async function deleteStaffDaySession({
   sessionId,
+  staffId,
+  workDate,
 }: {
   sessionId: number;
   staffId?: number;
@@ -1263,6 +1265,8 @@ export async function deleteStaffDaySession({
     throw new Error("No pudimos resolver el colaborador de la sesión.");
   }
 
+  const effectiveStaffId = staffId ?? resolvedStaffId;
+
   const resolvedWorkDate = ensureWorkDate(
     workDate ??
       toTimeZoneDayString(coerceString(readRowValue(existing, ["checkin_time"]))) ??
@@ -1276,10 +1280,10 @@ export async function deleteStaffDaySession({
     WHERE id = ${sessionId}::bigint
   `;
 
-  await invalidateStaffDayApproval(sql, resolvedStaffId, resolvedWorkDate);
+  await invalidateStaffDayApproval(sql, effectiveStaffId, resolvedWorkDate);
   await logPayrollAuditEvent({
     action: "delete_session",
-    staffId: resolvedStaffId,
+    staffId: effectiveStaffId,
     workDate: resolvedWorkDate,
     sessionId,
     details: {
