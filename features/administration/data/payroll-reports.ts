@@ -1112,7 +1112,7 @@ export async function updateStaffDaySession({
 
   if (!effectiveWorkDate) {
     const fallbackDate =
-      toTimeZoneDayString(readRowValue(existing, ["checkin_time"])) ??
+      toTimeZoneDayString(coerceString(readRowValue(existing, ["checkin_time"]))) ??
       toTimeZoneDayString(checkinIso) ??
       null;
     if (!fallbackDate) {
@@ -1264,7 +1264,7 @@ export async function deleteStaffDaySession({
 
   const resolvedWorkDate = ensureWorkDate(
     workDate ??
-      toTimeZoneDayString(readRowValue(existing, ["checkin_time"])) ??
+      toTimeZoneDayString(coerceString(readRowValue(existing, ["checkin_time"]))) ??
       (() => {
         throw new Error("No pudimos determinar el día de trabajo de la sesión.");
       })(),
