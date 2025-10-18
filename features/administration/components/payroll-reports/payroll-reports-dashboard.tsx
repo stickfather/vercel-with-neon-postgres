@@ -1292,7 +1292,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setActionError(null);
     setActionLoading(false);
     setPinModalOpen(false);
-    resolvePinRequest(false);
+    resolvePinRequest(null);
     setDayApproval(null);
   }, [resolvePinRequest]);
 
