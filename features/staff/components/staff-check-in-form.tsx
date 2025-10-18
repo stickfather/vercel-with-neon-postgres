@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffDirectoryEntry } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import { isWithinCheckInWindow } from "@/lib/time/check-in-window";
 
 type StatusState = { message: string } | null;
 
@@ -71,6 +72,14 @@ export function StaffCheckInForm({
       return;
     }
 
+    if (!isWithinCheckInWindow()) {
+      const message =
+        "Los registros solo están permitidos entre las 07:00 y las 20:00. Intenta de nuevo dentro del horario permitido.";
+      setStatus({ message });
+      setToast({ tone: "error", message });
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setStatus(null);
@@ -99,23 +108,27 @@ export function StaffCheckInForm({
         message: successMessage,
       });
 
+      setSearchTerm("");
+      setSelectedStaffId(null);
+      setShowSuggestions(false);
+
       if (redirectTimeoutRef.current) {
         clearTimeout(redirectTimeoutRef.current);
       }
 
       redirectTimeoutRef.current = setTimeout(() => {
         startTransition(() => {
-          router.push("/");
+          router.refresh();
         });
-      }, 550);
+      }, 320);
     } catch (error) {
       console.error(error);
-      setStatus({
-        message:
-          error instanceof Error
-            ? error.message
-            : "No logramos registrar la asistencia. Inténtalo de nuevo.",
-      });
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No logramos registrar la asistencia. Inténtalo de nuevo.";
+      setStatus({ message });
+      setToast({ tone: "error", message });
     } finally {
       setIsSubmitting(false);
     }

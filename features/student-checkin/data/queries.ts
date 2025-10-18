@@ -39,6 +39,19 @@ export type StudentLastLesson = {
   attendedAt: string;
 };
 
+export type LessonSelectionValidation = {
+  needsConfirmation: boolean;
+  lastLessonName: string | null;
+  lastLessonSequence: number | null;
+  selectedLessonName: string | null;
+  selectedLessonSequence: number | null;
+};
+
+export type StudentStatusCheck = {
+  isActive: boolean;
+  statusLabel: string | null;
+};
+
 export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
 
@@ -158,20 +171,93 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
     .filter((attendance) => attendance.fullName.trim().length);
 }
 
+export async function getStudentStatusForCheckIn(
+  studentId: number,
+): Promise<StudentStatusCheck> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT status, estado
+    FROM students
+    WHERE id = ${studentId}
+    LIMIT 1
+  `);
+
+  if (!rows.length) {
+    throw new Error("No encontramos a la persona seleccionada en la base de datos.");
+  }
+
+  const statusValue =
+    (rows[0].status as string | null) ??
+    (rows[0].estado as string | null) ??
+    null;
+  const trimmed = statusValue?.trim() ?? null;
+  const normalized = trimmed?.toLowerCase() ?? null;
+
+  const isActive =
+    normalized == null ||
+    normalized === "activo" ||
+    normalized === "activa" ||
+    normalized === "active";
+
+  return {
+    isActive,
+    statusLabel: trimmed,
+  };
+}
+
+export async function validateStudentLessonSelection(
+  studentId: number,
+  lessonId: number,
+): Promise<LessonSelectionValidation> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM validate_student_lesson_selection(${studentId}, ${lessonId})
+  `);
+
+  if (!rows.length) {
+    return {
+      needsConfirmation: false,
+      lastLessonName: null,
+      lastLessonSequence: null,
+      selectedLessonName: null,
+      selectedLessonSequence: null,
+    };
+  }
+
+  const payload = rows[0];
+
+  return {
+    needsConfirmation: Boolean(payload.needs_confirmation ?? false),
+    lastLessonName: (payload.last_lesson_name as string | null) ?? null,
+    lastLessonSequence:
+      payload.last_lesson_seq == null
+        ? null
+        : Number(payload.last_lesson_seq),
+    selectedLessonName: (payload.selected_name as string | null) ?? null,
+    selectedLessonSequence:
+      payload.selected_seq == null ? null : Number(payload.selected_seq),
+  };
+}
+
 export async function registerCheckIn({
   studentId,
   lessonId,
   level,
+  confirmOverride = false,
 }: {
   studentId: number;
   lessonId: number;
   level: string;
+  confirmOverride?: boolean;
 }): Promise<number> {
   const sql = getSqlClient();
   await closeExpiredSessions(sql);
 
   const studentRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name
+    SELECT id, full_name, status, estado
     FROM students
     WHERE id = ${studentId}
     LIMIT 1
@@ -183,9 +269,25 @@ export async function registerCheckIn({
 
   const studentRecord = studentRows[0];
   const studentName = ((studentRecord.full_name as string | null) ?? "").trim();
+  const rawStatus =
+    (studentRecord.status as string | null) ??
+    (studentRecord.estado as string | null) ??
+    null;
+  const normalizedStatus = rawStatus?.trim().toLowerCase() ?? null;
 
   if (!studentName) {
     throw new Error("El estudiante seleccionado no tiene un nombre registrado.");
+  }
+
+  if (
+    normalizedStatus &&
+    normalizedStatus !== "activo" &&
+    normalizedStatus !== "activa" &&
+    normalizedStatus !== "active"
+  ) {
+    throw new Error(
+      "Tu cuenta requiere atención. Por favor, contacta a la administración.",
+    );
   }
 
   const lessonRows = normalizeRows<SqlRow>(await sql`
@@ -215,8 +317,8 @@ export async function registerCheckIn({
   }
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO student_attendance (student_id, lesson_id, checkin_time)
-    VALUES (${studentId}, ${lessonId}, now())
+    INSERT INTO student_attendance (student_id, lesson_id, checkin_time, confirm_override)
+    VALUES (${studentId}, ${lessonId}, now(), ${Boolean(confirmOverride)})
     RETURNING id
   `);
 

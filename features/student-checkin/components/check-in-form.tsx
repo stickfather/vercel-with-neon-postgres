@@ -19,6 +19,10 @@ import {
   getLevelAccent,
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import {
+  formatLessonWithSequence,
+  isWithinCheckInWindow,
+} from "@/lib/time/check-in-window";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
@@ -40,6 +44,16 @@ type ToastState = {
 };
 
 type FetchState = "idle" | "loading" | "error";
+
+type LessonOverridePrompt = {
+  studentId: number;
+  lessonId: number;
+  level: string;
+  lastLessonName: string | null;
+  lastLessonSequence: number | null;
+  selectedLessonName: string | null;
+  selectedLessonSequence: number | null;
+};
 
 export function CheckInForm({
   levels,
@@ -69,10 +83,48 @@ export function CheckInForm({
   const [isLoadingLastLesson, setIsLoadingLastLesson] = useState(false);
   const [lastLessonError, setLastLessonError] = useState<string | null>(null);
   const [suggestedLesson, setSuggestedLesson] = useState<StudentLastLesson | null>(null);
+  const [lessonOverridePrompt, setLessonOverridePrompt] =
+    useState<LessonOverridePrompt | null>(null);
   const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
   const lastLessonAbortRef = useRef<AbortController | null>(null);
 
   const isFormDisabled = disabled || Boolean(initialError);
+
+  const overrideQuestion = useMemo(() => {
+    if (!lessonOverridePrompt) {
+      return null;
+    }
+
+    const { lastLessonSequence, selectedLessonSequence } =
+      lessonOverridePrompt;
+
+    if (
+      lastLessonSequence != null &&
+      selectedLessonSequence != null &&
+      selectedLessonSequence < lastLessonSequence
+    ) {
+      return "¿Seguro que quieres regresar?";
+    }
+
+    return "¿Seguro que quieres saltarte lecciones?";
+  }, [lessonOverridePrompt]);
+
+  const overrideMessage = useMemo(() => {
+    if (!lessonOverridePrompt) {
+      return null;
+    }
+
+    const lastLessonLabel = formatLessonWithSequence(
+      lessonOverridePrompt.lastLessonName,
+      lessonOverridePrompt.lastLessonSequence,
+    );
+    const selectedLessonLabel = formatLessonWithSequence(
+      lessonOverridePrompt.selectedLessonName,
+      lessonOverridePrompt.selectedLessonSequence,
+    );
+
+    return `Nuestros registros indican que tu última lección fue ${lastLessonLabel}. ¿Seguro que quieres cambiar a ${selectedLessonLabel}?`;
+  }, [lessonOverridePrompt]);
 
   const applySuggestedLesson = useCallback(
     (suggestion: StudentLastLesson | null) => {
@@ -318,6 +370,71 @@ export function CheckInForm({
     lastLessonAbortRef.current?.abort();
   };
 
+  const submitCheckIn = useCallback(
+    async ({
+      studentId,
+      lessonId,
+      level,
+      confirmOverride,
+    }: {
+      studentId: number;
+      lessonId: number;
+      level: string;
+      confirmOverride: boolean;
+    }) => {
+      const response = await fetch("/api/check-in", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          studentId,
+          level,
+          lessonId,
+          confirmOverride,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          (payload as { error?: string })?.error ??
+            "No se pudo registrar tu asistencia.",
+        );
+      }
+
+      setToast({
+        type: "success",
+        message: "¡Asistencia confirmada, buen trabajo!",
+      });
+      setStatus(null);
+      setStudentQuery("");
+      setSelectedStudent(null);
+      setSelectedLevel("");
+      setSelectedLesson("");
+      setIsSuggestionsOpen(false);
+      setSuggestions([]);
+      setHighlightedSuggestion(0);
+      setSuggestedLesson(null);
+      setLastLessonError(null);
+      setLessonOverridePrompt(null);
+      lastLessonAbortRef.current?.abort();
+      lastLessonCache.current.delete(studentId);
+
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      redirectTimeoutRef.current = setTimeout(() => {
+        startTransition(() => {
+          router.refresh();
+        });
+      }, 320);
+    },
+    [router, startTransition],
+  );
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isFormDisabled) {
@@ -357,48 +474,123 @@ export function CheckInForm({
       return;
     }
 
+    const parsedLessonId = Number(selectedLesson);
+    if (!Number.isFinite(parsedLessonId)) {
+      setStatus({
+        message: "La lección seleccionada no es válida.",
+      });
+      return;
+    }
+
+    if (!isWithinCheckInWindow()) {
+      const message =
+        "Los registros solo están permitidos entre las 07:00 y las 20:00. Intenta de nuevo dentro del horario permitido.";
+      setStatus({ message });
+      setToast({ type: "error", message });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/check-in", {
+      const validationResponse = await fetch("/api/check-in/validate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           studentId: selectedStudent.id,
-          level: selectedLevel,
-          lessonId: Number(selectedLesson),
+          lessonId: parsedLessonId,
         }),
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const validationPayload = (await validationResponse
+        .json()
+        .catch(() => ({}))) as {
+        isActive?: boolean;
+        needsConfirmation?: boolean;
+        message?: string;
+        lastLessonName?: string | null;
+        lastLessonSequence?: number | null;
+        selectedLessonName?: string | null;
+        selectedLessonSequence?: number | null;
+        error?: string;
+      };
 
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
+      if (!validationResponse.ok) {
+        throw new Error(
+          validationPayload?.error ??
+            "No pudimos validar la lección seleccionada.",
+        );
       }
 
-      setToast({
-        type: "success",
-        message: "¡Asistencia confirmada, buen trabajo!",
-      });
-
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
+      if (!validationPayload.isActive) {
+        const message =
+          validationPayload?.message ??
+          "Tu cuenta requiere atención. Por favor, contacta a la administración.";
+        setStatus({ message });
+        setToast({ type: "error", message });
+        return;
       }
 
-      redirectTimeoutRef.current = setTimeout(() => {
-        startTransition(() => {
-          router.push("/");
+      if (validationPayload.needsConfirmation) {
+        setLessonOverridePrompt({
+          studentId: selectedStudent.id,
+          lessonId: parsedLessonId,
+          level: selectedLevel,
+          lastLessonName: validationPayload.lastLessonName ?? null,
+          lastLessonSequence:
+            validationPayload.lastLessonSequence ?? null,
+          selectedLessonName: validationPayload.selectedLessonName ?? null,
+          selectedLessonSequence:
+            validationPayload.selectedLessonSequence ?? null,
         });
-      }, 550);
+        return;
+      }
+
+      await submitCheckIn({
+        studentId: selectedStudent.id,
+        lessonId: parsedLessonId,
+        level: selectedLevel,
+        confirmOverride: false,
+      });
     } catch (error) {
       console.error(error);
-      setStatus({
-        message:
-          error instanceof Error
-            ? error.message
-            : "No logramos registrar tu asistencia. Inténtalo de nuevo.",
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No logramos registrar tu asistencia. Inténtalo de nuevo.";
+      setStatus({ message });
+      setToast({ type: "error", message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const closeLessonOverridePrompt = () => {
+    setLessonOverridePrompt(null);
+  };
+
+  const confirmLessonOverride = async () => {
+    if (!lessonOverridePrompt) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await submitCheckIn({
+        studentId: lessonOverridePrompt.studentId,
+        lessonId: lessonOverridePrompt.lessonId,
+        level: lessonOverridePrompt.level,
+        confirmOverride: true,
       });
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No logramos registrar tu asistencia. Inténtalo de nuevo.";
+      setStatus({ message });
+      setToast({ type: "error", message });
     } finally {
       setIsSubmitting(false);
     }
@@ -715,6 +907,42 @@ export function CheckInForm({
       >
         {isSubmitting || isPending ? "Registrando…" : "Confirmar asistencia"}
       </button>
+      {lessonOverridePrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.4)] px-4 py-6 backdrop-blur-sm">
+          <div className="max-w-md rounded-[32px] border border-white/70 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
+                  Confirmar cambio de lección
+                </span>
+                <p className="text-base font-semibold text-brand-deep">
+                  {overrideQuestion ?? "¿Seguro que quieres continuar?"}
+                </p>
+                {overrideMessage ? (
+                  <p className="text-sm text-brand-ink-muted">{overrideMessage}</p>
+                ) : null}
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeLessonOverridePrompt}
+                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmLessonOverride}
+                  disabled={isSubmitting}
+                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
+                >
+                  {isSubmitting ? "Registrando…" : "Sí, registrar asistencia"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }

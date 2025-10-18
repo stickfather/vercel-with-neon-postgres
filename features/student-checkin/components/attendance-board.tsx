@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import type { ActiveAttendance } from "@/features/student-checkin/data/queries";
 import { getLevelAccent } from "../lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import {
+  exceedsSessionDurationLimit,
+  isAfterBubbleHideTime,
+} from "@/lib/time/check-in-window";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -38,7 +42,10 @@ export function AttendanceBoard({ attendances }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [shouldHideBubbles, setShouldHideBubbles] = useState(() =>
+    isAfterBubbleHideTime(),
+  );
 
   const formatter = useMemo(() => {
     return new Intl.DateTimeFormat("es-EC", {
@@ -48,9 +55,17 @@ export function AttendanceBoard({ attendances }: Props) {
   }, []);
 
   useEffect(() => {
+    const updateVisibility = () => {
+      setShouldHideBubbles(isAfterBubbleHideTime());
+    };
+
+    updateVisibility();
+    const interval = setInterval(updateVisibility, 60_000);
+
     return () => {
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
+      clearInterval(interval);
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
       }
     };
   }, []);
@@ -72,6 +87,11 @@ export function AttendanceBoard({ attendances }: Props) {
 
   const requestCheckout = (attendance: ActiveAttendance) => {
     setError(null);
+    if (exceedsSessionDurationLimit(attendance.checkInTime)) {
+      const message = "El registro excede el máximo permitido de 12 horas.";
+      setToast({ tone: "error", message });
+      return;
+    }
     setPendingCheckout(attendance);
   };
 
@@ -102,13 +122,13 @@ export function AttendanceBoard({ attendances }: Props) {
         message: `${attendance.fullName.trim()} salió de clase. ¡Gracias!`,
       });
 
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
       }
 
-      redirectTimeoutRef.current = setTimeout(() => {
-        router.push("/");
-      }, 550);
+      refreshTimeoutRef.current = setTimeout(() => {
+        router.refresh();
+      }, 320);
     } catch (err) {
       console.error(err);
       setError(
@@ -125,6 +145,19 @@ export function AttendanceBoard({ attendances }: Props) {
     setPendingCheckout(null);
     setError(null);
   };
+
+  if (shouldHideBubbles) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-[32px] border border-dashed border-white/70 bg-white/80 px-6 py-12 text-center text-brand-ink-muted shadow-inner">
+        <span className="text-base font-semibold text-brand-deep-soft">
+          Las asistencias del día se ocultan después de las 20:30.
+        </span>
+        <span className="text-sm">
+          Regresa mañana para ver quién está en clase.
+        </span>
+      </div>
+    );
+  }
 
   if (!attendances.length) {
     return (
