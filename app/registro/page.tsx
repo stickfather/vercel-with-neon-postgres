@@ -106,12 +106,6 @@ export default async function RegistroPage() {
             >
               Volver a bienvenida
             </Link>
-            <Link
-              href="/administracion/registro-personal"
-              className={`${quickLinkBaseClass} bg-brand-teal text-white focus-visible:outline-[#00bfa6]`}
-            >
-              Check-in del personal
-            </Link>
           </div>
         </div>
       </main>

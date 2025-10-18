@@ -3,7 +3,7 @@ import { registerCheckIn } from "@/features/student-checkin/data/queries";
 
 export async function POST(request: Request) {
   try {
-    const { studentId, level, lessonId } = await request.json();
+    const { studentId, level, lessonId, confirmOverride } = await request.json();
 
     if (!studentId || !level || !lessonId) {
       return NextResponse.json(
@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       studentId: parsedStudentId,
       level,
       lessonId: parsedLessonId,
+      confirmOverride: Boolean(confirmOverride),
     });
 
     return NextResponse.json({ attendanceId });

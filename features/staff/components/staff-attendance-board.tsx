@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActiveStaffAttendance } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import {
+  exceedsSessionDurationLimit,
+  isAfterBubbleHideTime,
+} from "@/lib/time/check-in-window";
 
 type Props = {
   attendances: ActiveStaffAttendance[];
@@ -35,7 +39,10 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [shouldHideBubbles, setShouldHideBubbles] = useState(() =>
+    isAfterBubbleHideTime(),
+  );
 
   const formatter = useMemo(
     () =>
@@ -49,15 +56,28 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   );
 
   useEffect(() => {
+    const updateVisibility = () => {
+      setShouldHideBubbles(isAfterBubbleHideTime());
+    };
+
+    updateVisibility();
+    const interval = setInterval(updateVisibility, 60_000);
+
     return () => {
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
+      clearInterval(interval);
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
       }
     };
   }, []);
 
   const requestCheckout = (attendance: ActiveStaffAttendance) => {
     setError(null);
+    if (exceedsSessionDurationLimit(attendance.checkInTime)) {
+      const message = "El registro excede el máximo permitido de 12 horas.";
+      setToast({ tone: "error", message });
+      return;
+    }
     setPendingCheckout(attendance);
   };
 
@@ -87,20 +107,19 @@ export function StaffAttendanceBoard({ attendances }: Props) {
         throw new Error(payload?.error ?? "No se pudo registrar la salida.");
       }
 
-      const encodedName = encodeURIComponent(attendance.fullName.trim());
       setPendingCheckout(null);
       setToast({
         tone: "success",
         message: `${attendance.fullName.trim()} finalizó su jornada.`,
       });
 
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
       }
 
-      redirectTimeoutRef.current = setTimeout(() => {
-        router.push("/");
-      }, 550);
+      refreshTimeoutRef.current = setTimeout(() => {
+        router.refresh();
+      }, 320);
     } catch (error) {
       console.error(error);
       setError(
@@ -112,6 +131,15 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       setLoadingId(null);
     }
   };
+
+  if (shouldHideBubbles) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#dde1ff] bg-white px-8 py-16 text-center text-lg text-brand-ink-muted shadow-inner">
+        <span>Las asistencias del personal se ocultan después de las 20:30.</span>
+        <span className="text-sm">Regresa mañana para ver quién está en la sede.</span>
+      </div>
+    );
+  }
 
   if (!attendances.length) {
     return (
