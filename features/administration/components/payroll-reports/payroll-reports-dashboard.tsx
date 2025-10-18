@@ -1511,6 +1511,37 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setCellWidth(Math.max(MIN_CELL_WIDTH, desired));
   }, []);
 
+  const totalMinutes = useMemo(
+    () =>
+      sessionRows.reduce((accumulator, row) => {
+        const minutes = computeRowMinutes(row);
+        return minutes != null ? accumulator + minutes : accumulator;
+      }, 0),
+    [sessionRows],
+  );
+
+  const totalHours = useMemo(() => Number((totalMinutes / 60).toFixed(2)), [totalMinutes]);
+
+  const displayHours = sessionsLoading
+    ? selectedCell?.rawHours ?? Number((totalMinutes / 60).toFixed(2))
+    : totalHours;
+
+  const minutesFromSelection = selectedCell
+    ? Math.max(0, Math.round(selectedCell.rawHours * 60))
+    : 0;
+  const minutesForApproval = sessionsLoading
+    ? minutesFromSelection
+    : Math.max(0, Math.round(totalMinutes));
+  const hoursForApproval = Number((minutesForApproval / 60).toFixed(2));
+  const approvedMinutesFromServer =
+    typeof dayApproval?.approvedMinutes === "number"
+      ? Math.max(0, dayApproval.approvedMinutes)
+      : null;
+  const approvedHoursFromServer =
+    approvedMinutesFromServer != null
+      ? Number((approvedMinutesFromServer / 60).toFixed(2))
+      : null;
+
   const handleApprove = useCallback(async () => {
     if (!selectedCell) return;
     setActionLoading(true);
@@ -1680,37 +1711,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, [cellVariant]);
   const compactCellText = cellVariant === "tight";
   const staffCount = matrixData?.rows.length ?? 0;
-
-  const totalMinutes = useMemo(
-    () =>
-      sessionRows.reduce((accumulator, row) => {
-        const minutes = computeRowMinutes(row);
-        return minutes != null ? accumulator + minutes : accumulator;
-      }, 0),
-    [sessionRows],
-  );
-
-  const totalHours = useMemo(() => Number((totalMinutes / 60).toFixed(2)), [totalMinutes]);
-
-  const displayHours = sessionsLoading
-    ? selectedCell?.rawHours ?? Number((totalMinutes / 60).toFixed(2))
-    : totalHours;
-
-  const minutesFromSelection = selectedCell
-    ? Math.max(0, Math.round(selectedCell.rawHours * 60))
-    : 0;
-  const minutesForApproval = sessionsLoading
-    ? minutesFromSelection
-    : Math.max(0, Math.round(totalMinutes));
-  const hoursForApproval = Number((minutesForApproval / 60).toFixed(2));
-  const approvedMinutesFromServer =
-    typeof dayApproval?.approvedMinutes === "number"
-      ? Math.max(0, dayApproval.approvedMinutes)
-      : null;
-  const approvedHoursFromServer =
-    approvedMinutesFromServer != null
-      ? Number((approvedMinutesFromServer / 60).toFixed(2))
-      : null;
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
