@@ -10,6 +10,11 @@ import type {
 } from "@/features/administration/data/payroll-reports";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
+import {
+  getPayrollDateTimeParts,
+  parsePayrollLocalDateTime,
+  PAYROLL_TIMEZONE,
+} from "@/lib/payroll/timezone";
 
 type MatrixResponse = PayrollMatrixResponse;
 
@@ -58,7 +63,6 @@ const TRAILING_COLUMNS_WIDTH =
 const MIN_CELL_WIDTH = 32;
 const PREFERRED_CELL_WIDTH = 68;
 const GRID_PADDING = 16;
-const PAYROLL_TIMEZONE = "America/Guayaquil";
 const rowDayFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: PAYROLL_TIMEZONE,
   year: "numeric",
@@ -83,17 +87,6 @@ const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
   hour12: false,
 });
 
-const timeZoneOffsetFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: PAYROLL_TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
 function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
   return parts.find((part) => part.type === type)?.value ?? null;
 }
@@ -112,38 +105,12 @@ function toTimeZoneDateString(date: Date): string | null {
 function toTimeZoneDateTimeParts(
   date: Date,
 ): { year: string; month: string; day: string; hour: string; minute: string } | null {
-  const parts = timeZoneDateTimeFormatter.formatToParts(date);
-  const year = getPart(parts, "year");
-  const month = getPart(parts, "month");
-  const day = getPart(parts, "day");
-  const hour = getPart(parts, "hour");
-  const minute = getPart(parts, "minute");
-  if (!year || !month || !day || !hour || !minute) {
+  const parts = getPayrollDateTimeParts(date);
+  if (!parts) {
     return null;
   }
+  const { year, month, day, hour, minute } = parts;
   return { year, month, day, hour, minute } as const;
-}
-
-function getTimeZoneOffsetInMinutes(baseDate: Date): number {
-  const parts = timeZoneOffsetFormatter.formatToParts(baseDate);
-  const year = getPart(parts, "year");
-  const month = getPart(parts, "month");
-  const day = getPart(parts, "day");
-  const hour = getPart(parts, "hour");
-  const minute = getPart(parts, "minute");
-  const second = getPart(parts, "second");
-  if (!year || !month || !day || !hour || !minute || !second) {
-    return 0;
-  }
-  const asUtc = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
-  );
-  return (asUtc - baseDate.getTime()) / 60000;
 }
 
 function toMiddayUtc(dateString: string): Date | null {
@@ -262,32 +229,7 @@ function toLocalInputValue(value: string | null): string {
 }
 
 function fromLocalInputValue(value: string): string | null {
-  if (!value) return null;
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!match) {
-    return null;
-  }
-  const [, yearStr, monthStr, dayStr, hourStr, minuteStr] = match;
-  const baseUtcMs = Date.UTC(
-    Number(yearStr),
-    Number(monthStr) - 1,
-    Number(dayStr),
-    Number(hourStr),
-    Number(minuteStr),
-    0,
-    0,
-  );
-  if (!Number.isFinite(baseUtcMs)) {
-    return null;
-  }
-  const baseDate = new Date(baseUtcMs);
-  const offsetMinutes = getTimeZoneOffsetInMinutes(baseDate);
-  const adjustedMs = baseUtcMs - offsetMinutes * 60000;
-  const adjustedDate = new Date(adjustedMs);
-  if (Number.isNaN(adjustedDate.getTime())) {
-    return null;
-  }
-  return adjustedDate.toISOString();
+  return parsePayrollLocalDateTime(value);
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {

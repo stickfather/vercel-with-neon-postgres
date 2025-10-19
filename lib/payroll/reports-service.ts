@@ -1,4 +1,8 @@
 import { getSqlClient, normalizeRows, TIMEZONE, type SqlRow } from "@/lib/db/client";
+import {
+  normalizePayrollTimestamp,
+  toPayrollZonedISOString,
+} from "@/lib/payroll/timezone";
 import { z, ZodError } from "@/lib/validation/zod";
 import type { BaseSchema } from "@/lib/validation/zod";
 import type {
@@ -212,11 +216,11 @@ function normalizeTime(value: string): string {
   if (!trimmed.length) {
     throw new HttpError(400, "Las horas indicadas no son válidas.");
   }
-  const date = new Date(trimmed);
-  if (Number.isNaN(date.getTime())) {
+  const normalized = normalizePayrollTimestamp(trimmed);
+  if (!normalized) {
     throw new HttpError(400, "Las horas indicadas no son válidas.");
   }
-  return date.toISOString();
+  return normalized;
 }
 
 function validateSessionRange(checkinIso: string, checkoutIso: string, workDate: string): void {
@@ -255,13 +259,17 @@ function normalizePaidAt(value: string | null): string | null {
   const trimmed = value.trim();
   if (!trimmed.length) return null;
   if (ISO_DATE_REGEX.test(trimmed)) {
-    return `${trimmed}T00:00:00-05:00`;
+    const zoned = normalizePayrollTimestamp(`${trimmed}T00:00:00`);
+    if (!zoned) {
+      throw new HttpError(400, "La fecha de pago no es válida.");
+    }
+    return zoned;
   }
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) {
+  const normalized = normalizePayrollTimestamp(trimmed);
+  if (!normalized) {
     throw new HttpError(400, "La fecha de pago no es válida.");
   }
-  return parsed.toISOString();
+  return normalized;
 }
 
 export const MatrixQuerySchema = z
@@ -368,8 +376,19 @@ function normalizeStaffName(value: unknown): string | null {
 
 function normalizeMonthDate(value: unknown, fallback: string): string {
   if (value instanceof Date) {
-    const iso = value.toISOString();
-    return iso.slice(0, 10);
+    const zoned = toPayrollZonedISOString(value);
+    if (!zoned) {
+      return fallback;
+    }
+    const zonedDate = zoned.slice(0, 10);
+    if (zonedDate === fallback) {
+      return zonedDate;
+    }
+    const utcDate = value.toISOString().slice(0, 10);
+    if (utcDate === fallback) {
+      return fallback;
+    }
+    return zonedDate;
   }
 
   if (typeof value === "string") {
@@ -380,10 +399,9 @@ function normalizeMonthDate(value: unknown, fallback: string): string {
         return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
       }
 
-      const parsed = new Date(trimmed);
-      if (!Number.isNaN(parsed.getTime())) {
-        const iso = parsed.toISOString();
-        return iso.slice(0, 10);
+      const normalized = normalizePayrollTimestamp(trimmed);
+      if (normalized) {
+        return normalized.slice(0, 10);
       }
     }
   }
@@ -683,8 +701,8 @@ export async function getMonthSummary(
       paidAtValue == null
         ? null
         : paidAtValue instanceof Date
-          ? paidAtValue.toISOString()
-          : String(paidAtValue);
+          ? toPayrollZonedISOString(paidAtValue)
+          : normalizePayrollTimestamp(String(paidAtValue));
     const monthValue = normalizeMonthDate(row["month"], params.month);
     return {
       staffId: Number(row["staff_id"] ?? 0),
