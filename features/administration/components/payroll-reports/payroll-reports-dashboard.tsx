@@ -548,6 +548,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
+  const sessionLoadTokenRef = useRef(0);
 
   const resolvePinRequest = useCallback((granted: boolean) => {
     const resolver = pinRequestRef.current;
@@ -1118,18 +1119,21 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     resolvePinRequest(false);
   }, [resolvePinRequest]);
 
-  useEffect(() => {
-    if (!selectedCell) return;
+  const loadSessionsFor = useCallback(
+    async (
+      target: { staffId: number; workDate: string },
+      options?: { silent?: boolean },
+    ): Promise<boolean> => {
+      const requestId = ++sessionLoadTokenRef.current;
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setSessionsLoading(true);
+        setSessionsError(null);
+      }
 
-    let cancelled = false;
-    const { staffId, workDate } = selectedCell;
-
-    async function loadSessions() {
-      setSessionsLoading(true);
-      setSessionsError(null);
       try {
         const response = await fetch(
-          `/api/payroll/day-sessions?staff_id=${staffId}&date=${workDate}`,
+          `/api/payroll/day-sessions?staff_id=${target.staffId}&date=${target.workDate}`,
           createNoStoreInit(),
         );
         if (!response.ok) {
@@ -1137,27 +1141,49 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           throw new Error((body as { error?: string }).error ?? "No se pudieron cargar las sesiones.");
         }
         const data = (await response.json()) as { sessions?: DaySession[] };
-        if (!cancelled) {
+        if (sessionLoadTokenRef.current === requestId) {
           setSessionRows(sortSessionRows(buildSessionRows(data.sessions ?? [])));
+          setSessionsError(null);
         }
-      } catch (err) {
-        console.error("No se pudieron cargar las sesiones del día", err);
-        if (!cancelled) {
-          const message =
-            err instanceof Error ? err.message : "No se pudieron cargar las sesiones del día.";
-          setSessionsError(message);
+        return true;
+      } catch (error) {
+        console.error("No se pudieron cargar las sesiones del día", error);
+        const message =
+          error instanceof Error ? error.message : "No se pudieron cargar las sesiones del día.";
+        if (sessionLoadTokenRef.current === requestId) {
+          setSessionsError((previous) => (silent ? previous ?? message : message));
         }
+        return false;
       } finally {
-        if (!cancelled) setSessionsLoading(false);
+        if (sessionLoadTokenRef.current === requestId && !silent) {
+          setSessionsLoading(false);
+        }
       }
+    },
+    [],
+  );
+
+  const reloadSessions = useCallback(
+    async (options?: { silent?: boolean }): Promise<boolean> => {
+      if (!selectedCell) return false;
+      return loadSessionsFor({ staffId: selectedCell.staffId, workDate: selectedCell.workDate }, options);
+    },
+    [loadSessionsFor, selectedCell],
+  );
+
+  useEffect(() => {
+    if (!selectedCell) {
+      return () => {
+        sessionLoadTokenRef.current += 1;
+      };
     }
 
-    void loadSessions();
+    void loadSessionsFor({ staffId: selectedCell.staffId, workDate: selectedCell.workDate });
 
     return () => {
-      cancelled = true;
+      sessionLoadTokenRef.current += 1;
     };
-  }, [selectedCell]);
+  }, [loadSessionsFor, selectedCell]);
 
   const handleDraftChange = useCallback(
     (sessionKey: string, field: "checkin" | "checkout", value: string) => {
@@ -1354,6 +1380,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             }),
           };
         });
+        await reloadSessions({ silent: true });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(selectedCell.staffId);
         await refreshMonthSummary();
@@ -1379,6 +1406,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       refreshMatrixOnly,
       refreshMonthStatusForStaff,
       refreshMonthSummary,
+      reloadSessions,
       setMatrixData,
       selectedCell,
     ],
@@ -1452,6 +1480,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         setSessionEditor((previous) =>
           previous?.sessionKey === sessionKey ? null : previous,
         );
+        await reloadSessions({ silent: true });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(target.staffId);
         await refreshMonthSummary();
@@ -1473,6 +1502,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [
       ensureManagementAccess,
       performProtectedFetch,
+      reloadSessions,
       refreshMatrixOnly,
       refreshMonthStatusForStaff,
       refreshMonthSummary,
