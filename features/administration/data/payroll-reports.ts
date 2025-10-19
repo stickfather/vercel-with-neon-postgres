@@ -890,6 +890,12 @@ export async function fetchDaySessions({
     staffId,
     date: workDate,
   });
+  // Session timing values (check-in/out) already arrive in local-time form because
+  // lib/payroll/reports-service#getDaySessions pulls straight from
+  // public.staff_day_sessions_with_edits_v (see scripts/payroll_sessions_with_edits.sql).
+  // That view materializes the checkin_local/checkout_local fields by converting the
+  // underlying timestamptz values from staff_attendance into the payroll timezone, so the
+  // UI only needs to normalize formatting below.
   const sessions = await getPayrollDaySessions(params, sql);
 
   return sessions.map((session: ReportsDaySession) => ({
