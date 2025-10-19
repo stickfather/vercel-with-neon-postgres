@@ -486,19 +486,7 @@ export async function getDaySessions(
   const sql = ensureSqlClient(sqlClient);
   const rows = normalizeRows<SqlRow>(
     await sql`
-      SELECT
-        s.session_id,
-        s.staff_id,
-        s.work_date,
-        s.checkin_local,
-        s.checkout_local,
-        s.session_minutes,
-        s.total_hours,
-        s.original_checkin_local,
-        s.original_checkout_local,
-        s.original_session_id,
-        s.replacement_session_id,
-        s.is_original_record
+      SELECT s.*
       FROM public.staff_day_sessions_with_edits_v AS s
       WHERE s.staff_id = ${params.staffId}::bigint
         AND s.work_date = ${params.date}::date

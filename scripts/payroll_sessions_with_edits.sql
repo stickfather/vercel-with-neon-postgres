@@ -113,4 +113,19 @@ FROM session_updates AS su
 CROSS JOIN timezone_config AS tz
 WHERE su.original_session_id IS NOT NULL;
 
+-- 3. Surface per-day edit state for the payroll matrix UI. We consider a day to have
+--    edits when an "update_session" audit event exists for that staff/day pair.
+CREATE OR REPLACE VIEW public.staff_day_has_edits_v AS
+SELECT DISTINCT
+  su.staff_id,
+  su.work_date,
+  TRUE AS has_edits
+FROM (
+  SELECT
+    pae.staff_id,
+    pae.work_date
+  FROM public.payroll_audit_events AS pae
+  WHERE pae.action = 'update_session'
+) AS su;
+
 COMMIT;
