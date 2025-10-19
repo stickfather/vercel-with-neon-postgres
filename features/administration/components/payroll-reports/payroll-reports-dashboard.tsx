@@ -206,6 +206,44 @@ type ApiMatrixResponse = {
   amounts_hidden?: boolean;
 };
 
+type ApiDayDetailSessionEdit = {
+  original_checkin?: unknown;
+  original_checkout?: unknown;
+  original_minutes?: unknown;
+  new_checkin?: unknown;
+  new_checkout?: unknown;
+  new_minutes?: unknown;
+  edited_by_staff_id?: unknown;
+  edited_at?: unknown;
+};
+
+type ApiDayDetailSession = {
+  session_id?: unknown;
+  staff_id?: unknown;
+  work_date?: unknown;
+  checkin_local?: unknown;
+  checkout_local?: unknown;
+  session_minutes?: unknown;
+  edit?: unknown;
+};
+
+type ApiDayDetailApproval = {
+  staff_id?: unknown;
+  work_date?: unknown;
+  approved?: unknown;
+  approved_minutes?: unknown;
+  approved_by_staff_id?: unknown;
+  approved_at?: unknown;
+  note?: unknown;
+};
+
+type ApiDayDetailResponse = {
+  staff_id?: unknown;
+  work_date?: unknown;
+  sessions?: unknown;
+  approval?: unknown;
+};
+
 const currencyFormatter = new Intl.NumberFormat("es-EC", {
   style: "currency",
   currency: "USD",
@@ -222,6 +260,244 @@ function toNumeric(value: unknown): number | null {
   if (value == null) return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function toOptionalString(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return null;
+}
+
+function toRoundedMinutes(value: unknown): number | null {
+  const numeric = toNumeric(value);
+  if (numeric == null) return null;
+  const rounded = Math.round(numeric);
+  return Number.isFinite(rounded) ? Math.max(0, rounded) : null;
+}
+
+function toPositiveInteger(value: unknown): number | null {
+  const numeric = toNumeric(value);
+  if (numeric == null) return null;
+  const rounded = Math.round(numeric);
+  return Number.isFinite(rounded) ? rounded : null;
+}
+
+function computeMinutesFromRange(
+  checkinIso: string | null,
+  checkoutIso: string | null,
+): number | null {
+  if (!checkinIso || !checkoutIso) return null;
+  const start = new Date(checkinIso).getTime();
+  const end = new Date(checkoutIso).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return null;
+  }
+  return Math.round((end - start) / 60000);
+}
+
+function normalizeSessionEdit(payload: unknown): SessionEditDiff | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if (
+    "originalCheckin" in payload ||
+    "originalCheckout" in payload ||
+    "newCheckin" in payload ||
+    "newCheckout" in payload ||
+    "originalMinutes" in payload ||
+    "newMinutes" in payload
+  ) {
+    const existing = payload as Partial<SessionEditDiff>;
+    const normalized: SessionEditDiff = {
+      originalCheckin: toOptionalString(existing.originalCheckin ?? null),
+      originalCheckout: toOptionalString(existing.originalCheckout ?? null),
+      originalMinutes: toRoundedMinutes(existing.originalMinutes ?? null),
+      newCheckin: toOptionalString(existing.newCheckin ?? null),
+      newCheckout: toOptionalString(existing.newCheckout ?? null),
+      newMinutes: toRoundedMinutes(existing.newMinutes ?? null),
+      editedByStaffId:
+        typeof existing.editedByStaffId === "number" && Number.isFinite(existing.editedByStaffId)
+          ? Math.round(existing.editedByStaffId)
+          : toPositiveInteger(existing.editedByStaffId ?? null),
+      editedAt: toOptionalString(existing.editedAt ?? null),
+    };
+
+    const hasData =
+      normalized.originalCheckin ||
+      normalized.originalCheckout ||
+      normalized.newCheckin ||
+      normalized.newCheckout ||
+      normalized.originalMinutes != null ||
+      normalized.newMinutes != null;
+
+    return hasData ? normalized : null;
+  }
+
+  const record = payload as ApiDayDetailSessionEdit;
+  const normalized: SessionEditDiff = {
+    originalCheckin: toOptionalString(record.original_checkin),
+    originalCheckout: toOptionalString(record.original_checkout),
+    originalMinutes: toRoundedMinutes(record.original_minutes),
+    newCheckin: toOptionalString(record.new_checkin),
+    newCheckout: toOptionalString(record.new_checkout),
+    newMinutes: toRoundedMinutes(record.new_minutes),
+    editedByStaffId: toPositiveInteger(record.edited_by_staff_id),
+    editedAt: toOptionalString(record.edited_at),
+  };
+
+  const hasData =
+    normalized.originalCheckin ||
+    normalized.originalCheckout ||
+    normalized.newCheckin ||
+    normalized.newCheckout ||
+    normalized.originalMinutes != null ||
+    normalized.newMinutes != null;
+
+  return hasData ? normalized : null;
+}
+
+function normalizeSessionEditsInput(input: unknown): SessionEditDiff[] | undefined {
+  if (!input) {
+    return undefined;
+  }
+
+  if (Array.isArray(input)) {
+    const normalized = input
+      .map((item) => normalizeSessionEdit(item))
+      .filter((item): item is SessionEditDiff => item != null);
+    return normalized.length ? normalized : undefined;
+  }
+
+  const single = normalizeSessionEdit(input);
+  return single ? [single] : undefined;
+}
+
+function normalizeDayDetailSession(
+  payload: unknown,
+  fallbackStaffId: number,
+  fallbackWorkDate: string,
+): { session: DaySession; minutes: number } {
+  if (!payload || typeof payload !== "object") {
+    return {
+      session: {
+        sessionId: null,
+        staffId: fallbackStaffId,
+        workDate: fallbackWorkDate,
+        checkinTime: null,
+        checkoutTime: null,
+        hours: 0,
+      },
+      minutes: 0,
+    };
+  }
+
+  if (
+    "checkinTime" in payload ||
+    "checkoutTime" in payload ||
+    "hours" in payload ||
+    "sessionId" in payload
+  ) {
+    const existing = payload as Partial<DaySession>;
+    const minutesFromTimes = computeMinutesFromRange(
+      toOptionalString(existing.checkinTime ?? null),
+      toOptionalString(existing.checkoutTime ?? null),
+    );
+    const minutesFromHours =
+      typeof existing.hours === "number" && Number.isFinite(existing.hours)
+        ? Math.max(0, Math.round(existing.hours * 60))
+        : null;
+    const resolvedMinutes = minutesFromTimes ?? minutesFromHours ?? 0;
+    const normalizedEdits = normalizeSessionEditsInput(existing.edits);
+    const hoursValue =
+      minutesFromHours != null
+        ? Number((minutesFromHours / 60).toFixed(2))
+        : Number((resolvedMinutes / 60).toFixed(2));
+
+    return {
+      session: {
+        sessionId: existing.sessionId ?? null,
+        staffId: existing.staffId ?? fallbackStaffId,
+        workDate: existing.workDate ?? fallbackWorkDate,
+        checkinTime: toOptionalString(existing.checkinTime ?? null),
+        checkoutTime: toOptionalString(existing.checkoutTime ?? null),
+        hours: hoursValue,
+        edits: normalizedEdits,
+      },
+      minutes: resolvedMinutes,
+    };
+  }
+
+  const record = payload as ApiDayDetailSession;
+  const checkinLocal = toOptionalString(record.checkin_local);
+  const checkoutLocal = toOptionalString(record.checkout_local);
+  const minutes =
+    toRoundedMinutes(record.session_minutes) ??
+    computeMinutesFromRange(checkinLocal, checkoutLocal) ??
+    0;
+
+  const edits = normalizeSessionEditsInput(record.edit);
+
+  return {
+    session: {
+      sessionId: toPositiveInteger(record.session_id),
+      staffId: toPositiveInteger(record.staff_id) ?? fallbackStaffId,
+      workDate: toOptionalString(record.work_date) ?? fallbackWorkDate,
+      checkinTime: checkinLocal,
+      checkoutTime: checkoutLocal,
+      hours: Number((minutes / 60).toFixed(2)),
+      edits,
+    },
+    minutes,
+  };
+}
+
+function normalizeDayDetailApproval(
+  payload: unknown,
+  fallbackStaffId: number,
+  fallbackWorkDate: string,
+): DayApproval | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if ("approved" in payload || "approvedMinutes" in payload) {
+    const existing = payload as Partial<DayApproval>;
+    const minutes =
+      typeof existing.approvedMinutes === "number" && Number.isFinite(existing.approvedMinutes)
+        ? Math.max(0, Math.round(existing.approvedMinutes))
+        : null;
+
+    return {
+      staffId: existing.staffId ?? fallbackStaffId,
+      workDate: existing.workDate ?? fallbackWorkDate,
+      approved: Boolean(existing.approved),
+      approvedMinutes: minutes,
+      approvedByStaffId:
+        typeof existing.approvedByStaffId === "number" && Number.isFinite(existing.approvedByStaffId)
+          ? Math.round(existing.approvedByStaffId)
+          : toPositiveInteger(existing.approvedByStaffId ?? null),
+      approvedAt: toOptionalString(existing.approvedAt ?? null),
+      note: toOptionalString(existing.note ?? null),
+    };
+  }
+
+  const record = payload as ApiDayDetailApproval;
+  return {
+    staffId: toPositiveInteger(record.staff_id) ?? fallbackStaffId,
+    workDate: toOptionalString(record.work_date) ?? fallbackWorkDate,
+    approved: Boolean(record.approved),
+    approvedMinutes: toRoundedMinutes(record.approved_minutes),
+    approvedByStaffId: toPositiveInteger(record.approved_by_staff_id),
+    approvedAt: toOptionalString(record.approved_at),
+    note: toOptionalString(record.note),
+  };
 }
 
 function createNoStoreInit(): RequestInit & { next: { revalidate: number } } {
@@ -1314,43 +1590,78 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           const body = await response.json().catch(() => ({}));
           throw new Error((body as { error?: string }).error ?? "No se pudieron cargar las sesiones.");
         }
-        const data = (await response.json()) as { sessions?: DaySession[]; approval?: DayApproval | null };
+        const data = (await response.json()) as ApiDayDetailResponse;
         if (!cancelled) {
-          const sessions = data.sessions ?? [];
-          setSessionRows(sortSessionRows(buildSessionRows(sessions)));
-          setDayApproval(data.approval ?? null);
-          const totalMinutesFromSessions = sessions.reduce((accumulator, session) => {
-            const checkinTime = session.checkinTime ? new Date(session.checkinTime).getTime() : NaN;
-            const checkoutTime = session.checkoutTime ? new Date(session.checkoutTime).getTime() : NaN;
-            if (
-              !Number.isFinite(checkinTime) ||
-              !Number.isFinite(checkoutTime) ||
-              checkoutTime <= checkinTime
-            ) {
-              return accumulator;
-            }
-            return accumulator + Math.round((checkoutTime - checkinTime) / 60000);
-          }, 0);
+          const rawSessionsInput = (data?.sessions ?? null) as unknown;
+          const sessionItems = Array.isArray(rawSessionsInput)
+            ? rawSessionsInput
+            : rawSessionsInput != null
+              ? [rawSessionsInput]
+              : [];
+
+          const normalizedSessionsWithMinutes = sessionItems.map((item) =>
+            normalizeDayDetailSession(item, staffId, workDate),
+          );
+
+          const normalizedSessions = normalizedSessionsWithMinutes.map((item) => item.session);
+          const totalMinutesFromSessions = normalizedSessionsWithMinutes.reduce(
+            (accumulator, item) => accumulator + Math.max(0, item.minutes),
+            0,
+          );
+
+          const normalizedApproval = normalizeDayDetailApproval(
+            (data?.approval ?? null) as unknown,
+            staffId,
+            workDate,
+          );
+
+          const normalizedDate =
+            normalizedSessions[0]?.workDate ??
+            normalizedApproval?.workDate ??
+            toOptionalString(data?.work_date) ??
+            workDate;
+
+          const derivedHasEdits = normalizedSessions.some(
+            (session) => Array.isArray(session.edits) && session.edits.length > 0,
+          );
+
+          setSessionRows(sortSessionRows(buildSessionRows(normalizedSessions)));
+          setDayApproval(normalizedApproval);
+
           const approvedMinutes =
-            typeof data.approval?.approvedMinutes === "number"
-              ? Math.max(0, data.approval.approvedMinutes)
+            typeof normalizedApproval?.approvedMinutes === "number"
+              ? Math.max(0, normalizedApproval.approvedMinutes)
               : null;
+
           const derivedRawHours = Number((totalMinutesFromSessions / 60).toFixed(2));
           const derivedApprovedHours =
             approvedMinutes != null ? Number((approvedMinutes / 60).toFixed(2)) : null;
+
           setSelectedCell((previous) => {
             if (!previous) return previous;
             if (previous.staffId !== staffId || previous.workDate !== workDate) {
               return previous;
             }
+            const nextApproved =
+              typeof normalizedApproval?.approved === "boolean"
+                ? normalizedApproval.approved
+                : previous.approved;
+            if (
+              previous.workDate === normalizedDate &&
+              previous.rawHours === derivedRawHours &&
+              previous.approvedHours === derivedApprovedHours &&
+              previous.approved === nextApproved &&
+              previous.hasEdits === derivedHasEdits
+            ) {
+              return previous;
+            }
             return {
               ...previous,
+              workDate: normalizedDate,
               rawHours: derivedRawHours,
               approvedHours: derivedApprovedHours,
-              approved:
-                typeof data.approval?.approved === "boolean"
-                  ? data.approval.approved
-                  : previous.approved,
+              approved: nextApproved,
+              hasEdits: derivedHasEdits,
             };
           });
         }
