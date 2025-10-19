@@ -387,6 +387,42 @@ describe("payroll integration", () => {
     assert.equal(onlyRow.cells[0].date, "2025-10-01");
     assert.equal(onlyRow.cells[1].date, "2025-10-02");
   });
+
+  it("includes hasEdits field from staff_day_has_edits_v", async () => {
+    const { sql } = createMockSqlClient([
+      {
+        match: /staff_day_matrix_local_v/,
+        rows: [
+          {
+            staff_id: 10,
+            staff_name: "EditTest",
+            work_date: "2025-10-15",
+            total_hours: 8,
+            approved_hours: null,
+            horas_mostrar: 8,
+            approved: false,
+            has_edits: true,
+          },
+          {
+            staff_id: 10,
+            staff_name: "EditTest",
+            work_date: "2025-10-16",
+            total_hours: 7,
+            approved_hours: null,
+            horas_mostrar: 7,
+            approved: false,
+            has_edits: false,
+          },
+        ],
+      },
+    ]);
+
+    const matrix = await getPayrollMatrix({ start: "2025-10-15", end: "2025-10-16" }, sql);
+    assert.equal(matrix.rows.length, 1);
+    const row = matrix.rows[0];
+    assert.equal(row.cells[0].hasEdits, true);
+    assert.equal(row.cells[1].hasEdits, false);
+  });
 });
 
 it("throws HttpError when staff missing in approveDay", async () => {
