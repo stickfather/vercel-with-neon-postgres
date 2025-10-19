@@ -31,6 +31,10 @@ type SessionRow = {
   originalCheckout?: string | null;
 };
 
+type SessionEditorState = {
+  sessionKey: string;
+};
+
 type SelectedCell = {
   staffId: number;
   staffName: string;
@@ -455,6 +459,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionRows, setSessionRows] = useState<SessionRow[]>([]);
+  const [sessionEditor, setSessionEditor] = useState<SessionEditorState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
@@ -1106,12 +1111,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     if (!allowed) {
       return;
     }
-    setSessionRows((previous) =>
-      sortSessionRows([
-        ...previous,
-        createEmptySessionRow(selectedCell.staffId, selectedCell.workDate),
-      ]),
-    );
+    const emptyRow = createEmptySessionRow(selectedCell.staffId, selectedCell.workDate);
+    setSessionRows((previous) => sortSessionRows([...previous, emptyRow]));
+    setSessionEditor({ sessionKey: emptyRow.sessionKey });
   }, [ensureManagementAccess, selectedCell]);
 
   const enableRowEditing = useCallback(
@@ -1143,10 +1145,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const saveRowChanges = useCallback(
     async (sessionKey: string) => {
-      if (!selectedCell) return;
+      if (!selectedCell) return false;
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
-      if (!target) return;
+      if (!target) return false;
 
       const validation = validateRowDraft(target, rows, target.workDate);
       if (validation) {
@@ -1157,12 +1159,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               : row,
           ),
         );
-        return;
+        return false;
       }
 
       const { checkinIso, checkoutIso } = getActiveRowTimes(target);
       if (!checkinIso || !checkoutIso) {
-        return;
+        return false;
       }
 
       setSessionRows((previous) =>
@@ -1238,10 +1240,30 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             ),
           ),
         );
+        setMatrixData((previous) => {
+          if (!previous) return previous;
+          return {
+            ...previous,
+            rows: previous.rows.map((row) => {
+              if (row.staffId !== saved.staffId) {
+                return row;
+              }
+              return {
+                ...row,
+                cells: row.cells.map((cell) =>
+                  cell.date === saved.workDate
+                    ? { ...cell, approved: true, hasEdits: true }
+                    : cell,
+                ),
+              };
+            }),
+          };
+        });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(selectedCell.staffId);
         await refreshMonthSummary();
         setToast({ message: "Cambios guardados", tone: "success" });
+        return true;
       } catch (error) {
         console.error("No se pudo guardar la sesión", error);
         const message =
@@ -1254,6 +1276,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           ),
         );
         setToast({ message: "No se pudo guardar", tone: "error" });
+        return false;
       }
     },
     [
@@ -1261,6 +1284,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       refreshMatrixOnly,
       refreshMonthStatusForStaff,
       refreshMonthSummary,
+      setMatrixData,
       selectedCell,
     ],
   );
@@ -1272,13 +1296,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!target || target.pendingAction) {
         return;
       }
-      if (!target.isEditing) {
-        await enableRowEditing(sessionKey);
-        return;
-      }
-      await saveRowChanges(sessionKey);
+      await enableRowEditing(sessionKey);
+      setSessionEditor({ sessionKey });
     },
-    [enableRowEditing, saveRowChanges],
+    [enableRowEditing],
   );
 
   const handleDeleteClick = useCallback(
@@ -1299,6 +1320,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
       if (target.sessionId == null) {
         setSessionRows((previous) => previous.filter((row) => row.sessionKey !== sessionKey));
+        setSessionEditor((previous) =>
+          previous?.sessionKey === sessionKey ? null : previous,
+        );
         setToast({ message: "Cambios guardados", tone: "success" });
         return;
       }
@@ -1330,6 +1354,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         }
 
         setSessionRows((previous) => previous.filter((row) => row.sessionKey !== sessionKey));
+        setSessionEditor((previous) =>
+          previous?.sessionKey === sessionKey ? null : previous,
+        );
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(target.staffId);
         await refreshMonthSummary();
@@ -1373,6 +1400,29 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       }),
     );
   }, []);
+
+  const closeSessionEditor = useCallback(
+    (options?: { discardChanges?: boolean }) => {
+      setSessionEditor((current) => {
+        if (!current) {
+          return null;
+        }
+        if (options?.discardChanges) {
+          cancelRowEditing(current.sessionKey);
+        }
+        return null;
+      });
+    },
+    [cancelRowEditing],
+  );
+
+  const submitSessionEditor = useCallback(async () => {
+    if (!sessionEditor || editorPending) return;
+    const success = await saveRowChanges(sessionEditor.sessionKey);
+    if (success) {
+      setSessionEditor(null);
+    }
+  }, [editorPending, saveRowChanges, sessionEditor]);
 
   const recalculateCellWidth = useCallback((containerWidth: number, daysCount: number) => {
     if (!daysCount) return;
@@ -1517,9 +1567,21 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     });
   }, [selectedCell, sessionsLoading, totalHours]);
 
+  useEffect(() => {
+    if (!selectedCell) {
+      setSessionEditor(null);
+    }
+  }, [selectedCell]);
+
   const displayHours = sessionsLoading
     ? selectedCell?.hours ?? totalHours
     : totalHours;
+
+  const activeEditorRow = sessionEditor
+    ? sessionRows.find((row) => row.sessionKey === sessionEditor.sessionKey) ?? null
+    : null;
+  const editorPending =
+    activeEditorRow?.pendingAction === "edit" || activeEditorRow?.pendingAction === "create";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
@@ -1901,11 +1963,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         || actionLoading
                         || session.pendingAction === "edit"
                         || session.pendingAction === "create";
-                      const inputDisabled =
-                        !session.isEditing
-                        || session.pendingAction != null
-                        || sessionsLoading
-                        || actionLoading;
+                      const saving =
+                        session.pendingAction === "edit" || session.pendingAction === "create";
+                      const editorActive = sessionEditor?.sessionKey === session.sessionKey;
+                      const currentCheckin = session.checkinTime
+                        ? timeZoneDateTimeFormatter.format(new Date(session.checkinTime))
+                        : "—";
+                      const currentCheckout = session.checkoutTime
+                        ? timeZoneDateTimeFormatter.format(new Date(session.checkoutTime))
+                        : "—";
 
                       return (
                         <div
@@ -1937,10 +2003,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 disabled={editingDisabled}
                                 className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                {session.pendingAction === "edit" || session.pendingAction === "create"
+                                {saving
                                   ? "Guardando…"
-                                  : session.isEditing
-                                    ? "Guardar"
+                                  : editorActive
+                                    ? "Editando…"
                                     : "Editar"}
                               </button>
                               <button
@@ -1962,38 +2028,22 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                             </div>
                           </div>
                           <div className="grid gap-4 sm:grid-cols-2">
-                            <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                            <div className="flex flex-col gap-1 text-sm text-brand-deep">
                               <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                                Entrada
+                                Entrada actual
                               </span>
-                              <input
-                                type="datetime-local"
-                                value={session.isEditing
-                                  ? session.draftCheckin
-                                  : toLocalInputValue(session.checkinTime)}
-                                onChange={(event) =>
-                                  handleDraftChange(session.sessionKey, "checkin", event.target.value)
-                                }
-                                disabled={inputDisabled}
-                                className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                              <span className="rounded-2xl border border-brand-ink-muted/20 bg-brand-deep-soft/20 px-3 py-2 text-sm font-semibold text-brand-deep">
+                                {currentCheckin}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-1 text-sm text-brand-deep">
                               <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                                Salida
+                                Salida actual
                               </span>
-                              <input
-                                type="datetime-local"
-                                value={session.isEditing
-                                  ? session.draftCheckout
-                                  : toLocalInputValue(session.checkoutTime)}
-                                onChange={(event) =>
-                                  handleDraftChange(session.sessionKey, "checkout", event.target.value)
-                                }
-                                disabled={inputDisabled}
-                                className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
-                              />
-                            </label>
+                              <span className="rounded-2xl border border-brand-ink-muted/20 bg-brand-deep-soft/20 px-3 py-2 text-sm font-semibold text-brand-deep">
+                                {currentCheckout}
+                              </span>
+                            </div>
                           </div>
                           {session.originalCheckin || session.originalCheckout ? (
                             <div className="mt-3 rounded-2xl border border-yellow-300 bg-yellow-50 px-4 py-3">
@@ -2029,15 +2079,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                             <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-orange">
                               {session.feedback}
                             </p>
-                          ) : null}
-                          {session.isEditing && !session.isNew && session.pendingAction == null ? (
-                            <button
-                              type="button"
-                              onClick={() => cancelRowEditing(session.sessionKey)}
-                              className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-ink-muted transition hover:text-brand-deep"
-                            >
-                              Cancelar edición
-                            </button>
                           ) : null}
                         </div>
                       );
@@ -2083,6 +2124,136 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               >
                 {actionLoading ? "Procesando…" : "Aprobar día"}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sessionEditor && activeEditorRow ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8 backdrop-blur-sm"
+          onClick={() => {
+            if (!editorPending) {
+              closeSessionEditor({ discardChanges: true });
+            }
+          }}
+        >
+          <div
+            className="relative w-full max-w-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => closeSessionEditor({ discardChanges: true })}
+              disabled={editorPending}
+              className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/70 bg-white text-lg font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Cerrar editor de sesión"
+            >
+              ×
+            </button>
+            <div className="overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+              <div className="px-6 py-6 sm:px-8">
+                <div className="flex flex-col gap-2 text-brand-deep">
+                  <h2 className="text-xl font-black">Editar sesión</h2>
+                  <p className="text-sm text-brand-ink-muted">
+                    Actualiza los horarios de entrada y salida. Conservaremos el registro original para referencia.
+                  </p>
+                </div>
+                <form
+                  className="mt-6 space-y-5"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submitSessionEditor();
+                  }}
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                      <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+                        Entrada
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={activeEditorRow.draftCheckin}
+                        onChange={(event) =>
+                          handleDraftChange(activeEditorRow.sessionKey, "checkin", event.target.value)
+                        }
+                        disabled={activeEditorRow.pendingAction != null}
+                        className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                        required
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm text-brand-deep">
+                      <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+                        Salida
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={activeEditorRow.draftCheckout}
+                        onChange={(event) =>
+                          handleDraftChange(activeEditorRow.sessionKey, "checkout", event.target.value)
+                        }
+                        disabled={activeEditorRow.pendingAction != null}
+                        className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                        required
+                      />
+                    </label>
+                  </div>
+                  {activeEditorRow.originalCheckin || activeEditorRow.originalCheckout ? (
+                    <div className="rounded-2xl border border-yellow-300 bg-yellow-50 px-4 py-3">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-yellow-900">
+                        Horarios originales
+                      </div>
+                      <div className="grid gap-3 text-sm sm:grid-cols-2">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-medium text-yellow-800">Entrada</span>
+                          <span className="text-sm font-semibold text-yellow-900">
+                            {activeEditorRow.originalCheckin
+                              ? timeZoneDateTimeFormatter.format(new Date(activeEditorRow.originalCheckin))
+                              : "—"}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-medium text-yellow-800">Salida</span>
+                          <span className="text-sm font-semibold text-yellow-900">
+                            {activeEditorRow.originalCheckout
+                              ? timeZoneDateTimeFormatter.format(new Date(activeEditorRow.originalCheckout))
+                              : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {activeEditorRow.validationError ? (
+                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-orange">
+                      {activeEditorRow.validationError}
+                    </p>
+                  ) : null}
+                  {activeEditorRow.feedback ? (
+                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-orange">
+                      {activeEditorRow.feedback}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => closeSessionEditor({ discardChanges: true })}
+                      disabled={editorPending}
+                      className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={editorPending}
+                      className="inline-flex items-center justify-center rounded-full border border-brand-teal-soft/70 bg-brand-teal-soft px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/80 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {editorPending
+                        ? "Guardando…"
+                        : "Actualizar sesión"}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
         </div>
