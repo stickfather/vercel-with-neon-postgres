@@ -237,7 +237,16 @@ function validateSessionRange(checkinIso: string, checkoutIso: string, workDate:
 }
 
 function formatLocalDate(value: string): string {
-  const date = new Date(value);
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return "";
+  }
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) {
     return "";
   }
@@ -251,6 +260,9 @@ function formatLocalDate(value: string): string {
   const year = parts.find((part) => part.type === "year")?.value ?? "";
   const month = parts.find((part) => part.type === "month")?.value ?? "";
   const day = parts.find((part) => part.type === "day")?.value ?? "";
+  if (!year || !month || !day) {
+    return "";
+  }
   return `${year}-${month}-${day}`;
 }
 

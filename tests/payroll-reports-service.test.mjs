@@ -267,7 +267,7 @@ describe("payroll integration", () => {
     assert.equal(rows[0].hourlyWage, 4.75);
     assert.equal(rows[0].approvedAmount, 73.43);
     assert.equal(rows[0].amountPaid, 73.43);
-    assert.equal(rows[0].paidAt, "2025-11-02T05:15:00-05:00");
+    assert.equal(rows[0].paidAt, "2025-11-02T10:15:00Z");
   });
 
   it("normalizes month values with timestamps", async () => {

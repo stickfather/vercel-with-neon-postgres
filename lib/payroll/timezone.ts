@@ -124,6 +124,9 @@ export function toPayrollZonedISOString(date: Date): string | null {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`;
 }
 
+const LOCAL_TIMESTAMP_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}:?\d{2}|Z))?$/;
+
 export function parsePayrollLocalDateTime(value: string): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -133,38 +136,9 @@ export function parsePayrollLocalDateTime(value: string): string | null {
   if (!match) {
     return null;
   }
-  const [, yearStr, monthStr, dayStr, hourStr, minuteStr, secondStr] = match;
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const day = Number(dayStr);
-  const hour = Number(hourStr);
-  const minute = Number(minuteStr);
-  const second = Number(secondStr ?? "0");
-  if (
-    !Number.isFinite(year)
-    || !Number.isFinite(month)
-    || !Number.isFinite(day)
-    || !Number.isFinite(hour)
-    || !Number.isFinite(minute)
-    || !Number.isFinite(second)
-  ) {
-    return null;
-  }
-  const baseUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
-  if (!Number.isFinite(baseUtcMs)) {
-    return null;
-  }
-  const baseDate = new Date(baseUtcMs);
-  if (Number.isNaN(baseDate.getTime())) {
-    return null;
-  }
-  const offsetMinutes = getPayrollTimeZoneOffsetInMinutes(baseDate);
-  const adjustedMs = baseUtcMs - offsetMinutes * 60000;
-  const adjustedDate = new Date(adjustedMs);
-  if (Number.isNaN(adjustedDate.getTime())) {
-    return null;
-  }
-  return toPayrollZonedISOString(adjustedDate);
+  const [, year, month, day, hour, minute, second] = match;
+  const safeSecond = second ?? "00";
+  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}`;
 }
 
 export function normalizePayrollTimestamp(
@@ -180,20 +154,16 @@ export function normalizePayrollTimestamp(
   if (!trimmed.length) {
     return null;
   }
-  const candidate = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
-  if (/[zZ]$/.test(candidate) || /[+-]\d{2}:?\d{2}$/.test(candidate)) {
-    const parsed = new Date(candidate);
-    if (!Number.isNaN(parsed.getTime())) {
-      return toPayrollZonedISOString(parsed);
-    }
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const match = normalized.match(LOCAL_TIMESTAMP_REGEX);
+  if (!match) {
+    return null;
   }
-  const local = parsePayrollLocalDateTime(candidate);
-  if (local) {
-    return local;
+  const [, year, month, day, hour, minute, second, offset] = match;
+  const safeSecond = second ?? "00";
+  let safeOffset = offset ?? "";
+  if (safeOffset && safeOffset !== "Z" && !safeOffset.includes(":")) {
+    safeOffset = `${safeOffset.slice(0, 3)}:${safeOffset.slice(3)}`;
   }
-  const parsed = new Date(candidate);
-  if (!Number.isNaN(parsed.getTime())) {
-    return toPayrollZonedISOString(parsed);
-  }
-  return null;
+  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${safeOffset}`;
 }

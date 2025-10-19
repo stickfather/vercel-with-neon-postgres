@@ -6,10 +6,7 @@ import {
   SqlRow,
   TIMEZONE,
 } from "@/lib/db/client";
-import {
-  normalizePayrollTimestamp,
-  toPayrollZonedISOString,
-} from "@/lib/payroll/timezone";
+import { normalizePayrollTimestamp, toPayrollZonedISOString } from "@/lib/payroll/timezone";
 import {
   DaySessionsQuerySchema as ReportsDaySessionsSchema,
   getDaySessions as getPayrollDaySessions,
@@ -191,7 +188,16 @@ const dayFormatter = new Intl.DateTimeFormat("en-CA", {
 
 export function toTimeZoneDayString(value: string | null): string | null {
   if (!value) return null;
-  const date = new Date(value);
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const directMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (directMatch) {
+    return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`;
+  }
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) {
     return null;
   }
@@ -434,11 +440,14 @@ function normalizeTimestampValue(value: unknown): string | null {
   if (value instanceof Date) {
     return toPayrollZonedISOString(value);
   }
-  const stringValue = coerceString(value);
-  if (!stringValue) {
-    return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) {
+      return null;
+    }
+    return trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
   }
-  return normalizePayrollTimestamp(stringValue);
+  return null;
 }
 
 function toInteger(value: unknown): number | null {

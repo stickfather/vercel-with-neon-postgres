@@ -10,11 +10,7 @@ import type {
 } from "@/features/administration/data/payroll-reports";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
-import {
-  getPayrollDateTimeParts,
-  parsePayrollLocalDateTime,
-  PAYROLL_TIMEZONE,
-} from "@/lib/payroll/timezone";
+import { getPayrollDateTimeParts, PAYROLL_TIMEZONE } from "@/lib/payroll/timezone";
 
 type MatrixResponse = PayrollMatrixResponse;
 
@@ -216,20 +212,77 @@ function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
   return formatter.format(midday);
 }
 
+const TIMESTAMP_INPUT_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}:?\d{2}|Z))?$/;
+
+function normalizeOffset(offset: string | null | undefined): string | null {
+  if (!offset || offset === "") {
+    return null;
+  }
+  if (offset === "Z") {
+    return "Z";
+  }
+  if (!offset.includes(":")) {
+    return `${offset.slice(0, 3)}:${offset.slice(3)}`;
+  }
+  return offset;
+}
+
+function extractTimestampComponents(value: string | null): {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+  offset: string | null;
+} | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const match = normalized.match(TIMESTAMP_INPUT_REGEX);
+  if (!match) {
+    return null;
+  }
+  const [, year, month, day, hour, minute, second, offset] = match;
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second: second ?? "00",
+    offset: normalizeOffset(offset),
+  };
+}
+
 function toLocalInputValue(value: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const parts = toTimeZoneDateTimeParts(date);
+  const parts = extractTimestampComponents(value);
   if (!parts) {
     return "";
   }
-  const { year, month, day, hour, minute } = parts;
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
-function fromLocalInputValue(value: string): string | null {
-  return parsePayrollLocalDateTime(value);
+function fromLocalInputValue(value: string, reference?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) {
+    return null;
+  }
+  const [, year, month, day, hour, minute, second] = match;
+  const safeSecond = second ?? "00";
+  const referenceParts = extractTimestampComponents(reference ?? null);
+  const offset = referenceParts?.offset ?? null;
+  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${offset ?? ""}`;
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {
@@ -352,8 +405,8 @@ function getActiveRowTimes(row: SessionRow): {
 } {
   if (row.isEditing) {
     return {
-      checkinIso: fromLocalInputValue(row.draftCheckin),
-      checkoutIso: fromLocalInputValue(row.draftCheckout),
+      checkinIso: fromLocalInputValue(row.draftCheckin, row.checkinTime),
+      checkoutIso: fromLocalInputValue(row.draftCheckout, row.checkoutTime),
     };
   }
   return { checkinIso: row.checkinTime, checkoutIso: row.checkoutTime };
