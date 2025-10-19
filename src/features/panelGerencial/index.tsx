@@ -14,10 +14,26 @@ import ExamsPanel from "./tabs/Exams/Exams";
 
 export const revalidate = 60;
 
+function parseLevelsParam(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  const items = Array.isArray(value) ? value : [value];
+  return items
+    .flatMap((item) => item.split(","))
+    .map((item) => item.trim().toUpperCase())
+    .filter((item) => item.length > 0);
+}
+
+function getSelectedLevels(searchParams: Record<string, string | string[] | undefined>) {
+  const levelsParam = parseLevelsParam(searchParams.levels);
+  if (levelsParam.length) return levelsParam;
+  const fallback = parseLevelsParam(searchParams.level);
+  if (fallback.length) return [fallback[0]];
+  return [];
+}
+
 function getSelectedLevel(searchParams: Record<string, string | string[] | undefined>) {
-  const value = searchParams.level;
-  if (Array.isArray(value)) return value[0];
-  return value ?? null;
+  const levels = getSelectedLevels(searchParams);
+  return levels.length ? levels[0] : null;
 }
 
 function getSelectedBand(searchParams: Record<string, string | string[] | undefined>) {
@@ -48,10 +64,11 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
 
   const activeTab = tabParam as TabSlug;
   const selectedLevel = getSelectedLevel(resolvedSearchParams);
+  const selectedLevels = getSelectedLevels(resolvedSearchParams);
   const selectedBand = getSelectedBand(resolvedSearchParams);
-
   const content = renderActiveTab(activeTab, {
     selectedLevel,
+    selectedLevels,
     selectedBand,
   });
 
@@ -86,7 +103,11 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
 
 function renderActiveTab(
   activeTab: TabSlug,
-  filters: { selectedLevel: string | null; selectedBand: string | null },
+  filters: {
+    selectedLevel: string | null;
+    selectedLevels: string[];
+    selectedBand: string | null;
+  },
 ) {
   switch (activeTab) {
     case "overview":
@@ -105,7 +126,7 @@ function renderActiveTab(
     case "progress":
       return (
         <Suspense fallback={<FullPanelSkeleton chartCount={5} />}>
-          <ProgressPanel selectedLevel={filters.selectedLevel ?? undefined} />
+          <ProgressPanel />
         </Suspense>
       );
     case "engagement":

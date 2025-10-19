@@ -241,12 +241,7 @@ export const getLevelKpis = cache(fetchLevelKpis);
 export const getLevelStates = cache(fetchLevelStates);
 
 export async function getResumenGeneralData() {
-  const [header, bands, kpis, states] = await Promise.all([
-    getResumenHeader(),
-    getLevelBands(),
-    getLevelKpis(),
-    getLevelStates(),
-  ]);
+  const [header, kpis] = await Promise.all([getResumenHeader(), getLevelKpis()]);
 
-  return { header, bands, kpis, states };
+  return { header, kpis };
 }
