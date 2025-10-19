@@ -40,6 +40,7 @@ export type DaySession = {
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
+  minutes: number;
   hours: number;
   originalCheckinTime?: string | null;
   originalCheckoutTime?: string | null;
@@ -767,6 +768,7 @@ export async function fetchDaySessions({
     workDate: params.date,
     checkinTime: session.checkinTimeLocal,
     checkoutTime: session.checkoutTimeLocal,
+    minutes: session.minutes,
     hours: session.hours,
     originalCheckinTime: session.originalCheckinLocal,
     originalCheckoutTime: session.originalCheckoutLocal,
@@ -962,6 +964,7 @@ export async function updateStaffDaySession({
     workDate: normalizedWorkDate,
     checkinTime: checkinIso,
     checkoutTime: checkoutIso,
+    minutes,
     hours: minutesToHours(minutes),
     originalCheckinTime: coerceString(existingRows[0].checkin_time),
     originalCheckoutTime: coerceString(existingRows[0].checkout_time),
@@ -1027,6 +1030,7 @@ export async function createStaffDaySession({
     workDate: normalizedWorkDate,
     checkinTime: checkinIso,
     checkoutTime: checkoutIso,
+    minutes,
     hours: minutesToHours(minutes),
   };
 }

@@ -20,6 +20,8 @@ type SessionRow = {
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
+  minutes: number | null;
+  hours: number | null;
   isNew: boolean;
   isEditing: boolean;
   draftCheckin: string;
@@ -320,27 +322,50 @@ function generateSessionKey(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 }
 
+function normalizeSessionDurations(
+  minutes: number | null | undefined,
+  hours: number | null | undefined,
+): { minutes: number | null; hours: number | null } {
+  const numericMinutes =
+    typeof minutes === "number" && Number.isFinite(minutes) ? Math.max(0, minutes) : null;
+  const safeMinutes = numericMinutes != null ? Math.round(numericMinutes) : null;
+  const numericHours = typeof hours === "number" && Number.isFinite(hours) ? hours : null;
+  const safeHours =
+    numericHours != null
+      ? numericHours
+      : safeMinutes != null
+        ? Math.round((safeMinutes / 60) * 100) / 100
+        : null;
+
+  return { minutes: safeMinutes, hours: safeHours };
+}
+
 function buildSessionRows(sessions: DaySession[]): SessionRow[] {
-  return sessions.map((session, index) => ({
-    sessionKey:
-      session.sessionId != null
-        ? `existing-${session.sessionId}`
-        : generateSessionKey(`session-${index}`),
-    sessionId: session.sessionId,
-    staffId: session.staffId,
-    workDate: session.workDate,
-    checkinTime: session.checkinTime,
-    checkoutTime: session.checkoutTime,
-    isNew: false,
-    isEditing: false,
-    draftCheckin: toLocalInputValue(session.checkinTime),
-    draftCheckout: toLocalInputValue(session.checkoutTime),
-    validationError: null,
-    feedback: null,
-    pendingAction: null,
-    originalCheckin: session.originalCheckinTime,
-    originalCheckout: session.originalCheckoutTime,
-  }));
+  return sessions.map((session, index) => {
+    const { minutes, hours } = normalizeSessionDurations(session.minutes, session.hours);
+    return {
+      sessionKey:
+        session.sessionId != null
+          ? `existing-${session.sessionId}`
+          : generateSessionKey(`session-${index}`),
+      sessionId: session.sessionId,
+      staffId: session.staffId,
+      workDate: session.workDate,
+      checkinTime: session.checkinTime,
+      checkoutTime: session.checkoutTime,
+      minutes,
+      hours,
+      isNew: false,
+      isEditing: false,
+      draftCheckin: toLocalInputValue(session.checkinTime),
+      draftCheckout: toLocalInputValue(session.checkoutTime),
+      validationError: null,
+      feedback: null,
+      pendingAction: null,
+      originalCheckin: session.originalCheckinTime,
+      originalCheckout: session.originalCheckoutTime,
+    };
+  });
 }
 
 function createEmptySessionRow(staffId: number, workDate: string): SessionRow {
@@ -351,6 +376,8 @@ function createEmptySessionRow(staffId: number, workDate: string): SessionRow {
     workDate,
     checkinTime: null,
     checkoutTime: null,
+    minutes: null,
+    hours: null,
     isNew: true,
     isEditing: true,
     draftCheckin: "",
@@ -383,6 +410,19 @@ function computeRowMinutes(row: SessionRow): number | null {
     return null;
   }
   return Math.round((end - start) / 60000);
+}
+
+function getRowMinutesForTotals(row: SessionRow): number | null {
+  if (row.isEditing || row.pendingAction === "edit" || row.pendingAction === "create" || row.isNew) {
+    return computeRowMinutes(row);
+  }
+  if (typeof row.minutes === "number" && Number.isFinite(row.minutes)) {
+    return row.minutes;
+  }
+  if (typeof row.hours === "number" && Number.isFinite(row.hours)) {
+    return Math.round(row.hours * 60);
+  }
+  return computeRowMinutes(row);
 }
 
 function sortSessionRows(rows: SessionRow[]): SessionRow[] {
@@ -1216,6 +1256,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                     workDate: saved.workDate,
                     checkinTime: saved.checkinTime,
                     checkoutTime: saved.checkoutTime,
+                    ...normalizeSessionDurations(saved.minutes, saved.hours),
                     draftCheckin: toLocalInputValue(saved.checkinTime),
                     draftCheckout: toLocalInputValue(saved.checkoutTime),
                     originalCheckin:
@@ -1558,7 +1599,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const totalMinutes = useMemo(
     () =>
       sessionRows.reduce((accumulator, row) => {
-        const minutes = computeRowMinutes(row);
+        const minutes = getRowMinutesForTotals(row);
         return minutes != null ? accumulator + minutes : accumulator;
       }, 0),
     [sessionRows],
