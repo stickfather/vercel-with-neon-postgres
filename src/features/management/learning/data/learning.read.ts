@@ -376,10 +376,20 @@ const fetchFastestCompletions = cache(async (): Promise<LearnFastestCompletionRo
   }));
 });
 
+function logAndFallback<T>(error: unknown, context: string, fallback: T): T {
+  console.error(`Error loading management learning data for ${context}`, error);
+  return fallback;
+}
+
 export async function getLearningDashboardData(
   levelFilter?: string[] | null,
 ): Promise<LearnDashboardData> {
-  const availableLevels = await fetchAvailableLevels();
+  const rawAvailableLevels = await fetchAvailableLevels().catch((error) =>
+    logAndFallback<string[]>(error, "learn_progress_bands_v (levels)", []),
+  );
+  const fallbackLevels = ["A1", "A2", "B1", "B2", "C1"];
+  const availableLevels = rawAvailableLevels.length ? rawAvailableLevels : fallbackLevels;
+
   const normalizedLevels = (levelFilter ?? [])
     .map((level) => level.trim().toUpperCase())
     .filter((level) => availableLevels.includes(level));
@@ -399,19 +409,53 @@ export async function getLearningDashboardData(
     fastest,
     fastestCompletions,
   ] = await Promise.all([
-    fetchLearnHeader(),
-    fetchLearnOnpaceSplit(),
-    fetchProgressBands(normalizedLevels.length ? normalizedLevels : undefined),
-    fetchCohortProgress(),
-    fetchLeiOverall(),
-    fetchLeiByLevel(normalizedLevels.length ? normalizedLevels : undefined),
-    fetchOutcomesWeekly(),
-    fetchLevelupsWeekly(),
-    fetchLevelMoveMatrix(),
-    fetchLessonsHeatmap(normalizedLevels.length ? normalizedLevels : undefined),
-    fetchSlowest(normalizedLevels.length ? normalizedLevels : undefined),
-    fetchFastest(normalizedLevels.length ? normalizedLevels : undefined),
-    fetchFastestCompletions(),
+    fetchLearnHeader().catch((error) =>
+      logAndFallback<LearnHeader | null>(error, "learn_header_v", null),
+    ),
+    fetchLearnOnpaceSplit().catch((error) =>
+      logAndFallback<LearnOnpaceSplit | null>(error, "learn_onpace_split_v", null),
+    ),
+    fetchProgressBands(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+      logAndFallback<LearnProgressBandRow[]>(
+        error,
+        "learn_progress_bands_v",
+        [],
+      ),
+    ),
+    fetchCohortProgress().catch((error) =>
+      logAndFallback<LearnCohortProgressRow[]>(error, "learn_cohort_progress_v", []),
+    ),
+    fetchLeiOverall().catch((error) =>
+      logAndFallback<LearnLeiDistributionRow | null>(error, "learn_lei_distribution_v", null),
+    ),
+    fetchLeiByLevel(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+      logAndFallback<LearnLeiDistributionRow[]>(error, "learn_lei_distribution_v", []),
+    ),
+    fetchOutcomesWeekly().catch((error) =>
+      logAndFallback<LearnOutcomesWeeklyRow[]>(error, "learn_outcomes_weekly_v", []),
+    ),
+    fetchLevelupsWeekly().catch((error) =>
+      logAndFallback<LearnLevelupsWeeklyRow[]>(error, "learn_levelups_weekly_v", []),
+    ),
+    fetchLevelMoveMatrix().catch((error) =>
+      logAndFallback<LearnLevelMoveMatrixRow[]>(error, "learn_level_move_matrix_v", []),
+    ),
+    fetchLessonsHeatmap(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+      logAndFallback<LearnLessonsHeatmapRow[]>(error, "learn_lessons_heatmap_v", []),
+    ),
+    fetchSlowest(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+      logAndFallback<LearnSlowLearnerRow[]>(error, "learn_slowest_20_v", []),
+    ),
+    fetchFastest(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+      logAndFallback<LearnFastLearnerRow[]>(error, "learn_fastest_20_v", []),
+    ),
+    fetchFastestCompletions().catch((error) =>
+      logAndFallback<LearnFastestCompletionRow[]>(
+        error,
+        "learn_fastest_completions_20_v",
+        [],
+      ),
+    ),
   ]);
 
   return {
