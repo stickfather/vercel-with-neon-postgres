@@ -111,6 +111,12 @@ export function formatPayrollTimeZoneOffset(offsetMinutes: number): string {
   return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
+const PAYROLL_OFFSET_PROBE = new Date(Date.UTC(2024, 0, 1, 12, 0, 0));
+
+export const PAYROLL_TIMEZONE_OFFSET = formatPayrollTimeZoneOffset(
+  getPayrollTimeZoneOffsetInMinutes(PAYROLL_OFFSET_PROBE),
+);
+
 export function toPayrollZonedISOString(date: Date): string | null {
   if (Number.isNaN(date.getTime())) {
     return null;
@@ -125,7 +131,7 @@ export function toPayrollZonedISOString(date: Date): string | null {
 }
 
 const LOCAL_TIMESTAMP_REGEX =
-  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
 export function parsePayrollLocalDateTime(value: string): string | null {
   if (!value) return null;
@@ -159,8 +165,9 @@ export function normalizePayrollTimestamp(
   if (!match) {
     return null;
   }
-  const [, year, month, day, hour, minute, second, offset] = match;
+  const [, year, month, day, hour, minute, second, fractional, offset] = match;
   const safeSecond = second ?? "00";
+  const safeFraction = fractional ? `.${fractional}` : "";
   let safeOffset = offset ?? "";
   if (safeOffset && safeOffset !== "Z") {
     if (/^[+-]\d{2}$/.test(safeOffset)) {
@@ -169,5 +176,5 @@ export function normalizePayrollTimestamp(
       safeOffset = `${safeOffset.slice(0, 3)}:${safeOffset.slice(3)}`;
     }
   }
-  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${safeOffset}`;
+  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${safeFraction}${safeOffset}`;
 }

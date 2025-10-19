@@ -6,7 +6,11 @@ import {
   SqlRow,
   TIMEZONE,
 } from "@/lib/db/client";
-import { normalizePayrollTimestamp, toPayrollZonedISOString } from "@/lib/payroll/timezone";
+import {
+  normalizePayrollTimestamp,
+  PAYROLL_TIMEZONE_OFFSET,
+  toPayrollZonedISOString,
+} from "@/lib/payroll/timezone";
 import {
   DaySessionsQuerySchema as ReportsDaySessionsSchema,
   getDaySessions as getPayrollDaySessions,
@@ -1181,7 +1185,10 @@ function ensureIsoString(value: string | null | undefined): string | null {
   if (!normalized) {
     return null;
   }
-  return normalized;
+  if (/(?:[+-]\d{2}:\d{2}|Z)$/.test(normalized)) {
+    return normalized;
+  }
+  return `${normalized}${PAYROLL_TIMEZONE_OFFSET}`;
 }
 
 async function allocateStaffAttendanceIds(

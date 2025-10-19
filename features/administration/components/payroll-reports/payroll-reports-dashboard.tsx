@@ -14,6 +14,7 @@ import {
   getPayrollDateTimeParts,
   normalizePayrollTimestamp,
   PAYROLL_TIMEZONE,
+  PAYROLL_TIMEZONE_OFFSET,
 } from "@/lib/payroll/timezone";
 
 type MatrixResponse = PayrollMatrixResponse;
@@ -232,7 +233,7 @@ function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
 }
 
 const TIMESTAMP_INPUT_REGEX =
-  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
 function normalizeOffset(offset: string | null | undefined): string | null {
   if (!offset || offset === "") {
@@ -269,7 +270,7 @@ function extractTimestampComponents(value: string | null): {
   if (!match) {
     return null;
   }
-  const [, year, month, day, hour, minute, second, offset] = match;
+  const [, year, month, day, hour, minute, second, _fractional, offset] = match;
   return {
     year,
     month,
@@ -303,8 +304,8 @@ function fromLocalInputValue(value: string, reference?: string | null): string |
   const [, year, month, day, hour, minute, second] = match;
   const safeSecond = second ?? "00";
   const referenceParts = extractTimestampComponents(reference ?? null);
-  const offset = referenceParts?.offset ?? null;
-  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${offset ?? ""}`;
+  const offset = referenceParts?.offset ?? PAYROLL_TIMEZONE_OFFSET;
+  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${offset}`;
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {
