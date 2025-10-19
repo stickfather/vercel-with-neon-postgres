@@ -723,6 +723,11 @@ export async function fetchPayrollMatrix({
       typeof baseHours === "number" && Number.isFinite(baseHours)
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
+    const cellColor: MatrixCell["cellColor"] = approved
+      ? hasEdits
+        ? "yellow"
+        : "green"
+      : "orange";
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
@@ -730,6 +735,7 @@ export async function fetchPayrollMatrix({
       approved,
       approvedHours: safeApprovedHours,
       hasEdits,
+      cellColor,
     });
   }
 
@@ -739,7 +745,14 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, rawHours: 0, approved: false, approvedHours: null, hasEdits: false };
+      return {
+        date: day,
+        rawHours: 0,
+        approved: false,
+        approvedHours: null,
+        hasEdits: false,
+        cellColor: "orange",
+      };
     });
 
     matrixRows.push({
