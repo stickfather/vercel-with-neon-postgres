@@ -133,6 +133,24 @@ export function toPayrollZonedISOString(date: Date): string | null {
 const LOCAL_TIMESTAMP_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
+const VERBOSE_TIMESTAMP_REGEX =
+  /^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?\s+GMT([+-]\d{4})(?:\s+\(.+\))?$/;
+
+const MONTH_NAME_TO_INDEX: Record<string, string> = {
+  jan: "01",
+  feb: "02",
+  mar: "03",
+  apr: "04",
+  may: "05",
+  jun: "06",
+  jul: "07",
+  aug: "08",
+  sep: "09",
+  oct: "10",
+  nov: "11",
+  dec: "12",
+};
+
 export function parsePayrollLocalDateTime(value: string): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -160,6 +178,20 @@ export function normalizePayrollTimestamp(
   if (!trimmed.length) {
     return null;
   }
+
+  const verboseMatch = trimmed.match(VERBOSE_TIMESTAMP_REGEX);
+  if (verboseMatch) {
+    const [, monthName, day, year, hour, minute, second, compactOffset] = verboseMatch;
+    const month = MONTH_NAME_TO_INDEX[monthName.toLowerCase()];
+    if (!month) {
+      return null;
+    }
+    const paddedDay = day.padStart(2, "0");
+    const safeSecond = second ?? "00";
+    const safeOffset = `${compactOffset.slice(0, 3)}:${compactOffset.slice(3)}`;
+    return `${year}-${month}-${paddedDay}T${hour}:${minute}:${safeSecond}${safeOffset}`;
+  }
+
   const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
   const match = normalized.match(LOCAL_TIMESTAMP_REGEX);
   if (!match) {

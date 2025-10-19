@@ -22,6 +22,14 @@ describe("normalizePayrollTimestamp", () => {
       "2025-11-10T09:54:12-05:00",
     );
   });
+
+  it("normalizes verbose browser-style timestamps", () => {
+    const verbose = "Sun Oct 12 2025 11:43:00 GMT+0000 (Coordinated Universal Time)";
+    assert.equal(
+      normalizePayrollTimestamp(verbose),
+      "2025-10-12T11:43:00+00:00",
+    );
+  });
 });
 
 describe("PAYROLL_TIMEZONE_OFFSET", () => {

@@ -78,29 +78,17 @@ const timeZoneDateFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: PAYROLL_TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
 function formatSessionTimestampForDisplay(value: string | null): string | null {
   if (!value) {
     return null;
   }
-  const normalized = normalizePayrollTimestamp(value);
-  if (!normalized) {
-    return value;
+  const normalized = normalizePayrollTimestamp(value) ?? value;
+  const match = normalized.match(/(?:T|\s)(\d{2}):(\d{2})/);
+  if (!match) {
+    return null;
   }
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return timeZoneDateTimeFormatter.format(parsed);
+  const [, hour, minute] = match;
+  return `${hour}:${minute}`;
 }
 
 function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
@@ -2071,8 +2059,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       const editorActive = sessionEditor?.sessionKey === session.sessionKey;
                       const formattedCheckin = formatSessionTimestampForDisplay(session.checkinTime);
                       const formattedCheckout = formatSessionTimestampForDisplay(session.checkoutTime);
-                      const currentCheckin = formattedCheckin ?? session.checkinTime ?? "—";
-                      const currentCheckout = formattedCheckout ?? session.checkoutTime ?? "—";
+                      const currentCheckin = formattedCheckin ?? "—";
+                      const currentCheckout = formattedCheckout ?? "—";
 
                       return (
                         <div
@@ -2204,9 +2192,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   <span className="text-xs font-medium text-yellow-800">Entrada</span>
                                   <span className="text-sm font-semibold text-yellow-900">
                                     {session.originalCheckin
-                                      ? formatSessionTimestampForDisplay(session.originalCheckin) ??
-                                        session.originalCheckin ??
-                                        "—"
+                                      ? formatSessionTimestampForDisplay(session.originalCheckin) ?? "—"
                                       : "—"}
                                   </span>
                                 </div>
@@ -2214,9 +2200,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   <span className="text-xs font-medium text-yellow-800">Salida</span>
                                   <span className="text-sm font-semibold text-yellow-900">
                                     {session.originalCheckout
-                                      ? formatSessionTimestampForDisplay(session.originalCheckout) ??
-                                        session.originalCheckout ??
-                                        "—"
+                                      ? formatSessionTimestampForDisplay(session.originalCheckout) ?? "—"
                                       : "—"}
                                   </span>
                                 </div>
@@ -2361,9 +2345,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                           <span className="text-xs font-medium text-yellow-800">Entrada</span>
                           <span className="text-sm font-semibold text-yellow-900">
                             {activeEditorRow.originalCheckin
-                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckin) ??
-                                activeEditorRow.originalCheckin ??
-                                "—"
+                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckin) ?? "—"
                               : "—"}
                           </span>
                         </div>
@@ -2371,9 +2353,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                           <span className="text-xs font-medium text-yellow-800">Salida</span>
                           <span className="text-sm font-semibold text-yellow-900">
                             {activeEditorRow.originalCheckout
-                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckout) ??
-                                activeEditorRow.originalCheckout ??
-                                "—"
+                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckout) ?? "—"
                               : "—"}
                           </span>
                         </div>
