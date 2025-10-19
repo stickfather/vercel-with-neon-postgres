@@ -63,6 +63,21 @@ function toBoolean(value: unknown): boolean {
   return false;
 }
 
+function getRowValue(row: SqlRow, candidates: string[]): unknown {
+  for (const candidate of candidates) {
+    if (candidate in row) {
+      return row[candidate as keyof typeof row];
+    }
+    const lowerCandidate = candidate.toLowerCase();
+    for (const [key, value] of Object.entries(row)) {
+      if (key.toLowerCase() === lowerCandidate) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function roundMinutesToHours(minutes: number): number {
   const safeMinutes = Number.isFinite(minutes) ? minutes : 0;
   return Math.round((safeMinutes / 60) * 100) / 100;
@@ -472,17 +487,22 @@ export async function getDaySessions(
   const rows = normalizeRows<SqlRow>(
     await sql`
       SELECT
-        session_id,
-        checkin_local,
-        checkout_local,
-        session_minutes,
-        total_hours,
-        original_checkin_local,
-        original_checkout_local
-      FROM public.staff_day_sessions_with_edits_v
-      WHERE staff_id = ${params.staffId}::bigint
-        AND work_date = ${params.date}::date
-      ORDER BY checkin_local NULLS LAST
+        s.session_id,
+        s.staff_id,
+        s.work_date,
+        s.checkin_local,
+        s.checkout_local,
+        s.session_minutes,
+        s.total_hours,
+        s.original_checkin_local,
+        s.original_checkout_local,
+        s.original_session_id,
+        s.replacement_session_id,
+        s.is_original_record
+      FROM public.staff_day_sessions_with_edits_v AS s
+      WHERE s.staff_id = ${params.staffId}::bigint
+        AND s.work_date = ${params.date}::date
+      ORDER BY s.checkin_local NULLS LAST, s.session_id
     `,
   );
 
@@ -505,6 +525,34 @@ export async function getDaySessions(
       }
     }
     const safeMinutes = Math.max(0, Math.round(minutes ?? 0));
+    const originalSessionIdRaw = getRowValue(row, [
+      "original_session_id",
+      "source_session_id",
+      "previous_session_id",
+    ]);
+    const replacementSessionIdRaw = getRowValue(row, [
+      "replacement_session_id",
+      "new_session_id",
+      "superseding_session_id",
+    ]);
+    const rawOriginalFlag = getRowValue(row, [
+      "is_original_record",
+      "is_original",
+      "is_history_record",
+    ]);
+    let isOriginalRecord = false;
+    if (typeof rawOriginalFlag === "string") {
+      const normalized = rawOriginalFlag.trim().toLowerCase();
+      if (["original", "history", "historical"].includes(normalized)) {
+        isOriginalRecord = true;
+      } else if (["edited", "current", "replacement", "updated"].includes(normalized)) {
+        isOriginalRecord = false;
+      } else {
+        isOriginalRecord = toBoolean(normalized);
+      }
+    } else if (rawOriginalFlag != null) {
+      isOriginalRecord = toBoolean(rawOriginalFlag);
+    }
     return {
       sessionId: Number(row["session_id"] ?? 0),
       checkinTimeLocal: row["checkin_local"] ? String(row["checkin_local"]) : null,
@@ -513,6 +561,15 @@ export async function getDaySessions(
       hours: roundMinutesToHours(safeMinutes),
       originalCheckinLocal: row["original_checkin_local"] ? String(row["original_checkin_local"]) : null,
       originalCheckoutLocal: row["original_checkout_local"] ? String(row["original_checkout_local"]) : null,
+      originalSessionId:
+        originalSessionIdRaw != null && Number.isFinite(Number(originalSessionIdRaw))
+          ? Number(originalSessionIdRaw)
+          : null,
+      replacementSessionId:
+        replacementSessionIdRaw != null && Number.isFinite(Number(replacementSessionIdRaw))
+          ? Number(replacementSessionIdRaw)
+          : null,
+      isOriginalRecord,
     };
   });
 }

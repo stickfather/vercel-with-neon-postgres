@@ -31,6 +31,9 @@ type SessionRow = {
   pendingAction: null | "edit" | "create" | "delete";
   originalCheckin?: string | null;
   originalCheckout?: string | null;
+  originalSessionId?: number | null;
+  replacementSessionId?: number | null;
+  isHistorical: boolean;
 };
 
 type SessionEditorState = {
@@ -364,6 +367,16 @@ function buildSessionRows(sessions: DaySession[]): SessionRow[] {
       pendingAction: null,
       originalCheckin: session.originalCheckinTime,
       originalCheckout: session.originalCheckoutTime,
+      originalSessionId:
+        typeof session.originalSessionId === "number" && Number.isFinite(session.originalSessionId)
+          ? session.originalSessionId
+          : null,
+      replacementSessionId:
+        typeof session.replacementSessionId === "number"
+          && Number.isFinite(session.replacementSessionId)
+          ? session.replacementSessionId
+          : null,
+      isHistorical: Boolean(session.isOriginalRecord),
     };
   });
 }
@@ -385,6 +398,9 @@ function createEmptySessionRow(staffId: number, workDate: string): SessionRow {
     validationError: null,
     feedback: null,
     pendingAction: null,
+    originalSessionId: null,
+    replacementSessionId: null,
+    isHistorical: false,
   };
 }
 
@@ -413,6 +429,9 @@ function computeRowMinutes(row: SessionRow): number | null {
 }
 
 function getRowMinutesForTotals(row: SessionRow): number | null {
+  if (row.isHistorical) {
+    return null;
+  }
   if (row.isEditing || row.pendingAction === "edit" || row.pendingAction === "create" || row.isNew) {
     return computeRowMinutes(row);
   }
@@ -463,6 +482,7 @@ function validateRowDraft(
 
   for (const candidate of rows) {
     if (candidate.sessionKey === row.sessionKey) continue;
+    if (candidate.isHistorical) continue;
     const { checkinIso: otherStart, checkoutIso: otherEnd } = getActiveRowTimes(candidate);
     if (!otherStart || !otherEnd) continue;
     const startMs = checkinDate.getTime();
@@ -1160,6 +1180,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     async (sessionKey: string) => {
       const allowed = await ensureManagementAccess();
       if (!allowed) return;
+      const currentRows = sessionRowsRef.current;
+      const targetRow = currentRows.find((row) => row.sessionKey === sessionKey);
+      if (!targetRow || targetRow.isHistorical) {
+        return;
+      }
       setSessionRows((previous) => {
         const updated = previous.map((row) => {
           if (row.sessionKey !== sessionKey) return row;
@@ -1189,6 +1214,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
       if (!target) return false;
+      const previousSessionId = target.sessionId;
 
       const validation = validateRowDraft(target, rows, target.workDate);
       if (validation) {
@@ -1271,6 +1297,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         ?? (row.checkoutTime && row.checkoutTime !== saved.checkoutTime
                           ? row.checkoutTime
                           : null),
+                    originalSessionId:
+                      saved.originalSessionId
+                        ?? row.originalSessionId
+                        ?? (previousSessionId != null ? previousSessionId : null),
+                    replacementSessionId:
+                      saved.replacementSessionId
+                        ?? row.replacementSessionId
+                        ?? null,
+                    isHistorical: Boolean(saved.isOriginalRecord),
                     isNew: false,
                     isEditing: false,
                     validationError: null,
@@ -1334,7 +1369,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     async (sessionKey: string) => {
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
-      if (!target || target.pendingAction) {
+      if (!target || target.pendingAction || target.isHistorical) {
         return;
       }
       await enableRowEditing(sessionKey);
@@ -1347,7 +1382,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     async (sessionKey: string) => {
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
-      if (!target || target.pendingAction) {
+      if (!target || target.pendingAction || target.isHistorical) {
         return;
       }
 
@@ -2001,10 +2036,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 <div className="space-y-4">
                   {sessionRows.length ? (
                     sessionRows.map((session, index) => {
+                      const isHistorical = session.isHistorical;
                       const editingDisabled =
-                        sessionsLoading || actionLoading || session.pendingAction === "delete";
+                        isHistorical
+                        || sessionsLoading
+                        || actionLoading
+                        || session.pendingAction === "delete";
                       const deletingDisabled =
-                        sessionsLoading
+                        isHistorical
+                        || sessionsLoading
                         || actionLoading
                         || session.pendingAction === "edit"
                         || session.pendingAction === "create";
@@ -2021,10 +2061,18 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       return (
                         <div
                           key={session.sessionKey}
-                          className="rounded-3xl border border-brand-ink-muted/15 bg-white px-5 py-4 shadow-inner"
+                          className={`rounded-3xl border px-5 py-4 shadow-inner ${
+                            isHistorical
+                              ? "border-brand-ink-muted/10 bg-brand-deep-soft/30"
+                              : "border-brand-ink-muted/15 bg-white"
+                          }`}
                         >
                           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex flex-wrap items-center gap-2 text-brand-deep">
+                            <div
+                              className={`flex flex-wrap items-center gap-2 ${
+                                isHistorical ? "text-brand-ink-muted" : "text-brand-deep"
+                              }`}
+                            >
                               <span className="text-sm font-semibold">
                                 {session.sessionId != null
                                   ? `Sesión ID ${session.sessionId}`
@@ -2038,6 +2086,21 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               {session.pendingAction ? (
                                 <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
                                   {session.pendingAction === "delete" ? "Eliminando…" : "Guardando…"}
+                                </span>
+                              ) : null}
+                              {isHistorical ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  Registro original
+                                </span>
+                              ) : null}
+                              {!isHistorical && session.originalSessionId ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  {`Reemplaza ID ${session.originalSessionId}`}
+                                </span>
+                              ) : null}
+                              {isHistorical && session.replacementSessionId ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  {`Reemplazada por ID ${session.replacementSessionId}`}
                                 </span>
                               ) : null}
                             </div>
@@ -2073,27 +2136,52 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                             </div>
                           </div>
                           <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="flex flex-col gap-1 text-sm text-brand-deep">
+                            <div
+                              className={`flex flex-col gap-1 text-sm ${
+                                isHistorical ? "text-brand-ink-muted" : "text-brand-deep"
+                              }`}
+                            >
                               <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                                Entrada actual
+                                {isHistorical ? "Entrada registrada" : "Entrada actual"}
                               </span>
-                              <span className="rounded-2xl border border-brand-ink-muted/20 bg-brand-deep-soft/20 px-3 py-2 text-sm font-semibold text-brand-deep">
+                              <span
+                                className={`rounded-2xl border border-brand-ink-muted/20 px-3 py-2 text-sm font-semibold ${
+                                  isHistorical
+                                    ? "bg-white text-brand-ink-muted"
+                                    : "bg-brand-deep-soft/20 text-brand-deep"
+                                }`}
+                              >
                                 {currentCheckin}
                               </span>
                             </div>
-                            <div className="flex flex-col gap-1 text-sm text-brand-deep">
+                            <div
+                              className={`flex flex-col gap-1 text-sm ${
+                                isHistorical ? "text-brand-ink-muted" : "text-brand-deep"
+                              }`}
+                            >
                               <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                                Salida actual
+                                {isHistorical ? "Salida registrada" : "Salida actual"}
                               </span>
-                              <span className="rounded-2xl border border-brand-ink-muted/20 bg-brand-deep-soft/20 px-3 py-2 text-sm font-semibold text-brand-deep">
+                              <span
+                                className={`rounded-2xl border border-brand-ink-muted/20 px-3 py-2 text-sm font-semibold ${
+                                  isHistorical
+                                    ? "bg-white text-brand-ink-muted"
+                                    : "bg-brand-deep-soft/20 text-brand-deep"
+                                }`}
+                              >
                                 {currentCheckout}
                               </span>
                             </div>
                           </div>
-                          {session.originalCheckin || session.originalCheckout ? (
+                          {!isHistorical && (session.originalCheckin || session.originalCheckout) ? (
                             <div className="mt-3 rounded-2xl border border-yellow-300 bg-yellow-50 px-4 py-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-yellow-900">
-                                Original
+                              <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-yellow-900">
+                                <span>Original</span>
+                                {session.originalSessionId ? (
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide text-yellow-800">
+                                    {`ID ${session.originalSessionId}`}
+                                  </span>
+                                ) : null}
                               </div>
                               <div className="grid gap-3 text-sm sm:grid-cols-2">
                                 <div className="flex flex-col gap-1">
