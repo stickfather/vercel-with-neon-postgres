@@ -223,6 +223,8 @@ function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
 const TIMESTAMP_INPUT_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
+const TIME_INPUT_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
 function normalizeOffset(offset: string | null | undefined): string | null {
   if (!offset || offset === "") {
     return null;
@@ -275,23 +277,34 @@ function toLocalInputValue(value: string | null): string {
   if (!parts) {
     return "";
   }
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  return `${parts.hour}:${parts.minute}`;
 }
 
-function fromLocalInputValue(value: string, reference?: string | null): string | null {
+function fromLocalInputValue(
+  value: string,
+  workDate: string,
+  reference?: string | null,
+): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed.length) {
     return null;
   }
   const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
-  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  const match = normalized.match(TIME_INPUT_REGEX);
   if (!match) {
     return null;
   }
-  const [, year, month, day, hour, minute, second] = match;
+  const [, hour, minute, second] = match;
   const safeSecond = second ?? "00";
+  const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const referenceParts = extractTimestampComponents(reference ?? null);
+  const year = workDateMatch?.[1] ?? referenceParts?.year;
+  const month = workDateMatch?.[2] ?? referenceParts?.month;
+  const day = workDateMatch?.[3] ?? referenceParts?.day;
+  if (!year || !month || !day) {
+    return null;
+  }
   const offset = referenceParts?.offset ?? PAYROLL_TIMEZONE_OFFSET;
   return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${offset}`;
 }
@@ -416,8 +429,8 @@ function getActiveRowTimes(row: SessionRow): {
 } {
   if (row.isEditing) {
     return {
-      checkinIso: fromLocalInputValue(row.draftCheckin, row.checkinTime),
-      checkoutIso: fromLocalInputValue(row.draftCheckout, row.checkoutTime),
+      checkinIso: fromLocalInputValue(row.draftCheckin, row.workDate, row.checkinTime),
+      checkoutIso: fromLocalInputValue(row.draftCheckout, row.workDate, row.checkoutTime),
     };
   }
   return { checkinIso: row.checkinTime, checkoutIso: row.checkoutTime };
@@ -2309,7 +2322,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Entrada
                       </span>
                       <input
-                        type="datetime-local"
+                        type="time"
+                        step={60}
                         value={activeEditorRow.draftCheckin}
                         onChange={(event) =>
                           handleDraftChange(activeEditorRow.sessionKey, "checkin", event.target.value)
@@ -2324,7 +2338,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Salida
                       </span>
                       <input
-                        type="datetime-local"
+                        type="time"
+                        step={60}
                         value={activeEditorRow.draftCheckout}
                         onChange={(event) =>
                           handleDraftChange(activeEditorRow.sessionKey, "checkout", event.target.value)
