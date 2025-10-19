@@ -472,17 +472,24 @@ export async function getDaySessions(
   const rows = normalizeRows<SqlRow>(
     await sql`
       SELECT
-        session_id,
-        checkin_local,
-        checkout_local,
-        session_minutes,
-        total_hours,
-        original_checkin_local,
-        original_checkout_local
-      FROM public.staff_day_sessions_with_edits_v
-      WHERE staff_id = ${params.staffId}::bigint
-        AND work_date = ${params.date}::date
-      ORDER BY checkin_local NULLS LAST
+        sa.id AS session_id,
+        to_char(sa.checkin_time AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD HH24:MI:SS') AS checkin_local,
+        to_char(sa.checkout_time AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD HH24:MI:SS') AS checkout_local,
+        EXTRACT(EPOCH FROM (COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time))::integer / 60 AS session_minutes,
+        ROUND(EXTRACT(EPOCH FROM (COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time))::numeric / 3600, 2) AS total_hours,
+        COALESCE(
+          to_char(sae.original_checkin_time AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD HH24:MI:SS'),
+          CASE WHEN sae.id IS NOT NULL THEN to_char(sa.checkin_time AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD HH24:MI:SS') END
+        ) AS original_checkin_local,
+        COALESCE(
+          to_char(sae.original_checkout_time AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD HH24:MI:SS'),
+          CASE WHEN sae.id IS NOT NULL THEN to_char(sa.checkout_time AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD HH24:MI:SS') END
+        ) AS original_checkout_local
+      FROM public.staff_attendance sa
+      LEFT JOIN public.staff_attendance_edits sae ON sae.attendance_id = sa.id
+      WHERE sa.staff_id = ${params.staffId}::bigint
+        AND DATE(sa.checkin_time AT TIME ZONE ${TIMEZONE}) = ${params.date}::date
+      ORDER BY sa.checkin_time
     `,
   );
 
