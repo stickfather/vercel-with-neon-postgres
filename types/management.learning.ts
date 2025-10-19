@@ -97,7 +97,6 @@ export type LearnFastestCompletionRow = {
 };
 
 export type LearnDashboardData = {
-  availableLevels: string[];
   header: LearnHeader | null;
   onpaceSplit: LearnOnpaceSplit | null;
   progressBands: LearnProgressBandRow[];

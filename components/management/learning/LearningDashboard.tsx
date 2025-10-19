@@ -1,7 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type {
   LearnDashboardData,
@@ -35,118 +34,40 @@ const monthsFormatter = new Intl.NumberFormat("es-EC", {
   maximumFractionDigits: 1,
 });
 
-const LEVEL_OPTIONS = ["A1", "A2", "B1", "B2", "C1"];
-
-const TREND_WINDOWS = [13, 26, 52] as const;
-
-type TrendWindow = (typeof TREND_WINDOWS)[number];
+const DEFAULT_TREND_WINDOW = 13;
 
 type LearningDashboardProps = {
   data: LearnDashboardData;
-  initialLevels: string[];
-  initialTrendWindow: TrendWindow;
 };
 
-export function LearningDashboard({ data, initialLevels, initialTrendWindow }: LearningDashboardProps) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
-  const [selectedLevels, setSelectedLevels] = useState<string[]>(initialLevels);
-  const [trendWindow, setTrendWindow] = useState<TrendWindow>(initialTrendWindow);
-
-  useEffect(() => {
-    setSelectedLevels(initialLevels);
-  }, [initialLevels]);
-
-  useEffect(() => {
-    setTrendWindow(initialTrendWindow);
-  }, [initialTrendWindow]);
-
-  const normalizedAvailableLevels = useMemo(() => {
-    return data.availableLevels.length ? data.availableLevels : LEVEL_OPTIONS;
-  }, [data.availableLevels]);
-
-  function updateUrl(levels: string[], windowValue: TrendWindow) {
-    const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
-    if (levels.length) {
-      params.set("levels", levels.join(","));
-    } else {
-      params.delete("levels");
-    }
-    if (windowValue) {
-      params.set("window", String(windowValue));
-    }
-    startTransition(() => {
-      const query = params.toString();
-      const href = query ? `${pathname}?${query}` : pathname;
-      router.replace(href, { scroll: false });
-    });
-  }
-
-  function toggleLevel(level: string) {
-    setSelectedLevels((prev) => {
-      const exists = prev.includes(level);
-      const next = exists ? prev.filter((item) => item !== level) : [...prev, level];
-      updateUrl(next, trendWindow);
-      return next;
-    });
-  }
-
-  function clearLevels() {
-    setSelectedLevels(() => {
-      updateUrl([], trendWindow);
-      return [];
-    });
-  }
-
-  function selectTrendWindow(windowValue: TrendWindow) {
-    setTrendWindow(windowValue);
-    updateUrl(selectedLevels, windowValue);
-  }
-
-  const filterChips = selectedLevels.filter((level) => level.length);
+export function LearningDashboard({ data }: LearningDashboardProps) {
+  const trendWindow = DEFAULT_TREND_WINDOW;
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.12)]">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Panel de gestión</span>
+    <div className="flex flex-col gap-10">
+      <header className="flex flex-col gap-6 rounded-3xl border border-slate-200/80 bg-white/95 p-8 shadow-lg shadow-slate-200/40">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex max-w-2xl flex-col gap-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">Panel de gestión</span>
             <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">Aprendizaje (Learning)</h1>
-            <p className="max-w-2xl text-sm text-slate-600">
-              Indicadores clave del avance académico, resultados semanales y focos de fricción en las lecciones.
+            <p className="text-sm leading-relaxed text-slate-600">
+              Indicadores clave del avance académico, resultados semanales y focos de fricción en las lecciones. Datos de los
+              últimos tres meses para todos los niveles.
             </p>
           </div>
-          <FiltersBar
-            availableLevels={normalizedAvailableLevels}
-            selectedLevels={selectedLevels}
-            onToggleLevel={toggleLevel}
-            onClearLevels={clearLevels}
-            trendWindow={trendWindow}
-            onSelectTrendWindow={selectTrendWindow}
-            isUpdating={isPending}
+          <ExportButton
             slowest={data.slowest}
             fastest={data.fastest}
             fastestCompletions={data.fastestCompletions}
           />
         </div>
-        {filterChips.length ? (
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <span className="font-semibold uppercase tracking-widest text-slate-500">Filtro:</span>
-            {filterChips.map((level) => (
-              <span
-                key={level}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold uppercase text-slate-700"
-              >
-                Nivel {level}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        <div className="flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <span className="rounded-full bg-slate-100 px-3 py-1">Ventana: 13 semanas</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1">Niveles: A1–C1</span>
+        </div>
       </header>
 
-      <section className="flex flex-col gap-6">
+      <section className="flex flex-col gap-8">
         <KpiTiles
           header={data.header}
           onpaceSplit={data.onpaceSplit}
@@ -167,7 +88,7 @@ export function LearningDashboard({ data, initialLevels, initialTrendWindow }: L
           <LevelMoveMatrixCard data={data.levelMoveMatrix} />
         </div>
 
-        <LessonsHeatmapCard rows={data.lessonsHeatmap} levels={selectedLevels.length ? selectedLevels : data.availableLevels} />
+        <LessonsHeatmapCard rows={data.lessonsHeatmap} />
 
         <LearnerTablesCard
           slowest={data.slowest}
@@ -179,108 +100,13 @@ export function LearningDashboard({ data, initialLevels, initialTrendWindow }: L
   );
 }
 
-type FiltersBarProps = {
-  availableLevels: string[];
-  selectedLevels: string[];
-  onToggleLevel: (level: string) => void;
-  onClearLevels: () => void;
-  trendWindow: TrendWindow;
-  onSelectTrendWindow: (window: TrendWindow) => void;
-  isUpdating: boolean;
-  slowest: LearnSlowLearnerRow[];
-  fastest: LearnFastLearnerRow[];
-  fastestCompletions: LearnFastestCompletionRow[];
-};
-
-function FiltersBar({
-  availableLevels,
-  selectedLevels,
-  onToggleLevel,
-  onClearLevels,
-  trendWindow,
-  onSelectTrendWindow,
-  isUpdating,
-  slowest,
-  fastest,
-  fastestCompletions,
-}: FiltersBarProps) {
-  return (
-    <div className="flex flex-col items-stretch gap-3 sm:w-[320px]">
-      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-500">
-          <span>Niveles</span>
-          {selectedLevels.length ? (
-            <button
-              type="button"
-              onClick={onClearLevels}
-              className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 transition hover:text-slate-700"
-            >
-              Limpiar
-            </button>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {availableLevels.map((level) => {
-            const isSelected = selectedLevels.includes(level);
-            return (
-              <button
-                key={level}
-                type="button"
-                onClick={() => onToggleLevel(level)}
-                className={`${
-                  isSelected
-                    ? "bg-emerald-500 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700"
-                } inline-flex min-w-[48px] items-center justify-center rounded-full px-3 py-1 text-xs font-semibold uppercase transition`}
-              >
-                {level}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ventana de tendencia</span>
-        <div className="flex flex-wrap gap-2">
-          {TREND_WINDOWS.map((option) => {
-            const isActive = option === trendWindow;
-            return (
-              <button
-                key={option}
-                type="button"
-                onClick={() => onSelectTrendWindow(option)}
-                className={`${
-                  isActive
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700"
-                } inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold uppercase transition`}
-              >
-                {option} semanas
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <ExportButton
-        slowest={slowest}
-        fastest={fastest}
-        fastestCompletions={fastestCompletions}
-        disabled={isUpdating}
-      />
-    </div>
-  );
-}
-
 type ExportButtonProps = {
   slowest: LearnSlowLearnerRow[];
   fastest: LearnFastLearnerRow[];
   fastestCompletions: LearnFastestCompletionRow[];
-  disabled?: boolean;
 };
 
-function ExportButton({ slowest, fastest, fastestCompletions, disabled }: ExportButtonProps) {
+function ExportButton({ slowest, fastest, fastestCompletions }: ExportButtonProps) {
   function handleExport() {
     const lines: string[] = [];
 
@@ -348,8 +174,7 @@ function ExportButton({ slowest, fastest, fastestCompletions, disabled }: Export
     <button
       type="button"
       onClick={handleExport}
-      disabled={disabled}
-      className="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500/90 disabled:cursor-not-allowed disabled:opacity-70"
+      className="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500/90"
     >
       Exportar tablas (CSV)
     </button>
@@ -480,7 +305,7 @@ type CardProps = {
 
 function Card({ title, description, children, actions }: CardProps) {
   return (
-    <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
+    <section className="flex flex-col gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/70">
       <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-col gap-1">
           <h2 className="text-xl font-bold text-slate-900">{title}</h2>
@@ -495,7 +320,7 @@ function Card({ title, description, children, actions }: CardProps) {
 
 function EmptyState() {
   return (
-    <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-10 text-sm text-slate-500">
+    <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-sm text-slate-500">
       Sin datos
     </div>
   );
@@ -575,7 +400,11 @@ type ProgressBandsCardProps = {
 };
 
 function ProgressBandsCard({ data }: ProgressBandsCardProps) {
-  if (!data.length) {
+  const hasValues = data.some(
+    (row) => row.band_0_33 || row.band_34_66 || row.band_67_99 || row.band_100,
+  );
+
+  if (!data.length || !hasValues) {
     return (
       <Card title="Progreso del Plan por Nivel" description="Distribución de bandas de avance">
         <EmptyState />
@@ -950,7 +779,7 @@ function BoxPlotRow({ row, minValue, maxValue }: BoxPlotRowProps) {
 
 type OutcomesWeeklyCardProps = {
   data: LearnOutcomesWeeklyRow[];
-  trendWindow: TrendWindow;
+  trendWindow: number;
 };
 
 function OutcomesWeeklyCard({ data, trendWindow }: OutcomesWeeklyCardProps) {
@@ -1001,7 +830,7 @@ function OutcomesWeeklyCard({ data, trendWindow }: OutcomesWeeklyCardProps) {
 
 type LevelUpsWeeklyCardProps = {
   data: LearnLevelupsWeeklyRow[];
-  trendWindow: TrendWindow;
+  trendWindow: number;
 };
 
 function LevelUpsWeeklyCard({ data, trendWindow }: LevelUpsWeeklyCardProps) {
@@ -1113,17 +942,11 @@ function LevelMoveMatrixCard({ data }: LevelMoveMatrixCardProps) {
 
 type LessonsHeatmapCardProps = {
   rows: LearnLessonsHeatmapRow[];
-  levels: string[];
 };
 
-function LessonsHeatmapCard({ rows, levels }: LessonsHeatmapCardProps) {
+function LessonsHeatmapCard({ rows }: LessonsHeatmapCardProps) {
   const [metric, setMetric] = useState<"p75" | "median">("p75");
   const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    setMetric("p75");
-    setQuery("");
-  }, [levels]);
 
   if (!rows.length) {
     return (
@@ -1134,7 +957,6 @@ function LessonsHeatmapCard({ rows, levels }: LessonsHeatmapCardProps) {
   }
 
   const filteredRows = rows.filter((row) => {
-    if (levels.length && !levels.includes(row.level)) return false;
     if (query.trim().length && !row.lesson_id.toLowerCase().includes(query.trim().toLowerCase())) {
       return false;
     }
@@ -1155,6 +977,10 @@ function LessonsHeatmapCard({ rows, levels }: LessonsHeatmapCardProps) {
     acc[key].push(row);
     return acc;
   }, {});
+
+  const groupedEntries = Object.entries(grouped).sort((a, b) =>
+    a[0].localeCompare(b[0], "es", { numeric: true })
+  );
 
   const allValues = filteredRows
     .map((row) => (metric === "p75" ? row.p75_minutes_per_student : row.median_minutes_per_student))
@@ -1196,7 +1022,7 @@ function LessonsHeatmapCard({ rows, levels }: LessonsHeatmapCardProps) {
       }
     >
       <div className="flex flex-col gap-4">
-        {Object.entries(grouped).map(([level, lessons]) => (
+        {groupedEntries.map(([level, lessons]) => (
           <div key={level} className="flex flex-col gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Nivel {level}</span>
             <div className="grid auto-rows-fr grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-2">

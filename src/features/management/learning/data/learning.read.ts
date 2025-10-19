@@ -54,16 +54,6 @@ function normalizeDateString(value: unknown): string {
   return String(value);
 }
 
-const fetchAvailableLevels = cache(async (): Promise<string[]> => {
-  const sql = getSqlClient();
-  const rows = normalizeRows<{ level?: unknown }>(
-    await sql`SELECT DISTINCT level FROM mgmt.learn_progress_bands_v ORDER BY level`,
-  );
-  return rows
-    .map((row) => normalizeString(row.level))
-    .filter((level) => level.length > 0);
-});
-
 const fetchLearnHeader = cache(async (): Promise<LearnHeader | null> => {
   const sql = getSqlClient();
   const rows = normalizeRows<Partial<LearnHeader>>(
@@ -98,27 +88,15 @@ const fetchLearnOnpaceSplit = cache(async (): Promise<LearnOnpaceSplit | null> =
   }
 });
 
-async function fetchProgressBandsFiltered(levels?: string[]): Promise<LearnProgressBandRow[]> {
+async function fetchProgressBandsFiltered(): Promise<LearnProgressBandRow[]> {
   const sql = getSqlClient();
-  let rows;
-  if (levels && levels.length) {
-    rows = normalizeRows<Partial<LearnProgressBandRow>>(
-      await sql`
-        SELECT level, band_0_33, band_34_66, band_67_99, band_100
-        FROM mgmt.learn_progress_bands_v
-        WHERE level = ANY(${levels}::text[])
-        ORDER BY level
-      `,
-    );
-  } else {
-    rows = normalizeRows<Partial<LearnProgressBandRow>>(
-      await sql`
-        SELECT level, band_0_33, band_34_66, band_67_99, band_100
-        FROM mgmt.learn_progress_bands_v
-        ORDER BY level
-      `,
-    );
-  }
+  const rows = normalizeRows<Partial<LearnProgressBandRow>>(
+    await sql`
+      SELECT level, band_0_33, band_34_66, band_67_99, band_100
+      FROM mgmt.learn_progress_bands_v
+      ORDER BY level
+    `,
+  );
   return rows.map((row) => ({
     level: normalizeString(row.level),
     band_0_33: normalizeNumber(row.band_0_33),
@@ -148,7 +126,6 @@ const fetchCohortProgress = cache(async (): Promise<LearnCohortProgressRow[]> =>
 
 async function fetchLeiDistributionByScope(
   scope: "overall" | "by_level",
-  levels?: string[],
 ): Promise<LearnLeiDistributionRow[]> {
   const sql = getSqlClient();
   if (scope === "overall") {
@@ -171,27 +148,14 @@ async function fetchLeiDistributionByScope(
     }));
   }
 
-  let rows;
-  if (levels && levels.length) {
-    rows = normalizeRows<Partial<LearnLeiDistributionRow>>(
-      await sql`
-        SELECT scope, level, p10, p25, p50, p75, p90, n
-        FROM mgmt.learn_lei_distribution_v
-        WHERE scope = 'by_level'
-          AND level = ANY(${levels}::text[])
-        ORDER BY level
-      `,
-    );
-  } else {
-    rows = normalizeRows<Partial<LearnLeiDistributionRow>>(
-      await sql`
-        SELECT scope, level, p10, p25, p50, p75, p90, n
-        FROM mgmt.learn_lei_distribution_v
-        WHERE scope = 'by_level'
-        ORDER BY level
-      `,
-    );
-  }
+  const rows = normalizeRows<Partial<LearnLeiDistributionRow>>(
+    await sql`
+      SELECT scope, level, p10, p25, p50, p75, p90, n
+      FROM mgmt.learn_lei_distribution_v
+      WHERE scope = 'by_level'
+      ORDER BY level
+    `,
+  );
   return rows.map((row) => ({
     scope: "by_level",
     level: row.level ? normalizeString(row.level) : null,
@@ -209,9 +173,7 @@ const fetchLeiOverall = cache(async () => {
   return rows.length ? rows[0] : null;
 });
 
-const fetchLeiByLevel = cache(
-  async (levels?: string[]) => fetchLeiDistributionByScope("by_level", levels),
-);
+const fetchLeiByLevel = cache(async () => fetchLeiDistributionByScope("by_level"));
 
 const fetchOutcomesWeekly = cache(async (): Promise<LearnOutcomesWeeklyRow[]> => {
   const sql = getSqlClient();
@@ -259,27 +221,15 @@ const fetchLevelMoveMatrix = cache(async (): Promise<LearnLevelMoveMatrixRow[]> 
   }));
 });
 
-async function fetchLessonsHeatmapFiltered(levels?: string[]): Promise<LearnLessonsHeatmapRow[]> {
+async function fetchLessonsHeatmapFiltered(): Promise<LearnLessonsHeatmapRow[]> {
   const sql = getSqlClient();
-  let rows;
-  if (levels && levels.length) {
-    rows = normalizeRows<Partial<LearnLessonsHeatmapRow>>(
-      await sql`
-        SELECT level, lesson_id, p75_minutes_per_student, median_minutes_per_student, pct_slow_over_60, students
-        FROM mgmt.learn_lessons_heatmap_v
-        WHERE level = ANY(${levels}::text[])
-        ORDER BY level, lesson_id
-      `,
-    );
-  } else {
-    rows = normalizeRows<Partial<LearnLessonsHeatmapRow>>(
-      await sql`
-        SELECT level, lesson_id, p75_minutes_per_student, median_minutes_per_student, pct_slow_over_60, students
-        FROM mgmt.learn_lessons_heatmap_v
-        ORDER BY level, lesson_id
-      `,
-    );
-  }
+  const rows = normalizeRows<Partial<LearnLessonsHeatmapRow>>(
+    await sql`
+      SELECT level, lesson_id, p75_minutes_per_student, median_minutes_per_student, pct_slow_over_60, students
+      FROM mgmt.learn_lessons_heatmap_v
+      ORDER BY level, lesson_id
+    `,
+  );
   return rows.map((row) => ({
     level: normalizeString(row.level),
     lesson_id: normalizeString(row.lesson_id),
@@ -292,25 +242,14 @@ async function fetchLessonsHeatmapFiltered(levels?: string[]): Promise<LearnLess
 
 const fetchLessonsHeatmap = cache(fetchLessonsHeatmapFiltered);
 
-async function fetchSlowestFiltered(levels?: string[]): Promise<LearnSlowLearnerRow[]> {
+async function fetchSlowestFiltered(): Promise<LearnSlowLearnerRow[]> {
   const sql = getSqlClient();
-  let rows;
-  if (levels && levels.length) {
-    rows = normalizeRows<Partial<LearnSlowLearnerRow>>(
-      await sql`
-        SELECT full_name, level, hours_30d, progress_delta_30d, min_per_pct, lei_30d_plan, on_pace_plan, last_seen_date
-        FROM mgmt.learn_slowest_20_v
-        WHERE level = ANY(${levels}::text[])
-      `,
-    );
-  } else {
-    rows = normalizeRows<Partial<LearnSlowLearnerRow>>(
-      await sql`
-        SELECT full_name, level, hours_30d, progress_delta_30d, min_per_pct, lei_30d_plan, on_pace_plan, last_seen_date
-        FROM mgmt.learn_slowest_20_v
-      `,
-    );
-  }
+  const rows = normalizeRows<Partial<LearnSlowLearnerRow>>(
+    await sql`
+      SELECT full_name, level, hours_30d, progress_delta_30d, min_per_pct, lei_30d_plan, on_pace_plan, last_seen_date
+      FROM mgmt.learn_slowest_20_v
+    `,
+  );
   return rows.map((row) => ({
     full_name: normalizeString(row.full_name),
     level: normalizeString(row.level),
@@ -325,25 +264,14 @@ async function fetchSlowestFiltered(levels?: string[]): Promise<LearnSlowLearner
 
 const fetchSlowest = cache(fetchSlowestFiltered);
 
-async function fetchFastestFiltered(levels?: string[]): Promise<LearnFastLearnerRow[]> {
+async function fetchFastestFiltered(): Promise<LearnFastLearnerRow[]> {
   const sql = getSqlClient();
-  let rows;
-  if (levels && levels.length) {
-    rows = normalizeRows<Partial<LearnFastLearnerRow>>(
-      await sql`
-        SELECT full_name, level, hours_30d, progress_delta_30d, pct_per_hour, lei_30d_plan, on_pace_plan, last_seen_date
-        FROM mgmt.learn_fastest_20_v
-        WHERE level = ANY(${levels}::text[])
-      `,
-    );
-  } else {
-    rows = normalizeRows<Partial<LearnFastLearnerRow>>(
-      await sql`
-        SELECT full_name, level, hours_30d, progress_delta_30d, pct_per_hour, lei_30d_plan, on_pace_plan, last_seen_date
-        FROM mgmt.learn_fastest_20_v
-      `,
-    );
-  }
+  const rows = normalizeRows<Partial<LearnFastLearnerRow>>(
+    await sql`
+      SELECT full_name, level, hours_30d, progress_delta_30d, pct_per_hour, lei_30d_plan, on_pace_plan, last_seen_date
+      FROM mgmt.learn_fastest_20_v
+    `,
+  );
   return rows.map((row) => ({
     full_name: normalizeString(row.full_name),
     level: normalizeString(row.level),
@@ -381,19 +309,7 @@ function logAndFallback<T>(error: unknown, context: string, fallback: T): T {
   return fallback;
 }
 
-export async function getLearningDashboardData(
-  levelFilter?: string[] | null,
-): Promise<LearnDashboardData> {
-  const rawAvailableLevels = await fetchAvailableLevels().catch((error) =>
-    logAndFallback<string[]>(error, "learn_progress_bands_v (levels)", []),
-  );
-  const fallbackLevels = ["A1", "A2", "B1", "B2", "C1"];
-  const availableLevels = rawAvailableLevels.length ? rawAvailableLevels : fallbackLevels;
-
-  const normalizedLevels = (levelFilter ?? [])
-    .map((level) => level.trim().toUpperCase())
-    .filter((level) => availableLevels.includes(level));
-
+export async function getLearningDashboardData(): Promise<LearnDashboardData> {
   const [
     header,
     onpaceSplit,
@@ -415,12 +331,8 @@ export async function getLearningDashboardData(
     fetchLearnOnpaceSplit().catch((error) =>
       logAndFallback<LearnOnpaceSplit | null>(error, "learn_onpace_split_v", null),
     ),
-    fetchProgressBands(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
-      logAndFallback<LearnProgressBandRow[]>(
-        error,
-        "learn_progress_bands_v",
-        [],
-      ),
+    fetchProgressBands().catch((error) =>
+      logAndFallback<LearnProgressBandRow[]>(error, "learn_progress_bands_v", []),
     ),
     fetchCohortProgress().catch((error) =>
       logAndFallback<LearnCohortProgressRow[]>(error, "learn_cohort_progress_v", []),
@@ -428,7 +340,7 @@ export async function getLearningDashboardData(
     fetchLeiOverall().catch((error) =>
       logAndFallback<LearnLeiDistributionRow | null>(error, "learn_lei_distribution_v", null),
     ),
-    fetchLeiByLevel(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+    fetchLeiByLevel().catch((error) =>
       logAndFallback<LearnLeiDistributionRow[]>(error, "learn_lei_distribution_v", []),
     ),
     fetchOutcomesWeekly().catch((error) =>
@@ -440,13 +352,13 @@ export async function getLearningDashboardData(
     fetchLevelMoveMatrix().catch((error) =>
       logAndFallback<LearnLevelMoveMatrixRow[]>(error, "learn_level_move_matrix_v", []),
     ),
-    fetchLessonsHeatmap(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+    fetchLessonsHeatmap().catch((error) =>
       logAndFallback<LearnLessonsHeatmapRow[]>(error, "learn_lessons_heatmap_v", []),
     ),
-    fetchSlowest(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+    fetchSlowest().catch((error) =>
       logAndFallback<LearnSlowLearnerRow[]>(error, "learn_slowest_20_v", []),
     ),
-    fetchFastest(normalizedLevels.length ? normalizedLevels : undefined).catch((error) =>
+    fetchFastest().catch((error) =>
       logAndFallback<LearnFastLearnerRow[]>(error, "learn_fastest_20_v", []),
     ),
     fetchFastestCompletions().catch((error) =>
@@ -459,7 +371,6 @@ export async function getLearningDashboardData(
   ]);
 
   return {
-    availableLevels,
     header,
     onpaceSplit,
     progressBands,

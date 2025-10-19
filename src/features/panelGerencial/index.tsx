@@ -14,9 +14,6 @@ import ExamsPanel from "./tabs/Exams/Exams";
 
 export const revalidate = 60;
 
-const TREND_WINDOWS = [13, 26, 52] as const;
-type TrendWindow = (typeof TREND_WINDOWS)[number];
-
 function parseLevelsParam(value: string | string[] | undefined): string[] {
   if (!value) return [];
   const items = Array.isArray(value) ? value : [value];
@@ -69,13 +66,10 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
   const selectedLevel = getSelectedLevel(resolvedSearchParams);
   const selectedLevels = getSelectedLevels(resolvedSearchParams);
   const selectedBand = getSelectedBand(resolvedSearchParams);
-  const trendWindow = getTrendWindow(resolvedSearchParams);
-
   const content = renderActiveTab(activeTab, {
     selectedLevel,
     selectedLevels,
     selectedBand,
-    trendWindow,
   });
 
   return (
@@ -107,24 +101,12 @@ export default async function PanelGerencialPage({ params, searchParams }: PageP
   );
 }
 
-function getTrendWindow(searchParams: Record<string, string | string[] | undefined>): TrendWindow {
-  const value = searchParams.window;
-  if (!value) return 26;
-  const raw = Array.isArray(value) ? value[0] : value;
-  const parsed = Number(raw);
-  if (TREND_WINDOWS.includes(parsed as TrendWindow)) {
-    return parsed as TrendWindow;
-  }
-  return 26;
-}
-
 function renderActiveTab(
   activeTab: TabSlug,
   filters: {
     selectedLevel: string | null;
     selectedLevels: string[];
     selectedBand: string | null;
-    trendWindow: TrendWindow;
   },
 ) {
   switch (activeTab) {
@@ -144,11 +126,7 @@ function renderActiveTab(
     case "progress":
       return (
         <Suspense fallback={<FullPanelSkeleton chartCount={5} />}>
-          <ProgressPanel
-            selectedLevel={filters.selectedLevel ?? undefined}
-            selectedLevels={filters.selectedLevels}
-            initialTrendWindow={filters.trendWindow}
-          />
+          <ProgressPanel />
         </Suspense>
       );
     case "engagement":
