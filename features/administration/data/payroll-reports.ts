@@ -20,6 +20,7 @@ export type MatrixCell = {
   hours: number;
   approved: boolean;
   approvedHours: number | null;
+  hasEdits?: boolean;
 };
 
 export type MatrixRow = {
@@ -40,6 +41,8 @@ export type DaySession = {
   checkinTime: string | null;
   checkoutTime: string | null;
   hours: number;
+  originalCheckinTime?: string | null;
+  originalCheckoutTime?: string | null;
 };
 
 export type PayrollMonthStatusRow = {
@@ -594,9 +597,11 @@ export async function fetchPayrollMatrix({
       m.horas_mostrar,
       m.approved,
       m.approved_hours,
-      m.total_hours
+      m.total_hours,
+      COALESCE(he.has_edits, FALSE) AS has_edits
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+    LEFT JOIN public.staff_day_has_edits_v he ON he.staff_id = m.staff_id AND he.work_date = m.work_date
     WHERE m.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
@@ -673,12 +678,14 @@ export async function fetchPayrollMatrix({
       typeof baseHours === "number" && Number.isFinite(baseHours)
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
+    const hasEdits = toBoolean(readRowValue(row, ["has_edits"]));
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
       hours: safeHours,
       approved,
       approvedHours: safeApprovedHours,
+      hasEdits,
     });
   }
 
@@ -688,7 +695,7 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, approved: false, approvedHours: null };
+      return { date: day, hours: 0, approved: false, approvedHours: null, hasEdits: false };
     });
 
     matrixRows.push({
@@ -732,6 +739,8 @@ export async function fetchDaySessions({
     checkinTime: session.checkinTimeLocal,
     checkoutTime: session.checkoutTimeLocal,
     hours: session.hours,
+    originalCheckinTime: session.originalCheckinLocal ?? null,
+    originalCheckoutTime: session.originalCheckoutLocal ?? null,
   }));
 }
 

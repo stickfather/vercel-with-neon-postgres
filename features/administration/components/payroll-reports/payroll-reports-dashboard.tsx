@@ -27,6 +27,8 @@ type SessionRow = {
   validationError: string | null;
   feedback: string | null;
   pendingAction: null | "edit" | "create" | "delete";
+  originalCheckin?: string | null;
+  originalCheckout?: string | null;
 };
 
 type SelectedCell = {
@@ -332,6 +334,8 @@ function buildSessionRows(sessions: DaySession[]): SessionRow[] {
     validationError: null,
     feedback: null,
     pendingAction: null,
+    originalCheckin: session.originalCheckinTime ?? null,
+    originalCheckout: session.originalCheckoutTime ?? null,
   }));
 }
 
@@ -1722,15 +1726,18 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
+                                  const hasEdits = cell.hasEdits === true;
                                   return (
                                     <td key={cell.date} className="px-1 py-1 text-center">
                                       <button
                                         type="button"
                                         onClick={() => openModal(row, cell)}
                                         className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
-                                          cell.approved
-                                            ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                            : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500"
+                                          hasEdits
+                                            ? "border-yellow-400 bg-yellow-100 text-yellow-900 hover:bg-yellow-200"
+                                            : cell.approved
+                                              ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
+                                              : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500"
                                         } ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
                                         style={{ minWidth: `${effectiveCellWidth}px` }}
                                       >
@@ -1956,6 +1963,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 disabled={inputDisabled}
                                 className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                               />
+                              {session.originalCheckin ? (
+                                <div className="mt-1 rounded-lg bg-brand-deep-soft/30 px-2 py-1 text-xs text-brand-ink-muted">
+                                  <span className="font-semibold uppercase tracking-wide">Original:</span>{" "}
+                                  {session.originalCheckin
+                                    ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckin))
+                                    : "—"}
+                                </div>
+                              ) : null}
                             </label>
                             <label className="flex flex-col gap-1 text-sm text-brand-deep">
                               <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
@@ -1972,6 +1987,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 disabled={inputDisabled}
                                 className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                               />
+                              {session.originalCheckout ? (
+                                <div className="mt-1 rounded-lg bg-brand-deep-soft/30 px-2 py-1 text-xs text-brand-ink-muted">
+                                  <span className="font-semibold uppercase tracking-wide">Original:</span>{" "}
+                                  {session.originalCheckout
+                                    ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckout))
+                                    : "—"}
+                                </div>
+                              ) : null}
                             </label>
                           </div>
                           {session.validationError ? (

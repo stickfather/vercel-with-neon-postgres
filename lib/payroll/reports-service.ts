@@ -393,9 +393,11 @@ export async function getPayrollMatrix(
         m.total_hours,
         m.approved_hours,
         m.horas_mostrar,
-        m.approved
+        m.approved,
+        COALESCE(he.has_edits, FALSE) AS has_edits
       FROM public.staff_day_matrix_local_v AS m
       LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+      LEFT JOIN public.staff_day_has_edits_v he ON he.staff_id = m.staff_id AND he.work_date = m.work_date
       WHERE m.work_date BETWEEN ${start}::date AND ${end}::date
       ORDER BY m.staff_id, m.work_date
     `,
@@ -433,11 +435,13 @@ export async function getPayrollMatrix(
       });
     }
     const entry = grouped.get(staffId)!;
+    const hasEdits = toBoolean(row["has_edits"]);
     entry.cellMap.set(workDate, {
       date: workDate,
       approved,
       hours,
       approvedHours,
+      hasEdits,
     });
   }
 
@@ -450,6 +454,7 @@ export async function getPayrollMatrix(
           hours: 0,
           approved: false,
           approvedHours: null,
+          hasEdits: false,
         },
     );
     resultRows.push({ staffId: value.staffId, staffName: value.staffName, cells });
@@ -468,15 +473,29 @@ export async function getDaySessions(
   const rows = normalizeRows<SqlRow>(
     await sql`
       SELECT
-        session_id,
-        checkin_local,
-        checkout_local,
-        session_minutes,
-        total_hours
-      FROM public.staff_day_sessions_local_v
-      WHERE staff_id = ${params.staffId}::bigint
-        AND work_date = ${params.date}::date
-      ORDER BY checkin_local NULLS LAST
+        s.session_id,
+        s.checkin_local,
+        s.checkout_local,
+        s.session_minutes,
+        s.total_hours,
+        e.original_checkin_local,
+        e.original_checkout_local
+      FROM public.staff_day_sessions_local_v s
+      LEFT JOIN LATERAL (
+        SELECT
+          (details->>'checkinTime')::timestamptz AT TIME ZONE 'America/Guayaquil' AS original_checkin_local,
+          (details->>'checkoutTime')::timestamptz AT TIME ZONE 'America/Guayaquil' AS original_checkout_local
+        FROM public.payroll_audit_events
+        WHERE action = 'update_session'
+          AND session_id = s.session_id
+          AND staff_id = ${params.staffId}::bigint
+          AND work_date = ${params.date}::date
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) e ON true
+      WHERE s.staff_id = ${params.staffId}::bigint
+        AND s.work_date = ${params.date}::date
+      ORDER BY s.checkin_local NULLS LAST
     `,
   );
 
@@ -505,6 +524,8 @@ export async function getDaySessions(
       checkoutTimeLocal: row["checkout_local"] ? String(row["checkout_local"]) : null,
       minutes: safeMinutes,
       hours: roundMinutesToHours(safeMinutes),
+      originalCheckinLocal: row["original_checkin_local"] ? String(row["original_checkin_local"]) : null,
+      originalCheckoutLocal: row["original_checkout_local"] ? String(row["original_checkout_local"]) : null,
     };
   });
 }
