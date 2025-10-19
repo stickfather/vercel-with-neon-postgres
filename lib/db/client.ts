@@ -1,12 +1,14 @@
 import { neon } from "@neondatabase/serverless";
 
+import { PAYROLL_TIMEZONE } from "@/lib/payroll/timezone";
+
 export type SqlRow = Record<string, unknown>;
 
 type SqlClient = ReturnType<typeof neon>;
 
 let sqlInstance: SqlClient | null = null;
 
-export const TIMEZONE = "America/Guayaquil";
+export const TIMEZONE = PAYROLL_TIMEZONE;
 
 export function getSqlClient(): SqlClient {
   const connectionString = process.env.DATABASE_URL;

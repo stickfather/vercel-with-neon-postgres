@@ -25,6 +25,9 @@ export type DaySession = {
   hours: number;
   originalCheckinLocal?: string | null;
   originalCheckoutLocal?: string | null;
+  originalSessionId?: number | null;
+  replacementSessionId?: number | null;
+  isOriginalRecord?: boolean;
 };
 
 export type MonthSummaryRow = {

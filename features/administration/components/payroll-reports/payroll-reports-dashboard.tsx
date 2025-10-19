@@ -10,6 +10,12 @@ import type {
 } from "@/features/administration/data/payroll-reports";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
+import {
+  getPayrollDateTimeParts,
+  normalizePayrollTimestamp,
+  PAYROLL_TIMEZONE,
+  PAYROLL_TIMEZONE_OFFSET,
+} from "@/lib/payroll/timezone";
 
 type MatrixResponse = PayrollMatrixResponse;
 
@@ -31,6 +37,9 @@ type SessionRow = {
   pendingAction: null | "edit" | "create" | "delete";
   originalCheckin?: string | null;
   originalCheckout?: string | null;
+  originalSessionId?: number | null;
+  replacementSessionId?: number | null;
+  isHistorical: boolean;
 };
 
 type SessionEditorState = {
@@ -55,7 +64,6 @@ const TRAILING_COLUMNS_WIDTH =
 const MIN_CELL_WIDTH = 32;
 const PREFERRED_CELL_WIDTH = 68;
 const GRID_PADDING = 16;
-const PAYROLL_TIMEZONE = "America/Guayaquil";
 const rowDayFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: PAYROLL_TIMEZONE,
   year: "numeric",
@@ -70,26 +78,18 @@ const timeZoneDateFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: PAYROLL_TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
-const timeZoneOffsetFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: PAYROLL_TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
+function formatSessionTimestampForDisplay(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = normalizePayrollTimestamp(value) ?? value;
+  const match = normalized.match(/(?:T|\s)(\d{2}):(\d{2})/);
+  if (!match) {
+    return null;
+  }
+  const [, hour, minute] = match;
+  return `${hour}:${minute}`;
+}
 
 function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
   return parts.find((part) => part.type === type)?.value ?? null;
@@ -109,38 +109,12 @@ function toTimeZoneDateString(date: Date): string | null {
 function toTimeZoneDateTimeParts(
   date: Date,
 ): { year: string; month: string; day: string; hour: string; minute: string } | null {
-  const parts = timeZoneDateTimeFormatter.formatToParts(date);
-  const year = getPart(parts, "year");
-  const month = getPart(parts, "month");
-  const day = getPart(parts, "day");
-  const hour = getPart(parts, "hour");
-  const minute = getPart(parts, "minute");
-  if (!year || !month || !day || !hour || !minute) {
+  const parts = getPayrollDateTimeParts(date);
+  if (!parts) {
     return null;
   }
+  const { year, month, day, hour, minute } = parts;
   return { year, month, day, hour, minute } as const;
-}
-
-function getTimeZoneOffsetInMinutes(baseDate: Date): number {
-  const parts = timeZoneOffsetFormatter.formatToParts(baseDate);
-  const year = getPart(parts, "year");
-  const month = getPart(parts, "month");
-  const day = getPart(parts, "day");
-  const hour = getPart(parts, "hour");
-  const minute = getPart(parts, "minute");
-  const second = getPart(parts, "second");
-  if (!year || !month || !day || !hour || !minute || !second) {
-    return 0;
-  }
-  const asUtc = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
-  );
-  return (asUtc - baseDate.getTime()) / 60000;
 }
 
 function toMiddayUtc(dateString: string): Date | null {
@@ -246,45 +220,93 @@ function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
   return formatter.format(midday);
 }
 
-function toLocalInputValue(value: string | null): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const parts = toTimeZoneDateTimeParts(date);
-  if (!parts) {
-    return "";
+const TIMESTAMP_INPUT_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
+
+const TIME_INPUT_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+function normalizeOffset(offset: string | null | undefined): string | null {
+  if (!offset || offset === "") {
+    return null;
   }
-  const { year, month, day, hour, minute } = parts;
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+  if (offset === "Z") {
+    return "Z";
+  }
+  if (/^[+-]\d{2}$/.test(offset)) {
+    return `${offset}:00`;
+  }
+  if (!offset.includes(":")) {
+    return `${offset.slice(0, 3)}:${offset.slice(3)}`;
+  }
+  return offset;
 }
 
-function fromLocalInputValue(value: string): string | null {
+function extractTimestampComponents(value: string | null): {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+  offset: string | null;
+} | null {
   if (!value) return null;
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const match = normalized.match(TIMESTAMP_INPUT_REGEX);
   if (!match) {
     return null;
   }
-  const [, yearStr, monthStr, dayStr, hourStr, minuteStr] = match;
-  const baseUtcMs = Date.UTC(
-    Number(yearStr),
-    Number(monthStr) - 1,
-    Number(dayStr),
-    Number(hourStr),
-    Number(minuteStr),
-    0,
-    0,
-  );
-  if (!Number.isFinite(baseUtcMs)) {
+  const [, year, month, day, hour, minute, second, _fractional, offset] = match;
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second: second ?? "00",
+    offset: normalizeOffset(offset),
+  };
+}
+
+function toLocalInputValue(value: string | null): string {
+  const parts = extractTimestampComponents(value);
+  if (!parts) {
+    return "";
+  }
+  return `${parts.hour}:${parts.minute}`;
+}
+
+function fromLocalInputValue(
+  value: string,
+  workDate: string,
+  reference?: string | null,
+): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed.length) {
     return null;
   }
-  const baseDate = new Date(baseUtcMs);
-  const offsetMinutes = getTimeZoneOffsetInMinutes(baseDate);
-  const adjustedMs = baseUtcMs - offsetMinutes * 60000;
-  const adjustedDate = new Date(adjustedMs);
-  if (Number.isNaN(adjustedDate.getTime())) {
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const match = normalized.match(TIME_INPUT_REGEX);
+  if (!match) {
     return null;
   }
-  return adjustedDate.toISOString();
+  const [, hour, minute, second] = match;
+  const safeSecond = second ?? "00";
+  const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const referenceParts = extractTimestampComponents(reference ?? null);
+  const year = workDateMatch?.[1] ?? referenceParts?.year;
+  const month = workDateMatch?.[2] ?? referenceParts?.month;
+  const day = workDateMatch?.[3] ?? referenceParts?.day;
+  if (!year || !month || !day) {
+    return null;
+  }
+  const offset = referenceParts?.offset ?? PAYROLL_TIMEZONE_OFFSET;
+  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${offset}`;
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {
@@ -364,6 +386,16 @@ function buildSessionRows(sessions: DaySession[]): SessionRow[] {
       pendingAction: null,
       originalCheckin: session.originalCheckinTime,
       originalCheckout: session.originalCheckoutTime,
+      originalSessionId:
+        typeof session.originalSessionId === "number" && Number.isFinite(session.originalSessionId)
+          ? session.originalSessionId
+          : null,
+      replacementSessionId:
+        typeof session.replacementSessionId === "number"
+          && Number.isFinite(session.replacementSessionId)
+          ? session.replacementSessionId
+          : null,
+      isHistorical: Boolean(session.isOriginalRecord),
     };
   });
 }
@@ -385,6 +417,9 @@ function createEmptySessionRow(staffId: number, workDate: string): SessionRow {
     validationError: null,
     feedback: null,
     pendingAction: null,
+    originalSessionId: null,
+    replacementSessionId: null,
+    isHistorical: false,
   };
 }
 
@@ -394,8 +429,8 @@ function getActiveRowTimes(row: SessionRow): {
 } {
   if (row.isEditing) {
     return {
-      checkinIso: fromLocalInputValue(row.draftCheckin),
-      checkoutIso: fromLocalInputValue(row.draftCheckout),
+      checkinIso: fromLocalInputValue(row.draftCheckin, row.workDate, row.checkinTime),
+      checkoutIso: fromLocalInputValue(row.draftCheckout, row.workDate, row.checkoutTime),
     };
   }
   return { checkinIso: row.checkinTime, checkoutIso: row.checkoutTime };
@@ -413,6 +448,9 @@ function computeRowMinutes(row: SessionRow): number | null {
 }
 
 function getRowMinutesForTotals(row: SessionRow): number | null {
+  if (row.isHistorical) {
+    return null;
+  }
   if (row.isEditing || row.pendingAction === "edit" || row.pendingAction === "create" || row.isNew) {
     return computeRowMinutes(row);
   }
@@ -463,6 +501,7 @@ function validateRowDraft(
 
   for (const candidate of rows) {
     if (candidate.sessionKey === row.sessionKey) continue;
+    if (candidate.isHistorical) continue;
     const { checkinIso: otherStart, checkoutIso: otherEnd } = getActiveRowTimes(candidate);
     if (!otherStart || !otherEnd) continue;
     const startMs = checkinDate.getTime();
@@ -509,6 +548,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
+  const sessionLoadTokenRef = useRef(0);
 
   const resolvePinRequest = useCallback((granted: boolean) => {
     const resolver = pinRequestRef.current;
@@ -1079,18 +1119,21 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     resolvePinRequest(false);
   }, [resolvePinRequest]);
 
-  useEffect(() => {
-    if (!selectedCell) return;
+  const loadSessionsFor = useCallback(
+    async (
+      target: { staffId: number; workDate: string },
+      options?: { silent?: boolean },
+    ): Promise<boolean> => {
+      const requestId = ++sessionLoadTokenRef.current;
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setSessionsLoading(true);
+        setSessionsError(null);
+      }
 
-    let cancelled = false;
-    const { staffId, workDate } = selectedCell;
-
-    async function loadSessions() {
-      setSessionsLoading(true);
-      setSessionsError(null);
       try {
         const response = await fetch(
-          `/api/payroll/day-sessions?staff_id=${staffId}&date=${workDate}`,
+          `/api/payroll/day-sessions?staff_id=${target.staffId}&date=${target.workDate}`,
           createNoStoreInit(),
         );
         if (!response.ok) {
@@ -1098,27 +1141,49 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           throw new Error((body as { error?: string }).error ?? "No se pudieron cargar las sesiones.");
         }
         const data = (await response.json()) as { sessions?: DaySession[] };
-        if (!cancelled) {
+        if (sessionLoadTokenRef.current === requestId) {
           setSessionRows(sortSessionRows(buildSessionRows(data.sessions ?? [])));
+          setSessionsError(null);
         }
-      } catch (err) {
-        console.error("No se pudieron cargar las sesiones del día", err);
-        if (!cancelled) {
-          const message =
-            err instanceof Error ? err.message : "No se pudieron cargar las sesiones del día.";
-          setSessionsError(message);
+        return true;
+      } catch (error) {
+        console.error("No se pudieron cargar las sesiones del día", error);
+        const message =
+          error instanceof Error ? error.message : "No se pudieron cargar las sesiones del día.";
+        if (sessionLoadTokenRef.current === requestId) {
+          setSessionsError((previous) => (silent ? previous ?? message : message));
         }
+        return false;
       } finally {
-        if (!cancelled) setSessionsLoading(false);
+        if (sessionLoadTokenRef.current === requestId && !silent) {
+          setSessionsLoading(false);
+        }
       }
+    },
+    [],
+  );
+
+  const reloadSessions = useCallback(
+    async (options?: { silent?: boolean }): Promise<boolean> => {
+      if (!selectedCell) return false;
+      return loadSessionsFor({ staffId: selectedCell.staffId, workDate: selectedCell.workDate }, options);
+    },
+    [loadSessionsFor, selectedCell],
+  );
+
+  useEffect(() => {
+    if (!selectedCell) {
+      return () => {
+        sessionLoadTokenRef.current += 1;
+      };
     }
 
-    void loadSessions();
+    void loadSessionsFor({ staffId: selectedCell.staffId, workDate: selectedCell.workDate });
 
     return () => {
-      cancelled = true;
+      sessionLoadTokenRef.current += 1;
     };
-  }, [selectedCell]);
+  }, [loadSessionsFor, selectedCell]);
 
   const handleDraftChange = useCallback(
     (sessionKey: string, field: "checkin" | "checkout", value: string) => {
@@ -1160,6 +1225,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     async (sessionKey: string) => {
       const allowed = await ensureManagementAccess();
       if (!allowed) return;
+      const currentRows = sessionRowsRef.current;
+      const targetRow = currentRows.find((row) => row.sessionKey === sessionKey);
+      if (!targetRow || targetRow.isHistorical) {
+        return;
+      }
       setSessionRows((previous) => {
         const updated = previous.map((row) => {
           if (row.sessionKey !== sessionKey) return row;
@@ -1189,6 +1259,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
       if (!target) return false;
+      const previousSessionId = target.sessionId;
 
       const validation = validateRowDraft(target, rows, target.workDate);
       if (validation) {
@@ -1271,6 +1342,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         ?? (row.checkoutTime && row.checkoutTime !== saved.checkoutTime
                           ? row.checkoutTime
                           : null),
+                    originalSessionId:
+                      saved.originalSessionId
+                        ?? row.originalSessionId
+                        ?? (previousSessionId != null ? previousSessionId : null),
+                    replacementSessionId:
+                      saved.replacementSessionId
+                        ?? row.replacementSessionId
+                        ?? null,
+                    isHistorical: Boolean(saved.isOriginalRecord),
                     isNew: false,
                     isEditing: false,
                     validationError: null,
@@ -1300,6 +1380,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             }),
           };
         });
+        await reloadSessions({ silent: true });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(selectedCell.staffId);
         await refreshMonthSummary();
@@ -1325,6 +1406,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       refreshMatrixOnly,
       refreshMonthStatusForStaff,
       refreshMonthSummary,
+      reloadSessions,
       setMatrixData,
       selectedCell,
     ],
@@ -1334,7 +1416,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     async (sessionKey: string) => {
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
-      if (!target || target.pendingAction) {
+      if (!target || target.pendingAction || target.isHistorical) {
         return;
       }
       await enableRowEditing(sessionKey);
@@ -1347,7 +1429,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     async (sessionKey: string) => {
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
-      if (!target || target.pendingAction) {
+      if (!target || target.pendingAction || target.isHistorical) {
         return;
       }
 
@@ -1398,6 +1480,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         setSessionEditor((previous) =>
           previous?.sessionKey === sessionKey ? null : previous,
         );
+        await reloadSessions({ silent: true });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(target.staffId);
         await refreshMonthSummary();
@@ -1419,6 +1502,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [
       ensureManagementAccess,
       performProtectedFetch,
+      reloadSessions,
       refreshMatrixOnly,
       refreshMonthStatusForStaff,
       refreshMonthSummary,
@@ -2001,30 +2085,41 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 <div className="space-y-4">
                   {sessionRows.length ? (
                     sessionRows.map((session, index) => {
+                      const isHistorical = session.isHistorical;
                       const editingDisabled =
-                        sessionsLoading || actionLoading || session.pendingAction === "delete";
+                        isHistorical
+                        || sessionsLoading
+                        || actionLoading
+                        || session.pendingAction === "delete";
                       const deletingDisabled =
-                        sessionsLoading
+                        isHistorical
+                        || sessionsLoading
                         || actionLoading
                         || session.pendingAction === "edit"
                         || session.pendingAction === "create";
                       const saving =
                         session.pendingAction === "edit" || session.pendingAction === "create";
                       const editorActive = sessionEditor?.sessionKey === session.sessionKey;
-                      const currentCheckin = session.checkinTime
-                        ? timeZoneDateTimeFormatter.format(new Date(session.checkinTime))
-                        : "—";
-                      const currentCheckout = session.checkoutTime
-                        ? timeZoneDateTimeFormatter.format(new Date(session.checkoutTime))
-                        : "—";
+                      const formattedCheckin = formatSessionTimestampForDisplay(session.checkinTime);
+                      const formattedCheckout = formatSessionTimestampForDisplay(session.checkoutTime);
+                      const currentCheckin = formattedCheckin ?? "—";
+                      const currentCheckout = formattedCheckout ?? "—";
 
                       return (
                         <div
                           key={session.sessionKey}
-                          className="rounded-3xl border border-brand-ink-muted/15 bg-white px-5 py-4 shadow-inner"
+                          className={`rounded-3xl border px-5 py-4 shadow-inner ${
+                            isHistorical
+                              ? "border-brand-ink-muted/10 bg-brand-deep-soft/30"
+                              : "border-brand-ink-muted/15 bg-white"
+                          }`}
                         >
                           <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex flex-wrap items-center gap-2 text-brand-deep">
+                            <div
+                              className={`flex flex-wrap items-center gap-2 ${
+                                isHistorical ? "text-brand-ink-muted" : "text-brand-deep"
+                              }`}
+                            >
                               <span className="text-sm font-semibold">
                                 {session.sessionId != null
                                   ? `Sesión ID ${session.sessionId}`
@@ -2038,6 +2133,21 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               {session.pendingAction ? (
                                 <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
                                   {session.pendingAction === "delete" ? "Eliminando…" : "Guardando…"}
+                                </span>
+                              ) : null}
+                              {isHistorical ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  Registro original
+                                </span>
+                              ) : null}
+                              {!isHistorical && session.originalSessionId ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  {`Reemplaza ID ${session.originalSessionId}`}
+                                </span>
+                              ) : null}
+                              {isHistorical && session.replacementSessionId ? (
+                                <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                                  {`Reemplazada por ID ${session.replacementSessionId}`}
                                 </span>
                               ) : null}
                             </div>
@@ -2073,34 +2183,59 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                             </div>
                           </div>
                           <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="flex flex-col gap-1 text-sm text-brand-deep">
+                            <div
+                              className={`flex flex-col gap-1 text-sm ${
+                                isHistorical ? "text-brand-ink-muted" : "text-brand-deep"
+                              }`}
+                            >
                               <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                                Entrada actual
+                                {isHistorical ? "Entrada registrada" : "Entrada actual"}
                               </span>
-                              <span className="rounded-2xl border border-brand-ink-muted/20 bg-brand-deep-soft/20 px-3 py-2 text-sm font-semibold text-brand-deep">
+                              <span
+                                className={`rounded-2xl border border-brand-ink-muted/20 px-3 py-2 text-sm font-semibold ${
+                                  isHistorical
+                                    ? "bg-white text-brand-ink-muted"
+                                    : "bg-brand-deep-soft/20 text-brand-deep"
+                                }`}
+                              >
                                 {currentCheckin}
                               </span>
                             </div>
-                            <div className="flex flex-col gap-1 text-sm text-brand-deep">
+                            <div
+                              className={`flex flex-col gap-1 text-sm ${
+                                isHistorical ? "text-brand-ink-muted" : "text-brand-deep"
+                              }`}
+                            >
                               <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                                Salida actual
+                                {isHistorical ? "Salida registrada" : "Salida actual"}
                               </span>
-                              <span className="rounded-2xl border border-brand-ink-muted/20 bg-brand-deep-soft/20 px-3 py-2 text-sm font-semibold text-brand-deep">
+                              <span
+                                className={`rounded-2xl border border-brand-ink-muted/20 px-3 py-2 text-sm font-semibold ${
+                                  isHistorical
+                                    ? "bg-white text-brand-ink-muted"
+                                    : "bg-brand-deep-soft/20 text-brand-deep"
+                                }`}
+                              >
                                 {currentCheckout}
                               </span>
                             </div>
                           </div>
-                          {session.originalCheckin || session.originalCheckout ? (
+                          {!isHistorical && (session.originalCheckin || session.originalCheckout) ? (
                             <div className="mt-3 rounded-2xl border border-yellow-300 bg-yellow-50 px-4 py-3">
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-yellow-900">
-                                Original
+                              <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-yellow-900">
+                                <span>Original</span>
+                                {session.originalSessionId ? (
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide text-yellow-800">
+                                    {`ID ${session.originalSessionId}`}
+                                  </span>
+                                ) : null}
                               </div>
                               <div className="grid gap-3 text-sm sm:grid-cols-2">
                                 <div className="flex flex-col gap-1">
                                   <span className="text-xs font-medium text-yellow-800">Entrada</span>
                                   <span className="text-sm font-semibold text-yellow-900">
                                     {session.originalCheckin
-                                      ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckin))
+                                      ? formatSessionTimestampForDisplay(session.originalCheckin) ?? "—"
                                       : "—"}
                                   </span>
                                 </div>
@@ -2108,7 +2243,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   <span className="text-xs font-medium text-yellow-800">Salida</span>
                                   <span className="text-sm font-semibold text-yellow-900">
                                     {session.originalCheckout
-                                      ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckout))
+                                      ? formatSessionTimestampForDisplay(session.originalCheckout) ?? "—"
                                       : "—"}
                                   </span>
                                 </div>
@@ -2217,7 +2352,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Entrada
                       </span>
                       <input
-                        type="datetime-local"
+                        type="time"
+                        step={60}
                         value={activeEditorRow.draftCheckin}
                         onChange={(event) =>
                           handleDraftChange(activeEditorRow.sessionKey, "checkin", event.target.value)
@@ -2232,7 +2368,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Salida
                       </span>
                       <input
-                        type="datetime-local"
+                        type="time"
+                        step={60}
                         value={activeEditorRow.draftCheckout}
                         onChange={(event) =>
                           handleDraftChange(activeEditorRow.sessionKey, "checkout", event.target.value)
@@ -2253,7 +2390,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                           <span className="text-xs font-medium text-yellow-800">Entrada</span>
                           <span className="text-sm font-semibold text-yellow-900">
                             {activeEditorRow.originalCheckin
-                              ? timeZoneDateTimeFormatter.format(new Date(activeEditorRow.originalCheckin))
+                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckin) ?? "—"
                               : "—"}
                           </span>
                         </div>
@@ -2261,7 +2398,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                           <span className="text-xs font-medium text-yellow-800">Salida</span>
                           <span className="text-sm font-semibold text-yellow-900">
                             {activeEditorRow.originalCheckout
-                              ? timeZoneDateTimeFormatter.format(new Date(activeEditorRow.originalCheckout))
+                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckout) ?? "—"
                               : "—"}
                           </span>
                         </div>

@@ -7,6 +7,11 @@ import {
   TIMEZONE,
 } from "@/lib/db/client";
 import {
+  normalizePayrollTimestamp,
+  PAYROLL_TIMEZONE_OFFSET,
+  toPayrollZonedISOString,
+} from "@/lib/payroll/timezone";
+import {
   DaySessionsQuerySchema as ReportsDaySessionsSchema,
   getDaySessions as getPayrollDaySessions,
   parseWithSchema as parsePayrollSchema,
@@ -44,6 +49,9 @@ export type DaySession = {
   hours: number;
   originalCheckinTime?: string | null;
   originalCheckoutTime?: string | null;
+  originalSessionId?: number | null;
+  replacementSessionId?: number | null;
+  isOriginalRecord?: boolean;
 };
 
 export type PayrollMonthStatusRow = {
@@ -184,7 +192,16 @@ const dayFormatter = new Intl.DateTimeFormat("en-CA", {
 
 export function toTimeZoneDayString(value: string | null): string | null {
   if (!value) return null;
-  const date = new Date(value);
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const directMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (directMatch) {
+    return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`;
+  }
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) {
     return null;
   }
@@ -217,7 +234,7 @@ function resolveWorkDateValue(value: unknown): string | null {
   if (typeof value === "string" && value.trim().length) {
     candidate = value.trim();
   } else if (value instanceof Date) {
-    candidate = value.toISOString();
+    candidate = toPayrollZonedISOString(value);
   } else if (normalized) {
     candidate = normalized;
   }
@@ -414,139 +431,27 @@ function coerceString(value: unknown): string | null {
     const trimmed = value.trim();
     return trimmed.length ? trimmed : null;
   }
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) {
+    return toPayrollZonedISOString(value);
+  }
   if (typeof value === "number" && Number.isFinite(value)) {
     return String(value);
   }
   return null;
 }
 
-const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
-const LOCAL_DATE_TIME_REGEX =
-  /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?$/;
-
-function getFormatterPart(
-  parts: Intl.DateTimeFormatPart[],
-  type: Intl.DateTimeFormatPart["type"],
-): string | null {
-  return parts.find((part) => part.type === type)?.value ?? null;
-}
-
-function getTimeZoneOffsetInMinutes(baseDate: Date): number {
-  const parts = timeZoneDateTimeFormatter.formatToParts(baseDate);
-  const year = Number(getFormatterPart(parts, "year") ?? "0");
-  const month = Number(getFormatterPart(parts, "month") ?? "0");
-  const day = Number(getFormatterPart(parts, "day") ?? "0");
-  const hour = Number(getFormatterPart(parts, "hour") ?? "0");
-  const minute = Number(getFormatterPart(parts, "minute") ?? "0");
-  const second = Number(getFormatterPart(parts, "second") ?? "0");
-
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day) ||
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute) ||
-    !Number.isFinite(second)
-  ) {
-    return 0;
-  }
-
-  const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
-  if (!Number.isFinite(asUtc)) {
-    return 0;
-  }
-
-  return (asUtc - baseDate.getTime()) / 60000;
-}
-
-function normalizeLocalDateTimeString(value: string): string | null {
-  const match = value.match(LOCAL_DATE_TIME_REGEX);
-  if (!match) {
-    return null;
-  }
-
-  const [, yearStr, monthStr, dayStr, hourStr = "00", minuteStr = "00", secondStr = "00"] = match;
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const day = Number(dayStr);
-  const hour = Number(hourStr ?? "0");
-  const minute = Number(minuteStr ?? "0");
-  const second = Number(secondStr ?? "0");
-
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day) ||
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute) ||
-    !Number.isFinite(second)
-  ) {
-    return null;
-  }
-
-  const baseUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
-  if (!Number.isFinite(baseUtcMs)) {
-    return null;
-  }
-
-  const baseDate = new Date(baseUtcMs);
-  if (Number.isNaN(baseDate.getTime())) {
-    return null;
-  }
-
-  const offsetMinutes = getTimeZoneOffsetInMinutes(baseDate);
-  const adjustedMs = baseUtcMs - offsetMinutes * 60000;
-  const adjustedDate = new Date(adjustedMs);
-
-  if (Number.isNaN(adjustedDate.getTime())) {
-    return null;
-  }
-
-  return adjustedDate.toISOString();
-}
-
 function normalizeTimestampValue(value: unknown): string | null {
-  const stringValue = coerceString(value);
-  if (!stringValue) {
+  if (!(value instanceof Date) && typeof value !== "string") {
     return null;
   }
-
-  const trimmed = stringValue.trim();
-  if (!trimmed.length) {
+  const normalized = normalizePayrollTimestamp(value as string | Date);
+  if (!normalized) {
     return null;
   }
-
-  const candidate = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
-
-  if (/[zZ]$/.test(candidate) || /[+-]\d{2}:?\d{2}$/.test(candidate)) {
-    const parsed = new Date(candidate);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toISOString();
-    }
+  if (/(?:[+-]\d{2}:\d{2}|Z)$/i.test(normalized)) {
+    return normalized;
   }
-
-  const localIso = normalizeLocalDateTimeString(candidate);
-  if (localIso) {
-    return localIso;
-  }
-
-  const parsed = new Date(trimmed);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString();
-  }
-
-  return null;
+  return `${normalized}${PAYROLL_TIMEZONE_OFFSET}`;
 }
 
 function toInteger(value: unknown): number | null {
@@ -673,9 +578,8 @@ function toIsoStartOfDay(dateString: string | null): string | null {
   if (!dateString) return null;
   const normalized = normalizeDateLike(dateString);
   if (!normalized) return null;
-  const parsed = new Date(`${normalized}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
+  const zoned = normalizePayrollTimestamp(`${normalized}T00:00:00`);
+  return zoned;
 }
 
 export async function updatePayrollMonthStatus({
@@ -887,11 +791,16 @@ export async function fetchDaySessions({
     staffId,
     date: workDate,
   });
+  // Session timing values (check-in/out) already arrive in local-time form because
+  // lib/payroll/reports-service#getDaySessions pulls straight from
+  // public.staff_day_sessions_with_edits_v (see scripts/payroll_sessions_with_edits.sql).
+  // That view materializes the checkin_local/checkout_local fields by converting the
+  // underlying timestamptz values from staff_attendance into the payroll timezone, so the
+  // UI only needs to normalize formatting below.
   const sessions = await getPayrollDaySessions(params, sql);
 
   return sessions.map((session: ReportsDaySession) => ({
-    sessionId:
-      Number.isFinite(session.sessionId) && session.sessionId > 0 ? session.sessionId : null,
+    sessionId: toInteger(session.sessionId ?? null),
     staffId: params.staffId,
     workDate: params.date,
     checkinTime:
@@ -904,6 +813,9 @@ export async function fetchDaySessions({
       normalizeTimestampValue(session.originalCheckinLocal) ?? coerceString(session.originalCheckinLocal),
     originalCheckoutTime:
       normalizeTimestampValue(session.originalCheckoutLocal) ?? coerceString(session.originalCheckoutLocal),
+    originalSessionId: toInteger(session.originalSessionId ?? null),
+    replacementSessionId: toInteger(session.replacementSessionId ?? null),
+    isOriginalRecord: Boolean(session.isOriginalRecord),
   }));
 }
 
@@ -915,12 +827,71 @@ function ensureWorkDate(value: string): string {
   return normalized;
 }
 
-function ensureIsoTime(value: string | null, label: string): string {
-  const iso = ensureIsoString(value);
-  if (!iso) {
+const TIME_ONLY_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+const TIMESTAMP_WITH_OPTIONAL_OFFSET_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
+
+function ensurePayrollSessionTimestamp(
+  value: string | null,
+  workDate: string,
+  label: string,
+): string {
+  if (!value) {
     throw new Error(`La hora de ${label} no es válida.`);
   }
-  return iso;
+
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const timeOnlyMatch = trimmed.match(TIME_ONLY_REGEX);
+  let year: string | null = null;
+  let month: string | null = null;
+  let day: string | null = null;
+  let hour: string | null = null;
+  let minute: string | null = null;
+  let second: string | null = null;
+  let fractional: string | null = null;
+
+  if (timeOnlyMatch) {
+    const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!workDateMatch) {
+      throw new Error("La sesión debe pertenecer al día seleccionado.");
+    }
+    year = workDateMatch[1];
+    month = workDateMatch[2];
+    day = workDateMatch[3];
+    hour = timeOnlyMatch[1];
+    minute = timeOnlyMatch[2];
+    second = timeOnlyMatch[3] ?? "00";
+  } else {
+    const normalized = normalizePayrollTimestamp(trimmed);
+    if (!normalized) {
+      throw new Error(`La hora de ${label} no es válida.`);
+    }
+
+    const match = normalized.match(TIMESTAMP_WITH_OPTIONAL_OFFSET_REGEX);
+    if (!match) {
+      throw new Error(`La hora de ${label} no es válida.`);
+    }
+
+    year = match[1];
+    month = match[2];
+    day = match[3];
+    hour = match[4];
+    minute = match[5];
+    second = match[6] ?? "00";
+    fractional = match[7] ?? null;
+  }
+
+  if (!year || !month || !day || !hour || !minute || !second) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const safeFraction = fractional ? `.${fractional}` : "";
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${safeFraction}${PAYROLL_TIMEZONE_OFFSET}`;
 }
 
 function computeDurationMinutes(checkinIso: string, checkoutIso: string): number {
@@ -1000,108 +971,144 @@ export async function updateStaffDaySession({
   const sql = getSqlClient();
 
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const checkinIso = ensureIsoTime(checkinTime, "entrada");
-  const checkoutIso = ensureIsoTime(checkoutTime, "salida");
+  const checkinIso = ensurePayrollSessionTimestamp(checkinTime, normalizedWorkDate, "entrada");
+  const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
   ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
   const minutes = computeDurationMinutes(checkinIso, checkoutIso);
+  const transactionalSql = sql as SqlClient & {
+    begin?: (callback: (client: SqlClient) => Promise<void>) => Promise<void>;
+  };
 
-  const existingRows = normalizeRows<SqlRow>(await sql`
-    SELECT checkin_time, checkout_time
-    FROM staff_attendance
-    WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
-    LIMIT 1
-  `);
+  let replacementSessionId = sessionId;
+  let previousCheckinValue: unknown = null;
+  let previousCheckoutValue: unknown = null;
+  let recalculatedMinutes = minutes;
+  let previousApprovedBy: string | null = null;
+  let previousApprovedMinutes: number | null = null;
 
-  if (!existingRows.length) {
-    throw new Error("No encontramos la sesión indicada.");
+  const executeUpdate = async (client: SqlClient) => {
+    const existingRows = normalizeRows<SqlRow>(await client`
+      SELECT checkin_time, checkout_time
+      FROM staff_attendance
+      WHERE id = ${sessionId}::bigint
+        AND staff_id = ${staffId}::bigint
+      LIMIT 1
+    `);
+
+    if (!existingRows.length) {
+      throw new Error("No encontramos la sesión indicada.");
+    }
+
+    previousCheckinValue = existingRows[0].checkin_time ?? null;
+    previousCheckoutValue = existingRows[0].checkout_time ?? null;
+
+    const approvalSnapshot = normalizeRows<SqlRow>(await client`
+      SELECT approved_by, approved_minutes
+      FROM payroll_day_approvals
+      WHERE staff_id = ${staffId}::bigint
+        AND work_date = ${normalizedWorkDate}::date
+      LIMIT 1
+    `);
+
+    previousApprovedBy = coerceString(approvalSnapshot[0]?.approved_by ?? null);
+    previousApprovedMinutes = toInteger(approvalSnapshot[0]?.approved_minutes ?? null) ?? null;
+
+    await assertNoOverlap(client, {
+      staffId,
+      workDate: normalizedWorkDate,
+      checkinIso,
+      checkoutIso,
+      ignoreSessionId: sessionId,
+    });
+
+    const [allocatedId] = await allocateStaffAttendanceIds(client, 1);
+    replacementSessionId = allocatedId;
+
+    await client`
+      INSERT INTO staff_attendance (id, staff_id, checkin_time, checkout_time)
+      VALUES (
+        ${replacementSessionId}::bigint,
+        ${staffId}::bigint,
+        ${checkinIso}::timestamptz,
+        ${checkoutIso}::timestamptz
+      )
+    `;
+
+    await client`
+      DELETE FROM staff_attendance
+      WHERE id = ${sessionId}::bigint
+        AND staff_id = ${staffId}::bigint
+    `;
+
+    const recalculatedRows = normalizeRows<SqlRow>(await client`
+      SELECT
+        COALESCE(
+          SUM(
+            GREATEST(
+              EXTRACT(
+                EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time,
+              ) / 60.0,
+              0
+            )
+          ),
+          0
+        )::integer AS total_minutes
+      FROM staff_attendance sa
+      WHERE sa.staff_id = ${staffId}::bigint
+        AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
+    `);
+
+    recalculatedMinutes =
+      toInteger(recalculatedRows[0]?.total_minutes ?? recalculatedRows[0]?.minutes ?? null) ?? 0;
+
+    await applyStaffDayApproval(client, staffId, normalizedWorkDate, recalculatedMinutes, {
+      approvedBy: previousApprovedBy,
+      preserveApprover: true,
+    });
+
+    await logPayrollAuditEvent({
+      action: "update_session",
+      staffId,
+      workDate: normalizedWorkDate,
+      sessionId: replacementSessionId,
+      details: {
+        replacedSessionId: sessionId,
+        before: {
+          checkinTime: previousCheckinValue,
+          checkoutTime: previousCheckoutValue,
+        },
+        after: {
+          checkinTime: checkinIso,
+          checkoutTime: checkoutIso,
+        },
+        approvalMinutesBefore: previousApprovedMinutes,
+        approvalMinutesAfter: recalculatedMinutes,
+      },
+      sql: client,
+    });
+  };
+
+  if (typeof transactionalSql.begin === "function") {
+    await transactionalSql.begin(executeUpdate);
+  } else {
+    await executeUpdate(sql);
   }
 
-  const approvalSnapshot = normalizeRows<SqlRow>(await sql`
-    SELECT approved_by, approved_minutes
-    FROM payroll_day_approvals
-    WHERE staff_id = ${staffId}::bigint
-      AND work_date = ${normalizedWorkDate}::date
-    LIMIT 1
-  `);
-
-  const previousApprovedBy = coerceString(approvalSnapshot[0]?.approved_by ?? null);
-  const previousApprovedMinutes =
-    toInteger(approvalSnapshot[0]?.approved_minutes ?? null) ?? null;
-
-  await assertNoOverlap(sql, {
-    staffId,
-    workDate: normalizedWorkDate,
-    checkinIso,
-    checkoutIso,
-    ignoreSessionId: sessionId,
-  });
-
-  await sql`
-    UPDATE staff_attendance
-    SET checkin_time = ${checkinIso}::timestamptz,
-        checkout_time = ${checkoutIso}::timestamptz
-    WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
-  `;
-
-  const recalculatedRows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      COALESCE(
-        SUM(
-          GREATEST(
-            EXTRACT(
-              EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time,
-            ) / 60.0,
-            0
-          )
-        ),
-        0
-      )::integer AS total_minutes
-    FROM staff_attendance sa
-    WHERE sa.staff_id = ${staffId}::bigint
-      AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
-  `);
-
-  const recalculatedMinutes =
-    toInteger(recalculatedRows[0]?.total_minutes ?? recalculatedRows[0]?.minutes ?? null) ?? 0;
-
-  await applyStaffDayApproval(sql, staffId, normalizedWorkDate, recalculatedMinutes, {
-    approvedBy: previousApprovedBy,
-    preserveApprover: true,
-  });
-  await logPayrollAuditEvent({
-    action: "update_session",
-    staffId,
-    workDate: normalizedWorkDate,
-    sessionId,
-    details: {
-      before: {
-        checkinTime: existingRows[0].checkin_time,
-        checkoutTime: existingRows[0].checkout_time,
-      },
-      after: {
-        checkinTime: checkinIso,
-        checkoutTime: checkoutIso,
-      },
-      approvalMinutesBefore: previousApprovedMinutes,
-      approvalMinutesAfter: recalculatedMinutes,
-    },
-    sql,
-  });
-
   return {
-    sessionId,
+    sessionId: replacementSessionId,
     staffId,
     workDate: normalizedWorkDate,
     checkinTime: checkinIso,
     checkoutTime: checkoutIso,
     minutes,
     hours: minutesToHours(minutes),
+    originalSessionId: sessionId,
     originalCheckinTime:
-      normalizeTimestampValue(existingRows[0].checkin_time) ?? coerceString(existingRows[0].checkin_time),
+      normalizeTimestampValue(previousCheckinValue) ?? coerceString(previousCheckinValue),
     originalCheckoutTime:
-      normalizeTimestampValue(existingRows[0].checkout_time) ?? coerceString(existingRows[0].checkout_time),
+      normalizeTimestampValue(previousCheckoutValue) ?? coerceString(previousCheckoutValue),
+    replacementSessionId: null,
+    isOriginalRecord: false,
   };
 }
 
@@ -1119,8 +1126,8 @@ export async function createStaffDaySession({
   const sql = getSqlClient();
 
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const checkinIso = ensureIsoTime(checkinTime, "entrada");
-  const checkoutIso = ensureIsoTime(checkoutTime, "salida");
+  const checkinIso = ensurePayrollSessionTimestamp(checkinTime, normalizedWorkDate, "entrada");
+  const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
   ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
   const minutes = computeDurationMinutes(checkinIso, checkoutIso);
 
@@ -1166,6 +1173,9 @@ export async function createStaffDaySession({
     checkoutTime: checkoutIso,
     minutes,
     hours: minutesToHours(minutes),
+    originalSessionId: null,
+    replacementSessionId: null,
+    isOriginalRecord: false,
   };
 }
 
@@ -1235,13 +1245,6 @@ export async function approveStaffDay({
   });
 }
 
-function ensureIsoString(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
-}
-
 async function allocateStaffAttendanceIds(
   sql: SqlClient,
   count: number,
@@ -1287,6 +1290,7 @@ export async function overrideSessionsAndApprove({
   deletions?: number[];
 }): Promise<void> {
   const sql = getSqlClient();
+  const normalizedWorkDate = ensureWorkDate(workDate);
 
   await sql`BEGIN`;
   try {
@@ -1302,8 +1306,16 @@ export async function overrideSessionsAndApprove({
     }
 
     for (const override of overrides) {
-      const checkinIso = ensureIsoString(override.checkinTime);
-      const checkoutIso = ensureIsoString(override.checkoutTime);
+      const checkinIso = ensurePayrollSessionTimestamp(
+        override.checkinTime,
+        normalizedWorkDate,
+        "entrada",
+      );
+      const checkoutIso = ensurePayrollSessionTimestamp(
+        override.checkoutTime,
+        normalizedWorkDate,
+        "salida",
+      );
       if (!checkinIso || !checkoutIso) {
         throw new Error("Las horas de entrada y salida deben ser válidas.");
       }
@@ -1323,8 +1335,16 @@ export async function overrideSessionsAndApprove({
     }
 
     const sanitizedAdditions = additions.map((entry) => ({
-      checkinTime: ensureIsoString(entry.checkinTime),
-      checkoutTime: ensureIsoString(entry.checkoutTime),
+      checkinTime: ensurePayrollSessionTimestamp(
+        entry.checkinTime,
+        normalizedWorkDate,
+        "entrada",
+      ),
+      checkoutTime: ensurePayrollSessionTimestamp(
+        entry.checkoutTime,
+        normalizedWorkDate,
+        "salida",
+      ),
     }));
 
     const validAdditions = sanitizedAdditions.filter(
@@ -1376,14 +1396,14 @@ export async function overrideSessionsAndApprove({
         )::integer AS total_minutes
       FROM staff_attendance sa
       WHERE sa.staff_id = ${staffId}::bigint
-        AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${workDate}::date
+        AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
     `);
 
     const metrics = recalculatedRows[0] ?? {};
     const recalculatedMinutes =
       toInteger(metrics.total_minutes ?? metrics.minutes ?? null) ?? 0;
 
-    await applyStaffDayApproval(sql, staffId, workDate, recalculatedMinutes);
+    await applyStaffDayApproval(sql, staffId, normalizedWorkDate, recalculatedMinutes);
     await sql`COMMIT`;
   } catch (error) {
     await sql`ROLLBACK`;
