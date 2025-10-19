@@ -11,6 +11,7 @@ export const fetchCache = "force-no-store";
 
 type CreateBody = {
   staff_id?: number;
+  work_date?: string | null;
   checkin_time?: string | null;
   checkout_time?: string | null;
 };
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
   try {
     const session = await createStaffDaySession({
       staffId,
+      workDate: payload.work_date ?? null,
       checkinTime: payload.checkin_time ?? null,
       checkoutTime: payload.checkout_time ?? null,
     });

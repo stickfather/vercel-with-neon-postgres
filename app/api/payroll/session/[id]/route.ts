@@ -13,6 +13,7 @@ export const fetchCache = "force-no-store";
 type UpdateBody = {
   checkin_time?: string | null;
   checkout_time?: string | null;
+  work_date?: string | null;
 };
 
 function parseSessionId(param: string | string[] | undefined): number | null {
@@ -56,6 +57,7 @@ export async function PUT(
   try {
     await updateStaffDaySession({
       sessionId,
+      workDate: payload.work_date ?? null,
       checkinTime: payload.checkin_time ?? null,
       checkoutTime: payload.checkout_time ?? null,
     });

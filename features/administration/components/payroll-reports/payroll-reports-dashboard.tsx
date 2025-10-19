@@ -546,17 +546,19 @@ function enumerateDaysInclusive(from: string, to: string): string[] {
 }
 
 function sanitizeHoursValue(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  const numeric = toNumeric(value);
+  if (numeric == null) {
     return 0;
   }
-  return Number(value.toFixed(2));
+  return Number(numeric.toFixed(2));
 }
 
 function sanitizeOptionalHoursValue(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  const numeric = toNumeric(value);
+  if (numeric == null) {
     return null;
   }
-  return Number(value.toFixed(2));
+  return Number(numeric.toFixed(2));
 }
 
 function getMonthRange(month: string): { from: string; to: string; endExclusive: string } {
@@ -821,6 +823,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [amountPopoverStaffId, setAmountPopoverStaffId] = useState<number | null>(null);
   const pinRequestRef = useRef<((value: ManagerAuthToken | null) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
+  const selectedCellRef = useRef<SelectedCell | null>(null);
 
   const isManagementMode = accessMode === "management";
   const isReadOnlyMode = accessMode === "readOnly";
@@ -1573,13 +1576,22 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, [resolvePinRequest]);
 
   useEffect(() => {
-    if (!selectedCell) return;
+    selectedCellRef.current = selectedCell;
+  }, [selectedCell]);
 
-    let cancelled = false;
-    const { staffId, workDate } = selectedCell;
-
-    async function loadSessions() {
-      setSessionsLoading(true);
+  const refreshDayDetail = useCallback(
+    async ({
+      staffId,
+      workDate,
+      showSpinner = true,
+    }: {
+      staffId: number;
+      workDate: string;
+      showSpinner?: boolean;
+    }) => {
+      if (showSpinner) {
+        setSessionsLoading(true);
+      }
       setSessionsError(null);
       try {
         const response = await fetch(
@@ -1591,99 +1603,166 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           throw new Error((body as { error?: string }).error ?? "No se pudieron cargar las sesiones.");
         }
         const data = (await response.json()) as ApiDayDetailResponse;
-        if (!cancelled) {
-          const rawSessionsInput = (data?.sessions ?? null) as unknown;
-          const sessionItems = Array.isArray(rawSessionsInput)
-            ? rawSessionsInput
-            : rawSessionsInput != null
-              ? [rawSessionsInput]
-              : [];
+        const rawSessionsInput = (data?.sessions ?? null) as unknown;
+        const sessionItems = Array.isArray(rawSessionsInput)
+          ? rawSessionsInput
+          : rawSessionsInput != null
+            ? [rawSessionsInput]
+            : [];
 
-          const normalizedSessionsWithMinutes = sessionItems.map((item) =>
-            normalizeDayDetailSession(item, staffId, workDate),
-          );
+        const normalizedSessionsWithMinutes = sessionItems.map((item) =>
+          normalizeDayDetailSession(item, staffId, workDate),
+        );
 
-          const normalizedSessions = normalizedSessionsWithMinutes.map((item) => item.session);
-          const totalMinutesFromSessions = normalizedSessionsWithMinutes.reduce(
-            (accumulator, item) => accumulator + Math.max(0, item.minutes),
-            0,
-          );
+        const normalizedSessions = normalizedSessionsWithMinutes.map((item) => item.session);
+        const totalMinutesFromSessions = normalizedSessionsWithMinutes.reduce(
+          (accumulator, item) => accumulator + Math.max(0, item.minutes),
+          0,
+        );
 
-          const normalizedApproval = normalizeDayDetailApproval(
-            (data?.approval ?? null) as unknown,
-            staffId,
-            workDate,
-          );
+        const normalizedApproval = normalizeDayDetailApproval(
+          (data?.approval ?? null) as unknown,
+          staffId,
+          workDate,
+        );
 
-          const normalizedDate =
-            normalizedSessions[0]?.workDate ??
-            normalizedApproval?.workDate ??
-            toOptionalString(data?.work_date) ??
-            workDate;
+        const normalizedDate =
+          normalizedSessions[0]?.workDate ??
+          normalizedApproval?.workDate ??
+          toOptionalString(data?.work_date) ??
+          workDate;
 
-          const derivedHasEdits = normalizedSessions.some(
-            (session) => Array.isArray(session.edits) && session.edits.length > 0,
-          );
+        const derivedHasEdits = normalizedSessions.some(
+          (session) => Array.isArray(session.edits) && session.edits.length > 0,
+        );
 
-          setSessionRows(sortSessionRows(buildSessionRows(normalizedSessions)));
-          setDayApproval(normalizedApproval);
+        const approvedMinutes =
+          typeof normalizedApproval?.approvedMinutes === "number"
+            ? Math.max(0, normalizedApproval.approvedMinutes)
+            : null;
 
-          const approvedMinutes =
-            typeof normalizedApproval?.approvedMinutes === "number"
-              ? Math.max(0, normalizedApproval.approvedMinutes)
-              : null;
+        const derivedRawHours = Number((totalMinutesFromSessions / 60).toFixed(2));
+        const derivedApprovedHours =
+          approvedMinutes != null ? Number((approvedMinutes / 60).toFixed(2)) : null;
 
-          const derivedRawHours = Number((totalMinutesFromSessions / 60).toFixed(2));
-          const derivedApprovedHours =
-            approvedMinutes != null ? Number((approvedMinutes / 60).toFixed(2)) : null;
-
-          setSelectedCell((previous) => {
-            if (!previous) return previous;
-            if (previous.staffId !== staffId || previous.workDate !== workDate) {
-              return previous;
-            }
-            const nextApproved =
-              typeof normalizedApproval?.approved === "boolean"
-                ? normalizedApproval.approved
-                : previous.approved;
-            if (
-              previous.workDate === normalizedDate &&
-              previous.rawHours === derivedRawHours &&
-              previous.approvedHours === derivedApprovedHours &&
-              previous.approved === nextApproved &&
-              previous.hasEdits === derivedHasEdits
-            ) {
-              return previous;
-            }
-            return {
-              ...previous,
-              workDate: normalizedDate,
-              rawHours: derivedRawHours,
-              approvedHours: derivedApprovedHours,
-              approved: nextApproved,
-              hasEdits: derivedHasEdits,
-            };
-          });
+        const current = selectedCellRef.current;
+        if (!current || current.staffId !== staffId) {
+          return {
+            rawHours: derivedRawHours,
+            approvedHours: derivedApprovedHours,
+            approval: normalizedApproval,
+            totalMinutes: totalMinutesFromSessions,
+          };
         }
-        } catch (err) {
-          console.error("No se pudieron cargar las sesiones del día", err);
-          if (!cancelled) {
-            const message =
-              err instanceof Error ? err.message : "No se pudieron cargar las sesiones del día.";
-            setSessionsError(message);
-            setDayApproval(null);
+
+        setSessionRows(sortSessionRows(buildSessionRows(normalizedSessions)));
+        setDayApproval(normalizedApproval);
+
+        setSelectedCell((previous) => {
+          if (!previous || previous.staffId !== staffId) {
+            return previous;
           }
-        } finally {
-          if (!cancelled) setSessionsLoading(false);
+          const nextApproved =
+            typeof normalizedApproval?.approved === "boolean"
+              ? normalizedApproval.approved
+              : previous.approved;
+          if (
+            previous.workDate === normalizedDate &&
+            previous.rawHours === derivedRawHours &&
+            previous.approvedHours === derivedApprovedHours &&
+            previous.approved === nextApproved &&
+            previous.hasEdits === derivedHasEdits
+          ) {
+            return previous;
+          }
+          return {
+            ...previous,
+            workDate: normalizedDate,
+            rawHours: derivedRawHours,
+            approvedHours: derivedApprovedHours,
+            approved: nextApproved,
+            hasEdits: derivedHasEdits,
+          };
+        });
+
+        setMatrixData((previous) => {
+          if (!previous) return previous;
+          let changed = false;
+          const nextRows = previous.rows.map((row) => {
+            if (row.staffId !== staffId) {
+              return row;
+            }
+            let rowChanged = false;
+            const nextCells = row.cells.map((cell) => {
+              if (cell.date !== normalizedDate) {
+                return cell;
+              }
+              rowChanged = true;
+              changed = true;
+              return {
+                ...cell,
+                rawHours: derivedRawHours,
+                approvedHours: derivedApprovedHours,
+                approved:
+                  typeof normalizedApproval?.approved === "boolean"
+                    ? normalizedApproval.approved
+                    : cell.approved,
+                hasEdits: derivedHasEdits,
+              };
+            });
+            if (!rowChanged) {
+              return row;
+            }
+            return { ...row, cells: nextCells };
+          });
+          if (!changed) {
+            return previous;
+          }
+          return { ...previous, rows: nextRows };
+        });
+
+        return {
+          rawHours: derivedRawHours,
+          approvedHours: derivedApprovedHours,
+          approval: normalizedApproval,
+          totalMinutes: totalMinutesFromSessions,
+        };
+      } catch (err) {
+        console.error("No se pudieron cargar las sesiones del día", err);
+        if (
+          selectedCellRef.current?.staffId === staffId &&
+          selectedCellRef.current?.workDate === workDate
+        ) {
+          const message =
+            err instanceof Error ? err.message : "No se pudieron cargar las sesiones del día.";
+          setSessionsError(message);
+          setDayApproval(null);
         }
-    }
+        throw err;
+      } finally {
+        if (
+          selectedCellRef.current?.staffId === staffId &&
+          selectedCellRef.current?.workDate === workDate
+        ) {
+          setSessionsLoading(false);
+        }
+      }
+    },
+    [
+      setDayApproval,
+      setMatrixData,
+      setSelectedCell,
+      setSessionRows,
+      setSessionsError,
+      setSessionsLoading,
+    ],
+  );
 
-    void loadSessions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCell]);
+  useEffect(() => {
+    if (!selectedCell) return;
+    const { staffId, workDate } = selectedCell;
+    void refreshDayDetail({ staffId, workDate }).catch(() => undefined);
+  }, [refreshDayDetail, selectedCell]);
 
   const handleDraftChange = useCallback(
     (sessionKey: string, field: "checkin" | "checkout", value: string) => {
@@ -1757,6 +1836,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       const rows = sessionRowsRef.current;
       const target = rows.find((row) => row.sessionKey === sessionKey);
       if (!target) return;
+      const { staffId, workDate } = selectedCell;
 
       const validation = validateRowDraft(target, rows, target.workDate);
       if (validation) {
@@ -1792,15 +1872,22 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           ? "/api/payroll/session"
           : `/api/payroll/session/${target.sessionId}`;
         const method = target.isNew ? "POST" : "PUT";
+        const payloadBody = target.isNew
+          ? {
+              staff_id: staffId,
+              work_date: workDate,
+              checkin_time: checkinIso,
+              checkout_time: checkoutIso,
+            }
+          : {
+              work_date: workDate,
+              checkin_time: checkinIso,
+              checkout_time: checkoutIso,
+            };
         const response = await performProtectedFetch(endpoint, {
           method,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            staffId: selectedCell.staffId,
-            workDate: selectedCell.workDate,
-            checkinTime: checkinIso,
-            checkoutTime: checkoutIso,
-          }),
+          body: JSON.stringify(payloadBody),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -1808,37 +1895,20 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           throw new Error(message);
         }
 
-        const saved = (payload as { session?: DaySession }).session;
-        if (!saved) {
-          throw new Error("No se recibió la sesión actualizada.");
+        if (target.isNew) {
+          const createdId = toPositiveInteger((payload as { session_id?: unknown }).session_id);
+          if (!createdId) {
+            throw new Error("No se recibió el identificador de la nueva sesión.");
+          }
         }
 
-        setSessionRows((previous) =>
-          sortSessionRows(
-            previous.map((row) =>
-              row.sessionKey === sessionKey
-                ? {
-                    ...row,
-                    sessionId: saved.sessionId,
-                    staffId: saved.staffId,
-                    workDate: saved.workDate,
-                    checkinTime: saved.checkinTime,
-                    checkoutTime: saved.checkoutTime,
-                    edits: Array.isArray(saved.edits) ? [...saved.edits] : [],
-                    draftCheckin: toLocalInputValue(saved.checkinTime),
-                    draftCheckout: toLocalInputValue(saved.checkoutTime),
-                    isNew: false,
-                    isEditing: false,
-                    validationError: null,
-                    feedback: null,
-                    pendingAction: null,
-                  }
-                : row,
-            ),
-          ),
-        );
+        await refreshDayDetail({
+          staffId,
+          workDate,
+          showSpinner: false,
+        });
         await refreshMatrixOnly();
-        await refreshMonthStatusForStaff(selectedCell.staffId);
+        await refreshMonthStatusForStaff(staffId);
         await refreshMonthSummary();
         setToast({ message: "Cambios guardados", tone: "success" });
       } catch (error) {
@@ -1857,6 +1927,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     },
     [
       performProtectedFetch,
+      refreshDayDetail,
       refreshMatrixOnly,
       refreshMonthStatusForStaff,
       refreshMonthSummary,
@@ -1915,11 +1986,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           `/api/payroll/session/${target.sessionId}`,
           {
             method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              staffId: target.staffId,
-              workDate: target.workDate,
-            }),
           },
         );
         const payload =
@@ -1930,6 +1996,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         }
 
         setSessionRows((previous) => previous.filter((row) => row.sessionKey !== sessionKey));
+        await refreshDayDetail({
+          staffId: target.staffId,
+          workDate: target.workDate,
+          showSpinner: false,
+        });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(target.staffId);
         await refreshMonthSummary();
@@ -1951,6 +2022,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [
       ensureManagementAccess,
       performProtectedFetch,
+      refreshDayDetail,
       refreshMatrixOnly,
       refreshMonthStatusForStaff,
       refreshMonthSummary,
@@ -2879,14 +2951,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             ) : null}
 
             {isManagementMode ? (
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="flex flex-col gap-1 text-sm text-brand-deep">
-                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
-                    Horas a aprobar (h)
-                  </span>
-                  <div className="w-full rounded-2xl border border-brand-ink-muted/30 bg-white px-3 py-2 text-sm font-semibold text-brand-deep shadow">
-                    {hoursFormatter.format(hoursForApproval)} h
-                  </div>
+              <div className="mt-6 flex flex-col gap-3 text-sm text-brand-deep">
+                <div className="rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-3 text-sm font-semibold text-brand-deep shadow">
+                  Aprobarás automáticamente {hoursFormatter.format(hoursForApproval)} h calculadas según las sesiones registradas.
                 </div>
                 {dayApproval?.approvedAt ? (
                   <span className="text-xs text-brand-ink-muted">
