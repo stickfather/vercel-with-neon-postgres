@@ -1416,6 +1416,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [cancelRowEditing],
   );
 
+  const activeEditorRow = useMemo(() => {
+    if (!sessionEditor) {
+      return null;
+    }
+    return sessionRows.find((row) => row.sessionKey === sessionEditor.sessionKey) ?? null;
+  }, [sessionEditor, sessionRows]);
+
+  const editorPending =
+    activeEditorRow?.pendingAction === "edit" || activeEditorRow?.pendingAction === "create";
+
   const submitSessionEditor = useCallback(async () => {
     if (!sessionEditor || editorPending) return;
     const success = await saveRowChanges(sessionEditor.sessionKey);
@@ -1576,12 +1586,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const displayHours = sessionsLoading
     ? selectedCell?.hours ?? totalHours
     : totalHours;
-
-  const activeEditorRow = sessionEditor
-    ? sessionRows.find((row) => row.sessionKey === sessionEditor.sessionKey) ?? null
-    : null;
-  const editorPending =
-    activeEditorRow?.pendingAction === "edit" || activeEditorRow?.pendingAction === "create";
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-white">
