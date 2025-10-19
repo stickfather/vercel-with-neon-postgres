@@ -12,9 +12,7 @@ import type {
   LearnLeiDistributionRow,
   LearnOnpaceSplit,
   LearnOutcomesWeeklyRow,
-  LearnProgressBandRow,
   LearnSlowLearnerRow,
-  LearnCohortProgressRow,
 } from "@/types/management.learning";
 
 function normalizeNumber(value: unknown): number {
@@ -86,42 +84,6 @@ const fetchLearnOnpaceSplit = cache(async (): Promise<LearnOnpaceSplit | null> =
     console.warn("learn_onpace_split_v not available", error);
     return null;
   }
-});
-
-async function fetchProgressBandsFiltered(): Promise<LearnProgressBandRow[]> {
-  const sql = getSqlClient();
-  const rows = normalizeRows<Partial<LearnProgressBandRow>>(
-    await sql`
-      SELECT level, band_0_33, band_34_66, band_67_99, band_100
-      FROM mgmt.learn_progress_bands_v
-      ORDER BY level
-    `,
-  );
-  return rows.map((row) => ({
-    level: normalizeString(row.level),
-    band_0_33: normalizeNumber(row.band_0_33),
-    band_34_66: normalizeNumber(row.band_34_66),
-    band_67_99: normalizeNumber(row.band_67_99),
-    band_100: normalizeNumber(row.band_100),
-  }));
-}
-
-const fetchProgressBands = cache(fetchProgressBandsFiltered);
-
-const fetchCohortProgress = cache(async (): Promise<LearnCohortProgressRow[]> => {
-  const sql = getSqlClient();
-  const rows = normalizeRows<Partial<LearnCohortProgressRow>>(
-    await sql`
-      SELECT cohort_month, months_since_start, avg_progress_pct
-      FROM mgmt.learn_cohort_progress_v
-      ORDER BY cohort_month, months_since_start
-    `,
-  );
-  return rows.map((row) => ({
-    cohort_month: normalizeString(row.cohort_month),
-    months_since_start: normalizeNumber(row.months_since_start),
-    avg_progress_pct: normalizeNullableNumber(row.avg_progress_pct),
-  }));
 });
 
 async function fetchLeiDistributionByScope(
@@ -313,8 +275,6 @@ export async function getLearningDashboardData(): Promise<LearnDashboardData> {
   const [
     header,
     onpaceSplit,
-    progressBands,
-    cohortProgress,
     leiOverall,
     leiByLevel,
     outcomesWeekly,
@@ -330,12 +290,6 @@ export async function getLearningDashboardData(): Promise<LearnDashboardData> {
     ),
     fetchLearnOnpaceSplit().catch((error) =>
       logAndFallback<LearnOnpaceSplit | null>(error, "learn_onpace_split_v", null),
-    ),
-    fetchProgressBands().catch((error) =>
-      logAndFallback<LearnProgressBandRow[]>(error, "learn_progress_bands_v", []),
-    ),
-    fetchCohortProgress().catch((error) =>
-      logAndFallback<LearnCohortProgressRow[]>(error, "learn_cohort_progress_v", []),
     ),
     fetchLeiOverall().catch((error) =>
       logAndFallback<LearnLeiDistributionRow | null>(error, "learn_lei_distribution_v", null),
@@ -373,8 +327,6 @@ export async function getLearningDashboardData(): Promise<LearnDashboardData> {
   return {
     header,
     onpaceSplit,
-    progressBands,
-    cohortProgress,
     leiOverall,
     leiByLevel,
     outcomesWeekly,

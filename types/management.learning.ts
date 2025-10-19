@@ -14,20 +14,6 @@ export type LearnOnpaceSplit = {
   off_pace: number;
 };
 
-export type LearnProgressBandRow = {
-  level: string;
-  band_0_33: number;
-  band_34_66: number;
-  band_67_99: number;
-  band_100: number;
-};
-
-export type LearnCohortProgressRow = {
-  cohort_month: string;
-  months_since_start: number;
-  avg_progress_pct: number | null;
-};
-
 export type LearnLeiDistributionRow = {
   scope: "overall" | "by_level";
   level: string | null;
@@ -99,8 +85,6 @@ export type LearnFastestCompletionRow = {
 export type LearnDashboardData = {
   header: LearnHeader | null;
   onpaceSplit: LearnOnpaceSplit | null;
-  progressBands: LearnProgressBandRow[];
-  cohortProgress: LearnCohortProgressRow[];
   leiOverall: LearnLeiDistributionRow | null;
   leiByLevel: LearnLeiDistributionRow[];
   outcomesWeekly: LearnOutcomesWeeklyRow[];

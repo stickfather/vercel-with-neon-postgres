@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import type {
   LearnDashboardData,
@@ -11,9 +11,7 @@ import type {
   LearnLevelupsWeeklyRow,
   LearnLeiDistributionRow,
   LearnOutcomesWeeklyRow,
-  LearnProgressBandRow,
   LearnSlowLearnerRow,
-  LearnCohortProgressRow,
 } from "@/types/management.learning";
 
 const percentFormatter = new Intl.NumberFormat("es-EC", {
@@ -74,14 +72,7 @@ export function LearningDashboard({ data }: LearningDashboardProps) {
           outcomesWeekly={data.outcomesWeekly}
         />
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <ProgressBandsCard data={data.progressBands} />
-          <CohortCurveCard data={data.cohortProgress} />
-        </div>
-
         <LeiDistributionCard overall={data.leiOverall} byLevel={data.leiByLevel} />
-
-        <OutcomesWeeklyCard data={data.outcomesWeekly} trendWindow={trendWindow} />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <LevelUpsWeeklyCard data={data.levelupsWeekly} trendWindow={trendWindow} />
@@ -395,261 +386,6 @@ function OnpaceDonut({ data }: OnpaceDonutProps) {
   );
 }
 
-type ProgressBandsCardProps = {
-  data: LearnProgressBandRow[];
-};
-
-function ProgressBandsCard({ data }: ProgressBandsCardProps) {
-  const hasValues = data.some(
-    (row) => row.band_0_33 || row.band_34_66 || row.band_67_99 || row.band_100,
-  );
-
-  if (!data.length || !hasValues) {
-    return (
-      <Card title="Progreso del Plan por Nivel" description="Distribución de bandas de avance">
-        <EmptyState />
-      </Card>
-    );
-  }
-
-  return (
-    <Card title="Progreso del Plan por Nivel" description="Distribución porcentual por bandas de avance">
-      <div className="flex flex-col gap-4">
-        {data.map((row) => {
-          const total = row.band_0_33 + row.band_34_66 + row.band_67_99 + row.band_100;
-          return (
-            <div key={row.level} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
-                <span>Nivel {row.level}</span>
-                <span>{formatInteger(total)}</span>
-              </div>
-              <div className="flex overflow-hidden rounded-full border border-slate-200 text-[11px] text-white">
-                <StackedSegment
-                  label="0–33%"
-                  value={row.band_0_33}
-                  total={total}
-                  color="bg-rose-500/90"
-                />
-                <StackedSegment
-                  label="34–66%"
-                  value={row.band_34_66}
-                  total={total}
-                  color="bg-amber-500/90"
-                />
-                <StackedSegment
-                  label="67–99%"
-                  value={row.band_67_99}
-                  total={total}
-                  color="bg-sky-500/90"
-                />
-                <StackedSegment
-                  label="100%"
-                  value={row.band_100}
-                  total={total}
-                  color="bg-emerald-500/90"
-                />
-              </div>
-            </div>
-          );
-        })}
-        <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-          <LegendChip color="bg-rose-500" label="0–33%" />
-          <LegendChip color="bg-amber-500" label="34–66%" />
-          <LegendChip color="bg-sky-500" label="67–99%" />
-          <LegendChip color="bg-emerald-500" label="100%" />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-type StackedSegmentProps = {
-  label: string;
-  value: number;
-  total: number;
-  color: string;
-};
-
-function StackedSegment({ label, value, total, color }: StackedSegmentProps) {
-  const ratio = total > 0 ? value / total : 0;
-  const widthPercent = Math.max(ratio * 100, 0);
-  if (widthPercent <= 0) {
-    return null;
-  }
-  return (
-    <div
-      className={`${color} flex items-center justify-center px-2 py-2`}
-      style={{ width: `${widthPercent}%` }}
-      title={`${label}: ${formatInteger(value)} (${percentFormatter.format(ratio)})`}
-    >
-      <span>{percentFormatter.format(ratio)}</span>
-    </div>
-  );
-}
-
-type LegendChipProps = {
-  color: string;
-  label: string;
-};
-
-function LegendChip({ color, label }: LegendChipProps) {
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
-      <span className={`h-2 w-2 rounded-full ${color}`} />
-      <span>{label}</span>
-    </span>
-  );
-}
-
-type CohortCurveCardProps = {
-  data: LearnCohortProgressRow[];
-};
-
-function CohortCurveCard({ data }: CohortCurveCardProps) {
-  const [selectedCohorts, setSelectedCohorts] = useState<string[]>(() => {
-    const unique = Array.from(new Set(data.map((row) => row.cohort_month)));
-    return unique
-      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-      .slice(0, 3);
-  });
-
-  useEffect(() => {
-    const unique = Array.from(new Set(data.map((row) => row.cohort_month)));
-    setSelectedCohorts((prev) => {
-      if (prev.length) {
-        return prev.filter((cohort) => unique.includes(cohort)).slice(0, 5);
-      }
-      return unique
-        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-        .slice(0, 3);
-    });
-  }, [data]);
-
-  if (!data.length) {
-    return (
-      <Card title="Curva de Cohortes (Progreso Promedio)" description="Meses desde inicio vs avance">
-        <EmptyState />
-      </Card>
-    );
-  }
-
-  const cohorts = Array.from(new Set(data.map((row) => row.cohort_month))).sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
-  );
-
-  const maxMonth = Math.max(...data.map((row) => row.months_since_start), 12);
-
-  const palette = ["#1D4ED8", "#047857", "#9333EA", "#F59E0B", "#DC2626"];
-
-  function toggleCohort(value: string) {
-    setSelectedCohorts((prev) => {
-      const exists = prev.includes(value);
-      if (exists) {
-        return prev.filter((item) => item !== value);
-      }
-      if (prev.length >= 5) {
-        const [, ...rest] = [...prev, value];
-        return rest;
-      }
-      return [...prev, value];
-    });
-  }
-
-  const selectedData = selectedCohorts.map((cohort) => ({
-    cohort,
-    rows: data.filter((row) => row.cohort_month === cohort),
-  }));
-
-  return (
-    <Card title="Curva de Cohortes (Progreso Promedio)" description="Seguimiento de progreso acumulado">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap gap-2">
-          {cohorts.map((cohort) => {
-            const isSelected = selectedCohorts.includes(cohort);
-            return (
-              <button
-                key={cohort}
-                type="button"
-                onClick={() => toggleCohort(cohort)}
-                className={`${
-                  isSelected
-                    ? "bg-slate-900 text-white"
-                    : "border border-slate-200 bg-white text-slate-700"
-                } inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold uppercase transition`}
-              >
-                {cohort}
-              </button>
-            );
-          })}
-        </div>
-        <div className="relative h-72 w-full rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-          <svg viewBox="0 0 1000 400" preserveAspectRatio="none" className="h-full w-full">
-            <Axes />
-            {selectedData.map((cohortData, index) => (
-              <CohortLine
-                key={cohortData.cohort}
-                cohort={cohortData.cohort}
-                rows={cohortData.rows}
-                maxMonth={maxMonth}
-                color={palette[index % palette.length]}
-              />
-            ))}
-          </svg>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-type CohortLineProps = {
-  cohort: string;
-  rows: LearnCohortProgressRow[];
-  maxMonth: number;
-  color: string;
-};
-
-function CohortLine({ cohort, rows, maxMonth, color }: CohortLineProps) {
-  const validRows = rows.filter((row) => row.avg_progress_pct !== null && row.avg_progress_pct !== undefined);
-  if (!validRows.length) return null;
-  const maxValue = Math.max(...validRows.map((row) => Number(row.avg_progress_pct ?? 0)), 100);
-  const points = validRows
-    .map((row) => {
-      const x = (row.months_since_start / Math.max(maxMonth, 1)) * 1000;
-      const value = Number(row.avg_progress_pct ?? 0);
-      const y = 400 - Math.min(Math.max((value / Math.max(maxValue, 1)) * 400, 0), 400);
-      return `${x},${y}`;
-    })
-    .join(" ");
-  const tooltip = validRows
-    .map(
-      (row) =>
-        `Cohorte: ${cohort} • Mes +${row.months_since_start} • Avg: ${formatPercent(row.avg_progress_pct ?? 0)}`,
-    )
-    .join("\n");
-  return (
-    <polyline
-      points={points}
-      fill="none"
-      stroke={color}
-      strokeWidth={6}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      opacity={0.85}
-    >
-      <title>{tooltip}</title>
-    </polyline>
-  );
-}
-
-function Axes() {
-  return (
-    <g>
-      <line x1={40} y1={20} x2={40} y2={360} stroke="#CBD5F5" strokeWidth={2} />
-      <line x1={40} y1={360} x2={980} y2={360} stroke="#CBD5F5" strokeWidth={2} />
-    </g>
-  );
-}
-
 type LeiDistributionCardProps = {
   overall: LearnLeiDistributionRow | null;
   byLevel: LearnLeiDistributionRow[];
@@ -658,174 +394,158 @@ type LeiDistributionCardProps = {
 function LeiDistributionCard({ overall, byLevel }: LeiDistributionCardProps) {
   if (!overall && !byLevel.length) {
     return (
-      <Card title="Distribución LEI (30 días)" description="Percentiles y dispersión por nivel">
+      <Card title="Salud LEI (30 días)" description="Mediana reciente y señal de alerta">
         <EmptyState />
       </Card>
     );
   }
 
-  const rows = [overall, ...byLevel].filter(Boolean) as LearnLeiDistributionRow[];
-  if (!rows.length) {
+  const dataRows = [overall, ...byLevel].filter(Boolean) as LearnLeiDistributionRow[];
+  if (!dataRows.length) {
     return (
-      <Card title="Distribución LEI (30 días)" description="Percentiles y dispersión por nivel">
+      <Card title="Salud LEI (30 días)" description="Mediana reciente y señal de alerta">
         <EmptyState />
       </Card>
     );
   }
 
-  const allValues = rows.flatMap((row) => [row.p10, row.p25, row.p50, row.p75, row.p90]).filter(
-    (value): value is number => value !== null && value !== undefined,
-  );
-  const globalMin = Math.min(...allValues, 0);
-  const globalMax = Math.max(...allValues, 1);
+  const overallMedian = overall?.p50 ?? null;
+  const overallStatus = getLeiStatus(overallMedian);
 
-  const levelRows = byLevel
-    .slice()
-    .sort((a, b) => {
-      const aMedian = a.p50 ?? -Infinity;
-      const bMedian = b.p50 ?? -Infinity;
-      return bMedian - aMedian;
-    });
+  const levelSummaries = byLevel
+    .map((row) => ({
+      level: row.level ?? "—",
+      median: row.p50 ?? null,
+      sample: row.n,
+      status: getLeiStatus(row.p50 ?? null),
+    }))
+    .sort((a, b) => (b.median ?? -Infinity) - (a.median ?? -Infinity));
 
   return (
-    <Card title="Distribución LEI (30 días)" description="Percentiles p10–p90 y tamaño de muestra">
+    <Card title="Salud LEI (30 días)" description="Mediana reciente y señal de alerta por nivel">
       <div className="flex flex-col gap-6">
-        {overall ? (
-          <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <span className="text-sm font-semibold uppercase tracking-wide text-slate-600">General</span>
-            <BoxPlotRow row={overall} minValue={globalMin} maxValue={globalMax} />
-          </div>
-        ) : null}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Por nivel</span>
+        <div
+          className={`rounded-3xl border ${overallStatus.panelBorder} ${overallStatus.panelBg} p-6`}
+        >
           <div className="flex flex-col gap-3">
-            {levelRows.length ? (
-              levelRows.map((row) => (
-                <div key={row.level ?? "—"} className="rounded-2xl border border-slate-200 bg-white p-3">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Nivel {row.level ?? "—"}
-                  </span>
-                  <BoxPlotRow row={row} minValue={globalMin} maxValue={globalMax} />
-                </div>
-              ))
-            ) : (
-              <EmptyState />
-            )}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Mediana general
+                </span>
+                <span className={`text-4xl font-black ${overallStatus.textClass}`}>
+                  {overallMedian === null ? "—" : decimalFormatter.format(overallMedian)}
+                </span>
+                <span className="text-sm text-slate-600">LEI promedio últimos 30 días</span>
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${overallStatus.badge}`}
+              >
+                {overallStatus.label}
+              </span>
+            </div>
+            <p className="text-sm text-slate-600">{overallStatus.message}</p>
           </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Por nivel
+            </span>
+            <span className="text-[11px] uppercase text-slate-400">
+              ≥75 bueno • 60–74 observar • &lt;60 riesgo
+            </span>
+          </div>
+          {levelSummaries.length ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <table className="min-w-full border-collapse text-sm text-slate-700">
+                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Nivel</th>
+                    <th className="px-4 py-3">Mediana LEI</th>
+                    <th className="px-4 py-3">Estudiantes</th>
+                    <th className="px-4 py-3">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {levelSummaries.map((row) => (
+                    <tr key={row.level} className="border-t border-slate-200">
+                      <td className="px-4 py-3 font-semibold text-slate-600">{row.level}</td>
+                      <td className="px-4 py-3">{formatDecimal(row.median)}</td>
+                      <td className="px-4 py-3">{formatInteger(row.sample)}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${row.status.badge}`}
+                        >
+                          {row.status.label}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState />
+          )}
         </div>
       </div>
     </Card>
   );
 }
 
-type BoxPlotRowProps = {
-  row: LearnLeiDistributionRow;
-  minValue: number;
-  maxValue: number;
+type LeiStatus = {
+  label: string;
+  badge: string;
+  panelBg: string;
+  panelBorder: string;
+  textClass: string;
+  message: string;
 };
 
-function BoxPlotRow({ row, minValue, maxValue }: BoxPlotRowProps) {
-  const range = maxValue - minValue || 1;
-  const p10 = row.p10 ?? row.p25 ?? 0;
-  const p25 = row.p25 ?? p10;
-  const p50 = row.p50 ?? p25;
-  const p75 = row.p75 ?? p50;
-  const p90 = row.p90 ?? p75;
-  return (
-    <div className="relative flex h-24 flex-col justify-center">
-      <div className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 bg-slate-200" aria-hidden="true" />
-      <div className="relative flex h-16 items-center">
-        <span
-          className="absolute top-0 text-[10px] font-semibold uppercase tracking-widest text-slate-400"
-          style={{ left: `${((p10 - minValue) / range) * 100}%` }}
-        >
-          p10
-        </span>
-        <span
-          className="absolute bottom-0 text-[10px] font-semibold uppercase tracking-widest text-slate-400"
-          style={{ left: `${((p90 - minValue) / range) * 100}%` }}
-        >
-          p90
-        </span>
-        <div
-          className="absolute h-[2px] w-0.5 bg-slate-400"
-          style={{ left: `${((p10 - minValue) / range) * 100}%`, height: "100%" }}
-        />
-        <div
-          className="absolute h-[2px] w-0.5 bg-slate-400"
-          style={{ left: `${((p90 - minValue) / range) * 100}%`, height: "100%" }}
-        />
-        <div
-          className="absolute flex h-10 items-center justify-center rounded-lg bg-slate-900/80 text-xs font-semibold text-white"
-          style={{
-            left: `${((p25 - minValue) / range) * 100}%`,
-            width: `${((p75 - p25) / range) * 100}%`,
-          }}
-          title={`p10 ${p10.toFixed(1)}, p25 ${p25.toFixed(1)}, p50 ${p50.toFixed(1)}, p75 ${p75.toFixed(1)}, p90 ${p90.toFixed(
-            1,
-          )} • n=${row.n}`}
-        >
-          <span>{decimalFormatter.format(p50)}</span>
-        </div>
-        <div
-          className="absolute h-12 w-[3px] rounded bg-emerald-400"
-          style={{ left: `${((p50 - minValue) / range) * 100}%` }}
-        />
-      </div>
-      <span className="mt-2 text-xs text-slate-600">n = {formatInteger(row.n)}</span>
-    </div>
-  );
-}
-
-type OutcomesWeeklyCardProps = {
-  data: LearnOutcomesWeeklyRow[];
-  trendWindow: number;
-};
-
-function OutcomesWeeklyCard({ data, trendWindow }: OutcomesWeeklyCardProps) {
-  if (!data.length) {
-    return (
-      <Card title="Resultados Semanales" description="Graduados vs Salidas Anticipadas">
-        <EmptyState />
-      </Card>
-    );
+function getLeiStatus(value: number | null): LeiStatus {
+  if (value === null) {
+    return {
+      label: "Sin datos",
+      badge: "bg-slate-200 text-slate-600",
+      panelBg: "bg-slate-50",
+      panelBorder: "border-slate-200",
+      textClass: "text-slate-500",
+      message: "No hay mediciones recientes de LEI para este grupo.",
+    };
   }
 
-  const trimmed = data.slice(-trendWindow);
-  const maxValue = Math.max(
-    ...trimmed.flatMap((row) => [row.graduados, row.retiros]),
-    0,
-  );
+  if (value >= 75) {
+    return {
+      label: "Excelente",
+      badge: "bg-emerald-100 text-emerald-700",
+      panelBg: "bg-emerald-50",
+      panelBorder: "border-emerald-200",
+      textClass: "text-emerald-700",
+      message: "La experiencia de aprendizaje es saludable y consistente.",
+    };
+  }
 
-  return (
-    <Card title="Resultados Semanales" description={`Últimas ${trendWindow} semanas`}>
-      <div className="flex h-72 items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-        {trimmed.map((row) => {
-          const total = row.graduados + row.retiros;
-          const graduadosHeight = maxValue ? (row.graduados / maxValue) * 100 : 0;
-          const retirosHeight = maxValue ? (row.retiros / maxValue) * 100 : 0;
-          return (
-            <div key={row.wk} className="flex w-full flex-col items-center gap-1">
-              <div className="flex w-full flex-col gap-1">
-                <div
-                  className="rounded-t-lg bg-emerald-500"
-                  style={{ height: `${graduadosHeight}%` }}
-                  title={`Semana ${row.wk} • Graduados ${formatInteger(row.graduados)} • Salidas ${formatInteger(row.retiros)}`}
-                />
-                <div
-                  className="rounded-b-lg bg-rose-500"
-                  style={{ height: `${retirosHeight}%` }}
-                  title={`Semana ${row.wk} • Graduados ${formatInteger(row.graduados)} • Salidas ${formatInteger(row.retiros)}`}
-                />
-              </div>
-              <span className="text-[10px] text-slate-500">{row.wk}</span>
-              <span className="text-[10px] font-semibold text-slate-500">{formatInteger(total)}</span>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
+  if (value >= 60) {
+    return {
+      label: "En observación",
+      badge: "bg-amber-100 text-amber-700",
+      panelBg: "bg-amber-50",
+      panelBorder: "border-amber-200",
+      textClass: "text-amber-700",
+      message: "Hay señales de fricción moderada, revisa planes de acción.",
+    };
+  }
+
+  return {
+    label: "En riesgo",
+    badge: "bg-rose-100 text-rose-700",
+    panelBg: "bg-rose-50",
+    panelBorder: "border-rose-200",
+    textClass: "text-rose-700",
+    message: "El LEI es bajo: intervén con soporte adicional a los estudiantes.",
+  };
 }
 
 type LevelUpsWeeklyCardProps = {
@@ -857,7 +577,7 @@ function LevelUpsWeeklyCard({ data, trendWindow }: LevelUpsWeeklyCardProps) {
     <Card title="Ascensos por Semana" description={`Últimas ${trendWindow} semanas`}>
       <div className="relative h-72 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
         <svg viewBox="0 0 1040 400" className="h-full w-full">
-          <Axes />
+          <ChartAxes />
           <polyline
             points={points}
             fill="none"
@@ -869,6 +589,15 @@ function LevelUpsWeeklyCard({ data, trendWindow }: LevelUpsWeeklyCardProps) {
         </svg>
       </div>
     </Card>
+  );
+}
+
+function ChartAxes() {
+  return (
+    <g>
+      <line x1={40} y1={20} x2={40} y2={360} stroke="#CBD5F5" strokeWidth={2} />
+      <line x1={40} y1={360} x2={1000} y2={360} stroke="#CBD5F5" strokeWidth={2} />
+    </g>
   );
 }
 
@@ -945,116 +674,96 @@ type LessonsHeatmapCardProps = {
 };
 
 function LessonsHeatmapCard({ rows }: LessonsHeatmapCardProps) {
-  const [metric, setMetric] = useState<"p75" | "median">("p75");
   const [query, setQuery] = useState("");
 
-  if (!rows.length) {
-    return (
-      <Card title="Atascos por Lección (últimos 60d)" description="Minutos por estudiante y % lento">
-        <EmptyState />
-      </Card>
-    );
-  }
-
-  const filteredRows = rows.filter((row) => {
-    if (query.trim().length && !row.lesson_id.toLowerCase().includes(query.trim().toLowerCase())) {
-      return false;
-    }
-    return true;
+  const processed = rows.map((row) => {
+    const students = Math.max(row.students ?? 0, 0);
+    const averageMinutes = row.median_minutes_per_student ?? row.p75_minutes_per_student ?? 0;
+    const totalMinutes = Math.max(Math.round(students * averageMinutes), 0);
+    return {
+      level: row.level,
+      lesson: row.lesson_id,
+      students,
+      averageMinutes,
+      totalMinutes,
+    };
   });
 
-  if (!filteredRows.length) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = processed.filter((row) => {
+    if (!normalizedQuery) return true;
     return (
-      <Card title="Atascos por Lección (últimos 60d)" description="Minutos por estudiante y % lento">
-        <EmptyState />
-      </Card>
+      row.lesson.toLowerCase().includes(normalizedQuery) ||
+      row.level.toLowerCase().includes(normalizedQuery)
     );
-  }
+  });
 
-  const grouped = filteredRows.reduce<Record<string, LearnLessonsHeatmapRow[]>>((acc, row) => {
-    const key = row.level;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(row);
-    return acc;
-  }, {});
+  const sorted = filtered.sort((a, b) => b.totalMinutes - a.totalMinutes);
+  const topRows = sorted.slice(0, 30);
 
-  const groupedEntries = Object.entries(grouped).sort((a, b) =>
-    a[0].localeCompare(b[0], "es", { numeric: true })
-  );
-
-  const allValues = filteredRows
-    .map((row) => (metric === "p75" ? row.p75_minutes_per_student : row.median_minutes_per_student))
-    .filter((value): value is number => value !== null && value !== undefined);
-  const maxValue = Math.max(...allValues, 1);
+  const totalStudents = filtered.reduce((sum, row) => sum + row.students, 0);
+  const totalMinutes = filtered.reduce((sum, row) => sum + row.totalMinutes, 0);
 
   return (
     <Card
       title="Atascos por Lección (últimos 60d)"
-      description="Minutos por estudiante (p75 o mediana) y % lento (>60m)"
+      description="Estudiantes atascados y minutos acumulados"
       actions={
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar lección"
-            className="rounded-full border border-slate-200 px-3 py-1 text-sm"
-          />
-          <div className="flex gap-2 rounded-full bg-slate-100 p-1 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setMetric("p75")}
-              className={`${metric === "p75" ? "bg-white shadow-sm" : "text-slate-500"} rounded-full px-3 py-1 transition`}
-            >
-              p75 min/estudiante
-            </button>
-            <button
-              type="button"
-              onClick={() => setMetric("median")}
-              className={`${
-                metric === "median" ? "bg-white shadow-sm" : "text-slate-500"
-              } rounded-full px-3 py-1 transition`}
-            >
-              Mediana min/estudiante
-            </button>
-          </div>
-        </div>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar nivel o lección"
+          className="w-full max-w-xs rounded-full border border-slate-200 px-3 py-1.5 text-sm"
+        />
       }
     >
-      <div className="flex flex-col gap-4">
-        {groupedEntries.map(([level, lessons]) => (
-          <div key={level} className="flex flex-col gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Nivel {level}</span>
-            <div className="grid auto-rows-fr grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-2">
-              {lessons.map((lesson) => {
-                const value = metric === "p75" ? lesson.p75_minutes_per_student : lesson.median_minutes_per_student;
-                const ratio = value ? value / maxValue : 0;
-                return (
-                  <div
-                    key={lesson.lesson_id}
-                    className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-center"
-                    style={{
-                      background: `linear-gradient(180deg, rgba(16,185,129,${0.15 + ratio * 0.5}) 0%, rgba(16,185,129,${
-                        0.05 + ratio * 0.2
-                      }) 100%)`,
-                    }}
-                    title={`Lección ${lesson.lesson_id} • ${metric === "p75" ? "p75" : "Mediana"}: ${formatDecimal(
-                      value,
-                    )} minutos • % lento (>60m): ${formatPercent(lesson.pct_slow_over_60 ?? 0)} • Estudiantes: ${formatInteger(
-                      lesson.students,
-                    )}`}
-                  >
-                    <span className="text-xs font-semibold text-slate-600">{lesson.lesson_id}</span>
-                    <span className="text-lg font-bold text-slate-900">{formatDecimal(value)}</span>
-                    <span className="text-[10px] uppercase text-slate-500">% lento: {formatPercent(lesson.pct_slow_over_60 ?? 0)}</span>
-                    <span className="text-[10px] text-slate-500">{formatInteger(lesson.students)} estudiantes</span>
-                  </div>
-                );
-              })}
+      {filtered.length ? (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Estudiantes afectados</span>
+              <span className="block text-2xl font-black text-slate-900">{formatInteger(totalStudents)}</span>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Minutos acumulados</span>
+              <span className="block text-2xl font-black text-slate-900">{formatInteger(totalMinutes)}</span>
             </div>
           </div>
-        ))}
-      </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <table className="min-w-full border-collapse text-sm text-slate-700">
+              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Nivel</th>
+                  <th className="px-4 py-2">Lección</th>
+                  <th className="px-4 py-2">Estudiantes atascados</th>
+                  <th className="px-4 py-2">Minutos totales</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topRows.map((row) => (
+                  <tr
+                    key={`${row.level}-${row.lesson}`}
+                    className="border-t border-slate-200 text-xs sm:text-sm"
+                    title={`Promedio por estudiante: ${formatDecimal(row.averageMinutes)} min`}
+                  >
+                    <td className="px-4 py-2 font-semibold text-slate-600">{row.level}</td>
+                    <td className="px-4 py-2">{row.lesson}</td>
+                    <td className="px-4 py-2">{formatInteger(row.students)}</td>
+                    <td className="px-4 py-2">{formatInteger(row.totalMinutes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length > topRows.length ? (
+            <span className="text-xs text-slate-500">Mostrando las {topRows.length} lecciones con más minutos acumulados.</span>
+          ) : null}
+        </div>
+      ) : (
+        <EmptyState />
+      )}
     </Card>
   );
 }
