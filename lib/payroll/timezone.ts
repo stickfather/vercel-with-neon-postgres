@@ -125,7 +125,7 @@ export function toPayrollZonedISOString(date: Date): string | null {
 }
 
 const LOCAL_TIMESTAMP_REGEX =
-  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}:?\d{2}|Z))?$/;
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
 export function parsePayrollLocalDateTime(value: string): string | null {
   if (!value) return null;
@@ -162,8 +162,12 @@ export function normalizePayrollTimestamp(
   const [, year, month, day, hour, minute, second, offset] = match;
   const safeSecond = second ?? "00";
   let safeOffset = offset ?? "";
-  if (safeOffset && safeOffset !== "Z" && !safeOffset.includes(":")) {
-    safeOffset = `${safeOffset.slice(0, 3)}:${safeOffset.slice(3)}`;
+  if (safeOffset && safeOffset !== "Z") {
+    if (/^[+-]\d{2}$/.test(safeOffset)) {
+      safeOffset = `${safeOffset}:00`;
+    } else if (!safeOffset.includes(":")) {
+      safeOffset = `${safeOffset.slice(0, 3)}:${safeOffset.slice(3)}`;
+    }
   }
   return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${safeOffset}`;
 }

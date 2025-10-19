@@ -10,7 +10,11 @@ import type {
 } from "@/features/administration/data/payroll-reports";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
-import { getPayrollDateTimeParts, PAYROLL_TIMEZONE } from "@/lib/payroll/timezone";
+import {
+  getPayrollDateTimeParts,
+  normalizePayrollTimestamp,
+  PAYROLL_TIMEZONE,
+} from "@/lib/payroll/timezone";
 
 type MatrixResponse = PayrollMatrixResponse;
 
@@ -82,6 +86,21 @@ const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
   minute: "2-digit",
   hour12: false,
 });
+
+function formatSessionTimestampForDisplay(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = normalizePayrollTimestamp(value);
+  if (!normalized) {
+    return value;
+  }
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return timeZoneDateTimeFormatter.format(parsed);
+}
 
 function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
   return parts.find((part) => part.type === type)?.value ?? null;
@@ -213,7 +232,7 @@ function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
 }
 
 const TIMESTAMP_INPUT_REGEX =
-  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}:?\d{2}|Z))?$/;
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
 function normalizeOffset(offset: string | null | undefined): string | null {
   if (!offset || offset === "") {
@@ -221,6 +240,9 @@ function normalizeOffset(offset: string | null | undefined): string | null {
   }
   if (offset === "Z") {
     return "Z";
+  }
+  if (/^[+-]\d{2}$/.test(offset)) {
+    return `${offset}:00`;
   }
   if (!offset.includes(":")) {
     return `${offset.slice(0, 3)}:${offset.slice(3)}`;
@@ -2046,12 +2068,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       const saving =
                         session.pendingAction === "edit" || session.pendingAction === "create";
                       const editorActive = sessionEditor?.sessionKey === session.sessionKey;
-                      const currentCheckin = session.checkinTime
-                        ? timeZoneDateTimeFormatter.format(new Date(session.checkinTime))
-                        : "—";
-                      const currentCheckout = session.checkoutTime
-                        ? timeZoneDateTimeFormatter.format(new Date(session.checkoutTime))
-                        : "—";
+                      const formattedCheckin = formatSessionTimestampForDisplay(session.checkinTime);
+                      const formattedCheckout = formatSessionTimestampForDisplay(session.checkoutTime);
+                      const currentCheckin = formattedCheckin ?? session.checkinTime ?? "—";
+                      const currentCheckout = formattedCheckout ?? session.checkoutTime ?? "—";
 
                       return (
                         <div
@@ -2183,7 +2203,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   <span className="text-xs font-medium text-yellow-800">Entrada</span>
                                   <span className="text-sm font-semibold text-yellow-900">
                                     {session.originalCheckin
-                                      ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckin))
+                                      ? formatSessionTimestampForDisplay(session.originalCheckin) ??
+                                        session.originalCheckin ??
+                                        "—"
                                       : "—"}
                                   </span>
                                 </div>
@@ -2191,7 +2213,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   <span className="text-xs font-medium text-yellow-800">Salida</span>
                                   <span className="text-sm font-semibold text-yellow-900">
                                     {session.originalCheckout
-                                      ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckout))
+                                      ? formatSessionTimestampForDisplay(session.originalCheckout) ??
+                                        session.originalCheckout ??
+                                        "—"
                                       : "—"}
                                   </span>
                                 </div>
@@ -2336,7 +2360,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                           <span className="text-xs font-medium text-yellow-800">Entrada</span>
                           <span className="text-sm font-semibold text-yellow-900">
                             {activeEditorRow.originalCheckin
-                              ? timeZoneDateTimeFormatter.format(new Date(activeEditorRow.originalCheckin))
+                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckin) ??
+                                activeEditorRow.originalCheckin ??
+                                "—"
                               : "—"}
                           </span>
                         </div>
@@ -2344,7 +2370,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                           <span className="text-xs font-medium text-yellow-800">Salida</span>
                           <span className="text-sm font-semibold text-yellow-900">
                             {activeEditorRow.originalCheckout
-                              ? timeZoneDateTimeFormatter.format(new Date(activeEditorRow.originalCheckout))
+                              ? formatSessionTimestampForDisplay(activeEditorRow.originalCheckout) ??
+                                activeEditorRow.originalCheckout ??
+                                "—"
                               : "—"}
                           </span>
                         </div>

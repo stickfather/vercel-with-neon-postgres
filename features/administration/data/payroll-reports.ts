@@ -437,15 +437,8 @@ function coerceString(value: unknown): string | null {
 }
 
 function normalizeTimestampValue(value: unknown): string | null {
-  if (value instanceof Date) {
-    return toPayrollZonedISOString(value);
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed.length) {
-      return null;
-    }
-    return trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  if (value instanceof Date || typeof value === "string") {
+    return normalizePayrollTimestamp(value as string | Date);
   }
   return null;
 }
