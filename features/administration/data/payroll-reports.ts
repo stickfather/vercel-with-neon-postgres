@@ -8,10 +8,8 @@ import {
 } from "@/lib/db/client";
 import {
   DaySessionsQuerySchema as ReportsDaySessionsSchema,
-  getDaySessions as getPayrollDaySessions,
   parseWithSchema as parsePayrollSchema,
 } from "@/lib/payroll/reports-service";
-import type { DaySession as ReportsDaySession } from "@/types/payroll";
 
 type SqlClient = ReturnType<typeof getSqlClient>;
 
@@ -871,76 +869,111 @@ export async function fetchDaySessions({
     staffId,
     date: workDate,
   });
-  const sessions = await getPayrollDaySessions(params, sql);
 
-  const baseSessions = sessions.map((session: ReportsDaySession) => ({
-    sessionId:
-      Number.isFinite(session.sessionId) && session.sessionId > 0 ? session.sessionId : null,
-    staffId: params.staffId,
-    workDate: params.date,
-    checkinTime: session.checkinTimeLocal,
-    checkoutTime: session.checkoutTimeLocal,
-    hours: session.hours,
-    edits: undefined as SessionEditDiff[] | undefined,
-  }));
-
-  const sessionIds = baseSessions
-    .map((session) => session.sessionId)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-
-  if (!sessionIds.length) {
-    return baseSessions;
-  }
-
-  const editRows = normalizeRows<SqlRow>(await sql`
+  const rows = normalizeRows<SqlRow>(await sql`
+    WITH latest_edit AS (
+      SELECT DISTINCT ON (attendance_id)
+        attendance_id,
+        original_checkin,
+        original_checkout,
+        original_minutes,
+        new_checkin,
+        new_checkout,
+        new_minutes,
+        edited_by_staff_id,
+        edited_at
+      FROM public.staff_attendance_edits
+      WHERE staff_id = ${params.staffId}::bigint
+        AND work_date = ${params.date}::date
+      ORDER BY attendance_id, edited_at DESC
+    )
     SELECT
-      attendance_id,
-      original_checkin,
-      original_checkout,
-      original_minutes,
-      new_checkin,
-      new_checkout,
-      new_minutes,
-      edited_by_staff_id,
-      edited_at
-    FROM public.staff_attendance_edits
-    WHERE attendance_id = ANY(${sessionIds}::bigint[])
-    ORDER BY attendance_id, edited_at DESC
+      s.session_id,
+      s.staff_id,
+      s.work_date,
+      s.checkin_local,
+      s.checkout_local,
+      s.session_minutes,
+      e.original_checkin,
+      e.original_checkout,
+      e.original_minutes,
+      e.new_checkin,
+      e.new_checkout,
+      e.new_minutes,
+      e.edited_by_staff_id,
+      e.edited_at
+    FROM public.staff_day_sessions_local_v s
+    LEFT JOIN latest_edit e
+      ON e.attendance_id = s.session_id
+    WHERE s.staff_id = ${params.staffId}::bigint
+      AND s.work_date = ${params.date}::date
+    ORDER BY s.checkin_local NULLS LAST
   `);
 
-  const editsBySession = new Map<number, SessionEditDiff[]>();
+  return rows.map((row) => {
+    const sessionId = toInteger(readRowValue(row, ["session_id", "attendance_id"]));
+    const checkinLocal = coerceString(readRowValue(row, ["checkin_local", "checkin"]));
+    const checkoutLocal = coerceString(readRowValue(row, ["checkout_local", "checkout"]));
+    const workDateValue =
+      coerceString(readRowValue(row, ["work_date", "work_date_local"])) ?? params.date;
+    const minutes = (() => {
+      const baseMinutes = toInteger(readRowValue(row, ["session_minutes", "minutes"]));
+      if (baseMinutes != null) {
+        return Math.max(0, baseMinutes);
+      }
+      if (checkinLocal && checkoutLocal) {
+        try {
+          return computeDurationMinutes(checkinLocal, checkoutLocal);
+        } catch (error) {
+          console.warn("No pudimos calcular la duración de la sesión", error);
+        }
+      }
+      return 0;
+    })();
 
-  for (const row of editRows) {
-    const attendanceId = Number(readRowValue(row, ["attendance_id", "session_id", "attendanceId"]));
-    if (!Number.isFinite(attendanceId) || attendanceId <= 0) {
-      continue;
-    }
+    const editDiff: SessionEditDiff | null = (() => {
+      const originalCheckin = coerceString(readRowValue(row, ["original_checkin"]));
+      const originalCheckout = coerceString(readRowValue(row, ["original_checkout"]));
+      const newCheckin = coerceString(readRowValue(row, ["new_checkin"]));
+      const newCheckout = coerceString(readRowValue(row, ["new_checkout"]));
+      const hasAny =
+        originalCheckin ||
+        originalCheckout ||
+        newCheckin ||
+        newCheckout ||
+        toInteger(readRowValue(row, ["original_minutes"])) != null ||
+        toInteger(readRowValue(row, ["new_minutes"])) != null;
+      if (!hasAny) {
+        return null;
+      }
+      const editedByRaw = readRowValue(row, ["edited_by_staff_id"]);
+      const editedByNumeric =
+        typeof editedByRaw === "number"
+          ? editedByRaw
+          : typeof editedByRaw === "string"
+            ? Number(editedByRaw)
+            : Number.NaN;
+      return {
+        originalCheckin,
+        originalCheckout,
+        originalMinutes: toInteger(readRowValue(row, ["original_minutes"])),
+        newCheckin,
+        newCheckout,
+        newMinutes: toInteger(readRowValue(row, ["new_minutes"])),
+        editedByStaffId: Number.isFinite(editedByNumeric) ? Number(editedByNumeric) : null,
+        editedAt: coerceString(readRowValue(row, ["edited_at"])),
+      };
+    })();
 
-    const diff: SessionEditDiff = {
-      originalCheckin: coerceString(readRowValue(row, ["original_checkin", "old_checkin"])),
-      originalCheckout: coerceString(readRowValue(row, ["original_checkout", "old_checkout"])),
-      originalMinutes: toInteger(readRowValue(row, ["original_minutes", "old_minutes"])),
-      newCheckin: coerceString(readRowValue(row, ["new_checkin", "updated_checkin"])),
-      newCheckout: coerceString(readRowValue(row, ["new_checkout", "updated_checkout"])),
-      newMinutes: toInteger(readRowValue(row, ["new_minutes", "updated_minutes"])),
-      editedByStaffId: (() => {
-        const value = readRowValue(row, ["edited_by_staff_id", "edited_by"]);
-        const numeric = typeof value === "number" ? value : Number(value ?? Number.NaN);
-        return Number.isFinite(numeric) ? Number(numeric) : null;
-      })(),
-      editedAt: coerceString(readRowValue(row, ["edited_at", "updated_at"])),
+    return {
+      sessionId: sessionId != null && sessionId > 0 ? sessionId : null,
+      staffId: params.staffId,
+      workDate: ensureWorkDate(workDateValue),
+      checkinTime: checkinLocal,
+      checkoutTime: checkoutLocal,
+      hours: minutesToHours(minutes),
+      edits: editDiff ? [editDiff] : undefined,
     };
-
-    const list = editsBySession.get(attendanceId) ?? [];
-    list.push(diff);
-    editsBySession.set(attendanceId, list);
-  }
-
-  return baseSessions.map((session) => {
-    if (session.sessionId && editsBySession.has(session.sessionId)) {
-      return { ...session, edits: editsBySession.get(session.sessionId) };
-    }
-    return session;
   });
 }
 
