@@ -20,6 +20,7 @@ export type MatrixCell = {
   hours: number;
   approved: boolean;
   approvedHours: number | null;
+  hasEdits?: boolean;
 };
 
 export type MatrixRow = {
@@ -40,6 +41,8 @@ export type DaySession = {
   checkinTime: string | null;
   checkoutTime: string | null;
   hours: number;
+  originalCheckinTime?: string | null;
+  originalCheckoutTime?: string | null;
 };
 
 export type PayrollMonthStatusRow = {
@@ -673,12 +676,14 @@ export async function fetchPayrollMatrix({
       typeof baseHours === "number" && Number.isFinite(baseHours)
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
+    const hasEdits = toBoolean(readRowValue(row, ["has_edits", "hasEdits"]));
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
       hours: safeHours,
       approved,
       approvedHours: safeApprovedHours,
+      hasEdits,
     });
   }
 
@@ -688,7 +693,7 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, approved: false, approvedHours: null };
+      return { date: day, hours: 0, approved: false, approvedHours: null, hasEdits: false };
     });
 
     matrixRows.push({
@@ -732,6 +737,8 @@ export async function fetchDaySessions({
     checkinTime: session.checkinTimeLocal,
     checkoutTime: session.checkoutTimeLocal,
     hours: session.hours,
+    originalCheckinTime: session.originalCheckinLocal,
+    originalCheckoutTime: session.originalCheckoutLocal,
   }));
 }
 
