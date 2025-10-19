@@ -43,9 +43,7 @@ export async function GET(request: Request) {
       work_date: row.workDate,
       total_hours: Number(row.totalHours.toFixed(2)),
       approved_hours:
-        amountsHidden || row.approvedHours == null
-          ? null
-          : Number(row.approvedHours.toFixed(2)),
+        row.approvedHours == null ? null : Number(row.approvedHours.toFixed(2)),
       approved: row.approved,
       has_edits: row.hasEdits,
       cell_color: row.cellColor,

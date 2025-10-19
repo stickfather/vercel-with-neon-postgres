@@ -40,6 +40,7 @@ type SelectedCell = {
   approvedHours: number | null;
   approved: MatrixCell["approved"];
   hasEdits: MatrixCell["hasEdits"];
+  cellColor: MatrixCell["cellColor"];
 };
 
 type AccessMode = "pending" | "readOnly" | "management";
@@ -559,6 +560,33 @@ function sanitizeOptionalHoursValue(value: unknown): number | null {
     return null;
   }
   return Number(numeric.toFixed(2));
+}
+
+function resolveCellColor(approved: boolean, hasEdits: boolean): "green" | "yellow" | "orange" {
+  if (approved && hasEdits) {
+    return "yellow";
+  }
+  if (approved) {
+    return "green";
+  }
+  return "orange";
+}
+
+function sanitizeCellColor(
+  value: unknown,
+  approved: boolean,
+  hasEdits: boolean,
+): "green" | "yellow" | "orange" {
+  if (value === "green" || value === "yellow" || value === "orange") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "green" || normalized === "yellow" || normalized === "orange") {
+      return normalized;
+    }
+  }
+  return resolveCellColor(approved, hasEdits);
 }
 
 function getMonthRange(month: string): { from: string; to: string; endExclusive: string } {
@@ -1285,13 +1313,22 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
       const rawHours = sanitizeHoursValue(entry.total_hours);
       const approvedHours = sanitizeOptionalHoursValue(entry.approved_hours);
+      const approved = Boolean(entry.approved);
+      const hasEdits = Boolean(entry.has_edits);
+      const cellColor = sanitizeCellColor(
+        (entry as { cell_color?: unknown; cellColor?: unknown }).cell_color ??
+          (entry as { cellColor?: unknown }).cellColor,
+        approved,
+        hasEdits,
+      );
 
       grouped.get(staffId)!.cells.set(workDate, {
         date: workDate,
         rawHours,
-        approved: Boolean(entry.approved),
+        approved,
         approvedHours: approvedHours,
-        hasEdits: Boolean(entry.has_edits),
+        hasEdits,
+        cellColor,
       });
     }
 
@@ -1309,6 +1346,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           approved: false,
           approvedHours: null,
           hasEdits: false,
+          cellColor: "orange",
         };
       });
 
@@ -1554,6 +1592,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         approvedHours: cell.approvedHours,
         approved: cell.approved,
         hasEdits: cell.hasEdits,
+        cellColor: cell.cellColor,
       });
       setSessionsLoading(true);
       setSessionsError(null);
@@ -1666,12 +1705,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             typeof normalizedApproval?.approved === "boolean"
               ? normalizedApproval.approved
               : previous.approved;
+          const nextColor = resolveCellColor(nextApproved, derivedHasEdits);
           if (
             previous.workDate === normalizedDate &&
             previous.rawHours === derivedRawHours &&
             previous.approvedHours === derivedApprovedHours &&
             previous.approved === nextApproved &&
-            previous.hasEdits === derivedHasEdits
+            previous.hasEdits === derivedHasEdits &&
+            previous.cellColor === nextColor
           ) {
             return previous;
           }
@@ -1682,6 +1723,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             approvedHours: derivedApprovedHours,
             approved: nextApproved,
             hasEdits: derivedHasEdits,
+            cellColor: nextColor,
           };
         });
 
@@ -1699,15 +1741,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               }
               rowChanged = true;
               changed = true;
+              const nextApprovedValue =
+                typeof normalizedApproval?.approved === "boolean"
+                  ? normalizedApproval.approved
+                  : cell.approved;
               return {
                 ...cell,
                 rawHours: derivedRawHours,
                 approvedHours: derivedApprovedHours,
-                approved:
-                  typeof normalizedApproval?.approved === "boolean"
-                    ? normalizedApproval.approved
-                    : cell.approved,
+                approved: nextApprovedValue,
                 hasEdits: derivedHasEdits,
+                cellColor: resolveCellColor(nextApprovedValue, derivedHasEdits),
               };
             });
             if (!rowChanged) {
@@ -2528,16 +2572,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   </div>
                                 </th>
                                 {row.cells.map((cell) => {
-                                  const hasApprovedValue = cell.approvedHours != null;
                                   const cellHours =
-                                    hasApprovedValue && (cell.approved || cell.hasEdits)
-                                      ? cell.approvedHours!
-                                      : cell.rawHours;
-                                  const cellTone = cell.hasEdits
-                                    ? "border-amber-400 bg-amber-300/90 text-amber-900 hover:bg-amber-300"
-                                    : cell.approved
-                                      ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                      : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500";
+                                    cell.cellColor === "orange"
+                                      ? cell.rawHours
+                                      : cell.approvedHours ?? cell.rawHours;
+                                  const cellTone =
+                                    cell.cellColor === "yellow"
+                                      ? "border-amber-400 bg-amber-300/90 text-amber-900 hover:bg-amber-300"
+                                      : cell.cellColor === "green"
+                                        ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
+                                        : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500";
                                   return (
                                     <td key={cell.date} className="px-1 py-1 text-center">
                                       <button

@@ -19,6 +19,7 @@ export type MatrixCell = {
   approved: boolean;
   approvedHours: number | null;
   hasEdits: boolean;
+  cellColor: "green" | "yellow" | "orange";
 };
 
 export type MatrixRow = {
@@ -792,8 +793,8 @@ export async function fetchPayrollMatrixContract({
       m.approved,
       m.has_edits,
       CASE
+        WHEN m.approved AND m.has_edits THEN 'yellow'
         WHEN m.approved THEN 'green'
-        WHEN m.has_edits THEN 'yellow'
         ELSE 'orange'
       END AS cell_color
     FROM public.staff_day_matrix_local_v AS m
@@ -829,8 +830,7 @@ export async function fetchPayrollMatrixContract({
       ) ?? null;
 
     const rawCellColor = coerceString(readRowValue(row, ["cell_color", "color"]));
-    const cellColor: "green" | "yellow" | "orange" =
-      rawCellColor === "green" || rawCellColor === "yellow" ? rawCellColor : "orange";
+    const cellColor = normalizeCellColor(rawCellColor, approved, hasEdits);
 
     parsedRows.push({
       staffId,
@@ -1032,6 +1032,23 @@ function ensureWorkDate(value: string): string {
     throw new Error("Debes indicar un día válido.");
   }
   return normalized;
+}
+
+function normalizeCellColor(
+  value: string | null,
+  approved: boolean,
+  hasEdits: boolean,
+): "green" | "yellow" | "orange" {
+  if (value === "green" || value === "yellow" || value === "orange") {
+    return value;
+  }
+  if (approved && hasEdits) {
+    return "yellow";
+  }
+  if (approved) {
+    return "green";
+  }
+  return "orange";
 }
 
 function ensureIsoTime(value: string | null, label: string): string {
