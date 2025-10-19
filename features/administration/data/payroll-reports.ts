@@ -421,6 +421,134 @@ function coerceString(value: unknown): string | null {
   return null;
 }
 
+const timeZoneDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+const LOCAL_DATE_TIME_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?$/;
+
+function getFormatterPart(
+  parts: Intl.DateTimeFormatPart[],
+  type: Intl.DateTimeFormatPart["type"],
+): string | null {
+  return parts.find((part) => part.type === type)?.value ?? null;
+}
+
+function getTimeZoneOffsetInMinutes(baseDate: Date): number {
+  const parts = timeZoneDateTimeFormatter.formatToParts(baseDate);
+  const year = Number(getFormatterPart(parts, "year") ?? "0");
+  const month = Number(getFormatterPart(parts, "month") ?? "0");
+  const day = Number(getFormatterPart(parts, "day") ?? "0");
+  const hour = Number(getFormatterPart(parts, "hour") ?? "0");
+  const minute = Number(getFormatterPart(parts, "minute") ?? "0");
+  const second = Number(getFormatterPart(parts, "second") ?? "0");
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second)
+  ) {
+    return 0;
+  }
+
+  const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  if (!Number.isFinite(asUtc)) {
+    return 0;
+  }
+
+  return (asUtc - baseDate.getTime()) / 60000;
+}
+
+function normalizeLocalDateTimeString(value: string): string | null {
+  const match = value.match(LOCAL_DATE_TIME_REGEX);
+  if (!match) {
+    return null;
+  }
+
+  const [, yearStr, monthStr, dayStr, hourStr = "00", minuteStr = "00", secondStr = "00"] = match;
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const hour = Number(hourStr ?? "0");
+  const minute = Number(minuteStr ?? "0");
+  const second = Number(secondStr ?? "0");
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second)
+  ) {
+    return null;
+  }
+
+  const baseUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  if (!Number.isFinite(baseUtcMs)) {
+    return null;
+  }
+
+  const baseDate = new Date(baseUtcMs);
+  if (Number.isNaN(baseDate.getTime())) {
+    return null;
+  }
+
+  const offsetMinutes = getTimeZoneOffsetInMinutes(baseDate);
+  const adjustedMs = baseUtcMs - offsetMinutes * 60000;
+  const adjustedDate = new Date(adjustedMs);
+
+  if (Number.isNaN(adjustedDate.getTime())) {
+    return null;
+  }
+
+  return adjustedDate.toISOString();
+}
+
+function normalizeTimestampValue(value: unknown): string | null {
+  const stringValue = coerceString(value);
+  if (!stringValue) {
+    return null;
+  }
+
+  const trimmed = stringValue.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+
+  const candidate = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+
+  if (/[zZ]$/.test(candidate) || /[+-]\d{2}:?\d{2}$/.test(candidate)) {
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+
+  const localIso = normalizeLocalDateTimeString(candidate);
+  if (localIso) {
+    return localIso;
+  }
+
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+
+  return null;
+}
+
 function toInteger(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.round(value);
@@ -766,12 +894,16 @@ export async function fetchDaySessions({
       Number.isFinite(session.sessionId) && session.sessionId > 0 ? session.sessionId : null,
     staffId: params.staffId,
     workDate: params.date,
-    checkinTime: session.checkinTimeLocal,
-    checkoutTime: session.checkoutTimeLocal,
+    checkinTime:
+      normalizeTimestampValue(session.checkinTimeLocal) ?? coerceString(session.checkinTimeLocal),
+    checkoutTime:
+      normalizeTimestampValue(session.checkoutTimeLocal) ?? coerceString(session.checkoutTimeLocal),
     minutes: session.minutes,
     hours: session.hours,
-    originalCheckinTime: session.originalCheckinLocal,
-    originalCheckoutTime: session.originalCheckoutLocal,
+    originalCheckinTime:
+      normalizeTimestampValue(session.originalCheckinLocal) ?? coerceString(session.originalCheckinLocal),
+    originalCheckoutTime:
+      normalizeTimestampValue(session.originalCheckoutLocal) ?? coerceString(session.originalCheckoutLocal),
   }));
 }
 
@@ -966,8 +1098,10 @@ export async function updateStaffDaySession({
     checkoutTime: checkoutIso,
     minutes,
     hours: minutesToHours(minutes),
-    originalCheckinTime: coerceString(existingRows[0].checkin_time),
-    originalCheckoutTime: coerceString(existingRows[0].checkout_time),
+    originalCheckinTime:
+      normalizeTimestampValue(existingRows[0].checkin_time) ?? coerceString(existingRows[0].checkin_time),
+    originalCheckoutTime:
+      normalizeTimestampValue(existingRows[0].checkout_time) ?? coerceString(existingRows[0].checkout_time),
   };
 }
 
