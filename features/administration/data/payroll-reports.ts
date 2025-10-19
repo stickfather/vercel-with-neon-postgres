@@ -460,11 +460,42 @@ async function applyStaffDayApproval(
   staffId: number,
   workDate: string,
   approvedMinutes: number | null,
+  options?: { approvedBy?: string | null; preserveApprover?: boolean },
 ): Promise<void> {
   const roundedMinutes =
     approvedMinutes != null && Number.isFinite(approvedMinutes)
       ? Math.max(0, Math.round(approvedMinutes))
       : null;
+
+  const normalizedApprovedBy = coerceString(options?.approvedBy);
+
+  if (options?.preserveApprover) {
+    await sql`
+      INSERT INTO payroll_day_approvals (
+        staff_id,
+        work_date,
+        approved,
+        approved_by,
+        approved_at,
+        approved_minutes
+      )
+      VALUES (
+        ${staffId}::bigint,
+        ${workDate}::date,
+        TRUE,
+        ${normalizedApprovedBy}::varchar,
+        NOW(),
+        ${roundedMinutes}::integer
+      )
+      ON CONFLICT (staff_id, work_date) DO UPDATE
+      SET
+        approved = EXCLUDED.approved,
+        approved_by = COALESCE(EXCLUDED.approved_by, payroll_day_approvals.approved_by),
+        approved_at = EXCLUDED.approved_at,
+        approved_minutes = EXCLUDED.approved_minutes
+    `;
+    return;
+  }
 
   await sql`
     INSERT INTO payroll_day_approvals (
@@ -479,7 +510,7 @@ async function applyStaffDayApproval(
       ${staffId}::bigint,
       ${workDate}::date,
       TRUE,
-      ${null}::varchar,
+      ${normalizedApprovedBy}::varchar,
       NOW(),
       ${roundedMinutes}::integer
     )
@@ -852,6 +883,18 @@ export async function updateStaffDaySession({
     throw new Error("No encontramos la sesión indicada.");
   }
 
+  const approvalSnapshot = normalizeRows<SqlRow>(await sql`
+    SELECT approved_by, approved_minutes
+    FROM payroll_day_approvals
+    WHERE staff_id = ${staffId}::bigint
+      AND work_date = ${normalizedWorkDate}::date
+    LIMIT 1
+  `);
+
+  const previousApprovedBy = coerceString(approvalSnapshot[0]?.approved_by ?? null);
+  const previousApprovedMinutes =
+    toInteger(approvalSnapshot[0]?.approved_minutes ?? null) ?? null;
+
   await assertNoOverlap(sql, {
     staffId,
     workDate: normalizedWorkDate,
@@ -868,7 +911,31 @@ export async function updateStaffDaySession({
       AND staff_id = ${staffId}::bigint
   `;
 
-  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
+  const recalculatedRows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      COALESCE(
+        SUM(
+          GREATEST(
+            EXTRACT(
+              EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time,
+            ) / 60.0,
+            0
+          )
+        ),
+        0
+      )::integer AS total_minutes
+    FROM staff_attendance sa
+    WHERE sa.staff_id = ${staffId}::bigint
+      AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
+  `);
+
+  const recalculatedMinutes =
+    toInteger(recalculatedRows[0]?.total_minutes ?? recalculatedRows[0]?.minutes ?? null) ?? 0;
+
+  await applyStaffDayApproval(sql, staffId, normalizedWorkDate, recalculatedMinutes, {
+    approvedBy: previousApprovedBy,
+    preserveApprover: true,
+  });
   await logPayrollAuditEvent({
     action: "update_session",
     staffId,
@@ -883,7 +950,8 @@ export async function updateStaffDaySession({
         checkinTime: checkinIso,
         checkoutTime: checkoutIso,
       },
-      approvalRevoked: true,
+      approvalMinutesBefore: previousApprovedMinutes,
+      approvalMinutesAfter: recalculatedMinutes,
     },
     sql,
   });
@@ -895,6 +963,8 @@ export async function updateStaffDaySession({
     checkinTime: checkinIso,
     checkoutTime: checkoutIso,
     hours: minutesToHours(minutes),
+    originalCheckinTime: coerceString(existingRows[0].checkin_time),
+    originalCheckoutTime: coerceString(existingRows[0].checkout_time),
   };
 }
 

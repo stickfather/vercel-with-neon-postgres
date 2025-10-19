@@ -1216,6 +1216,18 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                     checkoutTime: saved.checkoutTime,
                     draftCheckin: toLocalInputValue(saved.checkinTime),
                     draftCheckout: toLocalInputValue(saved.checkoutTime),
+                    originalCheckin:
+                      saved.originalCheckinTime
+                        ?? row.originalCheckin
+                        ?? (row.checkinTime && row.checkinTime !== saved.checkinTime
+                          ? row.checkinTime
+                          : null),
+                    originalCheckout:
+                      saved.originalCheckoutTime
+                        ?? row.originalCheckout
+                        ?? (row.checkoutTime && row.checkoutTime !== saved.checkoutTime
+                          ? row.checkoutTime
+                          : null),
                     isNew: false,
                     isEditing: false,
                     validationError: null,
@@ -1653,7 +1665,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       </span>
                       <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] text-yellow-900">
                         <span className="h-2 w-2 rounded-full bg-yellow-400" />
-                        Editado
+                        Editado y aprobado
                       </span>
                     </div>
                     <div className="overflow-x-auto overflow-y-hidden rounded-2xl border border-brand-ink-muted/10">
