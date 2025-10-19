@@ -3,6 +3,7 @@ export type PayrollMatrixCell = {
   hours: number;
   approved: boolean;
   approvedHours: number | null;
+  hasEdits?: boolean;
 };
 
 export type PayrollMatrixRow = {
@@ -22,6 +23,8 @@ export type DaySession = {
   checkoutTimeLocal: string | null;
   minutes: number;
   hours: number;
+  originalCheckinLocal?: string | null;
+  originalCheckoutLocal?: string | null;
 };
 
 export type MonthSummaryRow = {

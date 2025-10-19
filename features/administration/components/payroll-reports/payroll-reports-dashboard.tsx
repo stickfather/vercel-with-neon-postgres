@@ -27,6 +27,8 @@ type SessionRow = {
   validationError: string | null;
   feedback: string | null;
   pendingAction: null | "edit" | "create" | "delete";
+  originalCheckin?: string | null;
+  originalCheckout?: string | null;
 };
 
 type SelectedCell = {
@@ -332,6 +334,8 @@ function buildSessionRows(sessions: DaySession[]): SessionRow[] {
     validationError: null,
     feedback: null,
     pendingAction: null,
+    originalCheckin: session.originalCheckinTime,
+    originalCheckout: session.originalCheckoutTime,
   }));
 }
 
@@ -1647,6 +1651,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />
                         Aprobado
                       </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] text-yellow-900">
+                        <span className="h-2 w-2 rounded-full bg-yellow-400" />
+                        Editado
+                      </span>
                     </div>
                     <div className="overflow-x-auto overflow-y-hidden rounded-2xl border border-brand-ink-muted/10">
                       <table className="w-full table-fixed border-collapse text-[10px] leading-tight text-brand-deep">
@@ -1722,16 +1730,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
+                                  const cellStyle = cell.hasEdits
+                                    ? "border-yellow-400 bg-yellow-100 text-yellow-900 hover:bg-yellow-200"
+                                    : cell.approved
+                                      ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
+                                      : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500";
                                   return (
                                     <td key={cell.date} className="px-1 py-1 text-center">
                                       <button
                                         type="button"
                                         onClick={() => openModal(row, cell)}
-                                        className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${
-                                          cell.approved
-                                            ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                            : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500"
-                                        } ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
+                                        className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${cellStyle} ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
                                         style={{ minWidth: `${effectiveCellWidth}px` }}
                                       >
                                         <span className="whitespace-nowrap">
@@ -1974,6 +1983,31 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               />
                             </label>
                           </div>
+                          {session.originalCheckin || session.originalCheckout ? (
+                            <div className="mt-3 rounded-2xl border border-yellow-300 bg-yellow-50 px-4 py-3">
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-yellow-900">
+                                Original
+                              </div>
+                              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-xs font-medium text-yellow-800">Entrada</span>
+                                  <span className="text-sm font-semibold text-yellow-900">
+                                    {session.originalCheckin
+                                      ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckin))
+                                      : "—"}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-xs font-medium text-yellow-800">Salida</span>
+                                  <span className="text-sm font-semibold text-yellow-900">
+                                    {session.originalCheckout
+                                      ? timeZoneDateTimeFormatter.format(new Date(session.originalCheckout))
+                                      : "—"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
                           {session.validationError ? (
                             <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-orange">
                               {session.validationError}

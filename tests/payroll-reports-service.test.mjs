@@ -310,6 +310,7 @@ describe("payroll integration", () => {
             approved_hours: null,
             horas_mostrar: 1.5,
             approved: false,
+            has_edits: false,
           },
           {
             staff_id: 1,
@@ -319,6 +320,7 @@ describe("payroll integration", () => {
             approved_hours: 2.25,
             horas_mostrar: 2.4,
             approved: true,
+            has_edits: false,
           },
           {
             staff_id: 2,
@@ -328,6 +330,7 @@ describe("payroll integration", () => {
             approved_hours: null,
             horas_mostrar: 3,
             approved: false,
+            has_edits: false,
           },
         ],
       },
@@ -366,6 +369,7 @@ describe("payroll integration", () => {
             approved_hours: null,
             horas_mostrar: 1,
             approved: false,
+            has_edits: false,
           },
           {
             staff_id: 7,
@@ -375,6 +379,7 @@ describe("payroll integration", () => {
             approved_hours: null,
             horas_mostrar: 2,
             approved: false,
+            has_edits: false,
           },
         ],
       },
