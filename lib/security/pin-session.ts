@@ -1,6 +1,8 @@
 import { cookies } from "next/headers.js";
 import { createHmac, randomBytes } from "crypto";
 
+import { env } from "@/src/config/env";
+
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
 async function resolveCookies(): Promise<CookieStore> {
@@ -21,7 +23,9 @@ function readCookie(
 }
 
 function deleteCookie(store: CookieStore, name: string) {
-  if (typeof (store as { delete?: (name: string) => void }).delete === "function") {
+  if (
+    typeof (store as { delete?: (name: string) => void }).delete === "function"
+  ) {
     (store as { delete: (name: string) => void }).delete(name);
   }
 }
@@ -42,7 +46,9 @@ function setCookie(
     (store as { set: CookieStore["set"] }).set(name, value, options);
     return;
   }
-  throw new Error("No se puede establecer la cookie de sesión del PIN en este contexto.");
+  throw new Error(
+    "No se puede establecer la cookie de sesión del PIN en este contexto.",
+  );
 }
 
 export type PinScope = "staff" | "manager";
@@ -56,9 +62,9 @@ const SESSION_TTL_MINUTES = 10;
 
 function getSessionSecret(): string {
   const secret =
-    process.env.PIN_SESSION_SECRET ??
-    process.env.SESSION_MAINTENANCE_TOKEN ??
-    process.env.DATABASE_URL ??
+    env.pinSessionSecret ??
+    env.sessionMaintenanceToken ??
+    env.databaseUrl ??
     "ingresorapido-dev-pin";
   return secret;
 }
@@ -120,7 +126,8 @@ async function checkPinSession(scope: PinScope): Promise<boolean> {
   return true;
 }
 
-export let hasValidPinSession: (scope: PinScope) => Promise<boolean> = checkPinSession;
+export let hasValidPinSession: (scope: PinScope) => Promise<boolean> =
+  checkPinSession;
 
 export async function setPinSession(
   scope: PinScope,
@@ -128,7 +135,7 @@ export async function setPinSession(
 ) {
   const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
   const value = encodeSession(scope, expiresAt);
-  const secure = process.env.NODE_ENV === "production";
+  const secure = env.nodeEnv === "production";
   const cookieName = COOKIE_NAMES[scope];
 
   const store = await resolveCookies();

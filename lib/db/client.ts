@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 
 import { PAYROLL_TIMEZONE } from "@/lib/payroll/timezone";
+import { requireEnv } from "@/src/config/env";
 
 export type SqlRow = Record<string, unknown>;
 
@@ -11,10 +12,7 @@ let sqlInstance: SqlClient | null = null;
 export const TIMEZONE = PAYROLL_TIMEZONE;
 
 export function getSqlClient(): SqlClient {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("No DATABASE_URL environment variable");
-  }
+  const connectionString = requireEnv("databaseUrl");
   if (!sqlInstance) {
     sqlInstance = neon(connectionString);
   }
@@ -34,8 +32,11 @@ export function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   return [];
 }
 
-export async function closeExpiredSessions(sql = getSqlClient()): Promise<number> {
-  const rows = normalizeRows<SqlRow>(await sql`
+export async function closeExpiredSessions(
+  sql = getSqlClient(),
+): Promise<number> {
+  const rows = normalizeRows<SqlRow>(
+    await sql`
     WITH vencidos AS (
       SELECT
         sa.id,
@@ -60,7 +61,8 @@ export async function closeExpiredSessions(sql = getSqlClient()): Promise<number
     )
     SELECT COUNT(*)::int AS total_cerrados
     FROM actualizados
-  `);
+  `,
+  );
 
   const count = Number(rows[0]?.total_cerrados ?? 0);
   return Number.isFinite(count) ? count : 0;
@@ -69,7 +71,8 @@ export async function closeExpiredSessions(sql = getSqlClient()): Promise<number
 export async function closeExpiredStaffSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  const rows = normalizeRows<SqlRow>(await sql`
+  const rows = normalizeRows<SqlRow>(
+    await sql`
     WITH vencidos AS (
       SELECT
         sa.id,
@@ -94,7 +97,8 @@ export async function closeExpiredStaffSessions(
     )
     SELECT COUNT(*)::int AS total_cerrados
     FROM actualizados
-  `);
+  `,
+  );
 
   const count = Number(rows[0]?.total_cerrados ?? 0);
   return Number.isFinite(count) ? count : 0;
@@ -104,7 +108,10 @@ function isPermissionDeniedError(error: unknown): boolean {
   if (error && typeof error === "object") {
     const { code, message } = error as { code?: unknown; message?: unknown };
     if (code === "42501") return true;
-    if (typeof message === "string" && message.toLowerCase().includes("permission denied")) {
+    if (
+      typeof message === "string" &&
+      message.toLowerCase().includes("permission denied")
+    ) {
       return true;
     }
   }
@@ -120,7 +127,10 @@ export async function safelyCloseExpiredSessions(
   } catch (error) {
     if (isPermissionDeniedError(error)) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn("Skipping session auto-closure due to permission error:", message);
+      console.warn(
+        "Skipping session auto-closure due to permission error:",
+        message,
+      );
       return;
     }
     throw error;
