@@ -4,7 +4,27 @@
 
 # Neon Postgres
 
-A minimal template for building full-stack React applications using Next.js, Vercel, and Neon.
+Una plataforma operativa completa para Inglés Rápido Manta construida con Next.js, Vercel y Neon. El proyecto combina páginas públicas, flujos de check-in, paneles administrativos y APIs internas que comparten un mismo conjunto tipado de consultas a Postgres.
+
+## Application Overview
+
+- **Bienvenida y marketing.** La página principal introduce la escuela, muestra llamados a la acción y responde a parámetros de URL para confirmar registros recientes.【F:app/page.tsx†L1-L149】
+- **Check-in autónomo de estudiantes.** El flujo en `/registro` permite seleccionar niveles y lecciones disponibles, ver asistencias activas y volver rápidamente al panel administrativo.【F:app/registro/page.tsx†L1-L113】【F:features/student-checkin/data/queries.ts†L1-L160】
+- **Centro administrativo.** Desde `/administracion` se navega a gestión de estudiantes, reportes de nómina, registro del personal, calendario, configuración y ayuda interna.【F:app/administracion/page.tsx†L1-L127】
+- **Paneles gerenciales.** Las rutas `/management/engagement` y `/management/learning` presentan tableros con datos de actividad y progreso derivados de vistas `mgmt` en Neon.【F:app/management/engagement/page.tsx†L1-L11】【F:app/management/learning/page.tsx†L1-L12】
+- **Informes ejecutivos.** `/reports/resumen-general` consolida encabezados, KPIs, bandas de progreso y estados por nivel reutilizando componentes especializados.【F:app/reports/resumen-general/page.tsx†L1-L32】【F:components/reports/resumen/ResumenHeaderTiles.tsx†L1-L121】
+- **API interna.** Las rutas en `app/api` abastecen dashboards y automatizaciones, como la API de heatmap de engagement y los endpoints de nómina protegidos por PINs gerenciales.【F:app/api/engagement/heatmap/route.ts†L1-L36】【F:app/api/(administration)/payroll/reports/day-sessions/route.ts†L1-L99】
+
+## Code Organization
+
+- **`app/`** contiene las rutas de la App Router, incluidas experiencias públicas, paneles administrativos y endpoints serverless.【F:app/administracion/page.tsx†L1-L127】【F:app/api/(administration)/payroll/reports/day-sessions/route.ts†L1-L99】
+- **`components/`** agrupa la UI reutilizable para dashboards, reportes y flujos de estudiantes, por ejemplo el tablero de engagement y los módulos del resumen general.【F:components/management/engagement/EngagementDashboard.tsx†L1-L68】【F:components/reports/resumen/LevelStateStacked.tsx†L1-L156】
+- **`features/`** encapsula lógica de dominio para administración, seguridad, personal y check-in estudiantil; expone consultas fuertemente tipadas y componentes conectados a datos.【F:features/administration/data/students.ts†L1-L120】【F:features/security/components/PinGate.tsx†L1-L43】【F:features/staff/components/staff-check-in-form.tsx†L1-L200】
+- **`src/features/`** aloja data loaders específicos de los tableros gerenciales y del informe resumen, reutilizados por componentes y APIs.【F:src/features/management/learning/data/learning.read.ts†L1-L140】【F:src/features/reports/resumen/data.ts†L1-L160】
+- **`lib/`** centraliza la infraestructura de acceso a datos, normalización de filas, reglas de nómina y utilidades de tiempo y seguridad.【F:lib/db/client.ts†L1-L138】【F:lib/payroll/reports-service.ts†L1-L160】【F:lib/security/pin-session.ts†L1-L160】
+- **`types/`** comparte contratos TypeScript entre APIs y UI, incluidos los modelos de reportes gerenciales.【F:types/reports.resumen.ts†L1-L45】【F:types/management.engagement.ts†L1-L87】
+- **`scripts/` y `tests/`** contienen herramientas de soporte (SQL de referencia y cargador TypeScript) y la batería de pruebas que valida cálculos de nómina, fechas y autorizaciones.【F:scripts/ts-loader.mjs†L1-L79】【F:tests/payroll-reports-service.test.mjs†L1-L160】
+- **`src/config/env.ts`** define el acceso tipado a variables de entorno, usadas por los clientes SQL y servicios que requieren tokens.【F:src/config/env.ts†L1-L38】【F:lib/db/client.ts†L1-L20】
 
 ## Getting Started
 

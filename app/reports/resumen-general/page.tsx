@@ -19,10 +19,10 @@ export default function ResumenGeneralPage() {
             </p>
           </div>
           <Link
-            href="/panel-gerencial/overview"
+            href="/management/engagement"
             className="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-900/90"
           >
-            Ir a Panel Gerencial
+            Abrir panel de gestión
           </Link>
         </header>
         <ResumenGeneralPanel />

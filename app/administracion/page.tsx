@@ -21,9 +21,10 @@ const tiles = [
     emoji: "🎓",
   },
   {
-    href: "/panel-gerencial",
+    href: "/management/engagement",
     title: "Paneles gerenciales",
-    description: "Analiza métricas clave para tomar decisiones estratégicas en minutos.",
+    description:
+      "Explora los tableros de engagement y aprendizaje con métricas listas para la acción.",
     emoji: "🚀",
   },
   {
