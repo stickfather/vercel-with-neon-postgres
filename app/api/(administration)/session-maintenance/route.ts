@@ -4,9 +4,10 @@ import {
   closeExpiredStaffSessions,
   getSqlClient,
 } from "@/lib/db/client";
+import { env } from "@/src/config/env";
 
 function isAuthorized(request: Request): boolean {
-  const expectedToken = process.env.SESSION_MAINTENANCE_TOKEN;
+  const expectedToken = env.sessionMaintenanceToken;
   if (!expectedToken) {
     return true;
   }

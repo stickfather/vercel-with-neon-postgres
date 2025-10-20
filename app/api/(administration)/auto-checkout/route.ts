@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server.js";
 
 import { runScheduledAutoCheckout } from "@/features/session-maintenance/auto-checkout";
+import { env } from "@/src/config/env";
 
 function isAuthorized(request: Request): boolean {
-  const expectedToken = process.env.SESSION_MAINTENANCE_TOKEN;
+  const expectedToken = env.sessionMaintenanceToken;
   if (!expectedToken) return true;
 
   const authHeader = request.headers.get("authorization");
@@ -31,6 +32,9 @@ export async function POST(request: Request) {
       error instanceof Error
         ? error.message
         : "No se pudo completar el cierre automático.";
-    return NextResponse.json({ status: "error", error: message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", error: message },
+      { status: 500 },
+    );
   }
 }
