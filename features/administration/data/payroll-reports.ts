@@ -265,7 +265,7 @@ async function ensurePayrollAuditTable(sql: SqlClient): Promise<void> {
   if (payrollAuditReady) return;
 
   await sql`
-    CREATE TABLE IF NOT EXISTS payroll_audit_events (
+    CREATE TABLE IF NOT EXISTS public.payroll_audit_events (
       id bigserial PRIMARY KEY,
       action text NOT NULL,
       staff_id bigint NOT NULL,
@@ -303,7 +303,7 @@ async function logPayrollAuditEvent({
   await ensurePayrollAuditTable(sql);
 
   await sql`
-    INSERT INTO payroll_audit_events (
+    INSERT INTO public.payroll_audit_events (
       action,
       staff_id,
       work_date,
@@ -979,10 +979,9 @@ export async function updateStaffDaySession({
     begin?: (callback: (client: SqlClient) => Promise<void>) => Promise<void>;
   };
 
-  let replacementSessionId = sessionId;
+  let recalculatedMinutes = minutes;
   let previousCheckinValue: unknown = null;
   let previousCheckoutValue: unknown = null;
-  let recalculatedMinutes = minutes;
   let previousApprovedBy: string | null = null;
   let previousApprovedMinutes: number | null = null;
 
@@ -1021,21 +1020,11 @@ export async function updateStaffDaySession({
       ignoreSessionId: sessionId,
     });
 
-    const [allocatedId] = await allocateStaffAttendanceIds(client, 1);
-    replacementSessionId = allocatedId;
-
     await client`
-      INSERT INTO staff_attendance (id, staff_id, checkin_time, checkout_time)
-      VALUES (
-        ${replacementSessionId}::bigint,
-        ${staffId}::bigint,
-        ${checkinIso}::timestamptz,
-        ${checkoutIso}::timestamptz
-      )
-    `;
-
-    await client`
-      DELETE FROM staff_attendance
+      UPDATE staff_attendance
+      SET
+        checkin_time = ${checkinIso}::timestamptz,
+        checkout_time = ${checkoutIso}::timestamptz
       WHERE id = ${sessionId}::bigint
         AND staff_id = ${staffId}::bigint
     `;
@@ -1070,9 +1059,8 @@ export async function updateStaffDaySession({
       action: "update_session",
       staffId,
       workDate: normalizedWorkDate,
-      sessionId: replacementSessionId,
+      sessionId,
       details: {
-        replacedSessionId: sessionId,
         before: {
           checkinTime: previousCheckinValue,
           checkoutTime: previousCheckoutValue,
@@ -1095,7 +1083,7 @@ export async function updateStaffDaySession({
   }
 
   return {
-    sessionId: replacementSessionId,
+    sessionId,
     staffId,
     workDate: normalizedWorkDate,
     checkinTime: checkinIso,

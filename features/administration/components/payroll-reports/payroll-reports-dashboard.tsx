@@ -551,6 +551,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [accessMode, setAccessMode] = useState<AccessMode>("read-only");
   const [pinSessionActive, setPinSessionActive] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [accessGateOpen, setAccessGateOpen] = useState(true);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
   const sessionLoadTokenRef = useRef(0);
@@ -638,17 +639,23 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   );
 
   const handleAccessSelection = useCallback(
-    (mode: AccessMode) => {
+    (mode: AccessMode, options?: { fromGate?: boolean }) => {
       if (mode === "read-only") {
         setAccessMode("read-only");
         setPinSessionActive(false);
         setPinModalOpen(false);
         resolvePinRequest(false);
+        if (options?.fromGate) {
+          setAccessGateOpen(false);
+        }
         return;
       }
 
       setAccessMode("management");
       if (pinSessionActive) {
+        if (options?.fromGate) {
+          setAccessGateOpen(false);
+        }
         return;
       }
 
@@ -1709,6 +1716,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     sessionRowsRef.current = sessionRows;
   }, [sessionRows]);
 
+  useEffect(() => {
+    if (!accessGateOpen) {
+      return;
+    }
+    if (accessMode === "management" && pinSessionActive) {
+      setAccessGateOpen(false);
+    }
+  }, [accessGateOpen, accessMode, pinSessionActive]);
+
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
   const cellVariant = useMemo(() => {
@@ -2544,6 +2560,33 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   </div>
                 </form>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {accessGateOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 px-4 py-10 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-[32px] border border-white/70 bg-white/95 p-8 text-left shadow-[0_26px_60px_rgba(15,23,42,0.18)]">
+            <h2 className="text-2xl font-black text-brand-deep">Selecciona el modo de acceso</h2>
+            <p className="mt-2 text-sm text-brand-ink-muted">
+              Ingresa en modo de gerencia para editar, crear o aprobar sesiones. También puedes continuar en modo solo lectura para revisar la información sin cambios.
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => handleAccessSelection("read-only", { fromGate: true })}
+                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-5 py-3 text-sm font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              >
+                Solo lectura
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAccessSelection("management", { fromGate: true })}
+                className="inline-flex items-center justify-center rounded-full border border-brand-teal-soft bg-brand-teal-soft px-5 py-3 text-sm font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              >
+                Ingreso de gerencia
+              </button>
             </div>
           </div>
         </div>
