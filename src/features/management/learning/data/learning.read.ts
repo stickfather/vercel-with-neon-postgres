@@ -15,6 +15,13 @@ import type {
   LearnSlowLearnerRow,
 } from "@/types/management.learning";
 
+function isManagementReportsEnabled() {
+  const flag = process.env.ENABLE_MANAGEMENT_REPORTS;
+  return typeof flag === "string" && flag.toLowerCase() === "true";
+}
+
+const MANAGEMENT_REPORTS_ENABLED = isManagementReportsEnabled();
+
 function normalizeNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -272,6 +279,22 @@ function logAndFallback<T>(error: unknown, context: string, fallback: T): T {
 }
 
 export async function getLearningDashboardData(): Promise<LearnDashboardData> {
+  if (!MANAGEMENT_REPORTS_ENABLED) {
+    return {
+      header: null,
+      onpaceSplit: null,
+      leiOverall: null,
+      leiByLevel: [],
+      outcomesWeekly: [],
+      levelupsWeekly: [],
+      levelMoveMatrix: [],
+      lessonsHeatmap: [],
+      slowest: [],
+      fastest: [],
+      fastestCompletions: [],
+    };
+  }
+
   const [
     header,
     onpaceSplit,
