@@ -549,7 +549,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     null,
   );
   const [accessMode, setAccessMode] = useState<AccessMode>("read-only");
-  const [accessModalOpen, setAccessModalOpen] = useState(true);
   const [pinSessionActive, setPinSessionActive] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
@@ -574,7 +573,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const ensureManagementAccess = useCallback(async (): Promise<AccessCheckResult> => {
     if (accessMode !== "management") {
-      setAccessModalOpen(true);
       setToast({
         message: "Acceso de solo lectura activo. Cambia a ingreso de gerencia para editar.",
         tone: "error",
@@ -594,7 +592,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
     setPinSessionActive(false);
     return "denied";
-  }, [accessMode, pinSessionActive, setAccessModalOpen, setToast, waitForPin]);
+  }, [accessMode, pinSessionActive, setToast, waitForPin]);
 
   const handleUnauthorized = useCallback(async (): Promise<boolean> => {
     setPinSessionActive(false);
@@ -612,13 +610,18 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         );
       }
 
-      let response = await fetch(input, init);
+      const requestInit: RequestInit = {
+        ...init,
+        credentials: init?.credentials ?? "include",
+      };
+
+      let response = await fetch(input, requestInit);
       if (response.status === 401) {
         const granted = await handleUnauthorized();
         if (!granted) {
           throw new Error("PIN de gerencia requerido.");
         }
-        response = await fetch(input, init);
+        response = await fetch(input, requestInit);
         if (response.status === 401) {
           setPinSessionActive(false);
           throw new Error("PIN de gerencia requerido.");
@@ -632,6 +635,27 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       return response;
     },
     [ensureManagementAccess, handleUnauthorized],
+  );
+
+  const handleAccessSelection = useCallback(
+    (mode: AccessMode) => {
+      if (mode === "read-only") {
+        setAccessMode("read-only");
+        setPinSessionActive(false);
+        setPinModalOpen(false);
+        resolvePinRequest(false);
+        return;
+      }
+
+      setAccessMode("management");
+      if (pinSessionActive) {
+        return;
+      }
+
+      setPinSessionActive(false);
+      void waitForPin();
+    },
+    [pinSessionActive, resolvePinRequest, waitForPin],
   );
 
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
@@ -1829,33 +1853,43 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-brand-deep sm:text-sm">
-              <span
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 ${
-                  isManagementMode
-                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border border-brand-deep-soft/40 bg-brand-deep-soft/25 text-brand-deep"
-                }`}
-              >
-                {isManagementMode ? "Ingreso de gerencia" : "Modo solo lectura"}
-              </span>
-              <button
-                type="button"
-                onClick={() => setAccessModalOpen(true)}
-                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 px-3 py-1 text-[11px] uppercase tracking-wide text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-xs"
-              >
-                Cambiar modo
-              </button>
-              {isManagementMode && !pinSessionActive ? (
+              <span className="text-brand-ink-muted">Modo de acceso</span>
+              <div className="inline-flex overflow-hidden rounded-full border border-brand-ink-muted/30 bg-white shadow-sm">
                 <button
                   type="button"
-                  onClick={() => {
-                    setPinSessionActive(false);
-                    setPinModalOpen(true);
-                  }}
-                  className="inline-flex items-center justify-center rounded-full border border-emerald-400/50 bg-emerald-50 px-3 py-1 text-[11px] uppercase tracking-wide text-emerald-700 shadow-sm transition hover:-translate-y-[1px] hover:bg-emerald-100 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 sm:text-xs"
+                  onClick={() => handleAccessSelection("read-only")}
+                  aria-pressed={accessMode === "read-only"}
+                  className={`px-3 py-1 text-[11px] uppercase tracking-wide transition sm:text-xs ${
+                    accessMode === "read-only"
+                      ? "bg-brand-deep-soft/30 text-brand-deep"
+                      : "text-brand-ink-muted hover:bg-brand-deep-soft/20"
+                  }`}
                 >
-                  Validar PIN de gerencia
+                  Solo lectura
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleAccessSelection("management")}
+                  aria-pressed={accessMode === "management"}
+                  className={`border-l border-brand-ink-muted/20 px-3 py-1 text-[11px] uppercase tracking-wide transition sm:text-xs ${
+                    accessMode === "management"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "text-brand-ink-muted hover:bg-emerald-50"
+                  }`}
+                >
+                  Ingreso de gerencia
+                </button>
+              </div>
+              {isManagementMode ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] uppercase tracking-wide sm:text-xs ${
+                    pinSessionActive
+                      ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border border-amber-200 bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {pinSessionActive ? "PIN validado" : "PIN pendiente"}
+                </span>
               ) : null}
             </div>
             <p className={`text-xs ${rangeError ? "text-rose-600" : "text-brand-ink-muted"}`}>
@@ -2521,61 +2555,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   </div>
                 </form>
               </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {accessModalOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 px-4 py-8 backdrop-blur-sm">
-          <div className="relative w-full max-w-2xl overflow-hidden rounded-[32px] border border-white/80 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
-            <div className="flex flex-col gap-6 px-6 py-8 text-brand-deep sm:px-10">
-              <div className="space-y-2">
-                <h2 className="text-2xl font-black">Selecciona tu acceso</h2>
-                <p className="text-sm text-brand-ink-muted sm:text-base">
-                  Ingresa en modo solo lectura para revisar la información o habilita el ingreso de gerencia para registrar cambios con un PIN válido.
-                </p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccessMode("read-only");
-                    setPinSessionActive(false);
-                    setAccessModalOpen(false);
-                  }}
-                  className="flex flex-col gap-3 rounded-[24px] border border-brand-deep-soft/40 bg-brand-deep-soft/20 px-5 py-6 text-left shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/30 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  <span className="text-sm font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">Solo lectura</span>
-                  <span className="text-lg font-bold text-brand-deep">Consultar reportes</span>
-                  <span className="text-sm text-brand-ink-muted">
-                    Revisa la matriz y los pagos sin riesgo de modificar registros.
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccessMode("management");
-                    setAccessModalOpen(false);
-                    setPinSessionActive(false);
-                    setPinModalOpen(true);
-                  }}
-                  className="flex flex-col gap-3 rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-6 text-left shadow transition hover:-translate-y-[1px] hover:bg-emerald-100 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
-                >
-                  <span className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-700">Ingreso de gerencia</span>
-                  <span className="text-lg font-bold text-emerald-700">Editar y aprobar</span>
-                  <span className="text-sm text-emerald-700/80">
-                    Requiere validar el PIN de gerencia para crear, editar, eliminar o aprobar sesiones.
-                  </span>
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAccessModalOpen(false)}
-                className="self-end text-xs font-semibold uppercase tracking-[0.35em] text-brand-ink-muted transition hover:text-brand-deep"
-              >
-                Cerrar
-              </button>
             </div>
           </div>
         </div>
