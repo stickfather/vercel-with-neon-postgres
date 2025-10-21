@@ -1046,7 +1046,7 @@ export async function updateStaffDaySession({
           SUM(
             GREATEST(
               EXTRACT(
-                EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time,
+                EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time
               ) / 60.0,
               0
             )
@@ -1386,8 +1386,7 @@ export async function overrideSessionsAndApprove({
           SUM(
             GREATEST(
               EXTRACT(
-                EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time)
-                - sa.checkin_time,
+                EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time
               ) / 60.0,
               0
             )
