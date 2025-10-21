@@ -55,6 +55,10 @@ type SelectedCell = {
   approved: MatrixCell["approved"];
 };
 
+type AccessMode = "read-only" | "management";
+
+type AccessCheckResult = "granted" | "read-only" | "denied";
+
 const STAFF_COLUMN_WIDTH = 94;
 const APPROVED_AMOUNT_COLUMN_WIDTH = 96;
 const PAID_COLUMN_WIDTH = 72;
@@ -544,11 +548,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [pinSessionActive, setPinSessionActive] = useState(true);
+  const [accessMode, setAccessMode] = useState<AccessMode>("read-only");
+  const [accessModalOpen, setAccessModalOpen] = useState(true);
+  const [pinSessionActive, setPinSessionActive] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
   const sessionLoadTokenRef = useRef(0);
+  const isManagementMode = accessMode === "management";
 
   const resolvePinRequest = useCallback((granted: boolean) => {
     const resolver = pinRequestRef.current;
@@ -565,12 +572,29 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     });
   }, []);
 
-  const ensureManagementAccess = useCallback(async (): Promise<boolean> => {
-    if (pinSessionActive) {
-      return true;
+  const ensureManagementAccess = useCallback(async (): Promise<AccessCheckResult> => {
+    if (accessMode !== "management") {
+      setAccessModalOpen(true);
+      setToast({
+        message: "Acceso de solo lectura activo. Cambia a ingreso de gerencia para editar.",
+        tone: "error",
+      });
+      return "read-only";
     }
-    return waitForPin();
-  }, [pinSessionActive, waitForPin]);
+
+    if (pinSessionActive) {
+      return "granted";
+    }
+
+    const granted = await waitForPin();
+    if (granted) {
+      setPinSessionActive(true);
+      return "granted";
+    }
+
+    setPinSessionActive(false);
+    return "denied";
+  }, [accessMode, pinSessionActive, setAccessModalOpen, setToast, waitForPin]);
 
   const handleUnauthorized = useCallback(async (): Promise<boolean> => {
     setPinSessionActive(false);
@@ -579,9 +603,13 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const performProtectedFetch = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit) => {
-      const allowed = await ensureManagementAccess();
-      if (!allowed) {
-        throw new Error("PIN de gerencia requerido.");
+      const access = await ensureManagementAccess();
+      if (access !== "granted") {
+        throw new Error(
+          access === "read-only"
+            ? "Modo solo lectura activo. Cambia a ingreso de gerencia para editar."
+            : "PIN de gerencia requerido.",
+        );
       }
 
       let response = await fetch(input, init);
@@ -1212,8 +1240,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const addBlankSession = useCallback(async () => {
     if (!selectedCell) return;
-    const allowed = await ensureManagementAccess();
-    if (!allowed) {
+    const access = await ensureManagementAccess();
+    if (access !== "granted") {
       return;
     }
     const emptyRow = createEmptySessionRow(selectedCell.staffId, selectedCell.workDate);
@@ -1223,8 +1251,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
   const enableRowEditing = useCallback(
     async (sessionKey: string) => {
-      const allowed = await ensureManagementAccess();
-      if (!allowed) return;
+      const access = await ensureManagementAccess();
+      if (access !== "granted") return;
       const currentRows = sessionRowsRef.current;
       const targetRow = currentRows.find((row) => row.sessionKey === sessionKey);
       if (!targetRow || targetRow.isHistorical) {
@@ -1438,8 +1466,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         return;
       }
 
-      const allowed = await ensureManagementAccess();
-      if (!allowed) return;
+      const access = await ensureManagementAccess();
+      if (access !== "granted") return;
 
       if (target.sessionId == null) {
         setSessionRows((previous) => previous.filter((row) => row.sessionKey !== sessionKey));
@@ -1800,6 +1828,36 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 </button>
               ) : null}
             </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-brand-deep sm:text-sm">
+              <span
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 ${
+                  isManagementMode
+                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border border-brand-deep-soft/40 bg-brand-deep-soft/25 text-brand-deep"
+                }`}
+              >
+                {isManagementMode ? "Ingreso de gerencia" : "Modo solo lectura"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setAccessModalOpen(true)}
+                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 px-3 py-1 text-[11px] uppercase tracking-wide text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] sm:text-xs"
+              >
+                Cambiar modo
+              </button>
+              {isManagementMode && !pinSessionActive ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinSessionActive(false);
+                    setPinModalOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center rounded-full border border-emerald-400/50 bg-emerald-50 px-3 py-1 text-[11px] uppercase tracking-wide text-emerald-700 shadow-sm transition hover:-translate-y-[1px] hover:bg-emerald-100 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 sm:text-xs"
+                >
+                  Validar PIN de gerencia
+                </button>
+              ) : null}
+            </div>
             <p className={`text-xs ${rangeError ? "text-rose-600" : "text-brand-ink-muted"}`}>
               {rangeStatusText}
             </p>
@@ -2088,15 +2146,19 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       const isHistorical = session.isHistorical;
                       const editingDisabled =
                         isHistorical
+                        || !isManagementMode
                         || sessionsLoading
                         || actionLoading
                         || session.pendingAction === "delete";
                       const deletingDisabled =
                         isHistorical
+                        || !isManagementMode
                         || sessionsLoading
                         || actionLoading
                         || session.pendingAction === "edit"
                         || session.pendingAction === "create";
+                      const creationDisabled =
+                        !isManagementMode || sessionsLoading || actionLoading;
                       const saving =
                         session.pendingAction === "edit" || session.pendingAction === "create";
                       const editorActive = sessionEditor?.sessionKey === session.sessionKey;
@@ -2156,6 +2218,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 type="button"
                                 onClick={() => handleEditClick(session.sessionKey)}
                                 disabled={editingDisabled}
+                                title={
+                                  !isManagementMode
+                                    ? "Disponible solo en modo gerencia"
+                                    : undefined
+                                }
                                 className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {saving
@@ -2167,7 +2234,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               <button
                                 type="button"
                                 onClick={addBlankSession}
-                                disabled={sessionsLoading || actionLoading}
+                                disabled={creationDisabled}
+                                title={
+                                  !isManagementMode
+                                    ? "Disponible solo en modo gerencia"
+                                    : undefined
+                                }
                                 className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 Agregar sesión
@@ -2176,6 +2248,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 type="button"
                                 onClick={() => handleDeleteClick(session.sessionKey)}
                                 disabled={deletingDisabled}
+                                title={
+                                  !isManagementMode
+                                    ? "Disponible solo en modo gerencia"
+                                    : undefined
+                                }
                                 className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {session.pendingAction === "delete" ? "Eliminando…" : "Eliminar"}
@@ -2270,7 +2347,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         <button
                           type="button"
                           onClick={addBlankSession}
-                          disabled={sessionsLoading || actionLoading}
+                          disabled={!isManagementMode || sessionsLoading || actionLoading}
+                          title={
+                            !isManagementMode
+                              ? "Disponible solo en modo gerencia"
+                              : undefined
+                          }
                           className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Agregar sesión
@@ -2299,7 +2381,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               <button
                 type="button"
                 onClick={handleApprove}
-                disabled={actionLoading}
+                disabled={!isManagementMode || actionLoading}
+                title={
+                  !isManagementMode ? "Disponible solo en modo gerencia" : undefined
+                }
                 className="inline-flex items-center justify-center rounded-full border border-emerald-500/50 bg-emerald-500/90 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-emerald-500 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {actionLoading ? "Procesando…" : "Aprobar día"}
@@ -2436,6 +2521,61 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   </div>
                 </form>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {accessModalOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 px-4 py-8 backdrop-blur-sm">
+          <div className="relative w-full max-w-2xl overflow-hidden rounded-[32px] border border-white/80 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
+            <div className="flex flex-col gap-6 px-6 py-8 text-brand-deep sm:px-10">
+              <div className="space-y-2">
+                <h2 className="text-2xl font-black">Selecciona tu acceso</h2>
+                <p className="text-sm text-brand-ink-muted sm:text-base">
+                  Ingresa en modo solo lectura para revisar la información o habilita el ingreso de gerencia para registrar cambios con un PIN válido.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccessMode("read-only");
+                    setPinSessionActive(false);
+                    setAccessModalOpen(false);
+                  }}
+                  className="flex flex-col gap-3 rounded-[24px] border border-brand-deep-soft/40 bg-brand-deep-soft/20 px-5 py-6 text-left shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/30 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                >
+                  <span className="text-sm font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">Solo lectura</span>
+                  <span className="text-lg font-bold text-brand-deep">Consultar reportes</span>
+                  <span className="text-sm text-brand-ink-muted">
+                    Revisa la matriz y los pagos sin riesgo de modificar registros.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccessMode("management");
+                    setAccessModalOpen(false);
+                    setPinSessionActive(false);
+                    setPinModalOpen(true);
+                  }}
+                  className="flex flex-col gap-3 rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-6 text-left shadow transition hover:-translate-y-[1px] hover:bg-emerald-100 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                >
+                  <span className="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-700">Ingreso de gerencia</span>
+                  <span className="text-lg font-bold text-emerald-700">Editar y aprobar</span>
+                  <span className="text-sm text-emerald-700/80">
+                    Requiere validar el PIN de gerencia para crear, editar, eliminar o aprobar sesiones.
+                  </span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAccessModalOpen(false)}
+                className="self-end text-xs font-semibold uppercase tracking-[0.35em] text-brand-ink-muted transition hover:text-brand-deep"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
