@@ -9,6 +9,13 @@ import type {
 } from "@/types/reports.resumen";
 import { getSqlClient, normalizeRows } from "@/lib/db/client";
 
+function isManagementReportsEnabled() {
+  const flag = process.env.ENABLE_MANAGEMENT_REPORTS;
+  return typeof flag === "string" && flag.toLowerCase() === "true";
+}
+
+const MANAGEMENT_REPORTS_ENABLED = isManagementReportsEnabled();
+
 const LEVEL_SORT_ORDER = ["PREA1", "A1", "A2", "B1", "B2", "C1", "C2", "C3"];
 
 const STATE_SYNONYMS: Record<LevelStateKey, string[]> = {
@@ -138,56 +145,87 @@ function normalizeNullableNumber(value: unknown): number | null {
 }
 
 async function fetchResumenHeader(): Promise<GenHeader | null> {
+  if (!MANAGEMENT_REPORTS_ENABLED) {
+    return null;
+  }
+
   const sql = getSqlClient();
-  const rows = normalizeRows<Partial<GenHeader>>(await sql`SELECT * FROM mgmt.gen_header_v LIMIT 1`);
-  if (!rows.length) return null;
-  const row = rows[0];
-  return {
-    students_total: normalizeNumber(row.students_total),
-    active_7d: normalizeNumber(row.active_7d),
-    active_30d: normalizeNumber(row.active_30d),
-    new_30d: normalizeNumber(row.new_30d),
-    returning_30d: normalizeNumber(row.returning_30d),
-    pct_on_pace: normalizeNullableNumber(row.pct_on_pace),
-    median_session_minutes_30d: normalizeNullableNumber(row.median_session_minutes_30d),
-    avg_study_hours_per_student_30d: normalizeNullableNumber(row.avg_study_hours_per_student_30d),
-  };
+  try {
+    const rows = normalizeRows<Partial<GenHeader>>(await sql`SELECT * FROM mgmt.gen_header_v LIMIT 1`);
+    if (!rows.length) return null;
+    const row = rows[0];
+    return {
+      students_total: normalizeNumber(row.students_total),
+      active_7d: normalizeNumber(row.active_7d),
+      active_30d: normalizeNumber(row.active_30d),
+      new_30d: normalizeNumber(row.new_30d),
+      returning_30d: normalizeNumber(row.returning_30d),
+      pct_on_pace: normalizeNullableNumber(row.pct_on_pace),
+      median_session_minutes_30d: normalizeNullableNumber(row.median_session_minutes_30d),
+      avg_study_hours_per_student_30d: normalizeNullableNumber(row.avg_study_hours_per_student_30d),
+    };
+  } catch (error) {
+    console.warn("Management resumen header view unavailable", error);
+    return null;
+  }
 }
 
 async function fetchLevelBands(): Promise<LevelBands[]> {
+  if (!MANAGEMENT_REPORTS_ENABLED) {
+    return [];
+  }
+
   const sql = getSqlClient();
-  const rows = normalizeRows<Partial<LevelBands>>(await sql`
-    SELECT level, band_0_33, band_34_66, band_67_99, band_100
-    FROM mgmt.gen_level_progress_bands_v
-    ORDER BY level
-  `);
-  return rows.map((row) => ({
-    level: String(row.level ?? "—"),
-    band_0_33: normalizeNumber(row.band_0_33),
-    band_34_66: normalizeNumber(row.band_34_66),
-    band_67_99: normalizeNumber(row.band_67_99),
-    band_100: normalizeNumber(row.band_100),
-  }));
+  try {
+    const rows = normalizeRows<Partial<LevelBands>>(await sql`
+      SELECT level, band_0_33, band_34_66, band_67_99, band_100
+      FROM mgmt.gen_level_progress_bands_v
+      ORDER BY level
+    `);
+    return rows.map((row) => ({
+      level: String(row.level ?? "—"),
+      band_0_33: normalizeNumber(row.band_0_33),
+      band_34_66: normalizeNumber(row.band_34_66),
+      band_67_99: normalizeNumber(row.band_67_99),
+      band_100: normalizeNumber(row.band_100),
+    }));
+  } catch (error) {
+    console.warn("Management level progress bands view unavailable", error);
+    return [];
+  }
 }
 
 async function fetchLevelKpis(): Promise<LevelKPI[]> {
+  if (!MANAGEMENT_REPORTS_ENABLED) {
+    return [];
+  }
+
   const sql = getSqlClient();
-  const rows = normalizeRows<Partial<LevelKPI>>(await sql`
-    SELECT level, students, active_30d_pct, on_pace_pct, median_lei_30d, median_months_to_finish
-    FROM mgmt.gen_level_kpis_v
-    ORDER BY level
-  `);
-  return rows.map((row) => ({
-    level: String(row.level ?? "—"),
-    students: normalizeNumber(row.students),
-    active_30d_pct: normalizeNullableNumber(row.active_30d_pct),
-    on_pace_pct: normalizeNullableNumber(row.on_pace_pct),
-    median_lei_30d: normalizeNullableNumber(row.median_lei_30d),
-    median_months_to_finish: normalizeNullableNumber(row.median_months_to_finish),
-  }));
+  try {
+    const rows = normalizeRows<Partial<LevelKPI>>(await sql`
+      SELECT level, students, active_30d_pct, on_pace_pct, median_lei_30d, median_months_to_finish
+      FROM mgmt.gen_level_kpis_v
+      ORDER BY level
+    `);
+    return rows.map((row) => ({
+      level: String(row.level ?? "—"),
+      students: normalizeNumber(row.students),
+      active_30d_pct: normalizeNullableNumber(row.active_30d_pct),
+      on_pace_pct: normalizeNullableNumber(row.on_pace_pct),
+      median_lei_30d: normalizeNullableNumber(row.median_lei_30d),
+      median_months_to_finish: normalizeNullableNumber(row.median_months_to_finish),
+    }));
+  } catch (error) {
+    console.warn("Management level KPI view unavailable", error);
+    return [];
+  }
 }
 
 async function fetchLevelStates(): Promise<LevelStateBreakdown[]> {
+  if (!MANAGEMENT_REPORTS_ENABLED) {
+    return [];
+  }
+
   const entries = await listStudentManagementEntries();
 
   if (!entries.length) {

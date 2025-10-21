@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import ResumenGeneralPanel from "@/components/reports/resumen/ResumenGeneralPanel";
 
 export const revalidate = 300;
@@ -18,12 +16,6 @@ export default function ResumenGeneralPage() {
               Visualiza los indicadores clave de salud escolar, actividad reciente y avance por nivel.
             </p>
           </div>
-          <Link
-            href="/management/engagement"
-            className="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-900/90"
-          >
-            Abrir panel de gestión
-          </Link>
         </header>
         <ResumenGeneralPanel />
       </main>

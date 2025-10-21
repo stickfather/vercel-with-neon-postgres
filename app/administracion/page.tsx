@@ -21,13 +21,6 @@ const tiles = [
     emoji: "🎓",
   },
   {
-    href: "/management/engagement",
-    title: "Paneles gerenciales",
-    description:
-      "Explora los tableros de engagement y aprendizaje con métricas listas para la acción.",
-    emoji: "🚀",
-  },
-  {
     href: "/administracion/calendario",
     title: "Calendario",
     description: "Coordina eventos, evaluaciones y actividades especiales de la sede.",
