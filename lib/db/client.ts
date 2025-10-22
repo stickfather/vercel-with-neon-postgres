@@ -63,8 +63,8 @@ export async function closeExpiredSessions(
 export async function closeExpiredStaffSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  const runUpdate = async () =>
-    normalizeRows<SqlRow>(
+  try {
+    const rows = normalizeRows<SqlRow>(
       await sql`
         UPDATE public.staff_attendance
         SET checkout_time = GREATEST(
@@ -83,34 +83,16 @@ export async function closeExpiredStaffSessions(
       `,
     );
 
-  try {
-    const rows = await runUpdate();
     return rows.length;
   } catch (error) {
-    if (!isMissingRelationError(error, "staff_attendance_edits")) {
-      throw error;
+    if (isMissingRelationError(error)) {
+      console.warn(
+        "No pudimos cerrar asistencias vencidas del personal porque falta una relación esperada.",
+        error,
+      );
+      return 0;
     }
-
-    const fallbackRows = normalizeRows<SqlRow>(
-      await sql`
-        UPDATE staff_attendance
-        SET checkout_time = GREATEST(
-          checkin_time,
-          timezone(
-            ${TIMEZONE},
-            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-          )
-        )
-        WHERE checkout_time IS NULL
-          AND timezone(${TIMEZONE}, now()) >= timezone(
-            ${TIMEZONE},
-            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-          )
-        RETURNING id
-      `,
-    );
-
-    return fallbackRows.length;
+    throw error;
   }
 }
 

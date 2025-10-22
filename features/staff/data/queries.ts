@@ -1,10 +1,4 @@
-import {
-  closeExpiredStaffSessions,
-  getSqlClient,
-  isMissingRelationError,
-  normalizeRows,
-  SqlRow,
-} from "@/lib/db/client";
+import { getSqlClient, normalizeRows, SqlRow, TIMEZONE } from "@/lib/db/client";
 
 export type StaffDirectoryEntry = {
   id: number;
@@ -55,13 +49,17 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 
 export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
   const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
+    WITH day_bounds AS (
+      SELECT
+        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+    )
     SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
     FROM public.staff_attendance sa
     LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
     WHERE sa.checkout_time IS NULL
+      AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
     ORDER BY sa.checkin_time ASC
   `);
 
@@ -81,7 +79,6 @@ export async function registerStaffCheckIn({
   staffId: number;
 }): Promise<{ attendanceId: string; staffName: string }> {
   const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
 
   const staffRows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, active
@@ -117,61 +114,30 @@ export async function registerStaffCheckIn({
   `);
   const nextId = Number(nextIdRows[0]?.next_id ?? 1);
 
-  let insertedRows: SqlRow[] = [];
-
-  try {
-    insertedRows = normalizeRows<SqlRow>(await sql`
-      INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
-      VALUES (${nextId}, ${staffId}, now())
-      RETURNING id
-    `);
-  } catch (error) {
-    if (!isMissingRelationError(error, "staff_attendance_edits")) {
-      throw error;
-    }
-
-    insertedRows = normalizeRows<SqlRow>(await sql`
-      INSERT INTO staff_attendance (id, staff_id, checkin_time)
-      VALUES (${nextId}, ${staffId}, now())
-      RETURNING id
-    `);
-  }
+  const insertedRows = normalizeRows<SqlRow>(await sql`
+    INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
+    VALUES (${nextId}, ${staffId}, now())
+    RETURNING id
+  `);
 
   return { attendanceId: String(insertedRows[0].id), staffName };
 }
 
 export async function registerStaffCheckOut(attendanceId: string): Promise<void> {
   const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
 
   const parsedId = Number(attendanceId);
   if (!Number.isFinite(parsedId)) {
     throw new Error("La asistencia seleccionada no es válida.");
   }
 
-  let updatedRows: SqlRow[] = [];
-
-  try {
-    updatedRows = normalizeRows<SqlRow>(await sql`
-      UPDATE public.staff_attendance
-      SET checkout_time = now()
-      WHERE id = ${parsedId}
-        AND checkout_time IS NULL
-      RETURNING id
-    `);
-  } catch (error) {
-    if (!isMissingRelationError(error, "staff_attendance_edits")) {
-      throw error;
-    }
-
-    updatedRows = normalizeRows<SqlRow>(await sql`
-      UPDATE staff_attendance
-      SET checkout_time = now()
-      WHERE id = ${parsedId}
-        AND checkout_time IS NULL
-      RETURNING id
-    `);
-  }
+  const updatedRows = normalizeRows<SqlRow>(await sql`
+    UPDATE public.staff_attendance
+    SET checkout_time = now()
+    WHERE id = ${parsedId}
+      AND checkout_time IS NULL
+    RETURNING id
+  `);
   if (!updatedRows.length) {
     throw new Error("La asistencia ya estaba cerrada o no existe.");
   }
