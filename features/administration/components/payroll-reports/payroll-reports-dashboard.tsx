@@ -571,11 +571,15 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, []);
 
   const waitForPin = useCallback((): Promise<boolean> => {
+    if (!hasSelectedAccessMode || accessMode !== "management") {
+      return Promise.resolve(false);
+    }
+
     return new Promise((resolve) => {
       pinRequestRef.current = resolve;
       setPinModalOpen(true);
     });
-  }, []);
+  }, [accessMode, hasSelectedAccessMode]);
 
   useEffect(() => {
     if (!accessGateOpen) {
