@@ -69,6 +69,12 @@ describe("payroll reports schemas", () => {
   it("parses approve day schema", () => {
     const parsed = ApproveDaySchema.parse({ staffId: 7, workDate: "2025-10-06", approvedBy: " Ana " });
     assert.equal(parsed.approvedBy, "Ana");
+    assert.equal(parsed.approved, true);
+  });
+
+  it("defaults approval flag when not provided", () => {
+    const parsed = ApproveDaySchema.parse({ staffId: 4, workDate: "2025-10-08" });
+    assert.equal(parsed.approved, true);
   });
 
   it("validates month summary schema", () => {
@@ -131,6 +137,28 @@ describe("payroll integration", () => {
       (op) => op.type === "query" && /payroll_audit_events/.test(op.text),
     );
     assert.equal(audit.length, 1);
+    assert(audit[0].values.includes("approve_day"));
+  });
+
+  it("revokes an approved day when requested", async () => {
+    const { sql, operations } = createMockSqlClient([
+      { match: /FROM public\.staff_members/, rows: [{ exists: true }] },
+    ]);
+
+    await approveDay({ staffId: 12, workDate: "2025-10-09", approved: false }, sql);
+
+    const upsert = operations.find(
+      (op) => op.type === "query" && /payroll_day_approvals/.test(op.text),
+    );
+    assert(upsert);
+    assert.equal(upsert.values[0], 12);
+    assert.equal(upsert.values[1], "2025-10-09");
+
+    const audit = operations.find(
+      (op) => op.type === "query" && /payroll_audit_events/.test(op.text),
+    );
+    assert(audit);
+    assert(audit.values.includes("unapprove_day"));
   });
 
   it("overrides sessions inside a single transaction", async () => {

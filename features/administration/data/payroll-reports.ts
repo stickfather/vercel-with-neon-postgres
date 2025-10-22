@@ -1061,6 +1061,7 @@ export async function updateStaffDaySession({
       workDate: normalizedWorkDate,
       sessionId,
       details: {
+        replacedSessionId: sessionId,
         before: {
           checkinTime: previousCheckinValue,
           checkoutTime: previousCheckoutValue,

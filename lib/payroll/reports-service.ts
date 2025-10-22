@@ -185,6 +185,37 @@ async function upsertDayApproval(
   `;
 }
 
+async function revokeDayApproval(
+  sql: SqlClientLike,
+  staffId: number,
+  workDate: string,
+): Promise<void> {
+  await sql`
+    INSERT INTO public.payroll_day_approvals (
+      staff_id,
+      work_date,
+      approved,
+      approved_minutes,
+      approved_by,
+      approved_at
+    )
+    VALUES (
+      ${staffId}::bigint,
+      ${workDate}::date,
+      FALSE,
+      NULL,
+      NULL,
+      NULL
+    )
+    ON CONFLICT (staff_id, work_date) DO UPDATE
+    SET
+      approved = FALSE,
+      approved_minutes = NULL,
+      approved_by = NULL,
+      approved_at = NULL
+  `;
+}
+
 async function logPayrollAudit(
   sql: SqlClientLike,
   action: string,
@@ -332,6 +363,7 @@ export const OverrideAndApproveSchema = z.object({
 export const ApproveDaySchema = z.object({
   staffId: z.number().int("El identificador del colaborador no es válido."),
   workDate: z.string().trim().regex(ISO_DATE_REGEX, "Debes indicar un día válido."),
+  approved: z.boolean().optional().default(true),
   approvedBy: z
     .string()
     .trim()
@@ -598,6 +630,14 @@ export async function approveDay(
 ): Promise<void> {
   const sql = ensureSqlClient(sqlClient);
   await ensureStaffExists(sql, payload.staffId);
+  if (payload.approved === false) {
+    await revokeDayApproval(sql, payload.staffId, payload.workDate);
+    await logPayrollAudit(sql, "unapprove_day", payload.staffId, payload.workDate, null, {
+      approved: false,
+      approvedBy: payload.approvedBy ?? null,
+    });
+    return;
+  }
   const minutes = await fetchApprovedMinutes(sql, payload.staffId, payload.workDate);
   await upsertDayApproval(sql, payload.staffId, payload.workDate, minutes, payload.approvedBy ?? null);
   await logPayrollAudit(sql, "approve_day", payload.staffId, payload.workDate, null, {
