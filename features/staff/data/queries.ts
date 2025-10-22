@@ -54,6 +54,7 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 
 export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
   const sql = getSqlClient();
+  await closeExpiredStaffSessions(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time

@@ -142,6 +142,7 @@ export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
 
 export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
+  await closeExpiredSessions(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
