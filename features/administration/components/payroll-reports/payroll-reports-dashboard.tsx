@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DaySession,
@@ -1797,9 +1798,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           />
         ) : null}
         <header className="flex flex-col gap-5 rounded-[28px] border border-white/70 bg-white/92 px-6 py-6 shadow-[0_20px_48px_rgba(15,23,42,0.12)] backdrop-blur">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
-            Control de nómina
-          </span>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
+              Control de nómina
+            </span>
+            <Link
+              href="/administracion"
+              className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white/90 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            >
+              Volver a panel
+            </Link>
+          </div>
           <div className="flex flex-col gap-2 text-brand-deep">
             <h1 className="text-3xl font-black sm:text-4xl">Reportes de nómina</h1>
             <p className="max-w-3xl text-sm text-brand-ink-muted sm:text-base">

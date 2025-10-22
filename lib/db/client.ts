@@ -43,13 +43,13 @@ export async function closeExpiredSessions(
         sa.checkin_time,
         timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
         ) AS checkout_programado
       FROM student_attendance sa
       WHERE sa.checkout_time IS NULL
         AND timezone(${TIMEZONE}, now()) >= timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
         )
     ),
     actualizados AS (
@@ -79,13 +79,13 @@ export async function closeExpiredStaffSessions(
         sa.checkin_time,
         timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
         ) AS checkout_programado
       FROM staff_attendance sa
       WHERE sa.checkout_time IS NULL
         AND timezone(${TIMEZONE}, now()) >= timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
         )
     ),
     actualizados AS (

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listStaffMembers } from "@/features/staff/data/queries";
 import { getSecurityPinStatuses } from "@/features/security/data/pins";
 import { hasValidPinSession } from "@/lib/security/pin-session";
@@ -40,9 +41,17 @@ export default async function ConfiguracionPage() {
       </div>
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-12 px-6 py-16 md:px-10 lg:px-14">
         <header className="flex flex-col gap-3 text-left text-brand-deep">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#1e1b32] px-4 py-1 text-xs font-semibold uppercase tracking-[0.38em] text-white">
-            Configuración
-          </span>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#1e1b32] px-4 py-1 text-xs font-semibold uppercase tracking-[0.38em] text-white">
+              Configuración
+            </span>
+            <Link
+              href="/administracion"
+              className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white/90 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-[#1e1b32]/10 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            >
+              Volver a panel
+            </Link>
+          </div>
           <h1 className="text-4xl font-black sm:text-5xl">Configuración del personal</h1>
           <p className="max-w-3xl text-base text-brand-ink-muted sm:text-lg">
             Administra quién forma parte del equipo, sus roles y horarios de referencia. Todos los cambios se reflejan de inmediato en el registro del personal.

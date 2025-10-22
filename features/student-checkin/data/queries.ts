@@ -177,7 +177,7 @@ export async function getStudentStatusForCheckIn(
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT status, estado
+    SELECT status
     FROM students
     WHERE id = ${studentId}
     LIMIT 1
@@ -187,10 +187,7 @@ export async function getStudentStatusForCheckIn(
     throw new Error("No encontramos a la persona seleccionada en la base de datos.");
   }
 
-  const statusValue =
-    (rows[0].status as string | null) ??
-    (rows[0].estado as string | null) ??
-    null;
+  const statusValue = (rows[0].status as string | null) ?? null;
   const trimmed = statusValue?.trim() ?? null;
   const normalized = trimmed?.toLowerCase() ?? null;
 
@@ -257,7 +254,7 @@ export async function registerCheckIn({
   await closeExpiredSessions(sql);
 
   const studentRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, full_name, status, estado
+    SELECT id, full_name, status
     FROM students
     WHERE id = ${studentId}
     LIMIT 1
@@ -269,10 +266,7 @@ export async function registerCheckIn({
 
   const studentRecord = studentRows[0];
   const studentName = ((studentRecord.full_name as string | null) ?? "").trim();
-  const rawStatus =
-    (studentRecord.status as string | null) ??
-    (studentRecord.estado as string | null) ??
-    null;
+  const rawStatus = (studentRecord.status as string | null) ?? null;
   const normalizedStatus = rawStatus?.trim().toLowerCase() ?? null;
 
   if (!studentName) {
