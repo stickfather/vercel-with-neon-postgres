@@ -35,24 +35,27 @@ export function normalizeRows<T extends SqlRow>(result: unknown): T[] {
 export async function closeExpiredSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  const rows = normalizeRows<SqlRow>(
-    await sql`
-      UPDATE public.student_attendance
-      SET checkout_time = GREATEST(
-        checkin_time,
-        timezone(
-          ${TIMEZONE},
-          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+  const runUpdate = async () =>
+    normalizeRows<SqlRow>(
+      await sql`
+        UPDATE public.student_attendance
+        SET checkout_time = GREATEST(
+          checkin_time,
+          timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
         )
-      )
-      WHERE checkout_time IS NULL
-        AND timezone(${TIMEZONE}, now()) >= timezone(
-          ${TIMEZONE},
-          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-        )
-      RETURNING id
-    `,
-  );
+        WHERE checkout_time IS NULL
+          AND timezone(${TIMEZONE}, now()) >= timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
+        RETURNING id
+      `,
+    );
+
+  const rows = await runUpdate();
 
   return rows.length;
 }
@@ -60,26 +63,55 @@ export async function closeExpiredSessions(
 export async function closeExpiredStaffSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  const rows = normalizeRows<SqlRow>(
-    await sql`
-      UPDATE public.staff_attendance
-      SET checkout_time = GREATEST(
-        checkin_time,
-        timezone(
-          ${TIMEZONE},
-          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+  const runUpdate = async () =>
+    normalizeRows<SqlRow>(
+      await sql`
+        UPDATE public.staff_attendance
+        SET checkout_time = GREATEST(
+          checkin_time,
+          timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
         )
-      )
-      WHERE checkout_time IS NULL
-        AND timezone(${TIMEZONE}, now()) >= timezone(
-          ${TIMEZONE},
-          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-        )
-      RETURNING id
-    `,
-  );
+        WHERE checkout_time IS NULL
+          AND timezone(${TIMEZONE}, now()) >= timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
+        RETURNING id
+      `,
+    );
 
-  return rows.length;
+  try {
+    const rows = await runUpdate();
+    return rows.length;
+  } catch (error) {
+    if (!isMissingRelationError(error, "staff_attendance_edits")) {
+      throw error;
+    }
+
+    const fallbackRows = normalizeRows<SqlRow>(
+      await sql`
+        UPDATE staff_attendance
+        SET checkout_time = GREATEST(
+          checkin_time,
+          timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
+        )
+        WHERE checkout_time IS NULL
+          AND timezone(${TIMEZONE}, now()) >= timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
+        RETURNING id
+      `,
+    );
+
+    return fallbackRows.length;
+  }
 }
 
 function isPermissionDeniedError(error: unknown): boolean {
@@ -113,4 +145,25 @@ export async function safelyCloseExpiredSessions(
     }
     throw error;
   }
+}
+
+export function isMissingRelationError(error: unknown, relation?: string): boolean {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "42P01") {
+      if (!relation) return true;
+      if (typeof message === "string") {
+        return message.includes(relation);
+      }
+      return true;
+    }
+    if (
+      typeof message === "string" &&
+      message.toLowerCase().includes("does not exist") &&
+      (!relation || message.includes(relation))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }

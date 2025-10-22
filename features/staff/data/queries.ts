@@ -1,6 +1,7 @@
 import {
   closeExpiredStaffSessions,
   getSqlClient,
+  isMissingRelationError,
   normalizeRows,
   SqlRow,
 } from "@/lib/db/client";
@@ -116,11 +117,25 @@ export async function registerStaffCheckIn({
   `);
   const nextId = Number(nextIdRows[0]?.next_id ?? 1);
 
-  const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
-    VALUES (${nextId}, ${staffId}, now())
-    RETURNING id
-  `);
+  let insertedRows: SqlRow[] = [];
+
+  try {
+    insertedRows = normalizeRows<SqlRow>(await sql`
+      INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
+      VALUES (${nextId}, ${staffId}, now())
+      RETURNING id
+    `);
+  } catch (error) {
+    if (!isMissingRelationError(error, "staff_attendance_edits")) {
+      throw error;
+    }
+
+    insertedRows = normalizeRows<SqlRow>(await sql`
+      INSERT INTO staff_attendance (id, staff_id, checkin_time)
+      VALUES (${nextId}, ${staffId}, now())
+      RETURNING id
+    `);
+  }
 
   return { attendanceId: String(insertedRows[0].id), staffName };
 }
@@ -134,13 +149,29 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
     throw new Error("La asistencia seleccionada no es válida.");
   }
 
-  const updatedRows = normalizeRows<SqlRow>(await sql`
-    UPDATE public.staff_attendance
-    SET checkout_time = now()
-    WHERE id = ${parsedId}
-      AND checkout_time IS NULL
-    RETURNING id
-  `);
+  let updatedRows: SqlRow[] = [];
+
+  try {
+    updatedRows = normalizeRows<SqlRow>(await sql`
+      UPDATE public.staff_attendance
+      SET checkout_time = now()
+      WHERE id = ${parsedId}
+        AND checkout_time IS NULL
+      RETURNING id
+    `);
+  } catch (error) {
+    if (!isMissingRelationError(error, "staff_attendance_edits")) {
+      throw error;
+    }
+
+    updatedRows = normalizeRows<SqlRow>(await sql`
+      UPDATE staff_attendance
+      SET checkout_time = now()
+      WHERE id = ${parsedId}
+        AND checkout_time IS NULL
+      RETURNING id
+    `);
+  }
   if (!updatedRows.length) {
     throw new Error("La asistencia ya estaba cerrada o no existe.");
   }
