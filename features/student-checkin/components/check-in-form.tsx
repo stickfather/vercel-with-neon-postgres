@@ -87,6 +87,7 @@ export function CheckInForm({
     useState<LessonOverridePrompt | null>(null);
   const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
   const lastLessonAbortRef = useRef<AbortController | null>(null);
+  const studentInputRef = useRef<HTMLInputElement | null>(null);
 
   const isFormDisabled = disabled || Boolean(initialError);
 
@@ -368,6 +369,7 @@ export function CheckInForm({
     setSuggestedLesson(null);
     setLastLessonError(null);
     lastLessonAbortRef.current?.abort();
+    studentInputRef.current?.blur();
   };
 
   const submitCheckIn = useCallback(
@@ -639,6 +641,7 @@ export function CheckInForm({
             name="student-name"
             autoComplete="off"
             placeholder="Escribe y elige tu nombre"
+            ref={studentInputRef}
             value={studentQuery}
             onChange={(event) => {
               setStudentQuery(event.target.value);

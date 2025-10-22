@@ -1,9 +1,4 @@
-import {
-  closeExpiredStaffSessions,
-  getSqlClient,
-  normalizeRows,
-  SqlRow,
-} from "@/lib/db/client";
+import { getSqlClient, normalizeRows, SqlRow, TIMEZONE } from "@/lib/db/client";
 
 export type StaffDirectoryEntry = {
   id: number;
@@ -38,7 +33,7 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, role
-    FROM staff_members
+    FROM public.staff_members
     WHERE active IS TRUE
     ORDER BY full_name ASC
   `);
@@ -56,10 +51,15 @@ export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
+    WITH day_bounds AS (
+      SELECT
+        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+    )
     SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
-    FROM staff_attendance sa
-    LEFT JOIN staff_members sm ON sm.id = sa.staff_id
+    FROM public.staff_attendance sa
+    LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
     WHERE sa.checkout_time IS NULL
+      AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
     ORDER BY sa.checkin_time ASC
   `);
 
@@ -79,11 +79,10 @@ export async function registerStaffCheckIn({
   staffId: number;
 }): Promise<{ attendanceId: string; staffName: string }> {
   const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
 
   const staffRows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, active
-    FROM staff_members
+    FROM public.staff_members
     WHERE id = ${staffId}
     LIMIT 1
   `);
@@ -98,9 +97,21 @@ export async function registerStaffCheckIn({
   if (!staffName) throw new Error("El miembro del personal no tiene un nombre registrado.");
   if (!isActive) throw new Error("El miembro del personal está marcado como inactivo.");
 
+  await sql`
+    WITH day_bounds AS (
+      SELECT
+        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+    )
+    UPDATE public.staff_attendance
+    SET checkout_time = GREATEST(checkin_time, now())
+    WHERE checkout_time IS NULL
+      AND staff_id = ${staffId}
+      AND checkin_time < (SELECT current_day_start FROM day_bounds)
+  `;
+
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
-    FROM staff_attendance
+    FROM public.staff_attendance
     WHERE checkout_time IS NULL
       AND staff_id = ${staffId}
     LIMIT 1
@@ -111,12 +122,12 @@ export async function registerStaffCheckIn({
 
   const nextIdRows = normalizeRows<SqlRow>(await sql`
     SELECT COALESCE(MAX(id), 0) + 1 AS next_id
-    FROM staff_attendance
+    FROM public.staff_attendance
   `);
   const nextId = Number(nextIdRows[0]?.next_id ?? 1);
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_attendance (id, staff_id, checkin_time)
+    INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
     VALUES (${nextId}, ${staffId}, now())
     RETURNING id
   `);
@@ -126,7 +137,6 @@ export async function registerStaffCheckIn({
 
 export async function registerStaffCheckOut(attendanceId: string): Promise<void> {
   const sql = getSqlClient();
-  await closeExpiredStaffSessions(sql);
 
   const parsedId = Number(attendanceId);
   if (!Number.isFinite(parsedId)) {
@@ -134,7 +144,7 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   }
 
   const updatedRows = normalizeRows<SqlRow>(await sql`
-    UPDATE staff_attendance
+    UPDATE public.staff_attendance
     SET checkout_time = now()
     WHERE id = ${parsedId}
       AND checkout_time IS NULL
@@ -150,7 +160,7 @@ export async function listStaffMembers(): Promise<StaffMemberRecord[]> {
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, role, active, hourly_wage, weekly_hours
-    FROM staff_members
+    FROM public.staff_members
     ORDER BY full_name ASC
   `);
 
@@ -187,7 +197,7 @@ export async function createStaffMember({
   const weeklyValue = toNullableNumber(weeklyHours ?? null);
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_members (full_name, role, hourly_wage, weekly_hours, active)
+    INSERT INTO public.staff_members (full_name, role, hourly_wage, weekly_hours, active)
     VALUES (${sanitizedName}, ${sanitizedRole}, ${wageValue}, ${weeklyValue}, ${active})
     RETURNING id, full_name, role, active, hourly_wage, weekly_hours
   `);

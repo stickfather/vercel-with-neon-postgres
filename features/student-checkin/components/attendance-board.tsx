@@ -42,6 +42,7 @@ export function AttendanceBoard({ attendances }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
+  const [resolvingExpired, setResolvingExpired] = useState(false);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shouldHideBubbles, setShouldHideBubbles] = useState(() =>
     isAfterBubbleHideTime(),
@@ -85,11 +86,55 @@ export function AttendanceBoard({ attendances }: Props) {
     );
   }, [attendances]);
 
+  const resolveExpiredAttendances = async () => {
+    setError(null);
+    setResolvingExpired(true);
+    try {
+      const response = await fetch("/api/attendance/resolve-stale", {
+        method: "POST",
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ??
+            "No pudimos actualizar las asistencias automáticamente.",
+        );
+      }
+
+      const message =
+        typeof payload?.message === "string"
+          ? payload.message
+          : "Actualizamos las asistencias vencidas automáticamente.";
+
+      setToast({ tone: "success", message });
+
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+
+      refreshTimeoutRef.current = setTimeout(() => {
+        router.refresh();
+      }, 320);
+    } catch (resolveError) {
+      console.error(resolveError);
+      setToast({
+        tone: "error",
+        message:
+          resolveError instanceof Error
+            ? resolveError.message
+            : "No pudimos actualizar las asistencias automáticamente.",
+      });
+    } finally {
+      setResolvingExpired(false);
+    }
+  };
+
   const requestCheckout = (attendance: ActiveAttendance) => {
     setError(null);
     if (exceedsSessionDurationLimit(attendance.checkInTime)) {
-      const message = "El registro excede el máximo permitido de 12 horas.";
-      setToast({ tone: "error", message });
+      void resolveExpiredAttendances();
       return;
     }
     setPendingCheckout(attendance);
@@ -218,7 +263,8 @@ export function AttendanceBoard({ attendances }: Props) {
                   const formattedTime = checkInDate
                     ? formatter.format(checkInDate)
                     : "";
-                  const isLoading = loadingId === attendance.id;
+                  const isLoading =
+                    resolvingExpired || loadingId === attendance.id;
                   const displayName = attendance.fullName.trim();
                   const bubbleLabel = formattedTime
                     ? `${displayName} • ${formattedTime}`
@@ -293,7 +339,9 @@ export function AttendanceBoard({ attendances }: Props) {
                 <button
                   type="button"
                   onClick={confirmCheckout}
-                  disabled={loadingId === pendingCheckout.id}
+                  disabled={
+                    resolvingExpired || loadingId === pendingCheckout.id
+                  }
                   className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70 hover:text-white"
                 >
                   {loadingId === pendingCheckout.id ? "Registrando…" : "Sí, registrar salida"}

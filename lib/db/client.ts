@@ -35,73 +35,65 @@ export function normalizeRows<T extends SqlRow>(result: unknown): T[] {
 export async function closeExpiredSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  const rows = normalizeRows<SqlRow>(
-    await sql`
-    WITH vencidos AS (
-      SELECT
-        sa.id,
-        sa.checkin_time,
-        timezone(
-          ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
-        ) AS checkout_programado
-      FROM student_attendance sa
-      WHERE sa.checkout_time IS NULL
-        AND timezone(${TIMEZONE}, now()) >= timezone(
-          ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+  const runUpdate = async () =>
+    normalizeRows<SqlRow>(
+      await sql`
+        UPDATE public.student_attendance
+        SET checkout_time = GREATEST(
+          checkin_time,
+          timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
         )
-    ),
-    actualizados AS (
-      UPDATE student_attendance AS sa
-      SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-      FROM vencidos
-      WHERE sa.id = vencidos.id
-      RETURNING sa.id
-    )
-    SELECT COUNT(*)::int AS total_cerrados
-    FROM actualizados
-  `,
-  );
+        WHERE checkout_time IS NULL
+          AND timezone(${TIMEZONE}, now()) >= timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
+        RETURNING id
+      `,
+    );
 
-  const count = Number(rows[0]?.total_cerrados ?? 0);
-  return Number.isFinite(count) ? count : 0;
+  const rows = await runUpdate();
+
+  return rows.length;
 }
 
 export async function closeExpiredStaffSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  const rows = normalizeRows<SqlRow>(
-    await sql`
-    WITH vencidos AS (
-      SELECT
-        sa.id,
-        sa.checkin_time,
-        timezone(
-          ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
-        ) AS checkout_programado
-      FROM staff_attendance sa
-      WHERE sa.checkout_time IS NULL
-        AND timezone(${TIMEZONE}, now()) >= timezone(
-          ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 30 minutes'
+  try {
+    const rows = normalizeRows<SqlRow>(
+      await sql`
+        UPDATE public.staff_attendance
+        SET checkout_time = GREATEST(
+          checkin_time,
+          timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
         )
-    ),
-    actualizados AS (
-      UPDATE staff_attendance AS sa
-      SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-      FROM vencidos
-      WHERE sa.id = vencidos.id
-      RETURNING sa.id
-    )
-    SELECT COUNT(*)::int AS total_cerrados
-    FROM actualizados
-  `,
-  );
+        WHERE checkout_time IS NULL
+          AND timezone(${TIMEZONE}, now()) >= timezone(
+            ${TIMEZONE},
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          )
+        RETURNING id
+      `,
+    );
 
-  const count = Number(rows[0]?.total_cerrados ?? 0);
-  return Number.isFinite(count) ? count : 0;
+    return rows.length;
+  } catch (error) {
+    if (isMissingRelationError(error)) {
+      console.warn(
+        "No pudimos cerrar asistencias vencidas del personal porque falta una relación esperada.",
+        error,
+      );
+      return 0;
+    }
+    throw error;
+  }
 }
 
 function isPermissionDeniedError(error: unknown): boolean {
@@ -135,4 +127,25 @@ export async function safelyCloseExpiredSessions(
     }
     throw error;
   }
+}
+
+export function isMissingRelationError(error: unknown, relation?: string): boolean {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "42P01") {
+      if (!relation) return true;
+      if (typeof message === "string") {
+        return message.includes(relation);
+      }
+      return true;
+    }
+    if (
+      typeof message === "string" &&
+      message.toLowerCase().includes("does not exist") &&
+      (!relation || message.includes(relation))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
