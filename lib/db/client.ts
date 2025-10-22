@@ -37,35 +37,24 @@ export async function closeExpiredSessions(
 ): Promise<number> {
   const rows = normalizeRows<SqlRow>(
     await sql`
-    WITH vencidos AS (
-      SELECT
-        sa.id,
-        sa.checkin_time,
+      UPDATE student_attendance
+      SET checkout_time = GREATEST(
+        checkin_time,
         timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-        ) AS checkout_programado
-      FROM student_attendance sa
-      WHERE sa.checkout_time IS NULL
+          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+        )
+      )
+      WHERE checkout_time IS NULL
         AND timezone(${TIMEZONE}, now()) >= timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
         )
-    ),
-    actualizados AS (
-      UPDATE student_attendance AS sa
-      SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-      FROM vencidos
-      WHERE sa.id = vencidos.id
-      RETURNING sa.id
-    )
-    SELECT COUNT(*)::int AS total_cerrados
-    FROM actualizados
-  `,
+      RETURNING id
+    `,
   );
 
-  const count = Number(rows[0]?.total_cerrados ?? 0);
-  return Number.isFinite(count) ? count : 0;
+  return rows.length;
 }
 
 export async function closeExpiredStaffSessions(
@@ -73,35 +62,24 @@ export async function closeExpiredStaffSessions(
 ): Promise<number> {
   const rows = normalizeRows<SqlRow>(
     await sql`
-    WITH vencidos AS (
-      SELECT
-        sa.id,
-        sa.checkin_time,
+      UPDATE staff_attendance
+      SET checkout_time = GREATEST(
+        checkin_time,
         timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-        ) AS checkout_programado
-      FROM staff_attendance sa
-      WHERE sa.checkout_time IS NULL
+          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+        )
+      )
+      WHERE checkout_time IS NULL
         AND timezone(${TIMEZONE}, now()) >= timezone(
           ${TIMEZONE},
-          date_trunc('day', sa.checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
         )
-    ),
-    actualizados AS (
-      UPDATE staff_attendance AS sa
-      SET checkout_time = GREATEST(sa.checkin_time, vencidos.checkout_programado)
-      FROM vencidos
-      WHERE sa.id = vencidos.id
-      RETURNING sa.id
-    )
-    SELECT COUNT(*)::int AS total_cerrados
-    FROM actualizados
-  `,
+      RETURNING id
+    `,
   );
 
-  const count = Number(rows[0]?.total_cerrados ?? 0);
-  return Number.isFinite(count) ? count : 0;
+  return rows.length;
 }
 
 function isPermissionDeniedError(error: unknown): boolean {
