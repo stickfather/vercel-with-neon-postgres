@@ -38,7 +38,7 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, role
-    FROM staff_members
+    FROM public.staff_members
     WHERE active IS TRUE
     ORDER BY full_name ASC
   `);
@@ -58,8 +58,8 @@ export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
-    FROM staff_attendance sa
-    LEFT JOIN staff_members sm ON sm.id = sa.staff_id
+    FROM public.staff_attendance sa
+    LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
     WHERE sa.checkout_time IS NULL
     ORDER BY sa.checkin_time ASC
   `);
@@ -84,7 +84,7 @@ export async function registerStaffCheckIn({
 
   const staffRows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, active
-    FROM staff_members
+    FROM public.staff_members
     WHERE id = ${staffId}
     LIMIT 1
   `);
@@ -101,7 +101,7 @@ export async function registerStaffCheckIn({
 
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
-    FROM staff_attendance
+    FROM public.staff_attendance
     WHERE checkout_time IS NULL
       AND staff_id = ${staffId}
     LIMIT 1
@@ -112,12 +112,12 @@ export async function registerStaffCheckIn({
 
   const nextIdRows = normalizeRows<SqlRow>(await sql`
     SELECT COALESCE(MAX(id), 0) + 1 AS next_id
-    FROM staff_attendance
+    FROM public.staff_attendance
   `);
   const nextId = Number(nextIdRows[0]?.next_id ?? 1);
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_attendance (id, staff_id, checkin_time)
+    INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
     VALUES (${nextId}, ${staffId}, now())
     RETURNING id
   `);
@@ -135,7 +135,7 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   }
 
   const updatedRows = normalizeRows<SqlRow>(await sql`
-    UPDATE staff_attendance
+    UPDATE public.staff_attendance
     SET checkout_time = now()
     WHERE id = ${parsedId}
       AND checkout_time IS NULL
@@ -151,7 +151,7 @@ export async function listStaffMembers(): Promise<StaffMemberRecord[]> {
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, role, active, hourly_wage, weekly_hours
-    FROM staff_members
+    FROM public.staff_members
     ORDER BY full_name ASC
   `);
 
@@ -188,7 +188,7 @@ export async function createStaffMember({
   const weeklyValue = toNullableNumber(weeklyHours ?? null);
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO staff_members (full_name, role, hourly_wage, weekly_hours, active)
+    INSERT INTO public.staff_members (full_name, role, hourly_wage, weekly_hours, active)
     VALUES (${sanitizedName}, ${sanitizedRole}, ${wageValue}, ${weeklyValue}, ${active})
     RETURNING id, full_name, role, active, hourly_wage, weekly_hours
   `);

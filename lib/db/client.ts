@@ -37,7 +37,7 @@ export async function closeExpiredSessions(
 ): Promise<number> {
   const rows = normalizeRows<SqlRow>(
     await sql`
-      UPDATE student_attendance
+      UPDATE public.student_attendance
       SET checkout_time = GREATEST(
         checkin_time,
         timezone(
@@ -62,7 +62,7 @@ export async function closeExpiredStaffSessions(
 ): Promise<number> {
   const rows = normalizeRows<SqlRow>(
     await sql`
-      UPDATE staff_attendance
+      UPDATE public.staff_attendance
       SET checkout_time = GREATEST(
         checkin_time,
         timezone(
