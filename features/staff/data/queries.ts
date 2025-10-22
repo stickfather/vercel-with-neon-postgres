@@ -97,6 +97,18 @@ export async function registerStaffCheckIn({
   if (!staffName) throw new Error("El miembro del personal no tiene un nombre registrado.");
   if (!isActive) throw new Error("El miembro del personal está marcado como inactivo.");
 
+  await sql`
+    WITH day_bounds AS (
+      SELECT
+        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+    )
+    UPDATE public.staff_attendance
+    SET checkout_time = GREATEST(checkin_time, now())
+    WHERE checkout_time IS NULL
+      AND staff_id = ${staffId}
+      AND checkin_time < (SELECT current_day_start FROM day_bounds)
+  `;
+
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
     FROM public.staff_attendance
