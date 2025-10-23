@@ -23,10 +23,17 @@ function readCookie(
 }
 
 function deleteCookie(store: CookieStore, name: string) {
-  if (
-    typeof (store as { delete?: (name: string) => void }).delete === "function"
-  ) {
-    (store as { delete: (name: string) => void }).delete(name);
+  const deleter = (store as { delete?: (name: string) => void }).delete;
+  if (typeof deleter === "function") {
+    try {
+      deleter.call(store, name);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const readonlyFailure = message.includes("ReadonlyRequestCookies");
+      if (!readonlyFailure) {
+        throw error;
+      }
+    }
   }
 }
 
@@ -80,35 +87,52 @@ function signPayload(payload: string): string {
 }
 
 function encodeSession(scope: PinScope, expiresAt: Date): string {
-  const payload = `${scope}|${expiresAt.toISOString()}|${randomBytes(8).toString("hex")}`;
+  const nonce = randomBytes(8).toString("hex");
+  const payload = `${scope}|${expiresAt.toISOString()}|${nonce}`;
   const signature = signPayload(payload);
   return Buffer.from(`${payload}|${signature}`).toString("base64url");
 }
 
-function decodeSession(value: string): {
+type DecodedSession = {
   scope: PinScope | null;
   expiresAt: Date | null;
   valid: boolean;
-} {
+  nonce: string | null;
+};
+
+function decodeSession(value: string): DecodedSession {
   try {
     const decoded = Buffer.from(value, "base64url").toString("utf8");
     const [scopeRaw, expiresRaw, nonce, signature] = decoded.split("|");
     if (!scopeRaw || !expiresRaw || !nonce || !signature) {
-      return { scope: null, expiresAt: null, valid: false };
+      return { scope: null, expiresAt: null, nonce: null, valid: false };
     }
     if (signPayload(`${scopeRaw}|${expiresRaw}|${nonce}`) !== signature) {
-      return { scope: null, expiresAt: null, valid: false };
+      return { scope: null, expiresAt: null, nonce: null, valid: false };
     }
     if (scopeRaw !== "staff" && scopeRaw !== "manager") {
-      return { scope: null, expiresAt: null, valid: false };
+      return { scope: null, expiresAt: null, nonce: null, valid: false };
     }
     const expiresAt = new Date(expiresRaw);
     if (Number.isNaN(expiresAt.getTime())) {
-      return { scope: null, expiresAt: null, valid: false };
+      return { scope: null, expiresAt: null, nonce: null, valid: false };
     }
-    return { scope: scopeRaw, expiresAt, valid: true };
+    return { scope: scopeRaw, expiresAt, nonce, valid: true };
   } catch (error) {
-    return { scope: null, expiresAt: null, valid: false };
+    return { scope: null, expiresAt: null, nonce: null, valid: false };
+  }
+}
+
+type SessionUseState = { expiresAt: number };
+
+const usedSessions = new Map<string, SessionUseState>();
+
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  for (const [nonce, state] of usedSessions.entries()) {
+    if (state.expiresAt <= now) {
+      usedSessions.delete(nonce);
+    }
   }
 }
 
@@ -123,10 +147,24 @@ async function checkPinSession(scope: PinScope): Promise<boolean> {
     decoded.scope === scope &&
     decoded.expiresAt != null &&
     decoded.expiresAt.getTime() > Date.now();
+  const nonce = decoded.nonce;
 
+  cleanupExpiredSessions();
+
+  if (!isValidSession || !nonce) {
+    deleteCookie(store, cookieName);
+    return false;
+  }
+
+  if (usedSessions.has(nonce)) {
+    deleteCookie(store, cookieName);
+    return false;
+  }
+
+  usedSessions.set(nonce, { expiresAt: decoded.expiresAt!.getTime() });
   deleteCookie(store, cookieName);
 
-  return isValidSession;
+  return true;
 }
 
 export let hasValidPinSession: (scope: PinScope) => Promise<boolean> =
