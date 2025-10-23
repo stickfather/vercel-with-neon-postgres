@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
 import { StudentManagementGraphs } from "./student-management-graphs";
@@ -63,10 +63,13 @@ function FlagIndicator({ active, label }: { active: boolean; label: string }) {
   );
 }
 
+const STUDENTS_PER_PAGE = 20;
+
 function StudentManagementTable({ students }: Props) {
   const [stateFilters, setStateFilters] = useState<string[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const totalStudents = students.length;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
@@ -113,6 +116,17 @@ function StudentManagementTable({ students }: Props) {
       return matchesState && matchesFlags && matchesSearch;
     });
   }, [students, stateFilters, flagFilters, normalizedSearchTerm]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [stateFilters, flagFilters, normalizedSearchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedStudents = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * STUDENTS_PER_PAGE;
+    return filteredStudents.slice(startIndex, startIndex + STUDENTS_PER_PAGE);
+  }, [filteredStudents, safeCurrentPage]);
 
   const toggleStateFilter = (key: string) => {
     setStateFilters((previous) =>
@@ -201,7 +215,7 @@ function StudentManagementTable({ students }: Props) {
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
-            {filteredStudents.map((student) => {
+            {paginatedStudents.map((student) => {
               const stateLabel = translateState(student.state);
               return (
                 <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
@@ -253,6 +267,36 @@ function StudentManagementTable({ students }: Props) {
             )}
           </tbody>
         </table>
+
+        {filteredStudents.length > 0 && (
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-brand-ink-muted/10 bg-white/70 px-5 py-4 text-sm text-brand-ink sm:flex-row">
+            <span className="text-xs font-medium uppercase tracking-wide text-brand-ink-muted">
+              Mostrando {Math.min((safeCurrentPage - 1) * STUDENTS_PER_PAGE + 1, filteredStudents.length)}-
+              {Math.min(safeCurrentPage * STUDENTS_PER_PAGE, filteredStudents.length)} de {filteredStudents.length} estudiantes
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={safeCurrentPage <= 1}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                ← Anterior
+              </button>
+              <span className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
+                Página {safeCurrentPage} de {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={safeCurrentPage >= totalPages}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Siguiente →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
