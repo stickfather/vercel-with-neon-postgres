@@ -1,7 +1,7 @@
 import { TIMEZONE } from "@/lib/db/client";
 
-const CHECK_IN_START_HOUR = 7;
-const CHECK_IN_END_HOUR = 20;
+const CHECK_IN_START_HOUR = 0;
+const CHECK_IN_END_HOUR = 23;
 const BUBBLE_HIDE_HOUR = 20;
 const BUBBLE_HIDE_MINUTE = 30;
 const MAX_SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
@@ -37,7 +37,9 @@ export function isWithinCheckInWindow(date = new Date()): boolean {
 
   if (hour < CHECK_IN_START_HOUR) return false;
   if (hour > CHECK_IN_END_HOUR) return false;
-  if (hour === CHECK_IN_END_HOUR && minute > 0) return false;
+  if (CHECK_IN_END_HOUR < 23 && hour === CHECK_IN_END_HOUR && minute > 0) {
+    return false;
+  }
   return true;
 }
 

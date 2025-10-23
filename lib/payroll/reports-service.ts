@@ -185,6 +185,37 @@ async function upsertDayApproval(
   `;
 }
 
+async function revokeDayApproval(
+  sql: SqlClientLike,
+  staffId: number,
+  workDate: string,
+): Promise<void> {
+  await sql`
+    INSERT INTO public.payroll_day_approvals (
+      staff_id,
+      work_date,
+      approved,
+      approved_minutes,
+      approved_by,
+      approved_at
+    )
+    VALUES (
+      ${staffId}::bigint,
+      ${workDate}::date,
+      FALSE,
+      NULL,
+      NULL,
+      NULL
+    )
+    ON CONFLICT (staff_id, work_date) DO UPDATE
+    SET
+      approved = FALSE,
+      approved_minutes = NULL,
+      approved_by = NULL,
+      approved_at = NULL
+  `;
+}
+
 async function logPayrollAudit(
   sql: SqlClientLike,
   action: string,
@@ -221,6 +252,28 @@ function normalizeTime(value: string): string {
     throw new HttpError(400, "Las horas indicadas no son válidas.");
   }
   return normalized;
+}
+
+function toPayrollLogTimestamp(value: unknown): string | null {
+  if (value == null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return toPayrollZonedISOString(value) ?? normalizePayrollTimestamp(value.toISOString());
+  }
+  const raw = String(value);
+  if (!raw.trim().length) {
+    return null;
+  }
+  const normalized = normalizePayrollTimestamp(raw);
+  if (!normalized) {
+    return null;
+  }
+  const asDate = new Date(normalized);
+  if (Number.isNaN(asDate.getTime())) {
+    return normalized;
+  }
+  return toPayrollZonedISOString(asDate) ?? normalized;
 }
 
 function validateSessionRange(checkinIso: string, checkoutIso: string, workDate: string): void {
@@ -332,6 +385,7 @@ export const OverrideAndApproveSchema = z.object({
 export const ApproveDaySchema = z.object({
   staffId: z.number().int("El identificador del colaborador no es válido."),
   workDate: z.string().trim().regex(ISO_DATE_REGEX, "Debes indicar un día válido."),
+  approved: z.boolean().optional().default(true),
   approvedBy: z
     .string()
     .trim()
@@ -598,6 +652,14 @@ export async function approveDay(
 ): Promise<void> {
   const sql = ensureSqlClient(sqlClient);
   await ensureStaffExists(sql, payload.staffId);
+  if (payload.approved === false) {
+    await revokeDayApproval(sql, payload.staffId, payload.workDate);
+    await logPayrollAudit(sql, "unapprove_day", payload.staffId, payload.workDate, null, {
+      approved: false,
+      approvedBy: payload.approvedBy ?? null,
+    });
+    return;
+  }
   const minutes = await fetchApprovedMinutes(sql, payload.staffId, payload.workDate);
   await upsertDayApproval(sql, payload.staffId, payload.workDate, minutes, payload.approvedBy ?? null);
   await logPayrollAudit(sql, "approve_day", payload.staffId, payload.workDate, null, {
@@ -631,6 +693,28 @@ export async function overrideAndApprove(
       const checkinIso = normalizeTime(override.checkinTime);
       const checkoutIso = normalizeTime(override.checkoutTime);
       validateSessionRange(checkinIso, checkoutIso, payload.workDate);
+
+      const existingSessions = normalizeRows<{
+        checkin_time: string | Date | null;
+        checkout_time: string | Date | null;
+      }>(
+        await transaction`
+          SELECT checkin_time, checkout_time
+          FROM public.staff_attendance
+          WHERE id = ${override.sessionId}::bigint
+            AND staff_id = ${payload.staffId}::bigint
+          FOR UPDATE
+        `,
+      );
+
+      const currentSession = existingSessions[0];
+      if (!currentSession) {
+        throw new HttpError(404, "No encontramos la sesión que intentas editar.");
+      }
+
+      const originalCheckin = toPayrollLogTimestamp(currentSession.checkin_time);
+      const originalCheckout = toPayrollLogTimestamp(currentSession.checkout_time);
+
       await transaction`
         UPDATE public.staff_attendance
         SET checkin_time = ${checkinIso}::timestamptz,
@@ -639,8 +723,15 @@ export async function overrideAndApprove(
           AND staff_id = ${payload.staffId}::bigint
       `;
       await logPayrollAudit(transaction, "update_session", payload.staffId, payload.workDate, override.sessionId, {
-        checkinTime: checkinIso,
-        checkoutTime: checkoutIso,
+        replacedSessionId: override.sessionId,
+        before: {
+          checkinTime: originalCheckin,
+          checkoutTime: originalCheckout,
+        },
+        after: {
+          checkinTime: checkinIso,
+          checkoutTime: checkoutIso,
+        },
       });
     }
 

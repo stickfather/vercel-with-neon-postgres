@@ -69,6 +69,12 @@ describe("payroll reports schemas", () => {
   it("parses approve day schema", () => {
     const parsed = ApproveDaySchema.parse({ staffId: 7, workDate: "2025-10-06", approvedBy: " Ana " });
     assert.equal(parsed.approvedBy, "Ana");
+    assert.equal(parsed.approved, true);
+  });
+
+  it("defaults approval flag when not provided", () => {
+    const parsed = ApproveDaySchema.parse({ staffId: 4, workDate: "2025-10-08" });
+    assert.equal(parsed.approved, true);
   });
 
   it("validates month summary schema", () => {
@@ -131,11 +137,42 @@ describe("payroll integration", () => {
       (op) => op.type === "query" && /payroll_audit_events/.test(op.text),
     );
     assert.equal(audit.length, 1);
+    assert(audit[0].values.includes("approve_day"));
+  });
+
+  it("revokes an approved day when requested", async () => {
+    const { sql, operations } = createMockSqlClient([
+      { match: /FROM public\.staff_members/, rows: [{ exists: true }] },
+    ]);
+
+    await approveDay({ staffId: 12, workDate: "2025-10-09", approved: false }, sql);
+
+    const upsert = operations.find(
+      (op) => op.type === "query" && /payroll_day_approvals/.test(op.text),
+    );
+    assert(upsert);
+    assert.equal(upsert.values[0], 12);
+    assert.equal(upsert.values[1], "2025-10-09");
+
+    const audit = operations.find(
+      (op) => op.type === "query" && /payroll_audit_events/.test(op.text),
+    );
+    assert(audit);
+    assert(audit.values.includes("unapprove_day"));
   });
 
   it("overrides sessions inside a single transaction", async () => {
     const { sql, operations } = createMockSqlClient([
       { match: /FROM public\.staff_members/, rows: [{ exists: true }] },
+      {
+        match: /SELECT checkin_time, checkout_time\s+FROM public\.staff_attendance/,
+        rows: [
+          {
+            checkin_time: "2025-10-07 07:45:00-05",
+            checkout_time: "2025-10-07 11:45:00-05",
+          },
+        ],
+      },
       { match: /RETURNING id/, rows: [{ id: 501 }] },
       { match: /attendance_local_base_v/, rows: [{ total_minutes: 240 }] },
     ]);
@@ -178,6 +215,15 @@ describe("payroll integration", () => {
     );
     assert(deleteOp);
 
+    const selectOp = operations.find(
+      (op, index) =>
+        op.type === "query" &&
+        /SELECT checkin_time, checkout_time\s+FROM public\.staff_attendance/.test(op.text) &&
+        index > beginIndex &&
+        index < commitIndex,
+    );
+    assert(selectOp);
+
     const updateOp = operations.find(
       (op, index) =>
         op.type === "query" &&
@@ -206,6 +252,57 @@ describe("payroll integration", () => {
     );
     assert(approvalOp);
     assert.equal(approvalOp.values[2], 240);
+
+    const updateAudit = operations.find(
+      (op) =>
+        op.type === "query" &&
+        /INSERT INTO public\.payroll_audit_events/.test(op.text) &&
+        op.values.includes("update_session"),
+    );
+    assert(updateAudit);
+    const [, , , , detailsJson] = updateAudit.values;
+    const parsedDetails = JSON.parse(detailsJson);
+    assert.equal(parsedDetails.replacedSessionId, 102);
+    assert.deepEqual(parsedDetails.before, {
+      checkinTime: "2025-10-07T07:45:00-05:00",
+      checkoutTime: "2025-10-07T11:45:00-05:00",
+    });
+    assert.deepEqual(parsedDetails.after, {
+      checkinTime: "2025-10-07T08:00:00-05:00",
+      checkoutTime: "2025-10-07T12:00:00-05:00",
+    });
+  });
+
+  it("fails when overriding a session that does not exist", async () => {
+    const { sql } = createMockSqlClient([
+      { match: /FROM public\.staff_members/, rows: [{ exists: true }] },
+      {
+        match: /SELECT checkin_time, checkout_time\s+FROM public\.staff_attendance/,
+        rows: [],
+      },
+      { match: /attendance_local_base_v/, rows: [{ total_minutes: 60 }] },
+    ]);
+
+    await assert.rejects(
+      () =>
+        overrideAndApprove(
+          {
+            staffId: 4,
+            workDate: "2025-10-10",
+            overrides: [
+              {
+                sessionId: 88,
+                checkinTime: "2025-10-10T08:00:00-05:00",
+                checkoutTime: "2025-10-10T09:00:00-05:00",
+              },
+            ],
+            additions: [],
+            deletions: [],
+          },
+          sql,
+        ),
+      (error) => error instanceof HttpError && error.status === 404,
+    );
   });
 
   it("computes month summary amounts", async () => {

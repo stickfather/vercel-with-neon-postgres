@@ -1,4 +1,10 @@
-import { getSqlClient, normalizeRows, SqlRow, TIMEZONE } from "@/lib/db/client";
+import {
+  getSqlClient,
+  isMissingRelationError,
+  normalizeRows,
+  SqlRow,
+  TIMEZONE,
+} from "@/lib/db/client";
 
 export type StaffDirectoryEntry = {
   id: number;
@@ -143,15 +149,38 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
     throw new Error("La asistencia seleccionada no es válida.");
   }
 
-  const updatedRows = normalizeRows<SqlRow>(await sql`
-    UPDATE public.staff_attendance
-    SET checkout_time = now()
-    WHERE id = ${parsedId}
-      AND checkout_time IS NULL
-    RETURNING id
-  `);
-  if (!updatedRows.length) {
-    throw new Error("La asistencia ya estaba cerrada o no existe.");
+  try {
+    const existingRows = normalizeRows<SqlRow>(await sql`
+      SELECT id, checkin_time
+      FROM public.staff_attendance
+      WHERE id = ${parsedId}::bigint
+      LIMIT 1
+    `);
+
+    if (!existingRows.length) {
+      throw new Error("No encontramos la asistencia seleccionada.");
+    }
+
+    const checkoutTimestamp = new Date().toISOString();
+
+    const updatedRows = normalizeRows<SqlRow>(await sql`
+      UPDATE public.staff_attendance
+      SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+      WHERE id = ${parsedId}::bigint
+        AND checkout_time IS NULL
+      RETURNING id
+    `);
+
+    if (!updatedRows.length) {
+      throw new Error("La asistencia ya estaba cerrada o no existe.");
+    }
+  } catch (error) {
+    if (isMissingRelationError(error, "staff_attendance")) {
+      throw new Error(
+        "No pudimos registrar la salida del personal porque falta la tabla principal de asistencias. Verifica que las asistencias del staff se almacenen en 'public.staff_attendance'.",
+      );
+    }
+    throw error;
   }
 }
 

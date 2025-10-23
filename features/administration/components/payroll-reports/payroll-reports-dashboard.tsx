@@ -546,6 +546,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [sessionEditor, setSessionEditor] = useState<SessionEditorState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionInFlight, setActionInFlight] = useState<null | "approve" | "unapprove">(
+    null,
+  );
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
@@ -553,6 +556,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [pinSessionActive, setPinSessionActive] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [accessGateOpen, setAccessGateOpen] = useState(true);
+  const [hasSelectedAccessMode, setHasSelectedAccessMode] = useState(false);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
   const sessionLoadTokenRef = useRef(0);
@@ -567,13 +571,32 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   }, []);
 
   const waitForPin = useCallback((): Promise<boolean> => {
+    if (!hasSelectedAccessMode || accessMode !== "management") {
+      return Promise.resolve(false);
+    }
+
     return new Promise((resolve) => {
       pinRequestRef.current = resolve;
       setPinModalOpen(true);
     });
-  }, []);
+  }, [accessMode, hasSelectedAccessMode]);
+
+  useEffect(() => {
+    if (!accessGateOpen) {
+      return;
+    }
+    setPinModalOpen(false);
+    setPinSessionActive(false);
+    setHasSelectedAccessMode(false);
+    resolvePinRequest(false);
+  }, [accessGateOpen, resolvePinRequest, setHasSelectedAccessMode]);
 
   const ensureManagementAccess = useCallback(async (): Promise<AccessCheckResult> => {
+    if (!hasSelectedAccessMode) {
+      setAccessGateOpen(true);
+      setToast({ message: "Selecciona el modo de acceso para continuar.", tone: "error" });
+      return "denied";
+    }
     if (accessMode !== "management") {
       setToast({
         message: "Acceso de solo lectura activo. Cambia a ingreso de gerencia para editar.",
@@ -594,7 +617,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
 
     setPinSessionActive(false);
     return "denied";
-  }, [accessMode, pinSessionActive, setToast, waitForPin]);
+  }, [
+    accessMode,
+    hasSelectedAccessMode,
+    pinSessionActive,
+    setAccessGateOpen,
+    setToast,
+    waitForPin,
+  ]);
 
   const handleUnauthorized = useCallback(async (): Promise<boolean> => {
     setPinSessionActive(false);
@@ -642,6 +672,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const handleAccessSelection = useCallback(
     (mode: AccessMode, options?: { fromGate?: boolean }) => {
       if (mode === "read-only") {
+        setHasSelectedAccessMode(true);
         setAccessMode("read-only");
         setPinSessionActive(false);
         setPinModalOpen(false);
@@ -652,18 +683,19 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         return;
       }
 
+      setHasSelectedAccessMode(true);
       setAccessMode("management");
+      if (options?.fromGate) {
+        setAccessGateOpen(false);
+      }
       if (pinSessionActive) {
-        if (options?.fromGate) {
-          setAccessGateOpen(false);
-        }
         return;
       }
 
       setPinSessionActive(false);
       void waitForPin();
     },
-    [pinSessionActive, resolvePinRequest, waitForPin],
+    [pinSessionActive, resolvePinRequest, setAccessGateOpen, setHasSelectedAccessMode, waitForPin],
   );
 
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
@@ -1175,9 +1207,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setSessionsError(null);
     setActionError(null);
     setActionLoading(false);
+    setActionInFlight(null);
     setPinModalOpen(false);
     resolvePinRequest(false);
-  }, [resolvePinRequest]);
+  }, [resolvePinRequest, setActionInFlight]);
 
   const loadSessionsFor = useCallback(
     async (
@@ -1631,6 +1664,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const handleApprove = useCallback(async () => {
     if (!selectedCell) return;
     setActionLoading(true);
+    setActionInFlight("approve");
     setActionError(null);
     try {
       const response = await performProtectedFetch("/api/payroll/reports/approve-day", {
@@ -1639,6 +1673,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         body: JSON.stringify({
           staffId: selectedCell.staffId,
           workDate: selectedCell.workDate,
+          approved: true,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -1657,6 +1692,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setToast({ message: "No se pudo guardar", tone: "error" });
     } finally {
       setActionLoading(false);
+      setActionInFlight(null);
     }
   }, [
     closeModal,
@@ -1665,6 +1701,51 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     refreshMonthStatusForStaff,
     refreshMonthSummary,
     selectedCell,
+    setActionInFlight,
+  ]);
+
+  const handleUnapprove = useCallback(async () => {
+    if (!selectedCell) return;
+    setActionLoading(true);
+    setActionInFlight("unapprove");
+    setActionError(null);
+    try {
+      const response = await performProtectedFetch("/api/payroll/reports/approve-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          staffId: selectedCell.staffId,
+          workDate: selectedCell.workDate,
+          approved: false,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((body as { error?: string }).error ?? "No pudimos revertir la aprobación.");
+      }
+      await refreshMatrixOnly();
+      await refreshMonthStatusForStaff(selectedCell.staffId);
+      await refreshMonthSummary();
+      setToast({ message: "Aprobación revocada", tone: "success" });
+      closeModal();
+    } catch (err) {
+      console.error("No se pudo revertir la aprobación del día", err);
+      const message =
+        err instanceof Error ? err.message : "No pudimos revertir la aprobación del día.";
+      setActionError(message);
+      setToast({ message: "No se pudo guardar", tone: "error" });
+    } finally {
+      setActionLoading(false);
+      setActionInFlight(null);
+    }
+  }, [
+    closeModal,
+    performProtectedFetch,
+    refreshMatrixOnly,
+    refreshMonthStatusForStaff,
+    refreshMonthSummary,
+    selectedCell,
+    setActionInFlight,
   ]);
 
   useEffect(() => {
@@ -2426,6 +2507,19 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               >
                 Cancelar
               </button>
+              {selectedCell?.approved ? (
+                <button
+                  type="button"
+                  onClick={handleUnapprove}
+                  disabled={!isManagementMode || actionLoading}
+                  title={
+                    !isManagementMode ? "Disponible solo en modo gerencia" : undefined
+                  }
+                  className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-rose-700 shadow transition hover:-translate-y-[1px] hover:bg-rose-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {actionInFlight === "unapprove" ? "Procesando…" : "Revocar aprobación"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleApprove}
@@ -2435,7 +2529,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 }
                 className="inline-flex items-center justify-center rounded-full border border-emerald-500/50 bg-emerald-500/90 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-emerald-500 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {actionLoading ? "Procesando…" : "Aprobar día"}
+                {actionInFlight === "approve"
+                  ? "Procesando…"
+                  : selectedCell?.approved
+                    ? "Actualizar aprobación"
+                    : "Aprobar día"}
               </button>
             </div>
           </div>
@@ -2608,6 +2706,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               type="button"
               onClick={() => {
                 setPinModalOpen(false);
+                setPinSessionActive(false);
+                setHasSelectedAccessMode(false);
+                setAccessGateOpen(true);
                 resolvePinRequest(false);
               }}
               className="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white text-lg font-semibold text-brand-ink shadow hover:-translate-y-[1px] hover:bg-brand-teal-soft/40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
