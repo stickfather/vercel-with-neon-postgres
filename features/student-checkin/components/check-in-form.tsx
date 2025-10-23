@@ -19,10 +19,7 @@ import {
   getLevelAccent,
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import {
-  formatLessonWithSequence,
-  isWithinCheckInWindow,
-} from "@/lib/time/check-in-window";
+import { formatLessonWithSequence } from "@/lib/time/check-in-window";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
@@ -481,14 +478,6 @@ export function CheckInForm({
       setStatus({
         message: "La lección seleccionada no es válida.",
       });
-      return;
-    }
-
-    if (!isWithinCheckInWindow()) {
-      const message =
-        "Los registros solo están permitidos entre las 07:00 y las 20:00. Intenta de nuevo dentro del horario permitido.";
-      setStatus({ message });
-      setToast({ type: "error", message });
       return;
     }
 

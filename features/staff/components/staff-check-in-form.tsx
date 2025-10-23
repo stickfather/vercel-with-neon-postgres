@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffDirectoryEntry } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import { isWithinCheckInWindow } from "@/lib/time/check-in-window";
 
 type StatusState = { message: string } | null;
 
@@ -69,14 +68,6 @@ export function StaffCheckInForm({
       setStatus({
         message: "Selecciona a un miembro del personal antes de continuar.",
       });
-      return;
-    }
-
-    if (!isWithinCheckInWindow()) {
-      const message =
-        "Los registros solo están permitidos entre las 07:00 y las 20:00. Intenta de nuevo dentro del horario permitido.";
-      setStatus({ message });
-      setToast({ tone: "error", message });
       return;
     }
 
