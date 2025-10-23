@@ -402,7 +402,7 @@ export function ConfigurationDashboard({
             </div>
           </div>
           <p className="mt-3 text-sm text-brand-ink-muted">
-            Toda verificación se realiza en el servidor, con sesiones temporales por tipo de PIN y sin almacenar códigos en texto plano.
+            Cada verificación se valida en el servidor, sin reutilizar sesiones y solicitando el PIN en cada acceso restringido.
           </p>
         </section>
       </div>

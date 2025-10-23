@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server.js";
 
 import { getSecurityPinStatuses, getSecurityPinsSummary, updateSecurityPins } from "@/features/security/data/pins";
-import { hasValidPinSession, setPinSession } from "@/lib/security/pin-session";
+import { hasValidPinSession } from "@/lib/security/pin-session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -75,10 +75,6 @@ export async function POST(request: Request) {
     }
 
     await updateSecurityPins({ staffPin, managerPin });
-
-    if (hasSession) {
-      await setPinSession("manager");
-    }
 
     return new NextResponse(null, {
       status: 204,

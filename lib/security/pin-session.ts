@@ -58,7 +58,10 @@ const COOKIE_NAMES: Record<PinScope, string> = {
   manager: "ir_pin_management",
 };
 
-const SESSION_TTL_MINUTES = 10;
+// Sessions are single-use, but we keep a short TTL as a safety net in case the
+// follow-up request is delayed by the network. The cookie is cleared on the
+// first successful validation.
+const SESSION_TTL_MINUTES = 1;
 
 function getSessionSecret(): string {
   const secret =
@@ -115,15 +118,15 @@ async function checkPinSession(scope: PinScope): Promise<boolean> {
   const stored = readCookie(store, cookieName);
   if (!stored?.value) return false;
   const decoded = decodeSession(stored.value);
-  if (!decoded.valid || decoded.scope !== scope) {
-    deleteCookie(store, cookieName);
-    return false;
-  }
-  if (!decoded.expiresAt || decoded.expiresAt.getTime() <= Date.now()) {
-    deleteCookie(store, cookieName);
-    return false;
-  }
-  return true;
+  const isValidSession =
+    decoded.valid &&
+    decoded.scope === scope &&
+    decoded.expiresAt != null &&
+    decoded.expiresAt.getTime() > Date.now();
+
+  deleteCookie(store, cookieName);
+
+  return isValidSession;
 }
 
 export let hasValidPinSession: (scope: PinScope) => Promise<boolean> =

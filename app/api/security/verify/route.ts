@@ -107,8 +107,7 @@ export async function POST(request: Request) {
 
   attemptStore.delete(key);
 
-  const ttlMinutes = type === "manager" ? 10 : undefined;
-  await setPinSession(type, ttlMinutes);
+  await setPinSession(type);
 
   return NextResponse.json(
     { valid: true },
