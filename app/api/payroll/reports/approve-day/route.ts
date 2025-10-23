@@ -1,9 +1,9 @@
-import * as adminRoute from "@/app/api/(administration)/payroll/reports/approve-day/route";
+import { POST as adminPOST } from "@/app/api/(administration)/payroll/reports/approve-day/route";
 
-export const dynamic = adminRoute.dynamic;
-export const revalidate = adminRoute.revalidate;
-export const fetchCache = adminRoute.fetchCache;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 export async function POST(request: Request) {
-  return adminRoute.POST(request);
+  return adminPOST(request);
 }

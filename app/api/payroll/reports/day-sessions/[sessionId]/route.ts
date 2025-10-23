@@ -1,19 +1,19 @@
-import * as adminRoute from "@/app/api/(administration)/payroll/reports/day-sessions/[sessionId]/route";
+import {
+  PATCH as adminPATCH,
+  DELETE as adminDELETE,
+} from "@/app/api/(administration)/payroll/reports/day-sessions/[sessionId]/route";
 
-export const dynamic = adminRoute.dynamic;
-export const revalidate = adminRoute.revalidate;
-export const fetchCache = adminRoute.fetchCache;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
-export async function PATCH(
-  request: Request,
-  context: Parameters<typeof adminRoute.PATCH>[1],
-) {
-  return adminRoute.PATCH(request, context);
+type PatchContext = Parameters<typeof adminPATCH>[1];
+type DeleteContext = Parameters<typeof adminDELETE>[1];
+
+export async function PATCH(request: Request, context: PatchContext) {
+  return adminPATCH(request, context);
 }
 
-export async function DELETE(
-  request: Request,
-  context: Parameters<typeof adminRoute.DELETE>[1],
-) {
-  return adminRoute.DELETE(request, context);
+export async function DELETE(request: Request, context: DeleteContext) {
+  return adminDELETE(request, context);
 }

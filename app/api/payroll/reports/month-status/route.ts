@@ -1,13 +1,16 @@
-import * as adminRoute from "@/app/api/(administration)/payroll/reports/month-status/route";
+import {
+  GET as adminGET,
+  PATCH as adminPATCH,
+} from "@/app/api/(administration)/payroll/reports/month-status/route";
 
-export const dynamic = adminRoute.dynamic;
-export const revalidate = adminRoute.revalidate;
-export const fetchCache = adminRoute.fetchCache;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 export async function GET(request: Request) {
-  return adminRoute.GET(request);
+  return adminGET(request);
 }
 
 export async function PATCH(request: Request) {
-  return adminRoute.PATCH(request);
+  return adminPATCH(request);
 }
