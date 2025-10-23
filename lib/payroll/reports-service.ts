@@ -254,6 +254,28 @@ function normalizeTime(value: string): string {
   return normalized;
 }
 
+function toPayrollLogTimestamp(value: unknown): string | null {
+  if (value == null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return toPayrollZonedISOString(value) ?? normalizePayrollTimestamp(value.toISOString());
+  }
+  const raw = String(value);
+  if (!raw.trim().length) {
+    return null;
+  }
+  const normalized = normalizePayrollTimestamp(raw);
+  if (!normalized) {
+    return null;
+  }
+  const asDate = new Date(normalized);
+  if (Number.isNaN(asDate.getTime())) {
+    return normalized;
+  }
+  return toPayrollZonedISOString(asDate) ?? normalized;
+}
+
 function validateSessionRange(checkinIso: string, checkoutIso: string, workDate: string): void {
   const start = new Date(checkinIso).getTime();
   const end = new Date(checkoutIso).getTime();
@@ -671,6 +693,28 @@ export async function overrideAndApprove(
       const checkinIso = normalizeTime(override.checkinTime);
       const checkoutIso = normalizeTime(override.checkoutTime);
       validateSessionRange(checkinIso, checkoutIso, payload.workDate);
+
+      const existingSessions = normalizeRows<{
+        checkin_time: string | Date | null;
+        checkout_time: string | Date | null;
+      }>(
+        await transaction`
+          SELECT checkin_time, checkout_time
+          FROM public.staff_attendance
+          WHERE id = ${override.sessionId}::bigint
+            AND staff_id = ${payload.staffId}::bigint
+          FOR UPDATE
+        `,
+      );
+
+      const currentSession = existingSessions[0];
+      if (!currentSession) {
+        throw new HttpError(404, "No encontramos la sesión que intentas editar.");
+      }
+
+      const originalCheckin = toPayrollLogTimestamp(currentSession.checkin_time);
+      const originalCheckout = toPayrollLogTimestamp(currentSession.checkout_time);
+
       await transaction`
         UPDATE public.staff_attendance
         SET checkin_time = ${checkinIso}::timestamptz,
@@ -679,8 +723,15 @@ export async function overrideAndApprove(
           AND staff_id = ${payload.staffId}::bigint
       `;
       await logPayrollAudit(transaction, "update_session", payload.staffId, payload.workDate, override.sessionId, {
-        checkinTime: checkinIso,
-        checkoutTime: checkoutIso,
+        replacedSessionId: override.sessionId,
+        before: {
+          checkinTime: originalCheckin,
+          checkoutTime: originalCheckout,
+        },
+        after: {
+          checkinTime: checkinIso,
+          checkoutTime: checkoutIso,
+        },
       });
     }
 

@@ -41,16 +41,14 @@ export async function closeExpiredSessions(
         UPDATE public.student_attendance
         SET checkout_time = GREATEST(
           checkin_time,
-          timezone(
-            ${TIMEZONE},
-            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-          )
+          (
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE})
+            + INTERVAL '20 hours 15 minutes'
+          ) AT TIME ZONE ${TIMEZONE}
         )
         WHERE checkout_time IS NULL
-          AND timezone(${TIMEZONE}, now()) >= timezone(
-            ${TIMEZONE},
+          AND now() AT TIME ZONE ${TIMEZONE} >=
             date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-          )
         RETURNING id
       `,
     );
@@ -69,16 +67,14 @@ export async function closeExpiredStaffSessions(
         UPDATE public.staff_attendance
         SET checkout_time = GREATEST(
           checkin_time,
-          timezone(
-            ${TIMEZONE},
-            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-          )
+          (
+            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE})
+            + INTERVAL '20 hours 15 minutes'
+          ) AT TIME ZONE ${TIMEZONE}
         )
         WHERE checkout_time IS NULL
-          AND timezone(${TIMEZONE}, now()) >= timezone(
-            ${TIMEZONE},
+          AND now() AT TIME ZONE ${TIMEZONE} >=
             date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-          )
         RETURNING id
       `,
     );
