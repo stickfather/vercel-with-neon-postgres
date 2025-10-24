@@ -54,6 +54,7 @@ type FetchState = "idle" | "loading" | "error";
 
 type LessonOverridePrompt = {
   studentId: number;
+  studentName: string;
   lessonId: number;
   level: string;
   lastLessonName: string | null;
@@ -99,6 +100,14 @@ export function CheckInForm({
   const [suggestedLesson, setSuggestedLesson] = useState<StudentLastLesson | null>(null);
   const [lessonOverridePrompt, setLessonOverridePrompt] =
     useState<LessonOverridePrompt | null>(null);
+  const [fullScreenMessage, setFullScreenMessage] = useState<
+    | {
+        tone: "success" | "error";
+        message: string;
+        subtext?: string;
+      }
+    | null
+  >(null);
   const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
   const lastLessonAbortRef = useRef<AbortController | null>(null);
   const studentInputRef = useRef<HTMLInputElement | null>(null);
@@ -421,18 +430,60 @@ export function CheckInForm({
     studentInputRef.current?.blur();
   };
 
+  const scheduleWelcomeRedirect = useCallback(
+    (
+      {
+        name,
+        delay = 1600,
+        reason = "checkin",
+      }: {
+        name?: string | null;
+        delay?: number;
+        reason?: "checkin" | "checkout" | "none";
+      } = { reason: "checkin" },
+    ) => {
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      redirectTimeoutRef.current = setTimeout(() => {
+        const trimmedName = name?.trim();
+        const params = new URLSearchParams();
+
+        if (reason === "checkin") {
+          params.set("saludo", "1");
+        } else if (reason === "checkout") {
+          params.set("despedida", "1");
+        }
+
+        if (
+          trimmedName &&
+          (reason === "checkin" || reason === "checkout")
+        ) {
+          params.set("nombre", trimmedName);
+        }
+
+        const target = params.size ? `/?${params.toString()}` : "/";
+        startTransition(() => {
+          router.push(target);
+        });
+      }, delay);
+    },
+    [router, startTransition],
+  );
+
   const handlePostSubmitSuccess = useCallback(
     (
       studentId: number,
       options?: {
         message?: string;
-        skipRefresh?: boolean;
         statusMessage?: string | null;
+        welcomeName?: string | null;
+        redirectDelayMs?: number;
       },
     ) => {
-      const toastMessage =
+      const confirmationMessage =
         options?.message ?? "¡Asistencia confirmada, buen trabajo!";
-      setToast({ type: "success", message: toastMessage });
 
       if (options?.statusMessage !== undefined) {
         if (options.statusMessage === null) {
@@ -443,6 +494,15 @@ export function CheckInForm({
       } else {
         setStatus(null);
       }
+
+      setToast(null);
+      setFullScreenMessage({
+        tone: "success",
+        message: confirmationMessage,
+        subtext:
+          options?.statusMessage ??
+          "Te llevaremos a la pantalla principal en un momento.",
+      });
 
       setStudentQuery("");
       setSelectedStudent(null);
@@ -457,19 +517,13 @@ export function CheckInForm({
       lastLessonAbortRef.current?.abort();
       lastLessonCache.current.delete(studentId);
 
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
-      }
-
-      if (!options?.skipRefresh) {
-        redirectTimeoutRef.current = setTimeout(() => {
-          startTransition(() => {
-            router.refresh();
-          });
-        }, 320);
-      }
+      scheduleWelcomeRedirect({
+        name: options?.welcomeName ?? null,
+        delay: options?.redirectDelayMs,
+        reason: "checkin",
+      });
     },
-    [router, startTransition],
+    [scheduleWelcomeRedirect],
   );
 
   const performCheckInRequest = useCallback(
@@ -538,11 +592,13 @@ export function CheckInForm({
   const submitCheckIn = useCallback(
     async ({
       studentId,
+      studentName,
       lessonId,
       level,
       confirmOverride,
     }: {
       studentId: number;
+      studentName?: string | null;
       lessonId: number;
       level: string;
       confirmOverride: boolean;
@@ -554,21 +610,26 @@ export function CheckInForm({
         handlePostSubmitSuccess(studentId, {
           message: "Registro guardado sin conexión. Se enviará al reconectar.",
           statusMessage: OFFLINE_WAITING_MESSAGE,
-          skipRefresh: true,
+          welcomeName: studentName ?? null,
+          redirectDelayMs: 2200,
         });
         return;
       }
 
       try {
         await performCheckInRequest(payload);
-        handlePostSubmitSuccess(studentId, { statusMessage: null });
+        handlePostSubmitSuccess(studentId, {
+          statusMessage: null,
+          welcomeName: studentName ?? null,
+        });
       } catch (error) {
         if (isOfflineError(error)) {
           queueStudentCheckIn(payload);
           handlePostSubmitSuccess(studentId, {
             message: "Registro guardado sin conexión. Se enviará al reconectar.",
             statusMessage: OFFLINE_WAITING_MESSAGE,
-            skipRefresh: true,
+            welcomeName: studentName ?? null,
+            redirectDelayMs: 2200,
           });
           return;
         }
@@ -666,6 +727,7 @@ export function CheckInForm({
     }
 
     setStatus(null);
+    setFullScreenMessage(null);
 
     const trimmedName = studentQuery.trim();
     if (!trimmedName) {
@@ -704,6 +766,7 @@ export function CheckInForm({
     if (!isOnline) {
       await submitCheckIn({
         studentId: selectedStudent.id,
+        studentName: selectedStudent.fullName,
         lessonId: parsedLessonId,
         level: selectedLevel,
         confirmOverride: false,
@@ -748,14 +811,21 @@ export function CheckInForm({
         const message =
           validationPayload?.message ??
           "Tu cuenta requiere atención. Por favor, contacta a la administración.";
-        setStatus({ message });
-        setToast({ type: "error", message });
+        setStatus(null);
+        setToast(null);
+        setFullScreenMessage({
+          tone: "error",
+          message,
+          subtext: "Regresaremos a la pantalla principal en unos segundos…",
+        });
+        scheduleWelcomeRedirect({ reason: "none", delay: 3000 });
         return;
       }
 
       if (validationPayload.needsConfirmation) {
         setLessonOverridePrompt({
           studentId: selectedStudent.id,
+          studentName: selectedStudent.fullName,
           lessonId: parsedLessonId,
           level: selectedLevel,
           lastLessonName: validationPayload.lastLessonName ?? null,
@@ -770,6 +840,7 @@ export function CheckInForm({
 
       await submitCheckIn({
         studentId: selectedStudent.id,
+        studentName: selectedStudent.fullName,
         lessonId: parsedLessonId,
         level: selectedLevel,
         confirmOverride: false,
@@ -781,6 +852,7 @@ export function CheckInForm({
         try {
           await submitCheckIn({
             studentId: selectedStudent.id,
+            studentName: selectedStudent.fullName,
             lessonId: parsedLessonId,
             level: selectedLevel,
             confirmOverride: false,
@@ -815,6 +887,7 @@ export function CheckInForm({
     try {
       await submitCheckIn({
         studentId: lessonOverridePrompt.studentId,
+        studentName: lessonOverridePrompt.studentName,
         lessonId: lessonOverridePrompt.lessonId,
         level: lessonOverridePrompt.level,
         confirmOverride: true,
@@ -1188,6 +1261,20 @@ export function CheckInForm({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {fullScreenMessage ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(15,23,42,0.55)] px-6 py-6 backdrop-blur-sm">
+          <div className="max-w-xl rounded-[36px] border border-white/80 bg-white/95 px-8 py-10 text-center text-brand-deep shadow-[0_28px_68px_rgba(15,23,42,0.28)]">
+            <p className="text-2xl font-black leading-snug">
+              {fullScreenMessage.message}
+            </p>
+            {fullScreenMessage.subtext ? (
+              <p className="mt-3 text-sm font-medium text-brand-ink-muted">
+                {fullScreenMessage.subtext}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}

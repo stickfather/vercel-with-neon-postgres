@@ -24,6 +24,13 @@ function decodeName(nombre?: string) {
 function buildMessage({ saludo, despedida, nombre }: SearchParams) {
   const safeName = decodeName(nombre);
 
+  if (despedida) {
+    return {
+      tone: "positivo" as const,
+      text: `¡Gracias, ${safeName || "estudiante"}! Tu salida quedó registrada.`,
+    };
+  }
+
   if (saludo) {
     return {
       tone: "positivo" as const,

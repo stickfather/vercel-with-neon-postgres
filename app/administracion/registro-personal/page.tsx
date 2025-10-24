@@ -55,12 +55,6 @@ export default async function RegistroPersonalPage() {
           >
             ← Volver al panel
           </Link>
-          <Link
-            href="/registro"
-            className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
-          >
-            Registro de estudiantes
-          </Link>
         </div>
 
         <div className="grid gap-12 xl:grid-cols-[1.3fr_1.7fr]">

@@ -59,6 +59,10 @@ export function StaffCheckInForm({
     PendingStaffCheckIn[]
   >([]);
   const [isSyncingOfflineQueue, setIsSyncingOfflineQueue] = useState(false);
+  const [fullScreenMessage, setFullScreenMessage] = useState<
+    | { tone: "success" | "error"; message: string; subtext?: string }
+    | null
+  >(null);
 
   useEffect(() => {
     return () => {
@@ -92,6 +96,13 @@ export function StaffCheckInForm({
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const pendingOfflineCount = pendingOfflineCheckIns.length;
 
+  const selectedStaffMember = useMemo(() => {
+    if (selectedStaffId == null) {
+      return null;
+    }
+    return staffMembers.find((member) => member.id === selectedStaffId) ?? null;
+  }, [selectedStaffId, staffMembers]);
+
   const filteredStaff = useMemo(() => {
     if (!normalizedSearch) {
       return staffMembers.slice(0, 8);
@@ -116,17 +127,59 @@ export function StaffCheckInForm({
     [staffMembers],
   );
 
+  const scheduleWelcomeRedirect = useCallback(
+    (
+      {
+        name,
+        delay = 1600,
+        reason = "checkin",
+      }: {
+        name?: string | null;
+        delay?: number;
+        reason?: "checkin" | "checkout" | "none";
+      } = { reason: "checkin" },
+    ) => {
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      redirectTimeoutRef.current = setTimeout(() => {
+        const trimmedName = name?.trim();
+        const params = new URLSearchParams();
+
+        if (reason === "checkin") {
+          params.set("saludo", "1");
+        } else if (reason === "checkout") {
+          params.set("despedida", "1");
+        }
+
+        if (
+          trimmedName &&
+          (reason === "checkin" || reason === "checkout")
+        ) {
+          params.set("nombre", trimmedName);
+        }
+
+        const target = params.size ? `/?${params.toString()}` : "/";
+        startTransition(() => {
+          router.push(target);
+        });
+      }, delay);
+    },
+    [router, startTransition],
+  );
+
   const handlePostSubmitSuccess = useCallback(
     (
       staffId: number,
       options?: {
         message?: string;
         statusMessage?: string | null;
-        skipRefresh?: boolean;
+        welcomeName?: string | null;
+        redirectDelayMs?: number;
       },
     ) => {
       const message = options?.message ?? resolveSuccessMessage(staffId);
-      setToast({ tone: "success", message });
 
       if (options?.statusMessage !== undefined) {
         if (options.statusMessage === null) {
@@ -138,23 +191,26 @@ export function StaffCheckInForm({
         setStatus(null);
       }
 
+      setToast(null);
+      setFullScreenMessage({
+        tone: "success",
+        message,
+        subtext:
+          options?.statusMessage ??
+          "Te llevaremos a la pantalla principal en un momento.",
+      });
+
       setSearchTerm("");
       setSelectedStaffId(null);
       setShowSuggestions(false);
 
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
-      }
-
-      if (!options?.skipRefresh) {
-        redirectTimeoutRef.current = setTimeout(() => {
-          startTransition(() => {
-            router.refresh();
-          });
-        }, 320);
-      }
+      scheduleWelcomeRedirect({
+        name: options?.welcomeName ?? null,
+        delay: options?.redirectDelayMs,
+        reason: "checkin",
+      });
     },
-    [resolveSuccessMessage, router, startTransition],
+    [resolveSuccessMessage, scheduleWelcomeRedirect],
   );
 
   const performCheckInRequest = useCallback(
@@ -279,12 +335,15 @@ export function StaffCheckInForm({
       return;
     }
 
+    setFullScreenMessage(null);
+
     if (!isOnline) {
       queueStaffCheckIn({ staffId: selectedStaffId });
       handlePostSubmitSuccess(selectedStaffId, {
         message: STAFF_OFFLINE_MESSAGE,
         statusMessage: STAFF_OFFLINE_MESSAGE,
-        skipRefresh: true,
+        welcomeName: selectedStaffMember?.fullName ?? null,
+        redirectDelayMs: 2200,
       });
       return;
     }
@@ -295,7 +354,10 @@ export function StaffCheckInForm({
 
       await performCheckInRequest({ staffId: selectedStaffId });
 
-      handlePostSubmitSuccess(selectedStaffId, { statusMessage: null });
+      handlePostSubmitSuccess(selectedStaffId, {
+        statusMessage: null,
+        welcomeName: selectedStaffMember?.fullName ?? null,
+      });
     } catch (error) {
       console.error(error);
 
@@ -304,7 +366,8 @@ export function StaffCheckInForm({
         handlePostSubmitSuccess(selectedStaffId, {
           message: STAFF_OFFLINE_MESSAGE,
           statusMessage: STAFF_OFFLINE_MESSAGE,
-          skipRefresh: true,
+          welcomeName: selectedStaffMember?.fullName ?? null,
+          redirectDelayMs: 2200,
         });
         return;
       }
@@ -453,6 +516,18 @@ export function StaffCheckInForm({
       )}
 
       <button type="submit" hidden aria-hidden />
+      {fullScreenMessage ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(15,23,42,0.55)] px-6 py-6 backdrop-blur-sm">
+          <div className="max-w-xl rounded-[36px] border border-white/80 bg-white/95 px-8 py-10 text-center text-brand-deep shadow-[0_28px_68px_rgba(15,23,42,0.28)]">
+            <p className="text-2xl font-black leading-snug">{fullScreenMessage.message}</p>
+            {fullScreenMessage.subtext ? (
+              <p className="mt-3 text-sm font-medium text-brand-ink-muted">
+                {fullScreenMessage.subtext}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }

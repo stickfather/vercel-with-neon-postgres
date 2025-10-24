@@ -2,8 +2,6 @@ import { TIMEZONE } from "@/lib/db/client";
 
 const CHECK_IN_START_HOUR = 0;
 const CHECK_IN_END_HOUR = 23;
-const BUBBLE_HIDE_HOUR = 20;
-const BUBBLE_HIDE_MINUTE = 30;
 const MAX_SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 
 type ZonedTimeParts = {
@@ -41,16 +39,6 @@ export function isWithinCheckInWindow(date = new Date()): boolean {
     return false;
   }
   return true;
-}
-
-export function isAfterBubbleHideTime(date = new Date()): boolean {
-  const { hour, minute } = getZonedTimeParts(date);
-
-  if (hour > BUBBLE_HIDE_HOUR) return true;
-  if (hour === BUBBLE_HIDE_HOUR && minute >= BUBBLE_HIDE_MINUTE) {
-    return true;
-  }
-  return false;
 }
 
 export function millisecondsUntilNextMinute(date = new Date()): number {

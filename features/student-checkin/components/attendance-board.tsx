@@ -5,10 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ActiveAttendance } from "@/features/student-checkin/data/queries";
 import { getLevelAccent } from "../lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import {
-  exceedsSessionDurationLimit,
-  isAfterBubbleHideTime,
-} from "@/lib/time/check-in-window";
+import { exceedsSessionDurationLimit } from "@/lib/time/check-in-window";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -43,9 +40,8 @@ export function AttendanceBoard({ attendances }: Props) {
     null,
   );
   const [resolvingExpired, setResolvingExpired] = useState(false);
-  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [shouldHideBubbles, setShouldHideBubbles] = useState(() =>
-    isAfterBubbleHideTime(),
+  const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
   );
 
   const formatter = useMemo(() => {
@@ -56,17 +52,9 @@ export function AttendanceBoard({ attendances }: Props) {
   }, []);
 
   useEffect(() => {
-    const updateVisibility = () => {
-      setShouldHideBubbles(isAfterBubbleHideTime());
-    };
-
-    updateVisibility();
-    const interval = setInterval(updateVisibility, 60_000);
-
     return () => {
-      clearInterval(interval);
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
       }
     };
   }, []);
@@ -110,11 +98,11 @@ export function AttendanceBoard({ attendances }: Props) {
 
       setToast({ tone: "success", message });
 
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
       }
 
-      refreshTimeoutRef.current = setTimeout(() => {
+      navigationTimeoutRef.current = setTimeout(() => {
         router.refresh();
       }, 320);
     } catch (resolveError) {
@@ -167,13 +155,20 @@ export function AttendanceBoard({ attendances }: Props) {
         message: `${attendance.fullName.trim()} salió de clase. ¡Gracias!`,
       });
 
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
       }
 
-      refreshTimeoutRef.current = setTimeout(() => {
-        router.refresh();
-      }, 320);
+      navigationTimeoutRef.current = setTimeout(() => {
+        const params = new URLSearchParams();
+        params.set("despedida", "1");
+        const trimmedName = attendance.fullName.trim();
+        if (trimmedName) {
+          params.set("nombre", trimmedName);
+        }
+        const target = params.size ? `/?${params.toString()}` : "/";
+        router.push(target);
+      }, 1500);
     } catch (err) {
       console.error(err);
       setError(
@@ -190,19 +185,6 @@ export function AttendanceBoard({ attendances }: Props) {
     setPendingCheckout(null);
     setError(null);
   };
-
-  if (shouldHideBubbles) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-[32px] border border-dashed border-white/70 bg-white/80 px-6 py-12 text-center text-brand-ink-muted shadow-inner">
-        <span className="text-base font-semibold text-brand-deep-soft">
-          Las asistencias del día se ocultan después de las 20:30.
-        </span>
-        <span className="text-sm">
-          Regresa mañana para ver quién está en clase.
-        </span>
-      </div>
-    );
-  }
 
   if (!attendances.length) {
     return (

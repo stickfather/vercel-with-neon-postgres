@@ -4,10 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActiveStaffAttendance } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import {
-  exceedsSessionDurationLimit,
-  isAfterBubbleHideTime,
-} from "@/lib/time/check-in-window";
+import { exceedsSessionDurationLimit } from "@/lib/time/check-in-window";
 
 type Props = {
   attendances: ActiveStaffAttendance[];
@@ -40,9 +37,8 @@ export function StaffAttendanceBoard({ attendances }: Props) {
     null,
   );
   const [resolvingExpired, setResolvingExpired] = useState(false);
-  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [shouldHideBubbles, setShouldHideBubbles] = useState(() =>
-    isAfterBubbleHideTime(),
+  const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
   );
 
   const formatter = useMemo(
@@ -57,17 +53,9 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   );
 
   useEffect(() => {
-    const updateVisibility = () => {
-      setShouldHideBubbles(isAfterBubbleHideTime());
-    };
-
-    updateVisibility();
-    const interval = setInterval(updateVisibility, 60_000);
-
     return () => {
-      clearInterval(interval);
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
       }
     };
   }, []);
@@ -96,11 +84,11 @@ export function StaffAttendanceBoard({ attendances }: Props) {
 
       setToast({ tone: "success", message });
 
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
       }
 
-      refreshTimeoutRef.current = setTimeout(() => {
+      navigationTimeoutRef.current = setTimeout(() => {
         router.refresh();
       }, 320);
     } catch (resolveError) {
@@ -158,13 +146,20 @@ export function StaffAttendanceBoard({ attendances }: Props) {
         message: `${attendance.fullName.trim()} finalizó su jornada.`,
       });
 
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
       }
 
-      refreshTimeoutRef.current = setTimeout(() => {
-        router.refresh();
-      }, 320);
+      navigationTimeoutRef.current = setTimeout(() => {
+        const params = new URLSearchParams();
+        params.set("despedida", "1");
+        const trimmedName = attendance.fullName.trim();
+        if (trimmedName) {
+          params.set("nombre", trimmedName);
+        }
+        const target = params.size ? `/?${params.toString()}` : "/";
+        router.push(target);
+      }, 1500);
     } catch (error) {
       console.error(error);
       setError(
@@ -176,15 +171,6 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       setLoadingId(null);
     }
   };
-
-  if (shouldHideBubbles) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#dde1ff] bg-white px-8 py-16 text-center text-lg text-brand-ink-muted shadow-inner">
-        <span>Las asistencias del personal se ocultan después de las 20:30.</span>
-        <span className="text-sm">Regresa mañana para ver quién está en la sede.</span>
-      </div>
-    );
-  }
 
   if (!attendances.length) {
     return (
