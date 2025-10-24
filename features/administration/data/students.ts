@@ -1,6 +1,7 @@
 import {
   getSqlClient,
   isFeatureNotSupportedError,
+  isMissingColumnError,
   isMissingRelationError,
   isPermissionDeniedError,
   normalizeRows,
@@ -341,16 +342,15 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
   if (!managementRows.length) {
     try {
       managementRows = normalizeRows<SqlRow>(await sql`
-        SELECT
-          s.id,
-          s.full_name,
-          s.current_level,
-          s.status
+        SELECT *
         FROM public.students AS s
-        ORDER BY s.full_name ASC
+        ORDER BY COALESCE(s.full_name, '') ASC
       `);
     } catch (fallbackError) {
-      if (!isMissingRelationError(fallbackError, "students")) {
+      if (
+        !isMissingRelationError(fallbackError, "students") &&
+        !isMissingColumnError(fallbackError)
+      ) {
         console.warn(
           "No pudimos cargar la lista de estudiantes directamente desde 'students'.",
           fallbackError,
@@ -385,15 +385,10 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
   if (needsFlagFallback || !flagRows.length) {
     try {
       flagRows = normalizeRows<SqlRow>(await sql`
-        SELECT
-          sf.student_id,
-          s.full_name,
-          s.current_level,
-          s.status,
-          sf.*
+        SELECT sf.*, s.*
         FROM public.student_flags AS sf
         LEFT JOIN public.students AS s ON s.id = sf.student_id
-        ORDER BY s.full_name ASC
+        ORDER BY COALESCE(s.full_name, '') ASC
       `);
     } catch (fallbackError) {
       if (isMissingRelationError(fallbackError, "student_flags")) {
@@ -401,6 +396,12 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
       } else if (isPermissionDeniedError(fallbackError)) {
         console.warn(
           "No pudimos acceder a 'student_flags' por falta de permisos.",
+          fallbackError,
+        );
+        flagRows = [];
+      } else if (isMissingColumnError(fallbackError)) {
+        console.warn(
+          "No pudimos leer todas las columnas de 'student_flags'. Se continuará sin banderas frescas.",
           fallbackError,
         );
         flagRows = [];

@@ -96,21 +96,17 @@ async function refreshStudentFlagsRecord(
     return;
   }
 
-  const refreshers: Array<() => Promise<unknown>> = [
-    () => sql`SELECT mgmt.refresh_student_flags(${studentId}::bigint)`,
-    () => sql`SELECT public.refresh_student_flags(${studentId}::bigint)`,
-  ];
-
-  for (const refresh of refreshers) {
-    try {
-      await refresh();
+  try {
+    await sql`SELECT public.refresh_student_flags(${studentId}::bigint)`;
+  } catch (error) {
+    if (isIgnorableFlagRefreshError(error)) {
+      console.warn(
+        "No se pudo ejecutar 'public.refresh_student_flags' tras el check-in.",
+        error,
+      );
       return;
-    } catch (error) {
-      if (isIgnorableFlagRefreshError(error)) {
-        continue;
-      }
-      throw error;
     }
+    throw error;
   }
 }
 

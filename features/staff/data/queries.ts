@@ -214,6 +214,28 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   }
 
   try {
+    const normalizeTimestampValue = (value: unknown): string => {
+      if (value == null) return "";
+      if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? "" : value.toISOString();
+      }
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed.length) return "";
+        if (/^0+/.test(trimmed) || /^1900-01-01/.test(trimmed)) return "";
+        return trimmed;
+      }
+      if (typeof value === "number") {
+        return Number.isFinite(value) ? new Date(value).toISOString() : "";
+      }
+      try {
+        const converted = String(value).trim();
+        return converted.startsWith("0000") ? "" : converted;
+      } catch {
+        return "";
+      }
+    };
+
     let existingRows: SqlRow[] = [];
     try {
       existingRows = normalizeRows<SqlRow>(await sql`
@@ -247,65 +269,85 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
     }
 
     const record = existingRows[0];
-    const alreadyClosed = Boolean(
-      (record["checkout_time"] as unknown | null) != null ||
-        (record["checkout"] as unknown | null) != null,
-    );
+    const checkoutColumns: Array<"checkout_time" | "checkout"> = [];
+    if ("checkout_time" in record) checkoutColumns.push("checkout_time");
+    if ("checkout" in record) checkoutColumns.push("checkout");
 
-    if (alreadyClosed) {
+    if (!checkoutColumns.length) {
+      throw new Error(
+        "No pudimos encontrar columnas de salida en 'public.staff_attendance'.",
+      );
+    }
+
+    const hasExistingCheckout = checkoutColumns.some((column) => {
+      const previousValue = record[column] as unknown;
+      return normalizeTimestampValue(previousValue).length > 0;
+    });
+
+    if (hasExistingCheckout) {
       return;
     }
 
-    const attemptedColumns = new Set<string>();
-    let updated = false;
-    let unexpectedError: unknown = null;
+    const checkInRaw = record["checkin_time"] as unknown;
+    const checkInIso = normalizeTimestampValue(checkInRaw);
+    const now = new Date();
+    const checkInDate = checkInIso ? new Date(checkInIso) : null;
+    const checkoutDate =
+      checkInDate && checkInDate.getTime() > now.getTime() ? checkInDate : now;
+    const checkoutIso = checkoutDate.toISOString();
 
     const tryUpdateColumn = async (
       column: "checkout_time" | "checkout",
-    ): Promise<void> => {
+    ): Promise<{ success: boolean; error?: unknown }> => {
       try {
         const rows =
           column === "checkout_time"
             ? normalizeRows<SqlRow>(await sql`
                 UPDATE public.staff_attendance
-                SET checkout_time = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
+                SET checkout_time = ${checkoutIso}
                 WHERE id = ${parsedId}::bigint
-                  AND checkout_time IS NULL
-                RETURNING id
+                RETURNING checkout_time
               `)
             : normalizeRows<SqlRow>(await sql`
                 UPDATE public.staff_attendance
-                SET checkout = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
+                SET checkout = ${checkoutIso}
                 WHERE id = ${parsedId}::bigint
-                  AND checkout IS NULL
-                RETURNING id
+                RETURNING checkout
               `);
 
-        attemptedColumns.add(column);
-        if (rows.length) {
-          updated = true;
+        const returnedValue =
+          rows[0]?.[
+            column === "checkout_time" ? "checkout_time" : "checkout"
+          ];
+        if (normalizeTimestampValue(returnedValue).length > 0) {
+          return { success: true };
         }
+        return { success: false };
       } catch (updateError) {
         if (isMissingColumnError(updateError, column)) {
-          return;
+          return { success: false };
         }
-        unexpectedError = updateError;
+        return { success: false, error: updateError };
       }
     };
 
-    await tryUpdateColumn("checkout_time");
-    if (!unexpectedError) {
-      await tryUpdateColumn("checkout");
+    let updated = false;
+    let unexpectedError: unknown = null;
+
+    for (const column of checkoutColumns) {
+      const result = await tryUpdateColumn(column);
+      if (result.error) {
+        unexpectedError = result.error;
+        break;
+      }
+      if (result.success) {
+        updated = true;
+        break;
+      }
     }
 
     if (unexpectedError) {
       throw unexpectedError;
-    }
-
-    if (!attemptedColumns.size) {
-      throw new Error(
-        "No pudimos encontrar columnas de salida en 'public.staff_attendance'.",
-      );
     }
 
     if (!updated) {
@@ -316,12 +358,13 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
         LIMIT 1
       `);
       const refreshed = refreshedRows[0];
-      if (
-        refreshed &&
-        ((refreshed["checkout_time"] as unknown | null) != null ||
-          (refreshed["checkout"] as unknown | null) != null)
-      ) {
-        return;
+      if (refreshed) {
+        const refreshedValue = checkoutColumns.some((column) =>
+          normalizeTimestampValue(refreshed[column] as unknown).length > 0,
+        );
+        if (refreshedValue) {
+          return;
+        }
       }
       throw new Error("La asistencia ya estaba cerrada o no existe.");
     }
