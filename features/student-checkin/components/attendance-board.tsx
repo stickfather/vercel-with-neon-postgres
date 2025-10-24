@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import type { ActiveAttendance } from "@/features/student-checkin/data/queries";
 import { getLevelAccent } from "../lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import {
+  FullScreenCelebration,
+  type FullScreenCelebrationAccent,
+} from "@/components/ui/full-screen-celebration";
 import { exceedsSessionDurationLimit } from "@/lib/time/check-in-window";
 
 type Props = {
@@ -29,6 +33,18 @@ function splitName(fullName: string): [string, string | null] {
   return [top, bottom || null];
 }
 
+function getFriendlyFirstName(fullName: string): string | null {
+  const trimmed = fullName.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const [firstWord] = trimmed.split(/\s+/);
+  if (!firstWord) {
+    return null;
+  }
+  return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+}
+
 export function AttendanceBoard({ attendances }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<number | null>(null);
@@ -39,6 +55,16 @@ export function AttendanceBoard({ attendances }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
+  const [celebration, setCelebration] = useState<
+    | {
+        tone: "success" | "error";
+        headline: string;
+        body?: string;
+        accent?: FullScreenCelebrationAccent;
+        autoDismissAfterMs?: number | null;
+      }
+    | null
+  >(null);
   const [resolvingExpired, setResolvingExpired] = useState(false);
   const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -121,6 +147,7 @@ export function AttendanceBoard({ attendances }: Props) {
 
   const requestCheckout = (attendance: ActiveAttendance) => {
     setError(null);
+    setCelebration(null);
     if (exceedsSessionDurationLimit(attendance.checkInTime)) {
       void resolveExpiredAttendances();
       return;
@@ -150,9 +177,16 @@ export function AttendanceBoard({ attendances }: Props) {
       }
 
       setPendingCheckout(null);
-      setToast({
+      setToast(null);
+      const friendlyName = getFriendlyFirstName(attendance.fullName);
+      setCelebration({
         tone: "success",
-        message: `${attendance.fullName.trim()} salió de clase. ¡Gracias!`,
+        headline:
+          friendlyName != null
+            ? `¡Hasta pronto, ${friendlyName}!`
+            : "¡Salida registrada!",
+        body: "Tu salida quedó registrada. ¡Nos vemos a la próxima!",
+        accent: "sparkles",
       });
 
       if (navigationTimeoutRef.current) {
@@ -161,7 +195,7 @@ export function AttendanceBoard({ attendances }: Props) {
 
       navigationTimeoutRef.current = setTimeout(() => {
         router.push("/");
-      }, 1500);
+      }, 1800);
     } catch (err) {
       console.error(err);
       setError(
@@ -177,6 +211,7 @@ export function AttendanceBoard({ attendances }: Props) {
   const closeConfirmation = () => {
     setPendingCheckout(null);
     setError(null);
+    setCelebration(null);
   };
 
   if (!attendances.length) {
@@ -326,6 +361,15 @@ export function AttendanceBoard({ attendances }: Props) {
           </div>
         </div>
       )}
+      {celebration ? (
+        <FullScreenCelebration
+          tone={celebration.tone}
+          headline={celebration.headline}
+          body={celebration.body}
+          accent={celebration.accent}
+          autoDismissAfterMs={celebration.autoDismissAfterMs ?? null}
+        />
+      ) : null}
 
     </div>
   );

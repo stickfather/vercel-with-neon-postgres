@@ -1,5 +1,6 @@
 import {
   getSqlClient,
+  isMissingColumnError,
   isMissingRelationError,
   normalizeRows,
   SqlRow,
@@ -163,13 +164,50 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
 
     const checkoutTimestamp = new Date().toISOString();
 
-    const updatedRows = normalizeRows<SqlRow>(await sql`
-      UPDATE public.staff_attendance
-      SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
-      WHERE id = ${parsedId}::bigint
-        AND checkout_time IS NULL
-      RETURNING id
-    `);
+    const client = sql as typeof sql & {
+      unsafe?: (query: string, params?: unknown[]) => Promise<unknown>;
+    };
+    const runUpdate = async (
+      column: "checkout_time" | "checkout",
+    ): Promise<SqlRow[]> => {
+      if (typeof client.unsafe === "function") {
+        const query = `
+          UPDATE public.staff_attendance
+          SET ${column} = GREATEST(checkin_time, $1::timestamptz)
+          WHERE id = $2::bigint
+            AND ${column} IS NULL
+          RETURNING id
+        `;
+        return normalizeRows<SqlRow>(
+          await client.unsafe(query, [checkoutTimestamp, parsedId]),
+        );
+      }
+
+      if (column !== "checkout_time") {
+        throw new Error(
+          "El cliente SQL no permite actualizar la columna de salida solicitada.",
+        );
+      }
+
+      return normalizeRows<SqlRow>(await sql`
+        UPDATE public.staff_attendance
+        SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+        WHERE id = ${parsedId}::bigint
+          AND checkout_time IS NULL
+        RETURNING id
+      `);
+    };
+
+    let updatedRows: SqlRow[] = [];
+    try {
+      updatedRows = await runUpdate("checkout_time");
+    } catch (columnError) {
+      if (isMissingColumnError(columnError, "checkout_time")) {
+        updatedRows = await runUpdate("checkout");
+      } else {
+        throw columnError;
+      }
+    }
 
     if (!updatedRows.length) {
       throw new Error("La asistencia ya estaba cerrada o no existe.");
@@ -178,6 +216,11 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
     if (isMissingRelationError(error, "staff_attendance")) {
       throw new Error(
         "No pudimos registrar la salida del personal porque falta la tabla principal de asistencias. Verifica que las asistencias del staff se almacenen en 'public.staff_attendance'.",
+      );
+    }
+    if (isMissingColumnError(error)) {
+      throw new Error(
+        "No pudimos registrar la salida del personal porque falta la columna de salida en 'public.staff_attendance'. Verifica que exista 'checkout_time' o 'checkout'.",
       );
     }
     throw error;

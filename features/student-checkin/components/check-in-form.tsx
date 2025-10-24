@@ -20,6 +20,10 @@ import {
   getLevelAccent,
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import {
+  FullScreenCelebration,
+  type FullScreenCelebrationAccent,
+} from "@/components/ui/full-screen-celebration";
 import { formatLessonWithSequence } from "@/lib/time/check-in-window";
 import {
   generateQueueId,
@@ -71,6 +75,21 @@ type PendingStudentCheckIn = OfflineQueueItem<{
   confirmOverride: boolean;
 }>;
 
+function getFriendlyFirstName(fullName: string | null | undefined): string | null {
+  if (!fullName) {
+    return null;
+  }
+  const trimmed = fullName.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const [firstWord] = trimmed.split(/\s+/);
+  if (!firstWord) {
+    return null;
+  }
+  return firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+}
+
 export function CheckInForm({
   levels,
   disabled = false,
@@ -105,8 +124,10 @@ export function CheckInForm({
   const [fullScreenMessage, setFullScreenMessage] = useState<
     | {
         tone: "success" | "error";
-        message: string;
-        subtext?: string;
+        headline: string;
+        body?: string;
+        accent?: FullScreenCelebrationAccent;
+        autoDismissAfterMs?: number | null;
       }
     | null
   >(null);
@@ -466,9 +487,19 @@ export function CheckInForm({
         statusMessage?: string | null;
         welcomeName?: string | null;
         redirectDelayMs?: number;
+        accent?: FullScreenCelebrationAccent;
       },
     ) => {
-      const confirmationMessage = options?.message ?? "Welcome";
+      const friendlyName = getFriendlyFirstName(options?.welcomeName ?? null);
+      const headline =
+        options?.message ??
+        (friendlyName
+          ? `¡Qué alegría verte, ${friendlyName}!`
+          : "¡Registro completado!");
+      const body =
+        options?.statusMessage !== undefined
+          ? options.statusMessage ?? undefined
+          : "Tu registro quedó listo. ¡Disfruta la clase!";
 
       if (options?.statusMessage !== undefined) {
         if (options.statusMessage === null) {
@@ -483,11 +514,9 @@ export function CheckInForm({
       setToast(null);
       setFullScreenMessage({
         tone: "success",
-        message: confirmationMessage,
-        subtext:
-          options?.statusMessage === undefined
-            ? undefined
-            : options.statusMessage ?? undefined,
+        headline,
+        body,
+        accent: options?.accent ?? "party",
       });
 
       setStudentQuery("");
@@ -596,6 +625,7 @@ export function CheckInForm({
           statusMessage: OFFLINE_WAITING_MESSAGE,
           welcomeName: studentName ?? null,
           redirectDelayMs: 2200,
+          accent: "warning",
         });
         return;
       }
@@ -617,6 +647,7 @@ export function CheckInForm({
             statusMessage: OFFLINE_WAITING_MESSAGE,
             welcomeName: studentName ?? null,
             redirectDelayMs: 2200,
+            accent: "warning",
           });
           return;
         }
@@ -805,8 +836,9 @@ export function CheckInForm({
         setToast(null);
         setFullScreenMessage({
           tone: "error",
-          message,
-          subtext: "Regresaremos a la pantalla principal en unos segundos…",
+          headline: message,
+          body: "Regresaremos a la pantalla principal en unos segundos…",
+          accent: "warning",
         });
         scheduleWelcomeRedirect({ delay: 3000 });
         return;
@@ -1274,18 +1306,13 @@ export function CheckInForm({
         </div>
       ) : null}
       {fullScreenMessage ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(15,23,42,0.55)] px-6 py-6 backdrop-blur-sm">
-          <div className="max-w-xl rounded-[36px] border border-white/80 bg-white/95 px-8 py-10 text-center text-brand-deep shadow-[0_28px_68px_rgba(15,23,42,0.28)]">
-            <p className="text-4xl font-black leading-snug sm:text-5xl">
-              {fullScreenMessage.message}
-            </p>
-            {fullScreenMessage.subtext ? (
-              <p className="mt-3 text-sm font-medium text-brand-ink-muted">
-                {fullScreenMessage.subtext}
-              </p>
-            ) : null}
-          </div>
-        </div>
+        <FullScreenCelebration
+          tone={fullScreenMessage.tone}
+          headline={fullScreenMessage.headline}
+          body={fullScreenMessage.body}
+          accent={fullScreenMessage.accent}
+          autoDismissAfterMs={fullScreenMessage.autoDismissAfterMs ?? null}
+        />
       ) : null}
     </form>
   );

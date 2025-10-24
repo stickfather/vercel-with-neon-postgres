@@ -63,8 +63,35 @@ export async function closeExpiredSessions(
 export async function closeExpiredStaffSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  try {
-    const rows = normalizeRows<SqlRow>(
+  const client = sql as typeof sql & {
+    unsafe?: (query: string, params?: unknown[]) => Promise<unknown>;
+  };
+  const runUpdate = async (
+    column: "checkout_time" | "checkout",
+  ): Promise<SqlRow[]> => {
+    if (typeof client.unsafe === "function") {
+      const query = `
+        UPDATE public.staff_attendance
+        SET ${column} = GREATEST(
+          checkin_time,
+          (
+            date_trunc('day', checkin_time AT TIME ZONE $1)
+            + INTERVAL '20 hours 15 minutes'
+          ) AT TIME ZONE $1
+        )
+        WHERE ${column} IS NULL
+          AND now() AT TIME ZONE $1 >=
+            date_trunc('day', checkin_time AT TIME ZONE $1) + INTERVAL '20 hours 15 minutes'
+        RETURNING id
+      `;
+      return normalizeRows<SqlRow>(await client.unsafe(query, [TIMEZONE]));
+    }
+
+    if (column !== "checkout_time") {
+      throw new Error("El cliente SQL no permite actualizar la columna de salida solicitada.");
+    }
+
+    return normalizeRows<SqlRow>(
       await sql`
         UPDATE public.staff_attendance
         SET checkout_time = GREATEST(
@@ -80,12 +107,33 @@ export async function closeExpiredStaffSessions(
         RETURNING id
       `,
     );
+  };
+
+  try {
+    let rows: SqlRow[] = [];
+
+    try {
+      rows = await runUpdate("checkout_time");
+    } catch (error) {
+      if (isMissingColumnError(error, "checkout_time")) {
+        rows = await runUpdate("checkout");
+      } else {
+        throw error;
+      }
+    }
 
     return rows.length;
   } catch (error) {
     if (isMissingRelationError(error)) {
       console.warn(
         "No pudimos cerrar asistencias vencidas del personal porque falta una relación esperada.",
+        error,
+      );
+      return 0;
+    }
+    if (isMissingColumnError(error)) {
+      console.warn(
+        "No pudimos cerrar asistencias vencidas del personal porque falta una columna de salida esperada.",
         error,
       );
       return 0;
@@ -141,6 +189,28 @@ export function isMissingRelationError(error: unknown, relation?: string): boole
       typeof message === "string" &&
       message.toLowerCase().includes("does not exist") &&
       (!relation || message.includes(relation))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isMissingColumnError(error: unknown, column?: string): boolean {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "42703") {
+      if (!column) return true;
+      if (typeof message === "string") {
+        return message.includes(column);
+      }
+      return true;
+    }
+    if (
+      typeof message === "string" &&
+      message.toLowerCase().includes("column") &&
+      message.toLowerCase().includes("does not exist") &&
+      (!column || message.includes(column))
     ) {
       return true;
     }

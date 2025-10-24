@@ -1,6 +1,7 @@
 import {
   closeExpiredSessions,
   getSqlClient,
+  isMissingRelationError,
   normalizeRows,
   SqlRow,
 } from "@/lib/db/client";
@@ -51,6 +52,60 @@ export type StudentStatusCheck = {
   isActive: boolean;
   statusLabel: string | null;
 };
+
+function isIgnorableFlagRefreshError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "42883" || code === "3F000") {
+      return true;
+    }
+    if (typeof message === "string") {
+      const normalized = message.toLowerCase();
+      if (
+        normalized.includes("does not exist") &&
+        (normalized.includes("function") || normalized.includes("schema"))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function refreshStudentFlagsRecord(
+  sql: ReturnType<typeof getSqlClient>,
+  studentId: number,
+): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO public.student_flags (student_id)
+      VALUES (${studentId}::bigint)
+      ON CONFLICT (student_id) DO NOTHING
+    `;
+  } catch (error) {
+    if (!isMissingRelationError(error, "student_flags")) {
+      throw error;
+    }
+    return;
+  }
+
+  const refreshers: Array<() => Promise<unknown>> = [
+    () => sql`SELECT mgmt.refresh_student_flags(${studentId}::bigint)`,
+    () => sql`SELECT public.refresh_student_flags(${studentId}::bigint)`,
+  ];
+
+  for (const refresh of refreshers) {
+    try {
+      await refresh();
+      return;
+    } catch (error) {
+      if (isIgnorableFlagRefreshError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
 
 export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
@@ -316,6 +371,15 @@ export async function registerCheckIn({
     VALUES (${studentId}, ${lessonId}, now(), ${Boolean(confirmOverride)})
     RETURNING id
   `);
+
+  try {
+    await refreshStudentFlagsRecord(sql, studentId);
+  } catch (error) {
+    console.warn(
+      "No se pudo actualizar las banderas del estudiante tras el check-in.",
+      error,
+    );
+  }
 
   return Number(insertedRows[0].id);
 }
