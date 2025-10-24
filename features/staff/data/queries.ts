@@ -214,78 +214,136 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   }
 
   try {
-    const existingRows = normalizeRows<SqlRow>(await sql`
-      SELECT id, checkin_time
-      FROM public.staff_attendance
-      WHERE id = ${parsedId}::bigint
-      LIMIT 1
-    `);
+    let existingRows: SqlRow[] = [];
+    try {
+      existingRows = normalizeRows<SqlRow>(await sql`
+        SELECT id, checkin_time, checkout_time, checkout
+        FROM public.staff_attendance
+        WHERE id = ${parsedId}::bigint
+        LIMIT 1
+      `);
+    } catch (columnError) {
+      if (isMissingColumnError(columnError, "checkout")) {
+        existingRows = normalizeRows<SqlRow>(await sql`
+          SELECT id, checkin_time, checkout_time
+          FROM public.staff_attendance
+          WHERE id = ${parsedId}::bigint
+          LIMIT 1
+        `);
+      } else if (isMissingColumnError(columnError, "checkout_time")) {
+        existingRows = normalizeRows<SqlRow>(await sql`
+          SELECT id, checkin_time, checkout
+          FROM public.staff_attendance
+          WHERE id = ${parsedId}::bigint
+          LIMIT 1
+        `);
+      } else {
+        throw columnError;
+      }
+    }
 
     if (!existingRows.length) {
       throw new Error("No encontramos la asistencia seleccionada.");
     }
 
-    const checkoutTimestamp = new Date().toISOString();
+    const record = existingRows[0];
+    const alreadyClosed = Boolean(
+      (record["checkout_time"] as unknown | null) != null ||
+        (record["checkout"] as unknown | null) != null,
+    );
+
+    if (alreadyClosed) {
+      return;
+    }
+
+    const columnRows = normalizeRows<SqlRow>(await sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'staff_attendance'
+        AND column_name IN ('checkout_time', 'checkout')
+    `);
+
+    const checkoutColumns = Array.from(
+      new Set(
+        columnRows
+          .map((row) => ((row.column_name as string | null) ?? "").trim())
+          .filter((name) => name.length > 0),
+      ),
+    );
+
+    if (!checkoutColumns.length) {
+      throw new Error(
+        "No pudimos encontrar columnas de salida en 'public.staff_attendance'.",
+      );
+    }
 
     const client = sql as typeof sql & {
       unsafe?: (query: string, params?: unknown[]) => Promise<unknown>;
     };
-    const runUpdate = async (
-      column: "checkout_time" | "checkout",
-    ): Promise<SqlRow[]> => {
-      if (typeof client.unsafe === "function") {
-        const query = `
-          UPDATE public.staff_attendance
-          SET ${column} = GREATEST(checkin_time, $1::timestamptz)
-          WHERE id = $2::bigint
-            AND ${column} IS NULL
-          RETURNING id
-        `;
-        return normalizeRows<SqlRow>(
-          await client.unsafe(query, [checkoutTimestamp, parsedId]),
-        );
-      }
 
+    const assignments = checkoutColumns
+      .map(
+        (column) => `${column} = GREATEST(checkin_time, timezone($1, now()))`,
+      )
+      .join(", ");
+    const nullConditions = checkoutColumns
+      .map((column) => `${column} IS NULL`)
+      .join(" OR ");
+
+    let updatedRows: SqlRow[] = [];
+
+    if (typeof client.unsafe === "function") {
+      const query = `
+        UPDATE public.staff_attendance
+        SET ${assignments}
+        WHERE id = $2::bigint
+          AND (${nullConditions})
+        RETURNING id
+      `;
+      updatedRows = normalizeRows<SqlRow>(
+        await client.unsafe(query, [TIMEZONE, parsedId]),
+      );
+    } else if (checkoutColumns.length === 1) {
+      const [column] = checkoutColumns;
       if (column === "checkout_time") {
-        return normalizeRows<SqlRow>(await sql`
+        updatedRows = normalizeRows<SqlRow>(await sql`
           UPDATE public.staff_attendance
-          SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+          SET checkout_time = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
           WHERE id = ${parsedId}::bigint
             AND checkout_time IS NULL
           RETURNING id
         `);
+      } else {
+        updatedRows = normalizeRows<SqlRow>(await sql`
+          UPDATE public.staff_attendance
+          SET checkout = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
+          WHERE id = ${parsedId}::bigint
+            AND checkout IS NULL
+          RETURNING id
+        `);
       }
+    } else {
+      throw new Error(
+        "El cliente SQL no permite actualizar todas las columnas de salida al mismo tiempo.",
+      );
+    }
 
-      return normalizeRows<SqlRow>(await sql`
-        UPDATE public.staff_attendance
-        SET checkout = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+    if (!updatedRows.length) {
+      const refreshedRows = normalizeRows<SqlRow>(await sql`
+        SELECT checkout_time, checkout
+        FROM public.staff_attendance
         WHERE id = ${parsedId}::bigint
-          AND checkout IS NULL
-        RETURNING id
+        LIMIT 1
       `);
-    };
-
-    let updatedCount = 0;
-
-    try {
-      const rows = await runUpdate("checkout_time");
-      updatedCount = Math.max(updatedCount, rows.length);
-    } catch (columnError) {
-      if (!isMissingColumnError(columnError, "checkout_time")) {
-        throw columnError;
+      const refreshed = refreshedRows[0];
+      if (
+        refreshed &&
+        ((refreshed["checkout_time"] as unknown | null) != null ||
+          (refreshed["checkout"] as unknown | null) != null)
+      ) {
+        return;
       }
-    }
-
-    try {
-      const rows = await runUpdate("checkout");
-      updatedCount = Math.max(updatedCount, rows.length);
-    } catch (columnError) {
-      if (!isMissingColumnError(columnError, "checkout")) {
-        throw columnError;
-      }
-    }
-
-    if (!updatedCount) {
       throw new Error("La asistencia ya estaba cerrada o no existe.");
     }
   } catch (error) {
@@ -302,6 +360,7 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
     throw error;
   }
 }
+
 
 export async function listStaffMembers(): Promise<StaffMemberRecord[]> {
   const sql = getSqlClient();

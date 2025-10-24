@@ -4,22 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import type { StudentManagementEntry } from "@/features/administration/data/students";
+import type {
+  StudentFlagKey,
+  StudentManagementEntry,
+} from "@/features/administration/data/students";
 import { StudentManagementGraphs } from "./student-management-graphs";
 
 type Props = {
   students: StudentManagementEntry[];
 };
 
-export type FlagKey =
-  | "isNewStudent"
-  | "isExamApproaching"
-  | "isExamPreparation"
-  | "hasSpecialNeeds"
-  | "isAbsent7Days"
-  | "isSlowProgress14Days"
-  | "hasActiveInstructive"
-  | "hasOverdueInstructive";
+export type FlagKey = StudentFlagKey;
 
 const FLAG_COLUMNS: ReadonlyArray<{ key: FlagKey; label: string }> = [
   { key: "isNewStudent", label: "Nuevo" },

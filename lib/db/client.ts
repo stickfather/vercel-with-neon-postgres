@@ -142,7 +142,7 @@ export async function closeExpiredStaffSessions(
   }
 }
 
-function isPermissionDeniedError(error: unknown): boolean {
+export function isPermissionDeniedError(error: unknown): boolean {
   if (error && typeof error === "object") {
     const { code, message } = error as { code?: unknown; message?: unknown };
     if (code === "42501") return true;
@@ -173,6 +173,20 @@ export async function safelyCloseExpiredSessions(
     }
     throw error;
   }
+}
+
+export function isFeatureNotSupportedError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "0A000") return true;
+    if (
+      typeof message === "string" &&
+      message.toLowerCase().includes("not supported")
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function isMissingRelationError(error: unknown, relation?: string): boolean {
