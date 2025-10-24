@@ -338,7 +338,30 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
     }
   }
 
+  if (!managementRows.length) {
+    try {
+      managementRows = normalizeRows<SqlRow>(await sql`
+        SELECT
+          s.id,
+          s.full_name,
+          s.current_level,
+          s.status
+        FROM public.students AS s
+        ORDER BY s.full_name ASC
+      `);
+    } catch (fallbackError) {
+      if (!isMissingRelationError(fallbackError, "students")) {
+        console.warn(
+          "No pudimos cargar la lista de estudiantes directamente desde 'students'.",
+          fallbackError,
+        );
+      }
+      managementRows = [];
+    }
+  }
+
   let flagRows: SqlRow[] = [];
+  let needsFlagFallback = false;
   try {
     flagRows = normalizeRows<SqlRow>(await sql`
       SELECT *
@@ -347,15 +370,43 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
     `);
   } catch (error) {
     if (isMissingRelationError(error, "student_flags_v")) {
-      flagRows = [];
+      needsFlagFallback = true;
     } else if (isPermissionDeniedError(error)) {
       console.warn(
         "No pudimos acceder a 'student_flags_v' por falta de permisos.",
         error,
       );
-      flagRows = [];
+      needsFlagFallback = true;
     } else {
       throw error;
+    }
+  }
+
+  if (needsFlagFallback || !flagRows.length) {
+    try {
+      flagRows = normalizeRows<SqlRow>(await sql`
+        SELECT
+          sf.student_id,
+          s.full_name,
+          s.current_level,
+          s.status,
+          sf.*
+        FROM public.student_flags AS sf
+        LEFT JOIN public.students AS s ON s.id = sf.student_id
+        ORDER BY s.full_name ASC
+      `);
+    } catch (fallbackError) {
+      if (isMissingRelationError(fallbackError, "student_flags")) {
+        flagRows = [];
+      } else if (isPermissionDeniedError(fallbackError)) {
+        console.warn(
+          "No pudimos acceder a 'student_flags' por falta de permisos.",
+          fallbackError,
+        );
+        flagRows = [];
+      } else {
+        throw fallbackError;
+      }
     }
   }
 

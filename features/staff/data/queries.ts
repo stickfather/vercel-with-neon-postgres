@@ -74,22 +74,7 @@ export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance
       `,
     );
   } catch (error) {
-    if (isMissingColumnError(error, "checkout")) {
-      rows = normalizeRows<SqlRow>(
-        await sql`
-          WITH day_bounds AS (
-            SELECT
-              (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
-          )
-          SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
-          FROM public.staff_attendance sa
-          LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
-          WHERE sa.checkout_time IS NULL
-            AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
-          ORDER BY sa.checkin_time ASC
-        `,
-      );
-    } else if (isMissingColumnError(error, "checkout_time")) {
+    if (isMissingColumnError(error, "checkout_time")) {
       rows = normalizeRows<SqlRow>(
         await sql`
           WITH day_bounds AS (
@@ -100,6 +85,21 @@ export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance
           FROM public.staff_attendance sa
           LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
           WHERE sa.checkout IS NULL
+            AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
+          ORDER BY sa.checkin_time ASC
+        `,
+      );
+    } else if (isMissingColumnError(error, "checkout")) {
+      rows = normalizeRows<SqlRow>(
+        await sql`
+          WITH day_bounds AS (
+            SELECT
+              (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+          )
+          SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
+          FROM public.staff_attendance sa
+          LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
+          WHERE sa.checkout_time IS NULL
             AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
           ORDER BY sa.checkin_time ASC
         `,
@@ -223,16 +223,16 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
         LIMIT 1
       `);
     } catch (columnError) {
-      if (isMissingColumnError(columnError, "checkout")) {
+      if (isMissingColumnError(columnError, "checkout_time")) {
         existingRows = normalizeRows<SqlRow>(await sql`
-          SELECT id, checkin_time, checkout_time
+          SELECT id, checkin_time, checkout
           FROM public.staff_attendance
           WHERE id = ${parsedId}::bigint
           LIMIT 1
         `);
-      } else if (isMissingColumnError(columnError, "checkout_time")) {
+      } else if (isMissingColumnError(columnError, "checkout")) {
         existingRows = normalizeRows<SqlRow>(await sql`
-          SELECT id, checkin_time, checkout
+          SELECT id, checkin_time, checkout_time
           FROM public.staff_attendance
           WHERE id = ${parsedId}::bigint
           LIMIT 1

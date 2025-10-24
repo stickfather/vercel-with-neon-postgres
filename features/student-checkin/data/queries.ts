@@ -54,6 +54,9 @@ export type StudentStatusCheck = {
 };
 
 function isIgnorableFlagRefreshError(error: unknown): boolean {
+  if (isMissingRelationError(error)) {
+    return true;
+  }
   if (error && typeof error === "object") {
     const { code, message } = error as { code?: unknown; message?: unknown };
     if (code === "42883" || code === "3F000") {
@@ -83,9 +86,13 @@ async function refreshStudentFlagsRecord(
       ON CONFLICT (student_id) DO NOTHING
     `;
   } catch (error) {
-    if (!isMissingRelationError(error, "student_flags")) {
+    if (!isMissingRelationError(error)) {
       throw error;
     }
+    console.warn(
+      "No se pudo actualizar la tabla 'student_flags' tras el check-in.",
+      error,
+    );
     return;
   }
 
