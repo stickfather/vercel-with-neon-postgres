@@ -18,6 +18,7 @@ import {
   type OfflineQueueItem,
   writeQueue,
 } from "@/lib/offline/queue-helpers";
+import { isTimeRestrictionMessage } from "@/lib/time/check-in-window";
 
 type StatusState = { message: string } | null;
 
@@ -32,6 +33,10 @@ type Props = {
 const STAFF_QUEUE_STORAGE_KEY = "ir_offline_staff_checkins_v1";
 const STAFF_OFFLINE_MESSAGE =
   "Sin conexión a internet. Guardamos tu registro y lo enviaremos cuando vuelva la conexión.";
+const STAFF_AFTER_HOURS_QUEUE_MESSAGE =
+  "Fuera del horario habitual. Guardamos tu registro y lo enviaremos automáticamente en cuanto se habilite.";
+const STAFF_AFTER_HOURS_STATUS_MESSAGE =
+  "Estamos fuera del horario habitual. Tu registro se enviará automáticamente apenas el sistema lo permita.";
 
 type PendingStaffCheckIn = OfflineQueueItem<{ staffId: number }>;
 
@@ -270,6 +275,14 @@ export function StaffCheckInForm({
           return next;
         });
       } catch (error) {
+        const maybeMessage =
+          error instanceof Error ? error.message : String(error ?? "");
+
+        if (isTimeRestrictionMessage(maybeMessage)) {
+          setStatus({ message: STAFF_AFTER_HOURS_STATUS_MESSAGE });
+          break;
+        }
+
         if (isOfflineError(error)) {
           setIsOnline(false);
           break;
@@ -369,6 +382,20 @@ export function StaffCheckInForm({
     } catch (error) {
       console.error(error);
 
+      const maybeMessage =
+        error instanceof Error ? error.message : String(error ?? "");
+
+      if (isTimeRestrictionMessage(maybeMessage)) {
+        queueStaffCheckIn({ staffId: selectedStaffId });
+        handlePostSubmitSuccess(selectedStaffId, {
+          message: STAFF_AFTER_HOURS_QUEUE_MESSAGE,
+          statusMessage: STAFF_AFTER_HOURS_STATUS_MESSAGE,
+          welcomeName: selectedStaffMember?.fullName ?? null,
+          redirectDelayMs: 2400,
+        });
+        return;
+      }
+
       if (isOfflineError(error)) {
         queueStaffCheckIn({ staffId: selectedStaffId });
         handlePostSubmitSuccess(selectedStaffId, {
@@ -381,8 +408,8 @@ export function StaffCheckInForm({
       }
 
       const message =
-        error instanceof Error
-          ? error.message
+        maybeMessage && maybeMessage.trim().length
+          ? maybeMessage
           : "No logramos registrar la asistencia. Inténtalo de nuevo.";
       setStatus({ message });
       setToast({ tone: "error", message });

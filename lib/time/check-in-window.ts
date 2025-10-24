@@ -3,6 +3,12 @@ import { TIMEZONE } from "@/lib/db/client";
 const CHECK_IN_START_HOUR = 0;
 const CHECK_IN_END_HOUR = 23;
 const MAX_SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
+const TIME_RESTRICTION_INDICATORS = [
+  "check-in not allowed before",
+  "check in not allowed before",
+  "checkin not allowed before",
+  "check-in no permitido antes",
+];
 
 type ZonedTimeParts = {
   hour: number;
@@ -72,4 +78,19 @@ export function formatLessonWithSequence(
   const sequenceLabel =
     sequence == null ? "sin número" : sequence.toString();
   return `${trimmedName} (Lección ${sequenceLabel})`;
+}
+
+export function isTimeRestrictionMessage(message: string | null | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return TIME_RESTRICTION_INDICATORS.some((indicator) =>
+    normalized.includes(indicator),
+  );
 }

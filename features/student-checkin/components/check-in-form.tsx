@@ -19,7 +19,10 @@ import {
   getLevelAccent,
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import { formatLessonWithSequence } from "@/lib/time/check-in-window";
+import {
+  formatLessonWithSequence,
+  isTimeRestrictionMessage,
+} from "@/lib/time/check-in-window";
 import {
   generateQueueId,
   isOfflineError,
@@ -33,6 +36,10 @@ const SUGGESTION_DEBOUNCE_MS = 220;
 const STUDENT_QUEUE_STORAGE_KEY = "ir_offline_student_checkins_v1";
 const OFFLINE_WAITING_MESSAGE =
   "Sin conexión a internet. Guardamos tu asistencia y la enviaremos cuando vuelva la conexión.";
+const AFTER_HOURS_QUEUE_MESSAGE =
+  "Fuera del horario habitual. Guardamos tu asistencia y la enviaremos automáticamente en cuanto se habilite.";
+const AFTER_HOURS_STATUS_MESSAGE =
+  "Estamos fuera del horario habitual. Tu asistencia se enviará automáticamente apenas el sistema lo permita.";
 
 type Props = {
   levels: LevelLessons[];
@@ -628,6 +635,20 @@ export function CheckInForm({
           welcomeName: studentName ?? null,
         });
       } catch (error) {
+        const maybeMessage =
+          error instanceof Error ? error.message : String(error ?? "");
+
+        if (isTimeRestrictionMessage(maybeMessage)) {
+          queueStudentCheckIn(payload);
+          handlePostSubmitSuccess(studentId, {
+            message: AFTER_HOURS_QUEUE_MESSAGE,
+            statusMessage: AFTER_HOURS_STATUS_MESSAGE,
+            welcomeName: studentName ?? null,
+            redirectDelayMs: 2400,
+          });
+          return;
+        }
+
         if (isOfflineError(error)) {
           queueStudentCheckIn(payload);
           handlePostSubmitSuccess(studentId, {
@@ -669,6 +690,14 @@ export function CheckInForm({
           return next;
         });
       } catch (error) {
+        const maybeMessage =
+          error instanceof Error ? error.message : String(error ?? "");
+
+        if (isTimeRestrictionMessage(maybeMessage)) {
+          setStatus({ message: AFTER_HOURS_STATUS_MESSAGE });
+          break;
+        }
+
         if (isOfflineError(error)) {
           setIsOnline(false);
           break;
