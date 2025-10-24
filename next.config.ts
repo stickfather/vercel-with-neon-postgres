@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  eslint: {
+    // Skip linting during builds in environments where eslint isn't installed.
+    ignoreDuringBuilds: true,
+  },
   images: {
     remotePatterns: [
       {

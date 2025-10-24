@@ -214,9 +214,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       Number.isFinite(effort.totalHours) &&
       effort.totalHours > 0;
 
-    const totalHoursDisplay = hasRecordedHours
-      ? effort.totalHours.toFixed(1)
-      : null;
+    let totalHoursDisplay: string | null = null;
+    if (hasRecordedHours && effort?.totalHours != null) {
+      totalHoursDisplay = effort.totalHours.toFixed(1);
+    }
 
     const tooltipLines: string[] = [];
     tooltipLines.push(
@@ -233,11 +234,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             : "—"
         } h`,
       );
-      if (effort.calendarDaysBetween != null && Number.isFinite(effort.calendarDaysBetween)) {
-        tooltipLines.push(
-          `Días entre inicio y fin: ${formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })} d`,
-        );
-      }
       tooltipLines.push(
         `Sesiones: ${
           effort.sessionsCount != null && Number.isFinite(effort.sessionsCount)
