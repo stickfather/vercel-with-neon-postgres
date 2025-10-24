@@ -256,80 +256,59 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
       return;
     }
 
-    const columnRows = normalizeRows<SqlRow>(await sql`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'staff_attendance'
-        AND column_name IN ('checkout_time', 'checkout')
-    `);
+    const attemptedColumns = new Set<string>();
+    let updated = false;
+    let unexpectedError: unknown = null;
 
-    const checkoutColumns = Array.from(
-      new Set(
-        columnRows
-          .map((row) => ((row.column_name as string | null) ?? "").trim())
-          .filter((name) => name.length > 0),
-      ),
-    );
+    const tryUpdateColumn = async (
+      column: "checkout_time" | "checkout",
+    ): Promise<void> => {
+      try {
+        const rows =
+          column === "checkout_time"
+            ? normalizeRows<SqlRow>(await sql`
+                UPDATE public.staff_attendance
+                SET checkout_time = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
+                WHERE id = ${parsedId}::bigint
+                  AND checkout_time IS NULL
+                RETURNING id
+              `)
+            : normalizeRows<SqlRow>(await sql`
+                UPDATE public.staff_attendance
+                SET checkout = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
+                WHERE id = ${parsedId}::bigint
+                  AND checkout IS NULL
+                RETURNING id
+              `);
 
-    if (!checkoutColumns.length) {
+        attemptedColumns.add(column);
+        if (rows.length) {
+          updated = true;
+        }
+      } catch (updateError) {
+        if (isMissingColumnError(updateError, column)) {
+          return;
+        }
+        unexpectedError = updateError;
+      }
+    };
+
+    await tryUpdateColumn("checkout_time");
+    if (!unexpectedError) {
+      await tryUpdateColumn("checkout");
+    }
+
+    if (unexpectedError) {
+      throw unexpectedError;
+    }
+
+    if (!attemptedColumns.size) {
       throw new Error(
         "No pudimos encontrar columnas de salida en 'public.staff_attendance'.",
       );
     }
 
-    const client = sql as typeof sql & {
-      unsafe?: (query: string, params?: unknown[]) => Promise<unknown>;
-    };
-
-    const assignments = checkoutColumns
-      .map(
-        (column) => `${column} = GREATEST(checkin_time, timezone($1, now()))`,
-      )
-      .join(", ");
-    const nullConditions = checkoutColumns
-      .map((column) => `${column} IS NULL`)
-      .join(" OR ");
-
-    let updatedRows: SqlRow[] = [];
-
-    if (typeof client.unsafe === "function") {
-      const query = `
-        UPDATE public.staff_attendance
-        SET ${assignments}
-        WHERE id = $2::bigint
-          AND (${nullConditions})
-        RETURNING id
-      `;
-      updatedRows = normalizeRows<SqlRow>(
-        await client.unsafe(query, [TIMEZONE, parsedId]),
-      );
-    } else if (checkoutColumns.length === 1) {
-      const [column] = checkoutColumns;
-      if (column === "checkout_time") {
-        updatedRows = normalizeRows<SqlRow>(await sql`
-          UPDATE public.staff_attendance
-          SET checkout_time = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
-          WHERE id = ${parsedId}::bigint
-            AND checkout_time IS NULL
-          RETURNING id
-        `);
-      } else {
-        updatedRows = normalizeRows<SqlRow>(await sql`
-          UPDATE public.staff_attendance
-          SET checkout = GREATEST(checkin_time, timezone(${TIMEZONE}, now()))
-          WHERE id = ${parsedId}::bigint
-            AND checkout IS NULL
-          RETURNING id
-        `);
-      }
-    } else {
-      throw new Error(
-        "El cliente SQL no permite actualizar todas las columnas de salida al mismo tiempo.",
-      );
-    }
-
-    if (!updatedRows.length) {
+    if (!updated) {
       const refreshedRows = normalizeRows<SqlRow>(await sql`
         SELECT checkout_time, checkout
         FROM public.staff_attendance

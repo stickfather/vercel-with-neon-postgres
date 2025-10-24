@@ -268,11 +268,18 @@ async function refreshStudentFlagsView() {
           );
           return;
         }
-        throw fallbackError;
+        console.warn(
+          "No pudimos refrescar 'student_flags_v' por un error inesperado.",
+          fallbackError,
+        );
+        return;
       }
       return;
     }
-    throw error;
+    console.warn(
+      "No pudimos refrescar 'student_flags_v' por un error inesperado.",
+      error,
+    );
   }
 }
 
@@ -320,6 +327,12 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
   } catch (error) {
     if (isMissingRelationError(error, "student_management_v")) {
       managementRows = [];
+    } else if (isPermissionDeniedError(error)) {
+      console.warn(
+        "No pudimos acceder a 'student_management_v' por falta de permisos.",
+        error,
+      );
+      managementRows = [];
     } else {
       throw error;
     }
@@ -334,6 +347,12 @@ export async function listStudentManagementEntries(): Promise<StudentManagementE
     `);
   } catch (error) {
     if (isMissingRelationError(error, "student_flags_v")) {
+      flagRows = [];
+    } else if (isPermissionDeniedError(error)) {
+      console.warn(
+        "No pudimos acceder a 'student_flags_v' por falta de permisos.",
+        error,
+      );
       flagRows = [];
     } else {
       throw error;
