@@ -17,6 +17,7 @@ import {
   listStudentAttendanceHistory,
 } from "@/features/administration/data/student-profile";
 import { getStudentManagementEntry } from "@/features/administration/data/students";
+import { getLevelsWithLessons } from "@/features/student-checkin/data/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,8 @@ type AttendanceHistoryData = {
   error: string | null;
 };
 
+type LessonOptionData = Awaited<ReturnType<typeof getLevelsWithLessons>>;
+
 const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
   basicDetails: null,
   paymentSchedule: [],
@@ -55,6 +58,8 @@ const ATTENDANCE_HISTORY_FALLBACK: AttendanceHistoryData = {
   entries: [],
   error: null,
 };
+
+const LESSON_OPTIONS_FALLBACK: LessonOptionData = [];
 
 async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfileData> {
   noStore();
@@ -218,6 +223,13 @@ export default async function StudentProfilePage({
     loadAttendanceHistory(studentId),
   ]);
 
+  let lessonOptions: LessonOptionData = LESSON_OPTIONS_FALLBACK;
+  try {
+    lessonOptions = await getLevelsWithLessons();
+  } catch (error) {
+    console.error("Failed to load lesson catalog", error);
+  }
+
   // If student doesn't exist, show not-found page
   if (!primaryData.basicDetails) {
     notFound();
@@ -274,18 +286,18 @@ export default async function StudentProfilePage({
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
             Perfil académico
           </span>
-            <div className="flex flex-col gap-6 text-brand-deep lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-6 text-brand-deep lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
               <StudentAvatar
                 name={studentName}
                 photoUrl={basicDetails.photoUrl}
                 updatedAt={basicDetails.photoUpdatedAt}
+                size={144}
               />
               <div className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-3">
                   <h1 className="text-3xl font-black sm:text-4xl">{studentName}</h1>
                   <StudentPhotoUploader studentId={studentId} />
-                  <DeleteStudentButton studentId={studentId} studentName={studentName} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-brand-ink-muted">
                   {metadataItems.map((item, index) => (
@@ -307,19 +319,26 @@ export default async function StudentProfilePage({
           </div>
         </header>
 
-        <div className="flex flex-col gap-8 pb-10">
-        <StudentProfileTabs
-          studentId={studentId}
-          basicDetails={basicDetails}
-          paymentSchedule={primaryData.paymentSchedule}
-          exams={primaryData.exams}
-          instructivos={primaryData.instructivos}
-          notes={primaryData.notes}
-          coachSummary={coachPanelData.summary}
-          coachError={coachPanelData.error}
-          attendanceHistory={attendanceData.entries}
-          attendanceError={attendanceData.error}
-        />
+        <div className="flex flex-col gap-8 pb-6">
+          <StudentProfileTabs
+            studentId={studentId}
+            basicDetails={basicDetails}
+            paymentSchedule={primaryData.paymentSchedule}
+            exams={primaryData.exams}
+            instructivos={primaryData.instructivos}
+            notes={primaryData.notes}
+            coachSummary={coachPanelData.summary}
+            coachError={coachPanelData.error}
+            attendanceHistory={attendanceData.entries}
+            attendanceError={attendanceData.error}
+            lessonOptions={lessonOptions}
+          />
+          <div className="flex justify-end pt-4">
+            <DeleteStudentButton
+              studentId={studentId}
+              studentName={studentName}
+            />
+          </div>
         </div>
       </main>
     </div>

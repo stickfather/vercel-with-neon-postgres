@@ -18,7 +18,7 @@ import {
   type OfflineQueueItem,
   writeQueue,
 } from "@/lib/offline/queue-helpers";
-import { isTimeRestrictionMessage } from "@/lib/time/check-in-window";
+ 
 
 type StatusState = { message: string } | null;
 
@@ -33,10 +33,6 @@ type Props = {
 const STAFF_QUEUE_STORAGE_KEY = "ir_offline_staff_checkins_v1";
 const STAFF_OFFLINE_MESSAGE =
   "Sin conexión a internet. Guardamos tu registro y lo enviaremos cuando vuelva la conexión.";
-const STAFF_AFTER_HOURS_QUEUE_MESSAGE =
-  "Fuera del horario habitual. Guardamos tu registro y lo enviaremos automáticamente en cuanto se habilite.";
-const STAFF_AFTER_HOURS_STATUS_MESSAGE =
-  "Estamos fuera del horario habitual. Tu registro se enviará automáticamente apenas el sistema lo permita.";
 
 type PendingStaffCheckIn = OfflineQueueItem<{ staffId: number }>;
 
@@ -125,50 +121,20 @@ export function StaffCheckInForm({
     setInitialAlert(initialError);
   }, [initialError]);
 
-  const resolveSuccessMessage = useCallback(
-    (staffId: number) => {
-      const selectedMember = staffMembers.find((member) => member.id === staffId);
-      return selectedMember
-        ? `${selectedMember.fullName.trim()} ya está registrado.`
-        : "¡Registro del personal confirmado!";
-    },
-    [staffMembers],
-  );
-
   const scheduleWelcomeRedirect = useCallback(
     (
       {
-        name,
         delay = 1600,
-        reason = "checkin",
       }: {
-        name?: string | null;
         delay?: number;
-        reason?: "checkin" | "checkout" | "none";
-      } = { reason: "checkin" },
+      } = {},
     ) => {
       if (redirectTimeoutRef.current) {
         clearTimeout(redirectTimeoutRef.current);
       }
 
       redirectTimeoutRef.current = setTimeout(() => {
-        const trimmedName = name?.trim();
-        const params = new URLSearchParams();
-
-        if (reason === "checkin") {
-          params.set("saludo", "1");
-        } else if (reason === "checkout") {
-          params.set("despedida", "1");
-        }
-
-        if (
-          trimmedName &&
-          (reason === "checkin" || reason === "checkout")
-        ) {
-          params.set("nombre", trimmedName);
-        }
-
-        const target = params.size ? `/?${params.toString()}` : "/";
+        const target = "/";
         startTransition(() => {
           router.push(target);
         });
@@ -187,7 +153,7 @@ export function StaffCheckInForm({
         redirectDelayMs?: number;
       },
     ) => {
-      const message = options?.message ?? resolveSuccessMessage(staffId);
+      const message = options?.message ?? "Welcome";
 
       if (options?.statusMessage !== undefined) {
         if (options.statusMessage === null) {
@@ -204,8 +170,9 @@ export function StaffCheckInForm({
         tone: "success",
         message,
         subtext:
-          options?.statusMessage ??
-          "Te llevaremos a la pantalla principal en un momento.",
+          options?.statusMessage === undefined
+            ? undefined
+            : options.statusMessage ?? undefined,
       });
 
       setSearchTerm("");
@@ -213,12 +180,10 @@ export function StaffCheckInForm({
       setShowSuggestions(false);
 
       scheduleWelcomeRedirect({
-        name: options?.welcomeName ?? null,
         delay: options?.redirectDelayMs,
-        reason: "checkin",
       });
     },
-    [resolveSuccessMessage, scheduleWelcomeRedirect],
+    [scheduleWelcomeRedirect],
   );
 
   const performCheckInRequest = useCallback(
@@ -275,14 +240,6 @@ export function StaffCheckInForm({
           return next;
         });
       } catch (error) {
-        const maybeMessage =
-          error instanceof Error ? error.message : String(error ?? "");
-
-        if (isTimeRestrictionMessage(maybeMessage)) {
-          setStatus({ message: STAFF_AFTER_HOURS_STATUS_MESSAGE });
-          break;
-        }
-
         if (isOfflineError(error)) {
           setIsOnline(false);
           break;
@@ -384,17 +341,6 @@ export function StaffCheckInForm({
 
       const maybeMessage =
         error instanceof Error ? error.message : String(error ?? "");
-
-      if (isTimeRestrictionMessage(maybeMessage)) {
-        queueStaffCheckIn({ staffId: selectedStaffId });
-        handlePostSubmitSuccess(selectedStaffId, {
-          message: STAFF_AFTER_HOURS_QUEUE_MESSAGE,
-          statusMessage: STAFF_AFTER_HOURS_STATUS_MESSAGE,
-          welcomeName: selectedStaffMember?.fullName ?? null,
-          redirectDelayMs: 2400,
-        });
-        return;
-      }
 
       if (isOfflineError(error)) {
         queueStaffCheckIn({ staffId: selectedStaffId });
@@ -573,7 +519,7 @@ export function StaffCheckInForm({
       {fullScreenMessage ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(15,23,42,0.55)] px-6 py-6 backdrop-blur-sm">
           <div className="max-w-xl rounded-[36px] border border-white/80 bg-white/95 px-8 py-10 text-center text-brand-deep shadow-[0_28px_68px_rgba(15,23,42,0.28)]">
-            <p className="text-2xl font-black leading-snug">{fullScreenMessage.message}</p>
+            <p className="text-4xl font-black leading-snug sm:text-5xl">{fullScreenMessage.message}</p>
             {fullScreenMessage.subtext ? (
               <p className="mt-3 text-sm font-medium text-brand-ink-muted">
                 {fullScreenMessage.subtext}

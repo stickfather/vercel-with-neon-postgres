@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useTransition,
+  type FormEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import type {
@@ -19,10 +20,7 @@ import {
   getLevelAccent,
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import {
-  formatLessonWithSequence,
-  isTimeRestrictionMessage,
-} from "@/lib/time/check-in-window";
+import { formatLessonWithSequence } from "@/lib/time/check-in-window";
 import {
   generateQueueId,
   isOfflineError,
@@ -36,10 +34,6 @@ const SUGGESTION_DEBOUNCE_MS = 220;
 const STUDENT_QUEUE_STORAGE_KEY = "ir_offline_student_checkins_v1";
 const OFFLINE_WAITING_MESSAGE =
   "Sin conexión a internet. Guardamos tu asistencia y la enviaremos cuando vuelva la conexión.";
-const AFTER_HOURS_QUEUE_MESSAGE =
-  "Fuera del horario habitual. Guardamos tu asistencia y la enviaremos automáticamente en cuanto se habilite.";
-const AFTER_HOURS_STATUS_MESSAGE =
-  "Estamos fuera del horario habitual. Tu asistencia se enviará automáticamente apenas el sistema lo permita.";
 
 type Props = {
   levels: LevelLessons[];
@@ -445,37 +439,17 @@ export function CheckInForm({
   const scheduleWelcomeRedirect = useCallback(
     (
       {
-        name,
         delay = 1600,
-        reason = "checkin",
       }: {
-        name?: string | null;
         delay?: number;
-        reason?: "checkin" | "checkout" | "none";
-      } = { reason: "checkin" },
+      } = {},
     ) => {
       if (redirectTimeoutRef.current) {
         clearTimeout(redirectTimeoutRef.current);
       }
 
       redirectTimeoutRef.current = setTimeout(() => {
-        const trimmedName = name?.trim();
-        const params = new URLSearchParams();
-
-        if (reason === "checkin") {
-          params.set("saludo", "1");
-        } else if (reason === "checkout") {
-          params.set("despedida", "1");
-        }
-
-        if (
-          trimmedName &&
-          (reason === "checkin" || reason === "checkout")
-        ) {
-          params.set("nombre", trimmedName);
-        }
-
-        const target = params.size ? `/?${params.toString()}` : "/";
+        const target = "/";
         startTransition(() => {
           router.push(target);
         });
@@ -494,8 +468,7 @@ export function CheckInForm({
         redirectDelayMs?: number;
       },
     ) => {
-      const confirmationMessage =
-        options?.message ?? "¡Asistencia confirmada, buen trabajo!";
+      const confirmationMessage = options?.message ?? "Welcome";
 
       if (options?.statusMessage !== undefined) {
         if (options.statusMessage === null) {
@@ -512,8 +485,9 @@ export function CheckInForm({
         tone: "success",
         message: confirmationMessage,
         subtext:
-          options?.statusMessage ??
-          "Te llevaremos a la pantalla principal en un momento.",
+          options?.statusMessage === undefined
+            ? undefined
+            : options.statusMessage ?? undefined,
       });
 
       setStudentQuery("");
@@ -530,9 +504,7 @@ export function CheckInForm({
       lastLessonCache.current.delete(studentId);
 
       scheduleWelcomeRedirect({
-        name: options?.welcomeName ?? null,
         delay: options?.redirectDelayMs,
-        reason: "checkin",
       });
     },
     [scheduleWelcomeRedirect],
@@ -638,17 +610,6 @@ export function CheckInForm({
         const maybeMessage =
           error instanceof Error ? error.message : String(error ?? "");
 
-        if (isTimeRestrictionMessage(maybeMessage)) {
-          queueStudentCheckIn(payload);
-          handlePostSubmitSuccess(studentId, {
-            message: AFTER_HOURS_QUEUE_MESSAGE,
-            statusMessage: AFTER_HOURS_STATUS_MESSAGE,
-            welcomeName: studentName ?? null,
-            redirectDelayMs: 2400,
-          });
-          return;
-        }
-
         if (isOfflineError(error)) {
           queueStudentCheckIn(payload);
           handlePostSubmitSuccess(studentId, {
@@ -692,11 +653,6 @@ export function CheckInForm({
       } catch (error) {
         const maybeMessage =
           error instanceof Error ? error.message : String(error ?? "");
-
-        if (isTimeRestrictionMessage(maybeMessage)) {
-          setStatus({ message: AFTER_HOURS_STATUS_MESSAGE });
-          break;
-        }
 
         if (isOfflineError(error)) {
           setIsOnline(false);
@@ -749,7 +705,7 @@ export function CheckInForm({
     processQueuedCheckIns,
   ]);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isFormDisabled) {
       setStatus({
@@ -852,7 +808,7 @@ export function CheckInForm({
           message,
           subtext: "Regresaremos a la pantalla principal en unos segundos…",
         });
-        scheduleWelcomeRedirect({ reason: "none", delay: 3000 });
+        scheduleWelcomeRedirect({ delay: 3000 });
         return;
       }
 
@@ -1320,7 +1276,7 @@ export function CheckInForm({
       {fullScreenMessage ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(15,23,42,0.55)] px-6 py-6 backdrop-blur-sm">
           <div className="max-w-xl rounded-[36px] border border-white/80 bg-white/95 px-8 py-10 text-center text-brand-deep shadow-[0_28px_68px_rgba(15,23,42,0.28)]">
-            <p className="text-2xl font-black leading-snug">
+            <p className="text-4xl font-black leading-snug sm:text-5xl">
               {fullScreenMessage.message}
             </p>
             {fullScreenMessage.subtext ? (

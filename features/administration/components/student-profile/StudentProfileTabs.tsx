@@ -28,6 +28,7 @@ import type {
   StudentAttendanceHistoryEntry,
   StudentPaymentScheduleEntry,
 } from "@/features/administration/data/student-profile";
+import type { LevelLessons } from "@/features/student-checkin/data/queries";
 
 const TAB_ORDER = [
   "datos-basicos",
@@ -60,6 +61,7 @@ type StudentProfileTabsProps = {
   coachError?: string | null;
   attendanceHistory: StudentAttendanceHistoryEntry[];
   attendanceError?: string | null;
+  lessonOptions: LevelLessons[];
 };
 
 type TabContentConfig = {
@@ -79,6 +81,7 @@ export function StudentProfileTabs({
   coachError,
   attendanceHistory,
   attendanceError,
+  lessonOptions,
 }: StudentProfileTabsProps) {
   const baseId = useId();
   const tabConfigs = useMemo<TabContentConfig[]>(
@@ -103,8 +106,10 @@ export function StudentProfileTabs({
         label: TAB_LABELS["historial-asistencia"],
         content: (
           <AttendanceHistoryPanel
+            studentId={studentId}
             entries={attendanceHistory}
             errorMessage={attendanceError}
+            lessonOptions={lessonOptions}
           />
         ),
       },

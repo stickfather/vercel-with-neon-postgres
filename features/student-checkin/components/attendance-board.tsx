@@ -160,14 +160,7 @@ export function AttendanceBoard({ attendances }: Props) {
       }
 
       navigationTimeoutRef.current = setTimeout(() => {
-        const params = new URLSearchParams();
-        params.set("despedida", "1");
-        const trimmedName = attendance.fullName.trim();
-        if (trimmedName) {
-          params.set("nombre", trimmedName);
-        }
-        const target = params.size ? `/?${params.toString()}` : "/";
-        router.push(target);
+        router.push("/");
       }, 1500);
     } catch (err) {
       console.error(err);

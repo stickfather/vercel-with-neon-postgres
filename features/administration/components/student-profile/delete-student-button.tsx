@@ -8,11 +8,13 @@ import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 type DeleteStudentButtonProps = {
   studentId: number;
   studentName: string;
+  className?: string;
 };
 
 export function DeleteStudentButton({
   studentId,
   studentName,
+  className = "",
 }: DeleteStudentButtonProps) {
   const router = useRouter();
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -98,7 +100,7 @@ export function DeleteStudentButton({
       <button
         type="button"
         onClick={openDialog}
-        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-ink px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-brand-ink/90 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+        className={`inline-flex items-center justify-center rounded-full border border-transparent bg-[#dc2626] px-6 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:-translate-y-[1px] hover:bg-[#b91c1c] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${className}`.trim()}
       >
         Eliminar estudiante
       </button>
