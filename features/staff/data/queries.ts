@@ -57,18 +57,57 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
   const sql = getSqlClient();
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    WITH day_bounds AS (
-      SELECT
-        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
-    )
-    SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
-    FROM public.staff_attendance sa
-    LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
-    WHERE sa.checkout_time IS NULL
-      AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
-    ORDER BY sa.checkin_time ASC
-  `);
+  let rows: SqlRow[] = [];
+  try {
+    rows = normalizeRows<SqlRow>(
+      await sql`
+        WITH day_bounds AS (
+          SELECT
+            (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+        )
+        SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
+        FROM public.staff_attendance sa
+        LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
+        WHERE COALESCE(sa.checkout_time, sa.checkout) IS NULL
+          AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
+        ORDER BY sa.checkin_time ASC
+      `,
+    );
+  } catch (error) {
+    if (isMissingColumnError(error, "checkout")) {
+      rows = normalizeRows<SqlRow>(
+        await sql`
+          WITH day_bounds AS (
+            SELECT
+              (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+          )
+          SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
+          FROM public.staff_attendance sa
+          LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
+          WHERE sa.checkout_time IS NULL
+            AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
+          ORDER BY sa.checkin_time ASC
+        `,
+      );
+    } else if (isMissingColumnError(error, "checkout_time")) {
+      rows = normalizeRows<SqlRow>(
+        await sql`
+          WITH day_bounds AS (
+            SELECT
+              (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+          )
+          SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
+          FROM public.staff_attendance sa
+          LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
+          WHERE sa.checkout IS NULL
+            AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
+          ORDER BY sa.checkin_time ASC
+        `,
+      );
+    } else {
+      throw error;
+    }
+  }
 
   return rows
     .map((row) => ({
@@ -104,17 +143,41 @@ export async function registerStaffCheckIn({
   if (!staffName) throw new Error("El miembro del personal no tiene un nombre registrado.");
   if (!isActive) throw new Error("El miembro del personal está marcado como inactivo.");
 
-  await sql`
-    WITH day_bounds AS (
-      SELECT
-        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
-    )
-    UPDATE public.staff_attendance
-    SET checkout_time = GREATEST(checkin_time, now())
-    WHERE checkout_time IS NULL
-      AND staff_id = ${staffId}
-      AND checkin_time < (SELECT current_day_start FROM day_bounds)
-  `;
+  try {
+    await sql`
+      WITH day_bounds AS (
+        SELECT
+          (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+      )
+      UPDATE public.staff_attendance
+      SET checkout_time = GREATEST(checkin_time, now())
+      WHERE checkout_time IS NULL
+        AND staff_id = ${staffId}
+        AND checkin_time < (SELECT current_day_start FROM day_bounds)
+    `;
+  } catch (error) {
+    if (!isMissingColumnError(error, "checkout_time")) {
+      throw error;
+    }
+  }
+
+  try {
+    await sql`
+      WITH day_bounds AS (
+        SELECT
+          (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+      )
+      UPDATE public.staff_attendance
+      SET checkout = GREATEST(checkin_time, now())
+      WHERE checkout IS NULL
+        AND staff_id = ${staffId}
+        AND checkin_time < (SELECT current_day_start FROM day_bounds)
+    `;
+  } catch (error) {
+    if (!isMissingColumnError(error, "checkout")) {
+      throw error;
+    }
+  }
 
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
@@ -183,33 +246,46 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
         );
       }
 
-      if (column !== "checkout_time") {
-        throw new Error(
-          "El cliente SQL no permite actualizar la columna de salida solicitada.",
-        );
+      if (column === "checkout_time") {
+        return normalizeRows<SqlRow>(await sql`
+          UPDATE public.staff_attendance
+          SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+          WHERE id = ${parsedId}::bigint
+            AND checkout_time IS NULL
+          RETURNING id
+        `);
       }
 
       return normalizeRows<SqlRow>(await sql`
         UPDATE public.staff_attendance
-        SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+        SET checkout = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
         WHERE id = ${parsedId}::bigint
-          AND checkout_time IS NULL
+          AND checkout IS NULL
         RETURNING id
       `);
     };
 
-    let updatedRows: SqlRow[] = [];
+    let updatedCount = 0;
+
     try {
-      updatedRows = await runUpdate("checkout_time");
+      const rows = await runUpdate("checkout_time");
+      updatedCount = Math.max(updatedCount, rows.length);
     } catch (columnError) {
-      if (isMissingColumnError(columnError, "checkout_time")) {
-        updatedRows = await runUpdate("checkout");
-      } else {
+      if (!isMissingColumnError(columnError, "checkout_time")) {
         throw columnError;
       }
     }
 
-    if (!updatedRows.length) {
+    try {
+      const rows = await runUpdate("checkout");
+      updatedCount = Math.max(updatedCount, rows.length);
+    } catch (columnError) {
+      if (!isMissingColumnError(columnError, "checkout")) {
+        throw columnError;
+      }
+    }
+
+    if (!updatedCount) {
       throw new Error("La asistencia ya estaba cerrada o no existe.");
     }
   } catch (error) {

@@ -20,10 +20,7 @@ import {
   getLevelAccent,
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import {
-  FullScreenCelebration,
-  type FullScreenCelebrationAccent,
-} from "@/components/ui/full-screen-celebration";
+import { type FullScreenCelebrationAccent } from "@/components/ui/full-screen-celebration";
 import { formatLessonWithSequence } from "@/lib/time/check-in-window";
 import {
   generateQueueId,
@@ -44,6 +41,7 @@ type Props = {
   disabled?: boolean;
   initialError?: string | null;
   lessonsError?: string | null;
+  onShowCelebration?: (message: CelebrationMessage | null) => void;
 };
 
 type StatusState = {
@@ -75,6 +73,14 @@ type PendingStudentCheckIn = OfflineQueueItem<{
   confirmOverride: boolean;
 }>;
 
+type CelebrationMessage = {
+  tone: "success" | "error";
+  headline: string;
+  body?: string;
+  accent?: FullScreenCelebrationAccent;
+  autoDismissAfterMs?: number | null;
+};
+
 function getFriendlyFirstName(fullName: string | null | undefined): string | null {
   if (!fullName) {
     return null;
@@ -95,6 +101,7 @@ export function CheckInForm({
   disabled = false,
   initialError = null,
   lessonsError = null,
+  onShowCelebration,
 }: Props) {
   const router = useRouter();
   const [studentQuery, setStudentQuery] = useState("");
@@ -121,16 +128,6 @@ export function CheckInForm({
   const [suggestedLesson, setSuggestedLesson] = useState<StudentLastLesson | null>(null);
   const [lessonOverridePrompt, setLessonOverridePrompt] =
     useState<LessonOverridePrompt | null>(null);
-  const [fullScreenMessage, setFullScreenMessage] = useState<
-    | {
-        tone: "success" | "error";
-        headline: string;
-        body?: string;
-        accent?: FullScreenCelebrationAccent;
-        autoDismissAfterMs?: number | null;
-      }
-    | null
-  >(null);
   const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
   const lastLessonAbortRef = useRef<AbortController | null>(null);
   const studentInputRef = useRef<HTMLInputElement | null>(null);
@@ -512,7 +509,7 @@ export function CheckInForm({
       }
 
       setToast(null);
-      setFullScreenMessage({
+      onShowCelebration?.({
         tone: "success",
         headline,
         body,
@@ -536,7 +533,7 @@ export function CheckInForm({
         delay: options?.redirectDelayMs,
       });
     },
-    [scheduleWelcomeRedirect],
+    [scheduleWelcomeRedirect, onShowCelebration],
   );
 
   const performCheckInRequest = useCallback(
@@ -748,7 +745,7 @@ export function CheckInForm({
     }
 
     setStatus(null);
-    setFullScreenMessage(null);
+    onShowCelebration?.(null);
 
     const trimmedName = studentQuery.trim();
     if (!trimmedName) {
@@ -834,7 +831,7 @@ export function CheckInForm({
           "Tu cuenta requiere atención. Por favor, contacta a la administración.";
         setStatus(null);
         setToast(null);
-        setFullScreenMessage({
+        onShowCelebration?.({
           tone: "error",
           headline: message,
           body: "Regresaremos a la pantalla principal en unos segundos…",
@@ -1304,15 +1301,6 @@ export function CheckInForm({
             </div>
           </div>
         </div>
-      ) : null}
-      {fullScreenMessage ? (
-        <FullScreenCelebration
-          tone={fullScreenMessage.tone}
-          headline={fullScreenMessage.headline}
-          body={fullScreenMessage.body}
-          accent={fullScreenMessage.accent}
-          autoDismissAfterMs={fullScreenMessage.autoDismissAfterMs ?? null}
-        />
       ) : null}
     </form>
   );

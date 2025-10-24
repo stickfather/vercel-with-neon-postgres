@@ -4,14 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActiveStaffAttendance } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import {
-  FullScreenCelebration,
-  type FullScreenCelebrationAccent,
-} from "@/components/ui/full-screen-celebration";
+import { type FullScreenCelebrationAccent } from "@/components/ui/full-screen-celebration";
 import { exceedsSessionDurationLimit } from "@/lib/time/check-in-window";
+
+type CelebrationMessage = {
+  tone: "success" | "error";
+  headline: string;
+  body?: string;
+  accent?: FullScreenCelebrationAccent;
+  autoDismissAfterMs?: number | null;
+};
 
 type Props = {
   attendances: ActiveStaffAttendance[];
+  onShowCelebration?: (message: CelebrationMessage | null) => void;
 };
 
 const accentPalette = [
@@ -42,7 +48,7 @@ function formatTime(value: string, formatter: Intl.DateTimeFormat) {
   return formatter.format(date);
 }
 
-export function StaffAttendanceBoard({ attendances }: Props) {
+export function StaffAttendanceBoard({ attendances, onShowCelebration }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [pendingCheckout, setPendingCheckout] = useState<ActiveStaffAttendance | null>(
@@ -52,16 +58,6 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [celebration, setCelebration] = useState<
-    | {
-        tone: "success" | "error";
-        headline: string;
-        body?: string;
-        accent?: FullScreenCelebrationAccent;
-        autoDismissAfterMs?: number | null;
-      }
-    | null
-  >(null);
   const [resolvingExpired, setResolvingExpired] = useState(false);
   const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -133,7 +129,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
 
   const requestCheckout = (attendance: ActiveStaffAttendance) => {
     setError(null);
-    setCelebration(null);
+    onShowCelebration?.(null);
     if (exceedsSessionDurationLimit(attendance.checkInTime)) {
       void resolveExpiredAttendances();
       return;
@@ -144,7 +140,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   const closeConfirmation = () => {
     setPendingCheckout(null);
     setError(null);
-    setCelebration(null);
+    onShowCelebration?.(null);
   };
 
   const confirmCheckout = async () => {
@@ -171,7 +167,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       setPendingCheckout(null);
       setToast(null);
       const friendlyName = getFriendlyFirstName(attendance.fullName);
-      setCelebration({
+      onShowCelebration?.({
         tone: "success",
         headline:
           friendlyName != null
@@ -305,15 +301,6 @@ export function StaffAttendanceBoard({ attendances }: Props) {
           </div>
         </div>
       )}
-      {celebration ? (
-        <FullScreenCelebration
-          tone={celebration.tone}
-          headline={celebration.headline}
-          body={celebration.body}
-          accent={celebration.accent}
-          autoDismissAfterMs={celebration.autoDismissAfterMs ?? null}
-        />
-      ) : null}
     </div>
   );
 }

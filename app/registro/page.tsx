@@ -3,8 +3,7 @@ import {
   getActiveAttendances,
   getLevelsWithLessons,
 } from "@/features/student-checkin/data/queries";
-import { AttendanceBoard } from "@/features/student-checkin/components/attendance-board";
-import { CheckInForm } from "@/features/student-checkin/components/check-in-form";
+import { CheckInExperience } from "@/features/student-checkin/components/check-in-experience";
 
 const quickLinkBaseClass =
   "inline-flex items-center justify-center rounded-full border border-transparent px-5 py-2 text-xs font-semibold uppercase tracking-wide shadow transition hover:-translate-y-[1px] hover:opacity-90 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
@@ -61,33 +60,13 @@ export default async function RegistroPage() {
           </p>
         </div>
 
-        <div className="grid gap-7 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)] xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.1fr)]">
-          <CheckInForm
-            levels={levels}
-            disabled={Boolean(formError)}
-            initialError={formError}
-            lessonsError={lessonsError}
-          />
-          <aside className="flex flex-col gap-5 rounded-[36px] border border-white/70 bg-white/94 p-8 shadow-[0_24px_60px_rgba(15,23,42,0.14)] backdrop-blur">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col text-left">
-                <h2 className="text-xl font-bold text-brand-deep">Estudiantes en clase</h2>
-                <p className="text-xs uppercase tracking-wide text-brand-ink-muted">
-                  Toca tu burbuja para salir
-                </p>
-              </div>
-              <span className="rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-teal">
-                {attendances.length}
-              </span>
-            </div>
-            {attendanceError && (
-              <p className="rounded-3xl border border-brand-orange bg-white/85 px-4 py-3 text-xs font-medium text-brand-ink">
-                {attendanceError}
-              </p>
-            )}
-            <AttendanceBoard attendances={attendances} />
-          </aside>
-        </div>
+        <CheckInExperience
+          levels={levels}
+          attendances={attendances}
+          formError={formError}
+          lessonsError={lessonsError}
+          attendanceError={attendanceError}
+        />
 
         <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/92 px-5 py-4 shadow-[0_18px_44px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-brand-ink-muted">
