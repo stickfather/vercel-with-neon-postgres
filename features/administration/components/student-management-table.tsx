@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
 import { StudentManagementGraphs } from "./student-management-graphs";
 
@@ -30,6 +32,15 @@ const FLAG_COLUMNS: ReadonlyArray<{ key: FlagKey; label: string }> = [
   { key: "hasOverdueInstructive", label: "Instructivo vencido" },
 ];
 
+const LEVEL_CODES: ReadonlyArray<string> = [
+  "A1",
+  "A2",
+  "B1",
+  "B2",
+  "C1",
+  "C2",
+];
+
 const STATE_TRANSLATIONS: Record<string, string> = {
   active: "activo",
   frozen: "congelado",
@@ -52,6 +63,12 @@ function translateState(state: string | null): string {
   return key.replace(/_/g, " ");
 }
 
+function sortStudents(entries: StudentManagementEntry[]): StudentManagementEntry[] {
+  return [...entries].sort((a, b) =>
+    a.fullName.localeCompare(b.fullName, "es", { sensitivity: "base" }),
+  );
+}
+
 function FlagIndicator({ active, label }: { active: boolean; label: string }) {
   return (
     <span
@@ -64,17 +81,48 @@ function FlagIndicator({ active, label }: { active: boolean; label: string }) {
 }
 
 function StudentManagementTable({ students }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [allStudents, setAllStudents] = useState<StudentManagementEntry[]>(() =>
+    sortStudents(students),
+  );
   const [stateFilters, setStateFilters] = useState<string[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
+  const [toast, setToast] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newPlannedMin, setNewPlannedMin] = useState("");
+  const [newPlannedMax, setNewPlannedMax] = useState("");
+  const [addStudentError, setAddStudentError] = useState<string | null>(null);
+  const [isCreatingStudent, setIsCreatingStudent] = useState(false);
 
-  const totalStudents = students.length;
+  useEffect(() => {
+    setAllStudents(sortStudents(students));
+  }, [students]);
+
+  useEffect(() => {
+    const deletedName = searchParams?.get("studentDeleted");
+    if (deletedName) {
+      setToast({
+        tone: "success",
+        message: `${deletedName} fue eliminado del registro.`,
+      });
+      router.replace(pathname);
+    }
+  }, [pathname, router, searchParams]);
+
+  const totalStudents = allStudents.length;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
   const stateTotals = useMemo(() => {
     const counts = new Map<string, number>();
-    students.forEach((student) => {
+    allStudents.forEach((student) => {
       const key = normalizeStateKey(student.state);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     });
@@ -87,11 +135,14 @@ function StudentManagementTable({ students }: Props) {
         selected: stateFilters.includes(key),
       }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [students, totalStudents, stateFilters]);
+  }, [allStudents, totalStudents, stateFilters]);
 
   const flagTotals = useMemo(() => {
     return FLAG_COLUMNS.map((flag) => {
-      const count = students.reduce((acc, student) => (student[flag.key] ? acc + 1 : acc), 0);
+      const count = allStudents.reduce(
+        (acc, student) => (student[flag.key] ? acc + 1 : acc),
+        0,
+      );
       return {
         key: flag.key,
         label: flag.label,
@@ -100,10 +151,10 @@ function StudentManagementTable({ students }: Props) {
         selected: flagFilters.includes(flag.key),
       };
     }).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [students, totalStudents, flagFilters]);
+  }, [allStudents, totalStudents, flagFilters]);
 
   const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
+    return allStudents.filter((student) => {
       const stateKey = normalizeStateKey(student.state);
       const matchesState =
         stateFilters.length === 0 || stateFilters.includes(stateKey);
@@ -113,7 +164,7 @@ function StudentManagementTable({ students }: Props) {
         student.fullName.toLowerCase().includes(normalizedSearchTerm);
       return matchesState && matchesFlags && matchesSearch;
     });
-  }, [students, stateFilters, flagFilters, normalizedSearchTerm]);
+  }, [allStudents, stateFilters, flagFilters, normalizedSearchTerm]);
 
   const PAGE_SIZE = 40;
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
@@ -168,8 +219,110 @@ function StudentManagementTable({ students }: Props) {
   const hasActiveFilters = stateFilters.length > 0 || flagFilters.length > 0;
   const hasSearch = normalizedSearchTerm.length > 0;
 
+  const resetAddStudentForm = () => {
+    setNewStudentName("");
+    setNewPlannedMin("");
+    setNewPlannedMax("");
+    setAddStudentError(null);
+  };
+
+  const openAddStudentDialog = () => {
+    resetAddStudentForm();
+    setIsAddStudentOpen(true);
+  };
+
+  const closeAddStudentDialog = () => {
+    setIsAddStudentOpen(false);
+    setAddStudentError(null);
+  };
+
+  const handleAddStudentSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    const trimmedName = newStudentName.trim();
+    const plannedMin = newPlannedMin.trim();
+    const plannedMax = newPlannedMax.trim();
+
+    if (!trimmedName) {
+      setAddStudentError("Ingresa el nombre del estudiante.");
+      return;
+    }
+
+    if (!plannedMin) {
+      setAddStudentError("Selecciona el nivel planificado mínimo.");
+      return;
+    }
+
+    if (!plannedMax) {
+      setAddStudentError("Selecciona el nivel planificado máximo.");
+      return;
+    }
+
+    setIsCreatingStudent(true);
+    setAddStudentError(null);
+
+    try {
+      const response = await fetch("/api/students", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fullName: trimmedName,
+          plannedLevelMin: plannedMin,
+          plannedLevelMax: plannedMax,
+        }),
+      });
+
+      const payload = (await response
+        .json()
+        .catch(() => ({}))) as {
+        student?: StudentManagementEntry;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.student) {
+        throw new Error(
+          payload?.error ??
+            "No se pudo crear el estudiante. Inténtalo nuevamente.",
+        );
+      }
+
+      setAllStudents((previous) =>
+        sortStudents([
+          ...previous.filter((student) => student.id !== payload.student!.id),
+          payload.student!,
+        ]),
+      );
+      setToast({
+        tone: "success",
+        message: `${payload.student.fullName} fue agregado correctamente.`,
+      });
+      setIsAddStudentOpen(false);
+      resetAddStudentForm();
+      router.refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo crear el estudiante. Inténtalo nuevamente.";
+      setAddStudentError(message);
+    } finally {
+      setIsCreatingStudent(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
+      {toast ? (
+        <EphemeralToast
+          message={toast.message}
+          tone={toast.tone}
+          onDismiss={() => setToast(null)}
+        />
+      ) : null}
+
       <StudentManagementGraphs
         totalStudents={totalStudents}
         filteredStudents={filteredStudents.length}
@@ -205,6 +358,13 @@ function StudentManagementTable({ students }: Props) {
                 Limpiar búsqueda
               </button>
             )}
+            <button
+              type="button"
+              onClick={openAddStudentDialog}
+              className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#ff6a00] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            >
+              Agregar estudiante
+            </button>
           </div>
         </div>
         <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left">
@@ -319,6 +479,102 @@ function StudentManagementTable({ students }: Props) {
           </div>
         </div>
       </div>
+
+      {isAddStudentOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.45)] px-4 py-8 backdrop-blur-sm">
+          <form
+            onSubmit={handleAddStudentSubmit}
+            className="w-full max-w-lg rounded-[32px] border border-white/70 bg-white/95 p-6 text-brand-ink shadow-[0_28px_64px_rgba(15,23,42,0.18)]"
+          >
+            <div className="flex flex-col gap-4">
+              <header className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
+                  Nuevo registro
+                </span>
+                <h2 className="text-2xl font-black text-brand-deep">Agregar estudiante</h2>
+                <p className="text-sm text-brand-ink-muted">
+                  Crea el perfil básico y completa los demás datos desde su ficha individual.
+                </p>
+              </header>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+                Nombre del estudiante
+                <input
+                  type="text"
+                  value={newStudentName}
+                  onChange={(event) => setNewStudentName(event.target.value)}
+                  className="rounded-3xl border border-brand-ink-muted/25 bg-white px-4 py-3 text-sm text-brand-ink shadow focus:border-brand-teal focus:outline-none"
+                  placeholder="Nombre y apellido"
+                  required
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+                  Nivel planificado mínimo
+                  <select
+                    value={newPlannedMin}
+                    onChange={(event) => setNewPlannedMin(event.target.value)}
+                    className="rounded-3xl border border-brand-ink-muted/25 bg-white px-4 py-3 text-sm text-brand-ink shadow focus:border-brand-teal focus:outline-none"
+                    required
+                  >
+                    <option value="" disabled>
+                      Selecciona un nivel
+                    </option>
+                    {LEVEL_CODES.map((level) => (
+                      <option key={`planned-min-${level}`} value={level}>
+                        {level}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+                  Nivel planificado máximo
+                  <select
+                    value={newPlannedMax}
+                    onChange={(event) => setNewPlannedMax(event.target.value)}
+                    className="rounded-3xl border border-brand-ink-muted/25 bg-white px-4 py-3 text-sm text-brand-ink shadow focus:border-brand-teal focus:outline-none"
+                    required
+                  >
+                    <option value="" disabled>
+                      Selecciona un nivel
+                    </option>
+                    {LEVEL_CODES.map((level) => (
+                      <option key={`planned-max-${level}`} value={level}>
+                        {level}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {addStudentError ? (
+                <div className="rounded-3xl border border-brand-orange bg-white/85 px-4 py-3 text-sm font-medium text-brand-ink">
+                  {addStudentError}
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeAddStudentDialog}
+                  className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-5 py-2 text-sm font-semibold uppercase tracking-wide text-brand-ink transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  disabled={isCreatingStudent}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingStudent}
+                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#00a894] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {isCreatingStudent ? "Guardando…" : "Crear estudiante"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

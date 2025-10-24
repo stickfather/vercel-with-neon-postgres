@@ -85,8 +85,9 @@ export function CheckInForm({
   const [suggestionState, setSuggestionState] = useState<FetchState>("idle");
   const [selectedLevel, setSelectedLevel] = useState("");
   const [selectedLesson, setSelectedLesson] = useState<string>("");
-  const [status, setStatus] = useState<StatusState>(
-    initialError ? { message: initialError } : null,
+  const [status, setStatus] = useState<StatusState>(null);
+  const [initialAlert, setInitialAlert] = useState<string | null>(
+    initialError,
   );
   const [isPending, startTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -119,7 +120,11 @@ export function CheckInForm({
   >([]);
   const [isSyncingOfflineQueue, setIsSyncingOfflineQueue] = useState(false);
 
-  const isFormDisabled = disabled || Boolean(initialError);
+  const isFormDisabled = disabled;
+
+  useEffect(() => {
+    setInitialAlert(initialError);
+  }, [initialError]);
 
   const overrideQuestion = useMemo(() => {
     if (!lessonOverridePrompt) {
@@ -415,7 +420,7 @@ export function CheckInForm({
   }, [selectedLevel, sortedLessons]);
 
   const canChooseProgression =
-    Boolean(selectedStudent) && !disabled && !initialError && Boolean(levels.length);
+    Boolean(selectedStudent) && !isFormDisabled && Boolean(levels.length);
   const pendingOfflineCount = pendingOfflineCheckIns.length;
 
   const handleSuggestionSelection = (student: StudentName) => {
@@ -720,7 +725,7 @@ export function CheckInForm({
     if (isFormDisabled) {
       setStatus({
         message:
-          initialError ??
+          initialAlert ??
           "El registro no está disponible en este momento. Consulta con un asesor.",
       });
       return;
@@ -926,6 +931,25 @@ export function CheckInForm({
         </span>
         <h1 className="text-3xl font-black text-brand-deep">¡Marca tu llegada!</h1>
       </header>
+
+      {initialAlert && (
+        <div
+          className="rounded-3xl border border-brand-orange bg-white/85 px-5 py-3 text-sm font-medium text-brand-ink"
+          role="status"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span>{initialAlert}</span>
+            <button
+              type="button"
+              onClick={() => setInitialAlert(null)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent bg-white/70 text-brand-ink hover:border-brand-orange/60 hover:text-brand-orange focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              aria-label="Ocultar mensaje inicial"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {!isOnline && (
         <div className="rounded-3xl border border-brand-orange bg-white/80 px-5 py-3 text-sm font-medium text-brand-ink" role="status">
@@ -1194,7 +1218,7 @@ export function CheckInForm({
         </div>
       </div>
 
-      {!levels.length && !initialError && (
+      {!levels.length && !isFormDisabled && (
         <div className="rounded-3xl border border-brand-orange bg-white/75 px-5 py-3 text-sm font-medium text-brand-ink">
           {lessonsError ??
             "Aún no hay lecciones disponibles para seleccionar. Nuestro equipo lo resolverá en breve."}

@@ -45,9 +45,8 @@ export function StaffCheckInForm({
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [status, setStatus] = useState<StatusState>(
-    initialError ? { message: initialError } : null,
-  );
+  const [status, setStatus] = useState<StatusState>(null);
+  const [initialAlert, setInitialAlert] = useState<string | null>(initialError);
   const [isPending, startTransition] = useTransition();
   const [showHelp, setShowHelp] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -115,7 +114,11 @@ export function StaffCheckInForm({
       .slice(0, 8);
   }, [staffMembers, normalizedSearch]);
 
-  const isFormDisabled = disabled || Boolean(initialError);
+  const isFormDisabled = disabled;
+
+  useEffect(() => {
+    setInitialAlert(initialError);
+  }, [initialError]);
 
   const resolveSuccessMessage = useCallback(
     (staffId: number) => {
@@ -325,6 +328,11 @@ export function StaffCheckInForm({
     event.preventDefault();
 
     if (isFormDisabled) {
+      setStatus({
+        message:
+          initialAlert ??
+          "El registro no está disponible en este momento. Contacta a coordinación para registrar tu asistencia.",
+      });
       return;
     }
 
@@ -403,6 +411,25 @@ export function StaffCheckInForm({
           Busca tu nombre y marca que ya estás listo para recibir a los estudiantes.
         </p>
       </header>
+
+      {initialAlert && (
+        <div
+          className="rounded-3xl border border-brand-orange bg-white/85 px-5 py-3 text-sm font-medium text-brand-ink"
+          role="status"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span>{initialAlert}</span>
+            <button
+              type="button"
+              onClick={() => setInitialAlert(null)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent bg-white/70 text-brand-ink hover:border-brand-orange/60 hover:text-brand-orange focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              aria-label="Ocultar mensaje inicial"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {!isOnline && (
         <div className="rounded-3xl border border-brand-orange bg-white/80 px-5 py-3 text-sm font-medium text-brand-ink" role="status">

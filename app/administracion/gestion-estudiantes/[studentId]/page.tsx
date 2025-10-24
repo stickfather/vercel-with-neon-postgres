@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { StudentAvatar } from "@/components/student/StudentAvatar";
 import { StudentPhotoUploader } from "@/components/student/StudentPhotoUploader";
 import { StudentProfileTabs } from "@/features/administration/components/student-profile/StudentProfileTabs";
+import { DeleteStudentButton } from "@/features/administration/components/student-profile/delete-student-button";
 import {
   getStudentBasicDetails,
   listStudentPaymentSchedule,
@@ -273,7 +274,7 @@ export default async function StudentProfilePage({
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-brand-deep-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-deep">
             Perfil académico
           </span>
-          <div className="flex flex-col gap-6 text-brand-deep lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-6 text-brand-deep lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
               <StudentAvatar
                 name={studentName}
@@ -284,6 +285,7 @@ export default async function StudentProfilePage({
                 <div className="flex flex-wrap items-center gap-3">
                   <h1 className="text-3xl font-black sm:text-4xl">{studentName}</h1>
                   <StudentPhotoUploader studentId={studentId} />
+                  <DeleteStudentButton studentId={studentId} studentName={studentName} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-brand-ink-muted">
                   {metadataItems.map((item, index) => (

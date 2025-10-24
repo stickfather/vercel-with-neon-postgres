@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { getStudentBasicDetails } from "@/features/administration/data/student-profile";
+import { deleteStudent } from "@/features/administration/data/students";
 import { getSqlClient } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
@@ -158,5 +159,37 @@ export async function PATCH(
       { error: "No se pudo actualizar el estado del estudiante." },
       { status: 500 },
     );
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ studentId: string }> },
+) {
+  const resolvedParams = await params;
+  const studentId = normalizeStudentId(resolvedParams.studentId);
+
+  if (studentId == null) {
+    return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
+  }
+
+  try {
+    const result = await deleteStudent(studentId);
+
+    revalidatePath("/administracion/gestion-estudiantes");
+    revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
+
+    return NextResponse.json({
+      id: result.id,
+      fullName: result.fullName,
+    });
+  } catch (error) {
+    console.error("Error al eliminar estudiante", error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : "No se pudo eliminar al estudiante.";
+    const statusCode = message === "Estudiante no encontrado." ? 404 : 400;
+    return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
