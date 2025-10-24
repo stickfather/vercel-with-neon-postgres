@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { hasValidPinSession, type PinScope } from "@/lib/security/pin-session";
 import { isSecurityPinEnabled } from "@/features/security/data/pins";
-import { PinPrompt } from "@/features/security/components/PinPrompt";
+import { PinGateOverlay } from "@/features/security/components/PinGateOverlay";
 
 type PinGateProps = {
   scope: PinScope;
@@ -24,20 +24,19 @@ export async function PinGate({
     return <>{children}</>;
   }
 
-  const allowed = await hasValidPinSession(scope);
-
-  if (allowed) {
-    return <>{children}</>;
-  }
+  const initiallyAllowed =
+    scope === "manager" ? await hasValidPinSession(scope) : false;
 
   return (
-    <div className="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-slate-900/30 px-4 py-10 backdrop-blur-sm">
-      <PinPrompt
+    <>
+      {children}
+      <PinGateOverlay
         scope={scope}
         title={title}
         description={description}
         ctaLabel={ctaLabel}
+        initiallyAllowed={initiallyAllowed}
       />
-    </div>
+    </>
   );
 }

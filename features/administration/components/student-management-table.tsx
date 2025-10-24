@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
 import { StudentManagementGraphs } from "./student-management-graphs";
@@ -67,6 +67,7 @@ function StudentManagementTable({ students }: Props) {
   const [stateFilters, setStateFilters] = useState<string[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(0);
 
   const totalStudents = students.length;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
@@ -113,6 +114,35 @@ function StudentManagementTable({ students }: Props) {
       return matchesState && matchesFlags && matchesSearch;
     });
   }, [students, stateFilters, flagFilters, normalizedSearchTerm]);
+
+  const PAGE_SIZE = 40;
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
+
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [stateFilters, flagFilters, normalizedSearchTerm]);
+
+  useEffect(() => {
+    setCurrentPage((previous) => {
+      const lastPageIndex = Math.max(
+        0,
+        Math.ceil(filteredStudents.length / PAGE_SIZE) - 1,
+      );
+      return Math.min(previous, lastPageIndex);
+    });
+  }, [filteredStudents.length]);
+
+  const paginatedStudents = useMemo(() => {
+    const startIndex = currentPage * PAGE_SIZE;
+    return filteredStudents.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filteredStudents, currentPage]);
+
+  const showingFrom = filteredStudents.length
+    ? currentPage * PAGE_SIZE + 1
+    : 0;
+  const showingTo = filteredStudents.length
+    ? Math.min(filteredStudents.length, (currentPage + 1) * PAGE_SIZE)
+    : 0;
 
   const toggleStateFilter = (key: string) => {
     setStateFilters((previous) =>
@@ -201,7 +231,7 @@ function StudentManagementTable({ students }: Props) {
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
-            {filteredStudents.map((student) => {
+            {paginatedStudents.map((student) => {
               const stateLabel = translateState(student.state);
               return (
                 <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
@@ -253,6 +283,41 @@ function StudentManagementTable({ students }: Props) {
             )}
           </tbody>
         </table>
+        <div className="flex flex-col gap-3 border-t border-brand-ink-muted/10 bg-white/70 px-5 py-4 text-sm text-brand-ink">
+          <div>
+            {filteredStudents.length ? (
+              <span>
+                Mostrando {showingFrom}
+                {showingFrom !== showingTo ? `-${showingTo}` : ""} de {filteredStudents.length} estudiantes
+              </span>
+            ) : (
+              <span>No hay estudiantes para mostrar.</span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">
+              Página {Math.min(currentPage + 1, totalPages)} de {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((previous) => Math.max(0, previous - 1))}
+                disabled={currentPage === 0}
+                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-deep transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ← Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((previous) => Math.min(totalPages - 1, previous + 1))}
+                disabled={currentPage >= totalPages - 1}
+                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-deep transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Siguiente →
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

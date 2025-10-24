@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server.js";
 
 import { verifySecurityPin } from "@/features/security/data/pins";
-import { setPinSession, type PinScope } from "@/lib/security/pin-session";
+import {
+  clearPinSession,
+  setPinSession,
+  type PinScope,
+} from "@/lib/security/pin-session";
 
 const RATE_LIMIT_ATTEMPTS = 5;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -107,8 +111,12 @@ export async function POST(request: Request) {
 
   attemptStore.delete(key);
 
-  const ttlMinutes = type === "manager" ? 10 : undefined;
-  await setPinSession(type, ttlMinutes);
+  if (type === "manager") {
+    const ttlMinutes = 10;
+    await setPinSession("manager", ttlMinutes);
+  } else {
+    await clearPinSession("staff");
+  }
 
   return NextResponse.json(
     { valid: true },

@@ -1,9 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import type { StaffDirectoryEntry } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import {
+  generateQueueId,
+  isOfflineError,
+  readQueue,
+  type OfflineQueueItem,
+  writeQueue,
+} from "@/lib/offline/queue-helpers";
 
 type StatusState = { message: string } | null;
 
@@ -14,6 +28,12 @@ type Props = {
   disabled?: boolean;
   initialError?: string | null;
 };
+
+const STAFF_QUEUE_STORAGE_KEY = "ir_offline_staff_checkins_v1";
+const STAFF_OFFLINE_MESSAGE =
+  "Sin conexión a internet. Guardamos tu registro y lo enviaremos cuando vuelva la conexión.";
+
+type PendingStaffCheckIn = OfflineQueueItem<{ staffId: number }>;
 
 export function StaffCheckInForm({
   staffMembers,
@@ -32,6 +52,13 @@ export function StaffCheckInForm({
   const [showHelp, setShowHelp] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  const [pendingOfflineCheckIns, setPendingOfflineCheckIns] = useState<
+    PendingStaffCheckIn[]
+  >([]);
+  const [isSyncingOfflineQueue, setIsSyncingOfflineQueue] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -41,7 +68,29 @@ export function StaffCheckInForm({
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    setPendingOfflineCheckIns(
+      readQueue<PendingStaffCheckIn["payload"]>(STAFF_QUEUE_STORAGE_KEY),
+    );
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
   const normalizedSearch = searchTerm.trim().toLowerCase();
+  const pendingOfflineCount = pendingOfflineCheckIns.length;
 
   const filteredStaff = useMemo(() => {
     if (!normalizedSearch) {
@@ -57,6 +106,165 @@ export function StaffCheckInForm({
 
   const isFormDisabled = disabled || Boolean(initialError);
 
+  const resolveSuccessMessage = useCallback(
+    (staffId: number) => {
+      const selectedMember = staffMembers.find((member) => member.id === staffId);
+      return selectedMember
+        ? `${selectedMember.fullName.trim()} ya está registrado.`
+        : "¡Registro del personal confirmado!";
+    },
+    [staffMembers],
+  );
+
+  const handlePostSubmitSuccess = useCallback(
+    (
+      staffId: number,
+      options?: {
+        message?: string;
+        statusMessage?: string | null;
+        skipRefresh?: boolean;
+      },
+    ) => {
+      const message = options?.message ?? resolveSuccessMessage(staffId);
+      setToast({ tone: "success", message });
+
+      if (options?.statusMessage !== undefined) {
+        if (options.statusMessage === null) {
+          setStatus(null);
+        } else {
+          setStatus({ message: options.statusMessage });
+        }
+      } else {
+        setStatus(null);
+      }
+
+      setSearchTerm("");
+      setSelectedStaffId(null);
+      setShowSuggestions(false);
+
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      if (!options?.skipRefresh) {
+        redirectTimeoutRef.current = setTimeout(() => {
+          startTransition(() => {
+            router.refresh();
+          });
+        }, 320);
+      }
+    },
+    [resolveSuccessMessage, router, startTransition],
+  );
+
+  const performCheckInRequest = useCallback(
+    async ({ staffId }: { staffId: number }) => {
+      const response = await fetch("/api/staff/check-in", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ staffId }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          (payload as { error?: string })?.error ??
+            "No se pudo registrar tu asistencia.",
+        );
+      }
+    },
+    [],
+  );
+
+  const queueStaffCheckIn = useCallback(({ staffId }: { staffId: number }) => {
+    setPendingOfflineCheckIns((previous) => {
+      const item: PendingStaffCheckIn = {
+        id: generateQueueId(),
+        createdAt: Date.now(),
+        payload: { staffId },
+      };
+      const next = [...previous, item];
+      writeQueue(STAFF_QUEUE_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const processQueuedCheckIns = useCallback(async () => {
+    if (!isOnline || !pendingOfflineCheckIns.length || isSyncingOfflineQueue) {
+      return;
+    }
+
+    setIsSyncingOfflineQueue(true);
+    const entries = [...pendingOfflineCheckIns];
+    let processedCount = 0;
+
+    for (const entry of entries) {
+      try {
+        await performCheckInRequest(entry.payload);
+        processedCount += 1;
+        setPendingOfflineCheckIns((previous) => {
+          const next = previous.filter((item) => item.id !== entry.id);
+          writeQueue(STAFF_QUEUE_STORAGE_KEY, next);
+          return next;
+        });
+      } catch (error) {
+        if (isOfflineError(error)) {
+          setIsOnline(false);
+          break;
+        }
+
+        console.error(
+          "No se pudo sincronizar un registro de personal pendiente",
+          error,
+        );
+        setStatus({
+          message:
+            "No se pudo sincronizar un registro pendiente del personal. Intenta más tarde.",
+        });
+        break;
+      }
+    }
+
+    if (processedCount > 0) {
+      setToast({
+        tone: "success",
+        message:
+          processedCount === 1
+            ? "Tu registro pendiente del personal se envió automáticamente."
+            : `${processedCount} registros pendientes del personal se sincronizaron.`,
+      });
+      setStatus(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    }
+
+    setIsSyncingOfflineQueue(false);
+  }, [
+    isOnline,
+    isSyncingOfflineQueue,
+    pendingOfflineCheckIns,
+    performCheckInRequest,
+    router,
+    startTransition,
+  ]);
+
+  useEffect(() => {
+    if (!isOnline || !pendingOfflineCheckIns.length || isSyncingOfflineQueue) {
+      return;
+    }
+
+    void processQueuedCheckIns();
+  }, [
+    isOnline,
+    isSyncingOfflineQueue,
+    pendingOfflineCheckIns.length,
+    processQueuedCheckIns,
+  ]);
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -71,49 +279,36 @@ export function StaffCheckInForm({
       return;
     }
 
+    if (!isOnline) {
+      queueStaffCheckIn({ staffId: selectedStaffId });
+      handlePostSubmitSuccess(selectedStaffId, {
+        message: STAFF_OFFLINE_MESSAGE,
+        statusMessage: STAFF_OFFLINE_MESSAGE,
+        skipRefresh: true,
+      });
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setStatus(null);
 
-      const response = await fetch("/api/staff/check-in", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ staffId: selectedStaffId }),
-      });
+      await performCheckInRequest({ staffId: selectedStaffId });
 
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
-      }
-
-      const selectedMember = staffMembers.find((member) => member.id === selectedStaffId);
-      const successMessage = selectedMember
-        ? `${selectedMember.fullName.trim()} ya está registrado.`
-        : "¡Registro del personal confirmado!";
-
-      setToast({
-        tone: "success",
-        message: successMessage,
-      });
-
-      setSearchTerm("");
-      setSelectedStaffId(null);
-      setShowSuggestions(false);
-
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
-      }
-
-      redirectTimeoutRef.current = setTimeout(() => {
-        startTransition(() => {
-          router.refresh();
-        });
-      }, 320);
+      handlePostSubmitSuccess(selectedStaffId, { statusMessage: null });
     } catch (error) {
       console.error(error);
+
+      if (isOfflineError(error)) {
+        queueStaffCheckIn({ staffId: selectedStaffId });
+        handlePostSubmitSuccess(selectedStaffId, {
+          message: STAFF_OFFLINE_MESSAGE,
+          statusMessage: STAFF_OFFLINE_MESSAGE,
+          skipRefresh: true,
+        });
+        return;
+      }
+
       const message =
         error instanceof Error
           ? error.message
@@ -145,6 +340,17 @@ export function StaffCheckInForm({
           Busca tu nombre y marca que ya estás listo para recibir a los estudiantes.
         </p>
       </header>
+
+      {!isOnline && (
+        <div className="rounded-3xl border border-brand-orange bg-white/80 px-5 py-3 text-sm font-medium text-brand-ink" role="status">
+          Sin conexión a internet. Puedes seguir registrando y enviaremos los registros automáticamente cuando vuelva la conexión.
+        </div>
+      )}
+      {isSyncingOfflineQueue && pendingOfflineCount > 0 && (
+        <div className="rounded-3xl border border-brand-teal bg-white/85 px-5 py-3 text-sm font-medium text-brand-teal" role="status">
+          Reconectamos y estamos enviando {pendingOfflineCount === 1 ? "1 registro pendiente" : `${pendingOfflineCount} registros pendientes`}…
+        </div>
+      )}
 
       <div className="flex flex-col gap-2">
         <label className="text-sm font-semibold uppercase tracking-wide text-brand-deep">

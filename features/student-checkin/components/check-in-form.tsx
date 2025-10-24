@@ -20,9 +20,19 @@ import {
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { formatLessonWithSequence } from "@/lib/time/check-in-window";
+import {
+  generateQueueId,
+  isOfflineError,
+  readQueue,
+  type OfflineQueueItem,
+  writeQueue,
+} from "@/lib/offline/queue-helpers";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
+const STUDENT_QUEUE_STORAGE_KEY = "ir_offline_student_checkins_v1";
+const OFFLINE_WAITING_MESSAGE =
+  "Sin conexión a internet. Guardamos tu asistencia y la enviaremos cuando vuelva la conexión.";
 
 type Props = {
   levels: LevelLessons[];
@@ -51,6 +61,13 @@ type LessonOverridePrompt = {
   selectedLessonName: string | null;
   selectedLessonSequence: number | null;
 };
+
+type PendingStudentCheckIn = OfflineQueueItem<{
+  studentId: number;
+  lessonId: number;
+  level: string;
+  confirmOverride: boolean;
+}>;
 
 export function CheckInForm({
   levels,
@@ -85,6 +102,13 @@ export function CheckInForm({
   const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
   const lastLessonAbortRef = useRef<AbortController | null>(null);
   const studentInputRef = useRef<HTMLInputElement | null>(null);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  const [pendingOfflineCheckIns, setPendingOfflineCheckIns] = useState<
+    PendingStudentCheckIn[]
+  >([]);
+  const [isSyncingOfflineQueue, setIsSyncingOfflineQueue] = useState(false);
 
   const isFormDisabled = disabled || Boolean(initialError);
 
@@ -173,6 +197,33 @@ export function CheckInForm({
         clearTimeout(redirectTimeoutRef.current);
       }
       lastLessonAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    setPendingOfflineCheckIns(
+      readQueue<PendingStudentCheckIn["payload"]>(
+        STUDENT_QUEUE_STORAGE_KEY,
+      ),
+    );
+
+    const handleOnline = () => {
+      setIsOnline(true);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -356,6 +407,7 @@ export function CheckInForm({
 
   const canChooseProgression =
     Boolean(selectedStudent) && !disabled && !initialError && Boolean(levels.length);
+  const pendingOfflineCount = pendingOfflineCheckIns.length;
 
   const handleSuggestionSelection = (student: StudentName) => {
     setStudentQuery(student.fullName);
@@ -369,7 +421,58 @@ export function CheckInForm({
     studentInputRef.current?.blur();
   };
 
-  const submitCheckIn = useCallback(
+  const handlePostSubmitSuccess = useCallback(
+    (
+      studentId: number,
+      options?: {
+        message?: string;
+        skipRefresh?: boolean;
+        statusMessage?: string | null;
+      },
+    ) => {
+      const toastMessage =
+        options?.message ?? "¡Asistencia confirmada, buen trabajo!";
+      setToast({ type: "success", message: toastMessage });
+
+      if (options?.statusMessage !== undefined) {
+        if (options.statusMessage === null) {
+          setStatus(null);
+        } else {
+          setStatus({ message: options.statusMessage });
+        }
+      } else {
+        setStatus(null);
+      }
+
+      setStudentQuery("");
+      setSelectedStudent(null);
+      setSelectedLevel("");
+      setSelectedLesson("");
+      setIsSuggestionsOpen(false);
+      setSuggestions([]);
+      setHighlightedSuggestion(0);
+      setSuggestedLesson(null);
+      setLastLessonError(null);
+      setLessonOverridePrompt(null);
+      lastLessonAbortRef.current?.abort();
+      lastLessonCache.current.delete(studentId);
+
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      if (!options?.skipRefresh) {
+        redirectTimeoutRef.current = setTimeout(() => {
+          startTransition(() => {
+            router.refresh();
+          });
+        }, 320);
+      }
+    },
+    [router, startTransition],
+  );
+
+  const performCheckInRequest = useCallback(
     async ({
       studentId,
       lessonId,
@@ -402,37 +505,154 @@ export function CheckInForm({
             "No se pudo registrar tu asistencia.",
         );
       }
+    },
+    [],
+  );
 
-      setToast({
-        type: "success",
-        message: "¡Asistencia confirmada, buen trabajo!",
+  const queueStudentCheckIn = useCallback(
+    ({
+      studentId,
+      lessonId,
+      level,
+      confirmOverride,
+    }: {
+      studentId: number;
+      lessonId: number;
+      level: string;
+      confirmOverride: boolean;
+    }) => {
+      setPendingOfflineCheckIns((previous) => {
+        const item: PendingStudentCheckIn = {
+          id: generateQueueId(),
+          createdAt: Date.now(),
+          payload: { studentId, lessonId, level, confirmOverride },
+        };
+        const next = [...previous, item];
+        writeQueue(STUDENT_QUEUE_STORAGE_KEY, next);
+        return next;
       });
-      setStatus(null);
-      setStudentQuery("");
-      setSelectedStudent(null);
-      setSelectedLevel("");
-      setSelectedLesson("");
-      setIsSuggestionsOpen(false);
-      setSuggestions([]);
-      setHighlightedSuggestion(0);
-      setSuggestedLesson(null);
-      setLastLessonError(null);
-      setLessonOverridePrompt(null);
-      lastLessonAbortRef.current?.abort();
-      lastLessonCache.current.delete(studentId);
+    },
+    [],
+  );
 
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
+  const submitCheckIn = useCallback(
+    async ({
+      studentId,
+      lessonId,
+      level,
+      confirmOverride,
+    }: {
+      studentId: number;
+      lessonId: number;
+      level: string;
+      confirmOverride: boolean;
+    }) => {
+      const payload = { studentId, lessonId, level, confirmOverride };
+
+      if (!isOnline) {
+        queueStudentCheckIn(payload);
+        handlePostSubmitSuccess(studentId, {
+          message: "Registro guardado sin conexión. Se enviará al reconectar.",
+          statusMessage: OFFLINE_WAITING_MESSAGE,
+          skipRefresh: true,
+        });
+        return;
       }
 
-      redirectTimeoutRef.current = setTimeout(() => {
-        startTransition(() => {
-          router.refresh();
-        });
-      }, 320);
+      try {
+        await performCheckInRequest(payload);
+        handlePostSubmitSuccess(studentId, { statusMessage: null });
+      } catch (error) {
+        if (isOfflineError(error)) {
+          queueStudentCheckIn(payload);
+          handlePostSubmitSuccess(studentId, {
+            message: "Registro guardado sin conexión. Se enviará al reconectar.",
+            statusMessage: OFFLINE_WAITING_MESSAGE,
+            skipRefresh: true,
+          });
+          return;
+        }
+
+        throw error;
+      }
     },
-    [router, startTransition],
+    [
+      handlePostSubmitSuccess,
+      isOnline,
+      performCheckInRequest,
+      queueStudentCheckIn,
+    ],
   );
+
+  const processQueuedCheckIns = useCallback(async () => {
+    if (!isOnline || !pendingOfflineCheckIns.length || isSyncingOfflineQueue) {
+      return;
+    }
+
+    setIsSyncingOfflineQueue(true);
+    const entries = [...pendingOfflineCheckIns];
+    let processedCount = 0;
+
+    for (const entry of entries) {
+      try {
+        await performCheckInRequest(entry.payload);
+        processedCount += 1;
+        setPendingOfflineCheckIns((previous) => {
+          const next = previous.filter((item) => item.id !== entry.id);
+          writeQueue(STUDENT_QUEUE_STORAGE_KEY, next);
+          return next;
+        });
+      } catch (error) {
+        if (isOfflineError(error)) {
+          setIsOnline(false);
+          break;
+        }
+
+        console.error("No se pudo sincronizar un check-in pendiente", error);
+        setStatus({
+          message:
+            "No se pudo sincronizar un registro pendiente. Intenta nuevamente más tarde.",
+        });
+        break;
+      }
+    }
+
+    if (processedCount > 0) {
+      setToast({
+        type: "success",
+        message:
+          processedCount === 1
+            ? "Tu asistencia pendiente se envió automáticamente."
+            : `${processedCount} asistencias pendientes se sincronizaron.`,
+      });
+      setStatus(null);
+      startTransition(() => {
+        router.refresh();
+      });
+    }
+
+    setIsSyncingOfflineQueue(false);
+  }, [
+    isOnline,
+    isSyncingOfflineQueue,
+    pendingOfflineCheckIns,
+    performCheckInRequest,
+    router,
+    startTransition,
+  ]);
+
+  useEffect(() => {
+    if (!isOnline || !pendingOfflineCheckIns.length || isSyncingOfflineQueue) {
+      return;
+    }
+
+    void processQueuedCheckIns();
+  }, [
+    isOnline,
+    isSyncingOfflineQueue,
+    pendingOfflineCheckIns.length,
+    processQueuedCheckIns,
+  ]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -477,6 +697,16 @@ export function CheckInForm({
     if (!Number.isFinite(parsedLessonId)) {
       setStatus({
         message: "La lección seleccionada no es válida.",
+      });
+      return;
+    }
+
+    if (!isOnline) {
+      await submitCheckIn({
+        studentId: selectedStudent.id,
+        lessonId: parsedLessonId,
+        level: selectedLevel,
+        confirmOverride: false,
       });
       return;
     }
@@ -546,6 +776,21 @@ export function CheckInForm({
       });
     } catch (error) {
       console.error(error);
+
+      if (isOfflineError(error)) {
+        try {
+          await submitCheckIn({
+            studentId: selectedStudent.id,
+            lessonId: parsedLessonId,
+            level: selectedLevel,
+            confirmOverride: false,
+          });
+          return;
+        } catch (submitError) {
+          console.error(submitError);
+        }
+      }
+
       const message =
         error instanceof Error
           ? error.message
@@ -608,6 +853,17 @@ export function CheckInForm({
         </span>
         <h1 className="text-3xl font-black text-brand-deep">¡Marca tu llegada!</h1>
       </header>
+
+      {!isOnline && (
+        <div className="rounded-3xl border border-brand-orange bg-white/80 px-5 py-3 text-sm font-medium text-brand-ink" role="status">
+          Sin conexión a internet. Puedes continuar y enviaremos tus registros automáticamente al reconectar.
+        </div>
+      )}
+      {isSyncingOfflineQueue && pendingOfflineCount > 0 && (
+        <div className="rounded-3xl border border-brand-teal bg-white/85 px-5 py-3 text-sm font-medium text-brand-teal" role="status">
+          Reconectamos y estamos enviando {pendingOfflineCount === 1 ? "1 registro pendiente" : `${pendingOfflineCount} registros pendientes`}…
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">

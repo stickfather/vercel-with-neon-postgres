@@ -209,23 +209,14 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
     const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
     const effort = lesson.effort;
-    const showEffortBadges =
-      effort != null &&
-      (effort.isCompletedByPosition ?? true) &&
-      effort.totalHours != null &&
+    const hasRecordedHours =
+      effort?.totalHours != null &&
       Number.isFinite(effort.totalHours) &&
       effort.totalHours > 0;
 
-    const totalHoursDisplay =
-      showEffortBadges && effort?.totalHours != null
-        ? effort.totalHours.toFixed(1)
-        : null;
-    const calendarDaysDisplay =
-      showEffortBadges &&
-      effort?.calendarDaysBetween != null &&
-      Number.isFinite(effort.calendarDaysBetween)
-        ? formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })
-        : null;
+    const totalHoursDisplay = hasRecordedHours
+      ? effort.totalHours.toFixed(1)
+      : null;
 
     const tooltipLines: string[] = [];
     tooltipLines.push(
@@ -242,13 +233,11 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             : "—"
         } h`,
       );
-      tooltipLines.push(
-        `Días entre inicio y fin: ${
-          effort.calendarDaysBetween != null && Number.isFinite(effort.calendarDaysBetween)
-            ? formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })
-            : "—"
-        } d`,
-      );
+      if (effort.calendarDaysBetween != null && Number.isFinite(effort.calendarDaysBetween)) {
+        tooltipLines.push(
+          `Días entre inicio y fin: ${formatNumber(effort.calendarDaysBetween, { maximumFractionDigits: 0 })} d`,
+        );
+      }
       tooltipLines.push(
         `Sesiones: ${
           effort.sessionsCount != null && Number.isFinite(effort.sessionsCount)
@@ -296,15 +285,11 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           ) : null}
           <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
           <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
-            {showEffortBadges ? (
+            {hasRecordedHours ? (
               <>
                 <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
                   <span aria-hidden="true">⌛</span>
                   {totalHoursDisplay}h
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-medium text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
-                  <span aria-hidden="true">📅</span>
-                  {calendarDaysDisplay ?? "—"}d
                 </span>
               </>
             ) : (
