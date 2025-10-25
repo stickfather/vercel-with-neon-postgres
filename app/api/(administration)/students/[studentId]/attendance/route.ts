@@ -1,13 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { createStudentAttendanceEntry } from "@/features/administration/data/student-profile";
 
-export async function POST(
-  request: Request,
-  { params }: { params: { studentId: string } },
-) {
+export async function POST(request: NextRequest) {
   try {
-    const studentId = Number(params.studentId);
+    const segments = request.nextUrl.pathname.split("/").filter(Boolean);
+    const studentIndex = segments.lastIndexOf("students");
+    const studentIdSegment =
+      studentIndex >= 0 && studentIndex + 1 < segments.length
+        ? segments[studentIndex + 1]
+        : undefined;
+
+    const studentId = Number(studentIdSegment);
 
     if (!Number.isFinite(studentId) || studentId <= 0) {
       return NextResponse.json(
