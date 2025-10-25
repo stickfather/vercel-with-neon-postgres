@@ -1122,8 +1122,6 @@ export async function updateStaffDaySession({
   };
 }
 
-}
-
 export async function createStaffDaySession({
   staffId,
   workDate,
