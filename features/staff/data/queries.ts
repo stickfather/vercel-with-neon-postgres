@@ -288,47 +288,125 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
       return;
     }
 
-    const checkInRaw = record["checkin_time"] as unknown;
-    const checkInIso = normalizeTimestampValue(checkInRaw);
-    const now = new Date();
-    const checkInDate = checkInIso ? new Date(checkInIso) : null;
-    const checkoutDate =
-      checkInDate && checkInDate.getTime() > now.getTime() ? checkInDate : now;
-    const checkoutIso = checkoutDate.toISOString();
+    const isTypeMismatchError = (error: unknown): boolean => {
+      if (error && typeof error === "object") {
+        const { code, message } = error as {
+          code?: unknown;
+          message?: unknown;
+        };
+        if (code === "42804") {
+          return true;
+        }
+        if (typeof message === "string") {
+          const normalized = message.toLowerCase();
+          if (
+            normalized.includes("invalid input syntax for type time") ||
+            normalized.includes("cannot cast") ||
+            normalized.includes("time without time zone")
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
 
     const tryUpdateColumn = async (
       column: "checkout_time" | "checkout",
     ): Promise<{ success: boolean; error?: unknown }> => {
-      try {
-        const rows =
-          column === "checkout_time"
-            ? normalizeRows<SqlRow>(await sql`
-                UPDATE public.staff_attendance
-                SET checkout_time = ${checkoutIso}
-                WHERE id = ${parsedId}::bigint
-                RETURNING checkout_time
-              `)
-            : normalizeRows<SqlRow>(await sql`
-                UPDATE public.staff_attendance
-                SET checkout = ${checkoutIso}
-                WHERE id = ${parsedId}::bigint
-                RETURNING checkout
-              `);
+      const attempts: Array<() => Promise<SqlRow[]>> =
+        column === "checkout_time"
+          ? [
+              async () =>
+                normalizeRows<SqlRow>(await sql`
+                  UPDATE public.staff_attendance
+                  SET checkout_time = now()
+                  WHERE id = ${parsedId}::bigint
+                    AND (
+                      checkout_time IS NULL OR
+                      TRIM(checkout_time::text) = '' OR
+                      checkout_time::text LIKE '0000%' OR
+                      checkout_time::text ILIKE '1900%'
+                    )
+                  RETURNING checkout_time
+                `),
+              async () =>
+                normalizeRows<SqlRow>(await sql`
+                  UPDATE public.staff_attendance
+                  SET checkout_time = timezone(${TIMEZONE}, now())
+                  WHERE id = ${parsedId}::bigint
+                    AND (
+                      checkout_time IS NULL OR
+                      TRIM(checkout_time::text) = '' OR
+                      checkout_time::text LIKE '0000%' OR
+                      checkout_time::text ILIKE '1900%'
+                    )
+                  RETURNING checkout_time
+                `),
+            ]
+          : [
+              async () =>
+                normalizeRows<SqlRow>(await sql`
+                  UPDATE public.staff_attendance
+                  SET checkout = now()
+                  WHERE id = ${parsedId}::bigint
+                    AND (
+                      checkout IS NULL OR
+                      TRIM(checkout::text) = '' OR
+                      checkout::text LIKE '0000%' OR
+                      checkout::text ILIKE '1900%'
+                    )
+                  RETURNING checkout
+                `),
+              async () =>
+                normalizeRows<SqlRow>(await sql`
+                  UPDATE public.staff_attendance
+                  SET checkout = now() AT TIME ZONE ${TIMEZONE}
+                  WHERE id = ${parsedId}::bigint
+                    AND (
+                      checkout IS NULL OR
+                      TRIM(checkout::text) = '' OR
+                      checkout::text LIKE '0000%' OR
+                      checkout::text ILIKE '1900%'
+                    )
+                  RETURNING checkout
+                `),
+              async () =>
+                normalizeRows<SqlRow>(await sql`
+                  UPDATE public.staff_attendance
+                  SET checkout = (timezone(${TIMEZONE}, now()))::time
+                  WHERE id = ${parsedId}::bigint
+                    AND (
+                      checkout IS NULL OR
+                      TRIM(checkout::text) = '' OR
+                      checkout::text LIKE '0000%' OR
+                      checkout::text ILIKE '1900%'
+                    )
+                  RETURNING checkout
+                `),
+            ];
 
-        const returnedValue =
-          rows[0]?.[
+      for (const attempt of attempts) {
+        try {
+          const rows = await attempt();
+          const returnedValue = rows[0]?.[
             column === "checkout_time" ? "checkout_time" : "checkout"
           ];
-        if (normalizeTimestampValue(returnedValue).length > 0) {
-          return { success: true };
+          if (normalizeTimestampValue(returnedValue).length > 0) {
+            return { success: true };
+          }
+        } catch (updateError) {
+          if (isMissingColumnError(updateError, column)) {
+            return { success: false };
+          }
+          if (isTypeMismatchError(updateError)) {
+            continue;
+          }
+          return { success: false, error: updateError };
         }
-        return { success: false };
-      } catch (updateError) {
-        if (isMissingColumnError(updateError, column)) {
-          return { success: false };
-        }
-        return { success: false, error: updateError };
       }
+
+      return { success: false };
     };
 
     let updated = false;

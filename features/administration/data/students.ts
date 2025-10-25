@@ -284,6 +284,66 @@ async function refreshStudentFlagsView() {
   }
 }
 
+async function refreshStudentManagementView() {
+  const sql = getSqlClient();
+
+  const refresh = async (concurrent: boolean) => {
+    if (concurrent) {
+      await sql`REFRESH MATERIALIZED VIEW CONCURRENTLY public.student_management_v`;
+    } else {
+      await sql`REFRESH MATERIALIZED VIEW public.student_management_v`;
+    }
+  };
+
+  try {
+    await refresh(true);
+  } catch (error) {
+    if (isMissingRelationError(error, "student_management_v")) {
+      return;
+    }
+    if (isPermissionDeniedError(error)) {
+      console.warn(
+        "No pudimos refrescar 'student_management_v' por falta de permisos.",
+        error,
+      );
+      return;
+    }
+    if (isFeatureNotSupportedError(error)) {
+      try {
+        await refresh(false);
+      } catch (fallbackError) {
+        if (isMissingRelationError(fallbackError, "student_management_v")) {
+          return;
+        }
+        if (isPermissionDeniedError(fallbackError)) {
+          console.warn(
+            "No pudimos refrescar 'student_management_v' por falta de permisos.",
+            fallbackError,
+          );
+          return;
+        }
+        if (isFeatureNotSupportedError(fallbackError)) {
+          console.warn(
+            "El entorno no soporta refrescar 'student_management_v'. Se utilizarán los datos existentes.",
+            fallbackError,
+          );
+          return;
+        }
+        console.warn(
+          "No pudimos refrescar 'student_management_v' por un error inesperado.",
+          fallbackError,
+        );
+        return;
+      }
+      return;
+    }
+    console.warn(
+      "No pudimos refrescar 'student_management_v' por un error inesperado.",
+      error,
+    );
+  }
+}
+
 function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
   const id = Number(row["student_id"] ?? row.id ?? row["id"] ?? 0);
   if (!Number.isFinite(id) || id <= 0) {
@@ -316,7 +376,10 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
 export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
   const sql = getSqlClient();
 
-  await refreshStudentFlagsView();
+  await Promise.allSettled([
+    refreshStudentFlagsView(),
+    refreshStudentManagementView(),
+  ]);
 
   let managementRows: SqlRow[] = [];
   try {

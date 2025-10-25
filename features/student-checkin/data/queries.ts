@@ -66,8 +66,13 @@ function isIgnorableFlagRefreshError(error: unknown): boolean {
       const normalized = message.toLowerCase();
       if (
         normalized.includes("does not exist") &&
-        (normalized.includes("function") || normalized.includes("schema"))
+        (normalized.includes("function") ||
+          normalized.includes("schema") ||
+          normalized.includes("relation"))
       ) {
+        return true;
+      }
+      if (normalized.includes("mart.refresh_flags")) {
         return true;
       }
     }
