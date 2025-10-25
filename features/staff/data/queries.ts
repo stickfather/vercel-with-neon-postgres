@@ -4,6 +4,7 @@ import {
   SqlRow,
   TIMEZONE,
 } from "@/lib/db/client";
+import { ensureStaffAttendanceEditsCompatibility } from "@/lib/db/compat";
 
 export type StaffDirectoryEntry = {
   id: number;
@@ -66,6 +67,8 @@ async function ensureStaffAttendanceInfrastructure(
       ON public.staff_attendance (staff_id)
       WHERE checkout_time IS NULL
   `;
+
+  await ensureStaffAttendanceEditsCompatibility();
 }
 
 export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
