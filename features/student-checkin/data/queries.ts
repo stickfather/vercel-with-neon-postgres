@@ -1,9 +1,4 @@
-import {
-  getSqlClient,
-  isMissingRelationError,
-  normalizeRows,
-  SqlRow,
-} from "@/lib/db/client";
+import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
 
 export type StudentName = {
   id: number;
@@ -157,7 +152,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       l.lesson,
       l.level AS level,
       l.seq AS lesson_sequence
-    FROM student_attendance sa
+    FROM public.student_attendance sa
     LEFT JOIN students s ON s.id = sa.student_id
     LEFT JOIN lessons l ON l.id = sa.lesson_id
     WHERE sa.checkout_time IS NULL
@@ -218,7 +213,7 @@ export async function validateStudentLessonSelection(
   const [lastLessonResult, selectedLessonResult] = await Promise.all([
     sql`
       SELECT sa.lesson_id, l.lesson, l.seq
-      FROM student_attendance sa
+      FROM public.student_attendance sa
       LEFT JOIN lessons l ON l.id = sa.lesson_id
       WHERE sa.student_id = ${studentId}
       ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
@@ -308,7 +303,7 @@ export async function registerCheckIn({
 
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT id
-    FROM student_attendance
+    FROM public.student_attendance
     WHERE checkout_time IS NULL
       AND student_id = ${studentId}
     LIMIT 1
@@ -317,53 +312,79 @@ export async function registerCheckIn({
     throw new Error("El estudiante ya tiene una asistencia abierta.");
   }
 
-  const insertAttendance = async () =>
-    normalizeRows<SqlRow>(
-      await sql`
-        INSERT INTO student_attendance (student_id, lesson_id, checkin_time, confirm_override)
-        VALUES (${studentId}, ${lessonId}, now(), ${Boolean(confirmOverride)})
-        RETURNING id
-      `,
-    );
+  const insertedRows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT public.student_checkin(${studentId}::bigint, ${lessonId}::bigint) AS attendance_id
+    `,
+  );
 
-  const insertedRows = await insertAttendance().catch(async (error) => {
-    if (!isMissingRelationError(error, "mart.refresh_flags")) {
-      throw error;
-    }
+  if (!insertedRows.length) {
+    throw new Error("No se pudo registrar la asistencia del estudiante.");
+  }
 
-    console.warn(
-      "Ignorando trigger legacy que dependía de mart.refresh_flags durante el registro de asistencia.",
-      error,
-    );
+  const attendanceId = Number(insertedRows[0].attendance_id);
+  if (!Number.isFinite(attendanceId)) {
+    throw new Error("El identificador de la asistencia registrada no es válido.");
+  }
 
-    return normalizeRows<SqlRow>(
-      await sql`
-        WITH set_role AS (
-          SELECT pg_catalog.set_config('session_replication_role', 'replica', true)
-        )
-        INSERT INTO student_attendance (student_id, lesson_id, checkin_time, confirm_override)
-        VALUES (${studentId}, ${lessonId}, now(), ${Boolean(confirmOverride)})
-        RETURNING id
-      `,
-    );
-  });
+  if (confirmOverride) {
+    await sql`
+      UPDATE public.student_attendance
+      SET override_ok = TRUE
+      WHERE id = ${attendanceId}::bigint
+    `;
+  }
 
-  return Number(insertedRows[0].id);
+  return attendanceId;
 }
 
 export async function registerCheckOut(attendanceId: number): Promise<void> {
   const sql = getSqlClient();
 
-  const updatedRows = normalizeRows<SqlRow>(await sql`
-    UPDATE student_attendance
-    SET checkout_time = now()
-    WHERE id = ${attendanceId}
-      AND checkout_time IS NULL
-    RETURNING id
-  `);
+  const existingRows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT id, student_id, checkout_time
+      FROM public.student_attendance
+      WHERE id = ${attendanceId}::bigint
+      LIMIT 1
+    `,
+  );
 
-  if (!updatedRows.length) {
+  if (!existingRows.length) {
+    throw new Error("No encontramos la asistencia seleccionada.");
+  }
+
+  if (existingRows[0].checkout_time != null) {
     throw new Error("La asistencia ya estaba cerrada o no existe.");
+  }
+
+  const studentId = Number(existingRows[0].student_id);
+  if (!Number.isFinite(studentId)) {
+    throw new Error("La asistencia seleccionada no tiene un estudiante válido.");
+  }
+
+  const checkoutResult = normalizeRows<SqlRow>(
+    await sql`
+      SELECT public.student_checkout(${studentId}::bigint) AS did_checkout
+    `,
+  );
+
+  const didCheckout = Boolean(checkoutResult[0]?.did_checkout);
+  if (!didCheckout) {
+    throw new Error("La asistencia ya estaba cerrada o no existe.");
+  }
+
+  const verificationRows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT checkout_time
+      FROM public.student_attendance
+      WHERE id = ${attendanceId}::bigint
+      LIMIT 1
+    `,
+  );
+
+  if (!verificationRows.length || verificationRows[0].checkout_time == null) {
+    throw new Error("No se pudo cerrar la asistencia seleccionada.");
   }
 }
 
@@ -380,7 +401,7 @@ export async function getStudentLastLesson(
       l.lesson,
       l.level,
       l.seq
-    FROM student_attendance sa
+    FROM public.student_attendance sa
     LEFT JOIN lessons l ON l.id = sa.lesson_id
     WHERE sa.student_id = ${studentId}
       AND sa.lesson_id IS NOT NULL
