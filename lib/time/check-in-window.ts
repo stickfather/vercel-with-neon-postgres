@@ -43,13 +43,7 @@ export function isWithinCheckInWindow(date = new Date()): boolean {
   return true;
 }
 
-export function isAfterBubbleHideTime(date = new Date()): boolean {
-  const { hour, minute } = getZonedTimeParts(date);
-
-  if (hour > BUBBLE_HIDE_HOUR) return true;
-  if (hour === BUBBLE_HIDE_HOUR && minute >= BUBBLE_HIDE_MINUTE) {
-    return true;
-  }
+export function isAfterBubbleHideTime(_date = new Date()): boolean {
   return false;
 }
 

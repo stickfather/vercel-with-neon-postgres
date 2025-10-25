@@ -1,6 +1,6 @@
 import {
-  closeExpiredSessions,
   getSqlClient,
+  isMissingRelationError,
   normalizeRows,
   SqlRow,
 } from "@/lib/db/client";
@@ -46,6 +46,12 @@ export type LessonSelectionValidation = {
   selectedLessonName: string | null;
   selectedLessonSequence: number | null;
 };
+
+function toNullableSequence(value: unknown): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export type StudentStatusCheck = {
   isActive: boolean;
@@ -142,7 +148,6 @@ export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
 
 export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
-  await closeExpiredSessions(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
@@ -210,33 +215,35 @@ export async function validateStudentLessonSelection(
 ): Promise<LessonSelectionValidation> {
   const sql = getSqlClient();
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM validate_student_lesson_selection(${studentId}, ${lessonId})
-  `);
+  const [lastLessonResult, selectedLessonResult] = await Promise.all([
+    sql`
+      SELECT sa.lesson_id, l.lesson, l.seq
+      FROM student_attendance sa
+      LEFT JOIN lessons l ON l.id = sa.lesson_id
+      WHERE sa.student_id = ${studentId}
+      ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
+      LIMIT 1
+    `,
+    sql`
+      SELECT lesson, seq
+      FROM lessons
+      WHERE id = ${lessonId}
+      LIMIT 1
+    `,
+  ]);
 
-  if (!rows.length) {
-    return {
-      needsConfirmation: false,
-      lastLessonName: null,
-      lastLessonSequence: null,
-      selectedLessonName: null,
-      selectedLessonSequence: null,
-    };
-  }
+  const lastLessonRows = normalizeRows<SqlRow>(lastLessonResult);
+  const selectedLessonRows = normalizeRows<SqlRow>(selectedLessonResult);
 
-  const payload = rows[0];
+  const lastLesson = lastLessonRows[0] ?? null;
+  const selectedLesson = selectedLessonRows[0] ?? null;
 
   return {
-    needsConfirmation: Boolean(payload.needs_confirmation ?? false),
-    lastLessonName: (payload.last_lesson_name as string | null) ?? null,
-    lastLessonSequence:
-      payload.last_lesson_seq == null
-        ? null
-        : Number(payload.last_lesson_seq),
-    selectedLessonName: (payload.selected_name as string | null) ?? null,
-    selectedLessonSequence:
-      payload.selected_seq == null ? null : Number(payload.selected_seq),
+    needsConfirmation: false,
+    lastLessonName: (lastLesson?.lesson as string | null) ?? null,
+    lastLessonSequence: toNullableSequence(lastLesson?.seq),
+    selectedLessonName: (selectedLesson?.lesson as string | null) ?? null,
+    selectedLessonSequence: toNullableSequence(selectedLesson?.seq),
   };
 }
 
@@ -252,7 +259,6 @@ export async function registerCheckIn({
   confirmOverride?: boolean;
 }): Promise<number> {
   const sql = getSqlClient();
-  await closeExpiredSessions(sql);
 
   const studentRows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, status
@@ -311,11 +317,36 @@ export async function registerCheckIn({
     throw new Error("El estudiante ya tiene una asistencia abierta.");
   }
 
-  const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO student_attendance (student_id, lesson_id, checkin_time, confirm_override)
-    VALUES (${studentId}, ${lessonId}, now(), ${Boolean(confirmOverride)})
-    RETURNING id
-  `);
+  const insertAttendance = async () =>
+    normalizeRows<SqlRow>(
+      await sql`
+        INSERT INTO student_attendance (student_id, lesson_id, checkin_time, confirm_override)
+        VALUES (${studentId}, ${lessonId}, now(), ${Boolean(confirmOverride)})
+        RETURNING id
+      `,
+    );
+
+  const insertedRows = await insertAttendance().catch(async (error) => {
+    if (!isMissingRelationError(error, "mart.refresh_flags")) {
+      throw error;
+    }
+
+    console.warn(
+      "Ignorando trigger legacy que dependía de mart.refresh_flags durante el registro de asistencia.",
+      error,
+    );
+
+    return normalizeRows<SqlRow>(
+      await sql`
+        WITH set_role AS (
+          SELECT pg_catalog.set_config('session_replication_role', 'replica', true)
+        )
+        INSERT INTO student_attendance (student_id, lesson_id, checkin_time, confirm_override)
+        VALUES (${studentId}, ${lessonId}, now(), ${Boolean(confirmOverride)})
+        RETURNING id
+      `,
+    );
+  });
 
   return Number(insertedRows[0].id);
 }

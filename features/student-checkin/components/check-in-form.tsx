@@ -20,6 +20,7 @@ import {
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { formatLessonWithSequence } from "@/lib/time/check-in-window";
+import { queueableFetch } from "@/lib/offline/fetch";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
@@ -85,8 +86,21 @@ export function CheckInForm({
   const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
   const lastLessonAbortRef = useRef<AbortController | null>(null);
   const studentInputRef = useRef<HTMLInputElement | null>(null);
+  const [blockedAccountMessage, setBlockedAccountMessage] = useState<string | null>(null);
 
   const isFormDisabled = disabled || Boolean(initialError);
+
+  useEffect(() => {
+    if (!blockedAccountMessage) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      router.push("/");
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [blockedAccountMessage, router]);
 
   const overrideQuestion = useMemo(() => {
     if (!lessonOverridePrompt) {
@@ -381,7 +395,7 @@ export function CheckInForm({
       level: string;
       confirmOverride: boolean;
     }) => {
-      const response = await fetch("/api/check-in", {
+      const response = await queueableFetch("/api/check-in", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -392,20 +406,25 @@ export function CheckInForm({
           lessonId,
           confirmOverride,
         }),
+        offlineLabel: "student-check-in",
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        queued?: boolean;
+      };
 
       if (!response.ok) {
-        throw new Error(
-          (payload as { error?: string })?.error ??
-            "No se pudo registrar tu asistencia.",
-        );
+        throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
       }
+
+      const wasQueued = Boolean(payload?.queued);
 
       setToast({
         type: "success",
-        message: "¡Asistencia confirmada, buen trabajo!",
+        message: wasQueued
+          ? "Asistencia registrada sin conexión. Se sincronizará automáticamente."
+          : "¡Asistencia confirmada, buen trabajo!",
       });
       setStatus(null);
       setStudentQuery("");
@@ -427,7 +446,7 @@ export function CheckInForm({
 
       redirectTimeoutRef.current = setTimeout(() => {
         startTransition(() => {
-          router.refresh();
+          router.push("/");
         });
       }, 320);
     },
@@ -481,8 +500,19 @@ export function CheckInForm({
       return;
     }
 
+    const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
     setIsSubmitting(true);
     try {
+      if (!isOnline) {
+        await submitCheckIn({
+          studentId: selectedStudent.id,
+          lessonId: parsedLessonId,
+          level: selectedLevel,
+          confirmOverride: false,
+        });
+        return;
+      }
+
       const validationResponse = await fetch("/api/check-in/validate", {
         method: "POST",
         headers: {
@@ -518,8 +548,9 @@ export function CheckInForm({
         const message =
           validationPayload?.message ??
           "Tu cuenta requiere atención. Por favor, contacta a la administración.";
-        setStatus({ message });
-        setToast({ type: "error", message });
+        setBlockedAccountMessage(message);
+        setStatus(null);
+        setToast(null);
         return;
       }
 
@@ -550,8 +581,19 @@ export function CheckInForm({
         error instanceof Error
           ? error.message
           : "No logramos registrar tu asistencia. Inténtalo de nuevo.";
-      setStatus({ message });
-      setToast({ type: "error", message });
+      if (
+        message.toLowerCase().includes("requiere atención") ||
+        message.toLowerCase().includes("contacta a la administración")
+      ) {
+        setBlockedAccountMessage(
+          "Tu cuenta requiere atención. Por favor, contacta a la administración.",
+        );
+        setStatus(null);
+        setToast(null);
+      } else {
+        setStatus({ message });
+        setToast({ type: "error", message });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -580,8 +622,19 @@ export function CheckInForm({
         error instanceof Error
           ? error.message
           : "No logramos registrar tu asistencia. Inténtalo de nuevo.";
-      setStatus({ message });
-      setToast({ type: "error", message });
+      if (
+        message.toLowerCase().includes("requiere atención") ||
+        message.toLowerCase().includes("contacta a la administración")
+      ) {
+        setBlockedAccountMessage(
+          "Tu cuenta requiere atención. Por favor, contacta a la administración.",
+        );
+        setStatus(null);
+        setToast(null);
+      } else {
+        setStatus({ message });
+        setToast({ type: "error", message });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -591,6 +644,7 @@ export function CheckInForm({
   const isLoadingSuggestions = suggestionState === "loading";
 
   return (
+    <>
     <form
       className="flex flex-col gap-8 rounded-[36px] border border-white/70 bg-white/95 px-10 py-12 text-left shadow-[0_24px_58px_rgba(15,23,42,0.12)] backdrop-blur"
       onSubmit={handleSubmit}
@@ -936,5 +990,17 @@ export function CheckInForm({
         </div>
       ) : null}
     </form>
+    {blockedAccountMessage ? (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 px-6">
+        <div className="max-w-lg rounded-[32px] border border-white/70 bg-white px-8 py-10 text-center shadow-[0_30px_70px_rgba(15,23,42,0.35)]">
+          <h2 className="text-2xl font-black text-brand-deep">Atención necesaria</h2>
+          <p className="mt-4 text-base text-brand-ink">{blockedAccountMessage}</p>
+          <p className="mt-6 text-sm text-brand-ink-muted">
+            Te redirigiremos a la pantalla de bienvenida en unos segundos…
+          </p>
+        </div>
+      </div>
+    ) : null}
+  </>
   );
 }

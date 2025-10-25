@@ -1,6 +1,10 @@
 import { unstable_noStore as noStore } from "next/cache";
 
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
+import {
+  isMissingStudentFlagRelation,
+  STUDENT_FLAG_RELATION_CANDIDATES,
+} from "./student-flag-relations";
 
 export type BasicDetailFieldType =
   | "text"
@@ -302,46 +306,7 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
   noStore();
   const sql = getSqlClient();
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      s.id                                   AS "studentId",
-      s.full_name                            AS "fullName",
-      s.photo_url                            AS "photoUrl",
-      s.photo_updated_at                     AS "photoUpdatedAt",
-      s.representative_name                  AS "representativeName",
-      s.representative_phone                 AS "representativePhone",
-      s.representative_email                 AS "representativeEmail",
-      s.has_special_needs                    AS "hasSpecialNeeds",
-      s.contract_start                       AS "contractStart",
-      s.contract_end                         AS "contractEnd",
-      s.graduated                            AS "graduated",
-      s.frozen_start                         AS "frozenStart",
-      s.frozen_end                           AS "frozenEnd",
-      s.current_level::text                  AS "currentLevel",
-      s.planned_level_min::text              AS "plannedLevelMin",
-      s.planned_level_max::text              AS "plannedLevelMax",
-      COALESCE(s.is_online, false)           AS "isOnline",
-      COALESCE(sf.is_new_student, false)     AS "isNewStudent",
-      COALESCE(sf.is_exam_approaching, false) AS "isExamApproaching",
-      COALESCE(sf.is_exam_preparation, false) AS "isExamPreparation",
-      COALESCE(sf.is_absent_7d, false)       AS "isAbsent7d",
-      COALESCE(sf.is_absent_7d, false)       AS "isAbsent7Days",
-      COALESCE(sf.is_slow_progress_14d, false) AS "isSlowProgress14d",
-      COALESCE(sf.is_slow_progress_14d, false) AS "isSlowProgress14Days",
-      COALESCE(sf.instructivo_active, false) AS "instructivoActive",
-      COALESCE(sf.instructivo_active, false) AS "hasActiveInstructive",
-      COALESCE(sf.instructivo_overdue, false) AS "instructivoOverdue",
-      COALESCE(sf.instructivo_overdue, false) AS "hasOverdueInstructive",
-      s.last_seen_at                         AS "lastSeenAt",
-      s.last_lesson_id                       AS "lastLessonId",
-      s.status                               AS "status",
-      s.updated_at                           AS "updatedAt",
-      s.created_at                           AS "createdAt"
-    FROM public.students AS s
-    LEFT JOIN public.student_flags AS sf ON sf.student_id = s.id
-    WHERE s.id = ${studentId}::bigint
-    LIMIT 1
-  `);
+  const rows = await fetchStudentBasicDetailsRows(sql, studentId);
 
   if (!rows.length) return null;
 
@@ -2820,6 +2785,115 @@ export async function getStudentAttendanceStats(
   };
 }
 
+function mapAttendanceHistoryRow(row: SqlRow): StudentAttendanceHistoryEntry | null {
+  const id = Number(row.id);
+  const checkIn = row.checkin_time as string | null;
+  if (!Number.isFinite(id) || !checkIn) {
+    return null;
+  }
+
+  const rawDuration =
+    row.duration_minutes == null
+      ? null
+      : typeof row.duration_minutes === "number"
+        ? row.duration_minutes
+        : Number(row.duration_minutes);
+
+  return {
+    id,
+    checkInTime: checkIn,
+    checkOutTime: (row.checkout_time as string | null) ?? null,
+    lessonLabel: (row.lesson_label as string | null) ?? null,
+    levelCode: (row.level_code as string | null) ?? null,
+    lessonSequence:
+      row.lesson_seq == null
+        ? null
+        : typeof row.lesson_seq === "number"
+          ? Math.trunc(row.lesson_seq)
+          : Math.trunc(Number(row.lesson_seq)),
+    durationMinutes:
+      rawDuration != null && Number.isFinite(rawDuration)
+        ? Math.max(0, rawDuration)
+        : null,
+  } satisfies StudentAttendanceHistoryEntry;
+}
+
+async function runBasicDetailsQuery(
+  sql: ReturnType<typeof getSqlClient>,
+  studentId: number,
+  relation: (typeof STUDENT_FLAG_RELATION_CANDIDATES)[number],
+): Promise<SqlRow[]> {
+  return normalizeRows<SqlRow>(await sql`
+    SELECT
+      s.id                                   AS "studentId",
+      s.full_name                            AS "fullName",
+      s.photo_url                            AS "photoUrl",
+      s.photo_updated_at                     AS "photoUpdatedAt",
+      s.representative_name                  AS "representativeName",
+      s.representative_phone                 AS "representativePhone",
+      s.representative_email                 AS "representativeEmail",
+      s.has_special_needs                    AS "hasSpecialNeeds",
+      s.contract_start                       AS "contractStart",
+      s.contract_end                         AS "contractEnd",
+      s.graduated                            AS "graduated",
+      s.frozen_start                         AS "frozenStart",
+      s.frozen_end                           AS "frozenEnd",
+      s.current_level::text                  AS "currentLevel",
+      s.planned_level_min::text              AS "plannedLevelMin",
+      s.planned_level_max::text              AS "plannedLevelMax",
+      COALESCE(s.is_online, false)           AS "isOnline",
+      COALESCE(flags.is_new_student, false)  AS "isNewStudent",
+      COALESCE(flags.is_exam_approaching, false) AS "isExamApproaching",
+      COALESCE(flags.is_exam_preparation, false) AS "isExamPreparation",
+      COALESCE(flags.is_absent_7d, false)    AS "isAbsent7d",
+      COALESCE(flags.is_absent_7d, false)    AS "isAbsent7Days",
+      COALESCE(flags.is_slow_progress_14d, false) AS "isSlowProgress14d",
+      COALESCE(flags.is_slow_progress_14d, false) AS "isSlowProgress14Days",
+      COALESCE(flags.instructivo_active, false) AS "instructivoActive",
+      COALESCE(flags.instructivo_active, false) AS "hasActiveInstructive",
+      COALESCE(flags.instructivo_overdue, false) AS "instructivoOverdue",
+      COALESCE(flags.instructivo_overdue, false) AS "hasOverdueInstructive",
+      s.last_seen_at                         AS "lastSeenAt",
+      s.last_lesson_id                       AS "lastLessonId",
+      s.status                               AS "status",
+      s.updated_at                           AS "updatedAt",
+      s.created_at                           AS "createdAt"
+    FROM public.students AS s
+    LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
+    WHERE s.id = ${studentId}::bigint
+    LIMIT 1
+  `);
+}
+
+async function fetchStudentBasicDetailsRows(
+  sql: ReturnType<typeof getSqlClient>,
+  studentId: number,
+): Promise<SqlRow[]> {
+  let lastError: unknown = null;
+
+  for (const relation of STUDENT_FLAG_RELATION_CANDIDATES) {
+    try {
+      return await runBasicDetailsQuery(sql, studentId, relation);
+    } catch (error) {
+      if (isMissingStudentFlagRelation(error, relation)) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastError) {
+    console.warn(
+      "No pudimos encontrar una relación de banderas para el perfil del estudiante." +
+        " La sección de banderas se mostrará vacía hasta que exista la vista o tabla correspondiente.",
+      lastError,
+    );
+  }
+
+  return [];
+}
+
 export async function listStudentAttendanceHistory(
   studentId: number,
   limit = 60,
@@ -2846,39 +2920,98 @@ export async function listStudentAttendanceHistory(
   `);
 
   return rows
-    .map((row) => {
-      const id = Number(row.id);
-      const checkIn = row.checkin_time as string | null;
-      if (!Number.isFinite(id) || !checkIn) {
-        return null;
-      }
-
-      const rawDuration =
-        row.duration_minutes == null
-          ? null
-          : typeof row.duration_minutes === "number"
-            ? row.duration_minutes
-            : Number(row.duration_minutes);
-
-      return {
-        id,
-        checkInTime: checkIn,
-        checkOutTime: (row.checkout_time as string | null) ?? null,
-        lessonLabel: (row.lesson_label as string | null) ?? null,
-        levelCode: (row.level_code as string | null) ?? null,
-        lessonSequence:
-          row.lesson_seq == null
-            ? null
-            : typeof row.lesson_seq === "number"
-              ? Math.trunc(row.lesson_seq)
-              : Math.trunc(Number(row.lesson_seq)),
-        durationMinutes:
-          rawDuration != null && Number.isFinite(rawDuration)
-            ? Math.max(0, rawDuration)
-            : null,
-      } satisfies StudentAttendanceHistoryEntry;
-    })
+    .map(mapAttendanceHistoryRow)
     .filter((entry): entry is StudentAttendanceHistoryEntry => Boolean(entry));
+}
+
+export async function createStudentAttendanceEntry({
+  studentId,
+  lessonId,
+  checkIn,
+  checkOut = null,
+}: {
+  studentId: number;
+  lessonId: number;
+  checkIn: string;
+  checkOut?: string | null;
+}): Promise<StudentAttendanceHistoryEntry> {
+  const sql = getSqlClient();
+
+  const sanitizedStudentId = Math.trunc(studentId);
+  if (!Number.isFinite(sanitizedStudentId) || sanitizedStudentId <= 0) {
+    throw new Error("El estudiante indicado no es válido.");
+  }
+
+  const sanitizedLessonId = Math.trunc(lessonId);
+  if (!Number.isFinite(sanitizedLessonId) || sanitizedLessonId <= 0) {
+    throw new Error("La lección seleccionada no es válida.");
+  }
+
+  const checkInDate = new Date(checkIn);
+  if (Number.isNaN(checkInDate.getTime())) {
+    throw new Error("La fecha de ingreso no es válida.");
+  }
+
+  let checkoutIso: string | null = null;
+  if (checkOut) {
+    const checkoutDate = new Date(checkOut);
+    if (Number.isNaN(checkoutDate.getTime())) {
+      throw new Error("La fecha de salida no es válida.");
+    }
+    if (checkoutDate <= checkInDate) {
+      throw new Error("La salida debe ser posterior al ingreso.");
+    }
+    checkoutIso = checkoutDate.toISOString();
+  }
+
+  const insertedRows = normalizeRows<SqlRow>(await sql`
+    INSERT INTO student_attendance (
+      student_id,
+      lesson_id,
+      checkin_time,
+      checkout_time,
+      confirm_override
+    )
+    VALUES (
+      ${sanitizedStudentId}::bigint,
+      ${sanitizedLessonId}::bigint,
+      ${checkInDate.toISOString()}::timestamptz,
+      ${checkoutIso}::timestamptz,
+      false
+    )
+    RETURNING id
+  `);
+
+  if (!insertedRows.length) {
+    throw new Error("No se pudo registrar la asistencia manual solicitada.");
+  }
+
+  const insertedId = Number(insertedRows[0].id);
+  if (!Number.isFinite(insertedId)) {
+    throw new Error("El identificador de la asistencia creada no es válido.");
+  }
+
+  const detailRows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      sa.id,
+      sa.checkin_time,
+      sa.checkout_time,
+      l.lesson AS lesson_label,
+      l.level AS level_code,
+      l.seq AS lesson_seq,
+      EXTRACT(EPOCH FROM (sa.checkout_time - sa.checkin_time)) / 60 AS duration_minutes
+    FROM student_attendance sa
+    LEFT JOIN lessons l ON l.id = sa.lesson_id
+    WHERE sa.id = ${insertedId}::bigint
+    LIMIT 1
+  `);
+
+  const mapped = detailRows.length ? mapAttendanceHistoryRow(detailRows[0]) : null;
+  if (!mapped) {
+    throw new Error("No se pudo recuperar la asistencia creada.");
+  }
+
+  return mapped;
 }
 
 export async function getStudentProgressEvents(

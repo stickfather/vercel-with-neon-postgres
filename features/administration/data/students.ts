@@ -1,4 +1,8 @@
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
+import {
+  isMissingStudentFlagRelation,
+  STUDENT_FLAG_RELATION_CANDIDATES,
+} from "./student-flag-relations";
 
 export type StudentManagementEntry = {
   id: number;
@@ -134,14 +138,40 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
   };
 }
 
+async function runStudentManagementQuery(
+  sql: ReturnType<typeof getSqlClient>,
+  relation: (typeof STUDENT_FLAG_RELATION_CANDIDATES)[number],
+  studentId?: number,
+  limitOne = false,
+): Promise<SqlRow[]> {
+  return normalizeRows<SqlRow>(
+    await sql`
+      SELECT
+        s.id AS student_id,
+        s.full_name AS full_name,
+        s.current_level::text AS level,
+        s.status AS state,
+        COALESCE(flags.is_new_student, false) AS is_new_student,
+        COALESCE(flags.is_exam_approaching, false) AS is_exam_approaching,
+        COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
+        COALESCE(flags.has_special_needs, false) AS has_special_needs,
+        COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
+        COALESCE(flags.is_slow_progress_14d, false) AS is_slow_progress_14d,
+        COALESCE(flags.instructivo_active, false) AS instructivo_active,
+        COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
+      FROM public.students AS s
+      LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
+      WHERE TRIM(COALESCE(s.full_name, '')) <> ''
+      ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}
+      ORDER BY s.full_name ASC
+      ${limitOne ? sql`LIMIT 1` : sql``}
+    `,
+  );
+}
+
 export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
   const sql = getSqlClient();
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.student_management_v
-    ORDER BY full_name ASC
-  `);
+  const rows = await fetchStudentManagementRows(sql);
 
   return rows
     .map(mapStudentManagementRow)
@@ -152,19 +182,85 @@ export async function getStudentManagementEntry(
   studentId: number,
 ): Promise<StudentManagementEntry | null> {
   const sql = getSqlClient();
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.student_management_v
-    WHERE student_id = ${studentId}::bigint
-      OR id = ${studentId}::bigint
-    ORDER BY full_name ASC
-    LIMIT 1
-  `);
-
+  const rows = await fetchStudentManagementRows(sql, studentId, true);
   if (!rows.length) {
     return null;
   }
 
   return mapStudentManagementRow(rows[0]);
+}
+
+async function fetchStudentManagementRows(
+  sql: ReturnType<typeof getSqlClient>,
+  studentId?: number,
+  limitOne = false,
+): Promise<SqlRow[]> {
+  let lastError: unknown = null;
+
+  for (const relation of STUDENT_FLAG_RELATION_CANDIDATES) {
+    try {
+      return await runStudentManagementQuery(sql, relation, studentId, limitOne);
+    } catch (error) {
+      if (isMissingStudentFlagRelation(error, relation)) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastError) {
+    console.warn(
+      "No pudimos encontrar una relación de banderas de estudiantes compatible."
+        + " Continuaremos sin banderas hasta que la base de datos se actualice.",
+      lastError,
+    );
+  }
+
+  return [];
+}
+
+export async function createStudentManagementEntry({
+  fullName,
+  plannedLevelMin,
+  plannedLevelMax,
+}: {
+  fullName: string;
+  plannedLevelMin: string;
+  plannedLevelMax: string;
+}): Promise<StudentManagementEntry> {
+  const sql = getSqlClient();
+
+  const sanitizedName = fullName.trim();
+  if (!sanitizedName.length) {
+    throw new Error("El nombre del estudiante es obligatorio.");
+  }
+
+  const sanitizedMin = plannedLevelMin.trim();
+  const sanitizedMax = plannedLevelMax.trim();
+
+  if (!sanitizedMin.length || !sanitizedMax.length) {
+    throw new Error(
+      "Debes indicar el nivel planificado mínimo y máximo para crear al estudiante.",
+    );
+  }
+
+  const insertRows = normalizeRows<SqlRow>(await sql`
+    INSERT INTO public.students (full_name, planned_level_min, planned_level_max, status)
+    VALUES (${sanitizedName}, ${sanitizedMin}, ${sanitizedMax}, 'Activo')
+    RETURNING id
+  `);
+
+  if (!insertRows.length) {
+    throw new Error("No se pudo registrar al estudiante solicitado.");
+  }
+
+  const insertedId = Number(insertRows[0].id);
+
+  const entry = await getStudentManagementEntry(insertedId);
+  if (!entry) {
+    throw new Error("No se pudo obtener el registro del estudiante creado.");
+  }
+
+  return entry;
 }
