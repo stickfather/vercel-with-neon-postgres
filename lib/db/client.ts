@@ -32,50 +32,29 @@ export function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   return [];
 }
 
-function isMissingRefreshFlagsFunction(error: unknown): boolean {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = String((error as { message?: unknown }).message ?? "");
-    return message.includes("mart.refresh_flags");
-  }
-  return false;
-}
-
 export async function closeExpiredSessions(
   sql = getSqlClient(),
 ): Promise<number> {
-  const runUpdate = async () =>
-    normalizeRows<SqlRow>(
-      await sql`
-        -- Students who remain checked in past 20:15 local time
-        -- are automatically closed with an 8:15 p.m. checkout.
-        UPDATE public.student_attendance
-        SET checkout_time = GREATEST(
-          checkin_time,
-          (
-            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE})
-            + INTERVAL '20 hours 15 minutes'
-          ) AT TIME ZONE ${TIMEZONE}
-        )
-        WHERE checkout_time IS NULL
-          AND now() AT TIME ZONE ${TIMEZONE} >=
-            date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
-        RETURNING id
-      `,
-    );
+  const rows = normalizeRows<SqlRow>(
+    await sql`
+      -- Students who remain checked in past 20:15 local time
+      -- are automatically closed with an 8:15 p.m. checkout.
+      UPDATE public.student_attendance
+      SET checkout_time = GREATEST(
+        checkin_time,
+        (
+          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE})
+          + INTERVAL '20 hours 15 minutes'
+        ) AT TIME ZONE ${TIMEZONE}
+      )
+      WHERE checkout_time IS NULL
+        AND now() AT TIME ZONE ${TIMEZONE} >=
+          date_trunc('day', checkin_time AT TIME ZONE ${TIMEZONE}) + INTERVAL '20 hours 15 minutes'
+      RETURNING id
+    `,
+  );
 
-  try {
-    const rows = await runUpdate();
-    return rows.length;
-  } catch (error) {
-    if (isMissingRefreshFlagsFunction(error)) {
-      console.warn(
-        "Saltamos el cierre automático de asistencias porque la base de datos aún hace referencia a mart.refresh_flags.",
-        error,
-      );
-      return 0;
-    }
-    throw error;
-  }
+  return rows.length;
 }
 
 export async function closeExpiredStaffSessions(

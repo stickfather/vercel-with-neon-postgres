@@ -3,7 +3,6 @@ import {
   normalizeRows,
   SqlRow,
 } from "@/lib/db/client";
-import { ensureStudentFlagRefreshCompatibility } from "@/lib/db/compat";
 
 export type StudentName = {
   id: number;
@@ -251,8 +250,6 @@ export async function registerCheckIn({
   confirmOverride?: boolean;
 }): Promise<number> {
   const sql = getSqlClient();
-
-  await ensureStudentFlagRefreshCompatibility();
 
   const studentRows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, status

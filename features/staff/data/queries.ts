@@ -4,7 +4,6 @@ import {
   SqlRow,
   TIMEZONE,
 } from "@/lib/db/client";
-import { ensureStaffAttendanceEditsCompatibility } from "@/lib/db/compat";
 
 export type StaffDirectoryEntry = {
   id: number;
@@ -28,8 +27,6 @@ export type StaffMemberRecord = {
   weeklyHours: number | null;
 };
 
-type SqlClient = ReturnType<typeof getSqlClient>;
-
 function toNullableNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -42,33 +39,6 @@ function isMissingIdDefaultError(error: unknown): boolean {
     return message.includes("null value in column \"id\"");
   }
   return false;
-}
-
-async function ensureStaffAttendanceInfrastructure(
-  sql: SqlClient,
-): Promise<void> {
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.staff_attendance (
-      id BIGSERIAL PRIMARY KEY,
-      staff_id BIGINT NOT NULL REFERENCES public.staff_members(id),
-      checkin_time TIMESTAMPTZ NOT NULL DEFAULT now(),
-      checkout_time TIMESTAMPTZ,
-      override_ok BOOLEAN DEFAULT FALSE
-    )
-  `;
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS staff_attendance_staff_checkin_idx
-      ON public.staff_attendance (staff_id, checkin_time DESC)
-  `;
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS staff_attendance_open_idx
-      ON public.staff_attendance (staff_id)
-      WHERE checkout_time IS NULL
-  `;
-
-  await ensureStaffAttendanceEditsCompatibility();
 }
 
 export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
@@ -92,8 +62,6 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 
 export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
   const sql = getSqlClient();
-
-  await ensureStaffAttendanceInfrastructure(sql);
 
   const rows = normalizeRows<SqlRow>(await sql`
     WITH day_bounds AS (
@@ -124,7 +92,6 @@ export async function registerStaffCheckIn({
   staffId: number;
 }): Promise<{ attendanceId: string; staffName: string }> {
   const sql = getSqlClient();
-  await ensureStaffAttendanceInfrastructure(sql);
 
   const staffRows = normalizeRows<SqlRow>(await sql`
     SELECT id, full_name, active
@@ -208,7 +175,6 @@ export async function registerStaffCheckIn({
 
 export async function registerStaffCheckOut(attendanceId: string): Promise<void> {
   const sql = getSqlClient();
-  await ensureStaffAttendanceInfrastructure(sql);
 
   const parsedId = Number(attendanceId);
   if (!Number.isFinite(parsedId)) {
