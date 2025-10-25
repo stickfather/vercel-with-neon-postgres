@@ -32,6 +32,14 @@ export function normalizeRows<T extends SqlRow>(result: unknown): T[] {
   return [];
 }
 
+function isMissingRefreshFlagsFunction(error: unknown): boolean {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String((error as { message?: unknown }).message ?? "");
+    return message.includes("mart.refresh_flags");
+  }
+  return false;
+}
+
 export async function closeExpiredSessions(
   sql = getSqlClient(),
 ): Promise<number> {
@@ -55,9 +63,19 @@ export async function closeExpiredSessions(
       `,
     );
 
-  const rows = await runUpdate();
-
-  return rows.length;
+  try {
+    const rows = await runUpdate();
+    return rows.length;
+  } catch (error) {
+    if (isMissingRefreshFlagsFunction(error)) {
+      console.warn(
+        "Saltamos el cierre automático de asistencias porque la base de datos aún hace referencia a mart.refresh_flags.",
+        error,
+      );
+      return 0;
+    }
+    throw error;
+  }
 }
 
 export async function closeExpiredStaffSessions(
