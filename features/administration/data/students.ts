@@ -1,9 +1,8 @@
+import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
 import {
-  getSqlClient,
-  isMissingRelationError,
-  normalizeRows,
-  SqlRow,
-} from "@/lib/db/client";
+  isMissingStudentFlagRelation,
+  STUDENT_FLAG_RELATION_CANDIDATES,
+} from "./student-flag-relations";
 
 export type StudentManagementEntry = {
   id: number;
@@ -139,11 +138,9 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
   };
 }
 
-type FlagsRelation = "student_flags_v" | "student_flags";
-
 async function runStudentManagementQuery(
   sql: ReturnType<typeof getSqlClient>,
-  relation: FlagsRelation,
+  relation: (typeof STUDENT_FLAG_RELATION_CANDIDATES)[number],
   studentId?: number,
   limitOne = false,
 ): Promise<SqlRow[]> {
@@ -163,7 +160,7 @@ async function runStudentManagementQuery(
         COALESCE(flags.instructivo_active, false) AS instructivo_active,
         COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
       FROM public.students AS s
-      LEFT JOIN ${sql.unsafe(`public.${relation}`)} AS flags ON flags.student_id = s.id
+      LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
       WHERE TRIM(COALESCE(s.full_name, '')) <> ''
       ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}
       ORDER BY s.full_name ASC
@@ -174,16 +171,7 @@ async function runStudentManagementQuery(
 
 export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
   const sql = getSqlClient();
-  let rows: SqlRow[] = [];
-
-  try {
-    rows = await runStudentManagementQuery(sql, "student_flags_v");
-  } catch (error) {
-    if (!isMissingRelationError(error, "student_flags_v")) {
-      throw error;
-    }
-    rows = await runStudentManagementQuery(sql, "student_flags");
-  }
+  const rows = await fetchStudentManagementRows(sql);
 
   return rows
     .map(mapStudentManagementRow)
@@ -194,22 +182,42 @@ export async function getStudentManagementEntry(
   studentId: number,
 ): Promise<StudentManagementEntry | null> {
   const sql = getSqlClient();
-  let rows: SqlRow[] = [];
-
-  try {
-    rows = await runStudentManagementQuery(sql, "student_flags_v", studentId, true);
-  } catch (error) {
-    if (!isMissingRelationError(error, "student_flags_v")) {
-      throw error;
-    }
-    rows = await runStudentManagementQuery(sql, "student_flags", studentId, true);
-  }
-
+  const rows = await fetchStudentManagementRows(sql, studentId, true);
   if (!rows.length) {
     return null;
   }
 
   return mapStudentManagementRow(rows[0]);
+}
+
+async function fetchStudentManagementRows(
+  sql: ReturnType<typeof getSqlClient>,
+  studentId?: number,
+  limitOne = false,
+): Promise<SqlRow[]> {
+  let lastError: unknown = null;
+
+  for (const relation of STUDENT_FLAG_RELATION_CANDIDATES) {
+    try {
+      return await runStudentManagementQuery(sql, relation, studentId, limitOne);
+    } catch (error) {
+      if (isMissingStudentFlagRelation(error, relation)) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastError) {
+    console.warn(
+      "No pudimos encontrar una relación de banderas de estudiantes compatible."
+        + " Continuaremos sin banderas hasta que la base de datos se actualice.",
+      lastError,
+    );
+  }
+
+  return [];
 }
 
 export async function createStudentManagementEntry({

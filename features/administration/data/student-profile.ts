@@ -1,11 +1,10 @@
 import { unstable_noStore as noStore } from "next/cache";
 
+import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
 import {
-  getSqlClient,
-  isMissingRelationError,
-  normalizeRows,
-  SqlRow,
-} from "@/lib/db/client";
+  isMissingStudentFlagRelation,
+  STUDENT_FLAG_RELATION_CANDIDATES,
+} from "./student-flag-relations";
 
 export type BasicDetailFieldType =
   | "text"
@@ -307,16 +306,7 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
   noStore();
   const sql = getSqlClient();
 
-  let rows: SqlRow[] = [];
-
-  try {
-    rows = await runBasicDetailsQuery(sql, studentId, "student_flags_v");
-  } catch (error) {
-    if (!isMissingRelationError(error, "student_flags_v")) {
-      throw error;
-    }
-    rows = await runBasicDetailsQuery(sql, studentId, "student_flags");
-  }
+  const rows = await fetchStudentBasicDetailsRows(sql, studentId);
 
   if (!rows.length) return null;
 
@@ -2828,12 +2818,10 @@ function mapAttendanceHistoryRow(row: SqlRow): StudentAttendanceHistoryEntry | n
   } satisfies StudentAttendanceHistoryEntry;
 }
 
-type StudentFlagsRelation = "student_flags_v" | "student_flags";
-
 async function runBasicDetailsQuery(
   sql: ReturnType<typeof getSqlClient>,
   studentId: number,
-  relation: StudentFlagsRelation,
+  relation: (typeof STUDENT_FLAG_RELATION_CANDIDATES)[number],
 ): Promise<SqlRow[]> {
   return normalizeRows<SqlRow>(await sql`
     SELECT
@@ -2871,10 +2859,39 @@ async function runBasicDetailsQuery(
       s.updated_at                           AS "updatedAt",
       s.created_at                           AS "createdAt"
     FROM public.students AS s
-    LEFT JOIN ${sql.unsafe(`public.${relation}`)} AS flags ON flags.student_id = s.id
+    LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
     WHERE s.id = ${studentId}::bigint
     LIMIT 1
   `);
+}
+
+async function fetchStudentBasicDetailsRows(
+  sql: ReturnType<typeof getSqlClient>,
+  studentId: number,
+): Promise<SqlRow[]> {
+  let lastError: unknown = null;
+
+  for (const relation of STUDENT_FLAG_RELATION_CANDIDATES) {
+    try {
+      return await runBasicDetailsQuery(sql, studentId, relation);
+    } catch (error) {
+      if (isMissingStudentFlagRelation(error, relation)) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastError) {
+    console.warn(
+      "No pudimos encontrar una relación de banderas para el perfil del estudiante." +
+        " La sección de banderas se mostrará vacía hasta que exista la vista o tabla correspondiente.",
+      lastError,
+    );
+  }
+
+  return [];
 }
 
 export async function listStudentAttendanceHistory(

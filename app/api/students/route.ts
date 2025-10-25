@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { createStudentManagementEntry } from "@/features/administration/data/students";
 import { searchStudents } from "@/features/student-checkin/data/queries";
 
+export const dynamic = "force-dynamic";
+
 const DEFAULT_LIMIT = 6;
 const MAX_LIMIT = 20;
 

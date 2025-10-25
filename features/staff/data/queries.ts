@@ -28,10 +28,52 @@ export type StaffMemberRecord = {
   weeklyHours: number | null;
 };
 
+type SqlClient = ReturnType<typeof getSqlClient>;
+
 function toNullableNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function ensureStaffAttendanceInfrastructure(
+  sql: SqlClient,
+): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.staff_attendance (
+      id BIGINT PRIMARY KEY,
+      staff_id BIGINT NOT NULL REFERENCES public.staff_members(id),
+      checkin_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+      checkout_time TIMESTAMPTZ,
+      override_ok BOOLEAN DEFAULT FALSE
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS staff_attendance_staff_checkin_idx
+      ON public.staff_attendance (staff_id, checkin_time DESC)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS staff_attendance_open_idx
+      ON public.staff_attendance (staff_id)
+      WHERE checkout_time IS NULL
+  `;
+}
+
+async function withStaffAttendanceTable<T>(
+  sql: SqlClient,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isMissingRelationError(error, "staff_attendance")) {
+      await ensureStaffAttendanceInfrastructure(sql);
+      return await operation();
+    }
+    throw error;
+  }
 }
 
 export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
@@ -56,27 +98,40 @@ export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
 export async function getActiveStaffAttendances(): Promise<ActiveStaffAttendance[]> {
   const sql = getSqlClient();
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    WITH day_bounds AS (
-      SELECT
-        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
-    )
-    SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
-    FROM public.staff_attendance sa
-    LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
-    WHERE sa.checkout_time IS NULL
-      AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
-    ORDER BY sa.checkin_time ASC
-  `);
+  try {
+    const rows = await withStaffAttendanceTable(sql, async () =>
+      normalizeRows<SqlRow>(await sql`
+        WITH day_bounds AS (
+          SELECT
+            (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+        )
+        SELECT sa.id, sa.staff_id, sm.full_name, sa.checkin_time
+        FROM public.staff_attendance sa
+        LEFT JOIN public.staff_members sm ON sm.id = sa.staff_id
+        WHERE sa.checkout_time IS NULL
+          AND sa.checkin_time >= (SELECT current_day_start FROM day_bounds)
+        ORDER BY sa.checkin_time ASC
+      `),
+    );
 
-  return rows
-    .map((row) => ({
-      id: String(row.id),
-      staffId: Number(row.staff_id),
-      fullName: ((row.full_name as string | null) ?? "").trim(),
-      checkInTime: row.checkin_time as string,
-    }))
-    .filter((attendance) => attendance.fullName.length > 0);
+    return rows
+      .map((row) => ({
+        id: String(row.id),
+        staffId: Number(row.staff_id),
+        fullName: ((row.full_name as string | null) ?? "").trim(),
+        checkInTime: row.checkin_time as string,
+      }))
+      .filter((attendance) => attendance.fullName.length > 0);
+  } catch (error) {
+    if (isMissingRelationError(error, "staff_attendance")) {
+      console.warn(
+        "No pudimos cargar asistencias del personal porque falta la tabla principal. Devolvemos una lista vacía.",
+        error,
+      );
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function registerStaffCheckIn({
@@ -103,40 +158,50 @@ export async function registerStaffCheckIn({
   if (!staffName) throw new Error("El miembro del personal no tiene un nombre registrado.");
   if (!isActive) throw new Error("El miembro del personal está marcado como inactivo.");
 
-  await sql`
-    WITH day_bounds AS (
-      SELECT
-        (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
-    )
-    UPDATE public.staff_attendance
-    SET checkout_time = GREATEST(checkin_time, now())
-    WHERE checkout_time IS NULL
-      AND staff_id = ${staffId}
-      AND checkin_time < (SELECT current_day_start FROM day_bounds)
-  `;
+  const performCheckIn = async () => {
+    await sql`
+      WITH day_bounds AS (
+        SELECT
+          (date_trunc('day', timezone(${TIMEZONE}, now())) AT TIME ZONE ${TIMEZONE}) AS current_day_start
+      )
+      UPDATE public.staff_attendance
+      SET checkout_time = GREATEST(checkin_time, now())
+      WHERE checkout_time IS NULL
+        AND staff_id = ${staffId}
+        AND checkin_time < (SELECT current_day_start FROM day_bounds)
+    `;
 
-  const existingRows = normalizeRows<SqlRow>(await sql`
-    SELECT id
-    FROM public.staff_attendance
-    WHERE checkout_time IS NULL
-      AND staff_id = ${staffId}
-    LIMIT 1
-  `);
-  if (existingRows.length) {
-    throw new Error("Esta persona ya tiene una asistencia abierta.");
-  }
+    const existingRows = normalizeRows<SqlRow>(await sql`
+      SELECT id
+      FROM public.staff_attendance
+      WHERE checkout_time IS NULL
+        AND staff_id = ${staffId}
+      LIMIT 1
+    `);
+    if (existingRows.length) {
+      throw new Error("Esta persona ya tiene una asistencia abierta.");
+    }
 
-  const nextIdRows = normalizeRows<SqlRow>(await sql`
-    SELECT COALESCE(MAX(id), 0) + 1 AS next_id
-    FROM public.staff_attendance
-  `);
-  const nextId = Number(nextIdRows[0]?.next_id ?? 1);
+    const nextIdRows = normalizeRows<SqlRow>(await sql`
+      SELECT COALESCE(MAX(id), 0) + 1 AS next_id
+      FROM public.staff_attendance
+    `);
+    const nextId = Number(nextIdRows[0]?.next_id ?? 1);
 
-  const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
-    VALUES (${nextId}, ${staffId}, now())
-    RETURNING id
-  `);
+    const insertedRows = normalizeRows<SqlRow>(await sql`
+      INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
+      VALUES (${nextId}, ${staffId}, now())
+      RETURNING id
+    `);
+
+    if (!insertedRows.length) {
+      throw new Error("No se pudo registrar la asistencia del personal.");
+    }
+
+    return insertedRows;
+  };
+
+  const insertedRows = await withStaffAttendanceTable(sql, performCheckIn);
 
   return { attendanceId: String(insertedRows[0].id), staffName };
 }
@@ -150,30 +215,32 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   }
 
   try {
-    const existingRows = normalizeRows<SqlRow>(await sql`
-      SELECT id, checkin_time
-      FROM public.staff_attendance
-      WHERE id = ${parsedId}::bigint
-      LIMIT 1
-    `);
+    await withStaffAttendanceTable(sql, async () => {
+      const existingRows = normalizeRows<SqlRow>(await sql`
+        SELECT id, checkin_time
+        FROM public.staff_attendance
+        WHERE id = ${parsedId}::bigint
+        LIMIT 1
+      `);
 
-    if (!existingRows.length) {
-      throw new Error("No encontramos la asistencia seleccionada.");
-    }
+      if (!existingRows.length) {
+        throw new Error("No encontramos la asistencia seleccionada.");
+      }
 
-    const checkoutTimestamp = new Date().toISOString();
+      const checkoutTimestamp = new Date().toISOString();
 
-    const updatedRows = normalizeRows<SqlRow>(await sql`
-      UPDATE public.staff_attendance
-      SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
-      WHERE id = ${parsedId}::bigint
-        AND checkout_time IS NULL
-      RETURNING id
-    `);
+      const updatedRows = normalizeRows<SqlRow>(await sql`
+        UPDATE public.staff_attendance
+        SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+        WHERE id = ${parsedId}::bigint
+          AND checkout_time IS NULL
+        RETURNING id
+      `);
 
-    if (!updatedRows.length) {
-      throw new Error("La asistencia ya estaba cerrada o no existe.");
-    }
+      if (!updatedRows.length) {
+        throw new Error("La asistencia ya estaba cerrada o no existe.");
+      }
+    });
   } catch (error) {
     if (isMissingRelationError(error, "staff_attendance")) {
       throw new Error(
