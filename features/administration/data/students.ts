@@ -168,3 +168,48 @@ export async function getStudentManagementEntry(
 
   return mapStudentManagementRow(rows[0]);
 }
+
+export async function createStudentManagementEntry({
+  fullName,
+  plannedLevelMin,
+  plannedLevelMax,
+}: {
+  fullName: string;
+  plannedLevelMin: string;
+  plannedLevelMax: string;
+}): Promise<StudentManagementEntry> {
+  const sql = getSqlClient();
+
+  const sanitizedName = fullName.trim();
+  if (!sanitizedName.length) {
+    throw new Error("El nombre del estudiante es obligatorio.");
+  }
+
+  const sanitizedMin = plannedLevelMin.trim();
+  const sanitizedMax = plannedLevelMax.trim();
+
+  if (!sanitizedMin.length || !sanitizedMax.length) {
+    throw new Error(
+      "Debes indicar el nivel planificado mínimo y máximo para crear al estudiante.",
+    );
+  }
+
+  const insertRows = normalizeRows<SqlRow>(await sql`
+    INSERT INTO public.students (full_name, planned_level_min, planned_level_max, status)
+    VALUES (${sanitizedName}, ${sanitizedMin}, ${sanitizedMax}, 'Activo')
+    RETURNING id
+  `);
+
+  if (!insertRows.length) {
+    throw new Error("No se pudo registrar al estudiante solicitado.");
+  }
+
+  const insertedId = Number(insertRows[0].id);
+
+  const entry = await getStudentManagementEntry(insertedId);
+  if (!entry) {
+    throw new Error("No se pudo obtener el registro del estudiante creado.");
+  }
+
+  return entry;
+}

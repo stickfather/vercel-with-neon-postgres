@@ -2820,6 +2820,39 @@ export async function getStudentAttendanceStats(
   };
 }
 
+function mapAttendanceHistoryRow(row: SqlRow): StudentAttendanceHistoryEntry | null {
+  const id = Number(row.id);
+  const checkIn = row.checkin_time as string | null;
+  if (!Number.isFinite(id) || !checkIn) {
+    return null;
+  }
+
+  const rawDuration =
+    row.duration_minutes == null
+      ? null
+      : typeof row.duration_minutes === "number"
+        ? row.duration_minutes
+        : Number(row.duration_minutes);
+
+  return {
+    id,
+    checkInTime: checkIn,
+    checkOutTime: (row.checkout_time as string | null) ?? null,
+    lessonLabel: (row.lesson_label as string | null) ?? null,
+    levelCode: (row.level_code as string | null) ?? null,
+    lessonSequence:
+      row.lesson_seq == null
+        ? null
+        : typeof row.lesson_seq === "number"
+          ? Math.trunc(row.lesson_seq)
+          : Math.trunc(Number(row.lesson_seq)),
+    durationMinutes:
+      rawDuration != null && Number.isFinite(rawDuration)
+        ? Math.max(0, rawDuration)
+        : null,
+  } satisfies StudentAttendanceHistoryEntry;
+}
+
 export async function listStudentAttendanceHistory(
   studentId: number,
   limit = 60,
@@ -2846,39 +2879,98 @@ export async function listStudentAttendanceHistory(
   `);
 
   return rows
-    .map((row) => {
-      const id = Number(row.id);
-      const checkIn = row.checkin_time as string | null;
-      if (!Number.isFinite(id) || !checkIn) {
-        return null;
-      }
-
-      const rawDuration =
-        row.duration_minutes == null
-          ? null
-          : typeof row.duration_minutes === "number"
-            ? row.duration_minutes
-            : Number(row.duration_minutes);
-
-      return {
-        id,
-        checkInTime: checkIn,
-        checkOutTime: (row.checkout_time as string | null) ?? null,
-        lessonLabel: (row.lesson_label as string | null) ?? null,
-        levelCode: (row.level_code as string | null) ?? null,
-        lessonSequence:
-          row.lesson_seq == null
-            ? null
-            : typeof row.lesson_seq === "number"
-              ? Math.trunc(row.lesson_seq)
-              : Math.trunc(Number(row.lesson_seq)),
-        durationMinutes:
-          rawDuration != null && Number.isFinite(rawDuration)
-            ? Math.max(0, rawDuration)
-            : null,
-      } satisfies StudentAttendanceHistoryEntry;
-    })
+    .map(mapAttendanceHistoryRow)
     .filter((entry): entry is StudentAttendanceHistoryEntry => Boolean(entry));
+}
+
+export async function createStudentAttendanceEntry({
+  studentId,
+  lessonId,
+  checkIn,
+  checkOut = null,
+}: {
+  studentId: number;
+  lessonId: number;
+  checkIn: string;
+  checkOut?: string | null;
+}): Promise<StudentAttendanceHistoryEntry> {
+  const sql = getSqlClient();
+
+  const sanitizedStudentId = Math.trunc(studentId);
+  if (!Number.isFinite(sanitizedStudentId) || sanitizedStudentId <= 0) {
+    throw new Error("El estudiante indicado no es válido.");
+  }
+
+  const sanitizedLessonId = Math.trunc(lessonId);
+  if (!Number.isFinite(sanitizedLessonId) || sanitizedLessonId <= 0) {
+    throw new Error("La lección seleccionada no es válida.");
+  }
+
+  const checkInDate = new Date(checkIn);
+  if (Number.isNaN(checkInDate.getTime())) {
+    throw new Error("La fecha de ingreso no es válida.");
+  }
+
+  let checkoutIso: string | null = null;
+  if (checkOut) {
+    const checkoutDate = new Date(checkOut);
+    if (Number.isNaN(checkoutDate.getTime())) {
+      throw new Error("La fecha de salida no es válida.");
+    }
+    if (checkoutDate <= checkInDate) {
+      throw new Error("La salida debe ser posterior al ingreso.");
+    }
+    checkoutIso = checkoutDate.toISOString();
+  }
+
+  const insertedRows = normalizeRows<SqlRow>(await sql`
+    INSERT INTO student_attendance (
+      student_id,
+      lesson_id,
+      checkin_time,
+      checkout_time,
+      confirm_override
+    )
+    VALUES (
+      ${sanitizedStudentId}::bigint,
+      ${sanitizedLessonId}::bigint,
+      ${checkInDate.toISOString()}::timestamptz,
+      ${checkoutIso}::timestamptz,
+      false
+    )
+    RETURNING id
+  `);
+
+  if (!insertedRows.length) {
+    throw new Error("No se pudo registrar la asistencia manual solicitada.");
+  }
+
+  const insertedId = Number(insertedRows[0].id);
+  if (!Number.isFinite(insertedId)) {
+    throw new Error("El identificador de la asistencia creada no es válido.");
+  }
+
+  const detailRows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      sa.id,
+      sa.checkin_time,
+      sa.checkout_time,
+      l.lesson AS lesson_label,
+      l.level AS level_code,
+      l.seq AS lesson_seq,
+      EXTRACT(EPOCH FROM (sa.checkout_time - sa.checkin_time)) / 60 AS duration_minutes
+    FROM student_attendance sa
+    LEFT JOIN lessons l ON l.id = sa.lesson_id
+    WHERE sa.id = ${insertedId}::bigint
+    LIMIT 1
+  `);
+
+  const mapped = detailRows.length ? mapAttendanceHistoryRow(detailRows[0]) : null;
+  if (!mapped) {
+    throw new Error("No se pudo recuperar la asistencia creada.");
+  }
+
+  return mapped;
 }
 
 export async function getStudentProgressEvents(

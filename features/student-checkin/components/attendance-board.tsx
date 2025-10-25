@@ -9,6 +9,7 @@ import {
   exceedsSessionDurationLimit,
   isAfterBubbleHideTime,
 } from "@/lib/time/check-in-window";
+import { queueableFetch } from "@/lib/offline/fetch";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -147,15 +148,19 @@ export function AttendanceBoard({ attendances }: Props) {
     setError(null);
     setLoadingId(attendance.id);
     try {
-      const response = await fetch("/api/check-out", {
+      const response = await queueableFetch("/api/check-out", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ attendanceId: attendance.id }),
+        offlineLabel: "student-check-out",
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        queued?: boolean;
+      };
 
       if (!response.ok) {
         throw new Error(payload?.error ?? "No se pudo registrar la salida.");
@@ -164,7 +169,9 @@ export function AttendanceBoard({ attendances }: Props) {
       setPendingCheckout(null);
       setToast({
         tone: "success",
-        message: `${attendance.fullName.trim()} salió de clase. ¡Gracias!`,
+        message: payload?.queued
+          ? `${attendance.fullName.trim()} saldrá registrado cuando vuelva la conexión.`
+          : `${attendance.fullName.trim()} salió de clase. ¡Gracias!`,
       });
 
       if (refreshTimeoutRef.current) {
@@ -172,7 +179,7 @@ export function AttendanceBoard({ attendances }: Props) {
       }
 
       refreshTimeoutRef.current = setTimeout(() => {
-        router.refresh();
+        router.push("/");
       }, 320);
     } catch (err) {
       console.error(err);

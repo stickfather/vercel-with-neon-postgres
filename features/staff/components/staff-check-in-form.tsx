@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffDirectoryEntry } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import { queueableFetch } from "@/lib/offline/fetch";
 
 type StatusState = { message: string } | null;
 
@@ -75,15 +76,19 @@ export function StaffCheckInForm({
       setIsSubmitting(true);
       setStatus(null);
 
-      const response = await fetch("/api/staff/check-in", {
+      const response = await queueableFetch("/api/staff/check-in", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ staffId: selectedStaffId }),
+        offlineLabel: "staff-check-in",
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        queued?: boolean;
+      };
 
       if (!response.ok) {
         throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
@@ -91,8 +96,12 @@ export function StaffCheckInForm({
 
       const selectedMember = staffMembers.find((member) => member.id === selectedStaffId);
       const successMessage = selectedMember
-        ? `${selectedMember.fullName.trim()} ya está registrado.`
-        : "¡Registro del personal confirmado!";
+        ? payload?.queued
+          ? `${selectedMember.fullName.trim()} quedará registrado al recuperar la conexión.`
+          : `${selectedMember.fullName.trim()} ya está registrado.`
+        : payload?.queued
+          ? "Registro guardado sin conexión. Se sincronizará automáticamente."
+          : "¡Registro del personal confirmado!";
 
       setToast({
         tone: "success",
@@ -109,7 +118,7 @@ export function StaffCheckInForm({
 
       redirectTimeoutRef.current = setTimeout(() => {
         startTransition(() => {
-          router.refresh();
+          router.push("/");
         });
       }, 320);
     } catch (error) {

@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
 import { StudentManagementGraphs } from "./student-management-graphs";
+import { queueableFetch } from "@/lib/offline/fetch";
+import { useOfflineStatus } from "@/components/offline/offline-provider";
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
 type Props = {
   students: StudentManagementEntry[];
@@ -40,6 +44,17 @@ const STATE_TRANSLATIONS: Record<string, string> = {
 
 const UNKNOWN_STATE_KEY = "__unknown__";
 
+const PAGE_SIZE = 40;
+
+type ManagedStudent = StudentManagementEntry & {
+  isPending?: boolean;
+};
+
+type ToastState = {
+  tone: "success" | "error";
+  message: string;
+};
+
 function normalizeStateKey(state: string | null): string {
   if (!state) return UNKNOWN_STATE_KEY;
   return state.toLowerCase();
@@ -64,16 +79,45 @@ function FlagIndicator({ active, label }: { active: boolean; label: string }) {
 }
 
 function StudentManagementTable({ students }: Props) {
+  const router = useRouter();
+  const { lastSyncAt } = useOfflineStatus();
+  const [studentList, setStudentList] = useState<ManagedStudent[]>(students);
   const [stateFilters, setStateFilters] = useState<string[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newStudentMinLevel, setNewStudentMinLevel] = useState("");
+  const [newStudentMaxLevel, setNewStudentMaxLevel] = useState("");
+  const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const totalStudents = students.length;
+  useEffect(() => {
+    setStudentList((previous) => {
+      const pending = previous.filter((student) => student.isPending);
+      const normalizedNames = new Set(
+        students.map((student) => student.fullName.trim().toLowerCase()),
+      );
+      const remainingPending = pending.filter(
+        (student) => !normalizedNames.has(student.fullName.trim().toLowerCase()),
+      );
+      return [...students, ...remainingPending];
+    });
+  }, [students]);
+
+  useEffect(() => {
+    if (lastSyncAt) {
+      router.refresh();
+    }
+  }, [lastSyncAt, router]);
+
+  const totalStudents = studentList.length;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
   const stateTotals = useMemo(() => {
     const counts = new Map<string, number>();
-    students.forEach((student) => {
+    studentList.forEach((student) => {
       const key = normalizeStateKey(student.state);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     });
@@ -86,11 +130,14 @@ function StudentManagementTable({ students }: Props) {
         selected: stateFilters.includes(key),
       }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [students, totalStudents, stateFilters]);
+  }, [studentList, totalStudents, stateFilters]);
 
   const flagTotals = useMemo(() => {
     return FLAG_COLUMNS.map((flag) => {
-      const count = students.reduce((acc, student) => (student[flag.key] ? acc + 1 : acc), 0);
+      const count = studentList.reduce(
+        (acc, student) => (student[flag.key] ? acc + 1 : acc),
+        0,
+      );
       return {
         key: flag.key,
         label: flag.label,
@@ -99,10 +146,10 @@ function StudentManagementTable({ students }: Props) {
         selected: flagFilters.includes(flag.key),
       };
     }).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [students, totalStudents, flagFilters]);
+  }, [studentList, totalStudents, flagFilters]);
 
   const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
+    return studentList.filter((student) => {
       const stateKey = normalizeStateKey(student.state);
       const matchesState =
         stateFilters.length === 0 || stateFilters.includes(stateKey);
@@ -112,7 +159,134 @@ function StudentManagementTable({ students }: Props) {
         student.fullName.toLowerCase().includes(normalizedSearchTerm);
       return matchesState && matchesFlags && matchesSearch;
     });
-  }, [students, stateFilters, flagFilters, normalizedSearchTerm]);
+  }, [studentList, stateFilters, flagFilters, normalizedSearchTerm]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [stateFilters, flagFilters, normalizedSearchTerm, studentList.length]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
+    setCurrentPage((previous) => Math.min(previous, totalPages));
+  }, [filteredStudents.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
+  const clampedPage = Math.min(currentPage, totalPages);
+  const pageStart = (clampedPage - 1) * PAGE_SIZE;
+  const paginatedStudents = filteredStudents.slice(
+    pageStart,
+    pageStart + PAGE_SIZE,
+  );
+
+  const addStudentToList = useCallback((entry: ManagedStudent) => {
+    setStudentList((previous) => {
+      const normalizedName = entry.fullName.trim().toLowerCase();
+      const withoutDuplicates = previous.filter((student) => {
+        if (student.id === entry.id) return false;
+        if (student.isPending && student.fullName.trim().toLowerCase() === normalizedName) {
+          return false;
+        }
+        return true;
+      });
+      const next = [...withoutDuplicates, entry];
+      next.sort((a, b) =>
+        a.fullName.localeCompare(b.fullName, "es", { sensitivity: "base" }),
+      );
+      return next;
+    });
+  }, []);
+
+  const handleCreateStudent = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const name = newStudentName.trim();
+      const minLevel = newStudentMinLevel.trim();
+      const maxLevel = newStudentMaxLevel.trim();
+
+      if (!name || !minLevel || !maxLevel) {
+        setToast({
+          tone: "error",
+          message:
+            "Completa el nombre y los niveles planificados para agregar un nuevo estudiante.",
+        });
+        return;
+      }
+
+      setIsSubmittingStudent(true);
+      try {
+        const response = await queueableFetch("/api/(administration)/students", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fullName: name,
+            plannedLevelMin: minLevel,
+            plannedLevelMax: maxLevel,
+          }),
+          offlineLabel: "student-create",
+        });
+
+        const payload = (await response.json().catch(() => ({}))) as {
+          student?: StudentManagementEntry;
+          queued?: boolean;
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "No se pudo crear el estudiante.");
+        }
+
+        if (payload.student) {
+          addStudentToList({ ...payload.student, isPending: false });
+          setToast({
+            tone: "success",
+            message: `${payload.student.fullName} fue agregado correctamente.`,
+          });
+        } else {
+          const pendingEntry: ManagedStudent = {
+            id: -Date.now(),
+            fullName: name,
+            level: null,
+            state: "Pendiente",
+            isNewStudent: true,
+            isExamApproaching: false,
+            isExamPreparation: false,
+            hasSpecialNeeds: false,
+            isAbsent7Days: false,
+            isSlowProgress14Days: false,
+            hasActiveInstructive: false,
+            hasOverdueInstructive: false,
+            isPending: true,
+          };
+          addStudentToList(pendingEntry);
+          setToast({
+            tone: "success",
+            message: `${name} se agregó sin conexión. Sincronizaremos el registro automáticamente.`,
+          });
+        }
+
+        setCurrentPage(1);
+        setIsAddDialogOpen(false);
+        setNewStudentName("");
+        setNewStudentMinLevel("");
+        setNewStudentMaxLevel("");
+      } catch (error) {
+        console.error(error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "No se pudo crear el estudiante solicitado.";
+        setToast({ tone: "error", message });
+      } finally {
+        setIsSubmittingStudent(false);
+      }
+    },
+    [
+      addStudentToList,
+      newStudentMaxLevel,
+      newStudentMinLevel,
+      newStudentName,
+    ],
+  );
 
   const toggleStateFilter = (key: string) => {
     setStateFilters((previous) =>
@@ -140,6 +314,13 @@ function StudentManagementTable({ students }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      {toast ? (
+        <EphemeralToast
+          message={toast.message}
+          tone={toast.tone}
+          onDismiss={() => setToast(null)}
+        />
+      ) : null}
       <StudentManagementGraphs
         totalStudents={totalStudents}
         filteredStudents={filteredStudents.length}
@@ -175,6 +356,13 @@ function StudentManagementTable({ students }: Props) {
                 Limpiar búsqueda
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setIsAddDialogOpen(true)}
+              className="inline-flex items-center justify-center rounded-full border border-brand-deep-soft bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            >
+              + Agregar estudiante
+            </button>
           </div>
         </div>
         <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left">
@@ -201,7 +389,7 @@ function StudentManagementTable({ students }: Props) {
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
-            {filteredStudents.map((student) => {
+            {paginatedStudents.map((student) => {
               const stateLabel = translateState(student.state);
               return (
                 <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
@@ -210,6 +398,11 @@ function StudentManagementTable({ students }: Props) {
                       <span className="font-semibold text-brand-deep whitespace-pre-wrap break-words leading-snug">
                         {student.fullName}
                       </span>
+                      {student.isPending ? (
+                        <span className="inline-flex w-fit items-center rounded-full bg-brand-orange/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-orange">
+                          Sincronizando…
+                        </span>
+                      ) : null}
                       {student.level && (
                         <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
                           Nivel {student.level}
@@ -253,7 +446,112 @@ function StudentManagementTable({ students }: Props) {
             )}
           </tbody>
         </table>
+        <div className="flex flex-col gap-3 border-t border-brand-ink-muted/10 bg-white/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-sm text-brand-ink-muted">
+            {filteredStudents.length
+              ? `Mostrando ${pageStart + 1}–${Math.min(
+                  pageStart + PAGE_SIZE,
+                  filteredStudents.length,
+                )} de ${filteredStudents.length} estudiantes`
+              : "Sin resultados que mostrar."}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+              disabled={clampedPage <= 1}
+              className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-deep transition disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ← Anterior
+            </button>
+            <span className="text-sm font-semibold text-brand-deep">
+              Página {clampedPage} de {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
+              disabled={clampedPage >= totalPages}
+              className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-deep transition disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Siguiente →
+            </button>
+          </div>
+        </div>
       </div>
+
+      {isAddDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6 backdrop-blur-sm">
+          <form
+            onSubmit={handleCreateStudent}
+            className="w-full max-w-lg rounded-[28px] border border-white/70 bg-white px-6 py-7 shadow-[0_26px_60px_rgba(15,23,42,0.2)]"
+          >
+            <header className="mb-4 flex flex-col gap-1 text-left">
+              <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-teal">
+                Nuevo estudiante
+              </span>
+              <h2 className="text-xl font-black text-brand-deep">Agregar estudiante</h2>
+              <p className="text-sm text-brand-ink-muted">
+                Ingresa el nombre y los niveles planificados mínimo y máximo. Podrás completar el resto desde el perfil.
+              </p>
+            </header>
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
+                Nombre completo
+                <input
+                  type="text"
+                  value={newStudentName}
+                  onChange={(event) => setNewStudentName(event.target.value)}
+                  className="rounded-2xl border border-brand-deep-soft bg-white px-4 py-2 text-base shadow-inner focus:border-brand-teal"
+                  required
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
+                  Nivel planificado mínimo
+                  <input
+                    type="text"
+                    value={newStudentMinLevel}
+                    onChange={(event) => setNewStudentMinLevel(event.target.value)}
+                    className="rounded-2xl border border-brand-deep-soft bg-white px-4 py-2 text-base shadow-inner focus:border-brand-teal"
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
+                  Nivel planificado máximo
+                  <input
+                    type="text"
+                    value={newStudentMaxLevel}
+                    onChange={(event) => setNewStudentMaxLevel(event.target.value)}
+                    className="rounded-2xl border border-brand-deep-soft bg-white px-4 py-2 text-base shadow-inner focus:border-brand-teal"
+                    required
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isSubmittingStudent) {
+                    setIsAddDialogOpen(false);
+                  }
+                }}
+                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                disabled={isSubmittingStudent}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmittingStudent}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isSubmittingStudent ? "Guardando…" : "Agregar"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

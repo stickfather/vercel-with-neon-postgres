@@ -16,6 +16,7 @@ import {
   listStudentAttendanceHistory,
 } from "@/features/administration/data/student-profile";
 import { getStudentManagementEntry } from "@/features/administration/data/students";
+import { getLevelsWithLessons } from "@/features/student-checkin/data/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ type CoachPanelData = {
 type AttendanceHistoryData = {
   entries: Awaited<ReturnType<typeof listStudentAttendanceHistory>>;
   error: string | null;
+  lessonCatalog: Awaited<ReturnType<typeof getLevelsWithLessons>>;
 };
 
 const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
@@ -53,6 +55,7 @@ const COACH_PANEL_FALLBACK: CoachPanelData = {
 const ATTENDANCE_HISTORY_FALLBACK: AttendanceHistoryData = {
   entries: [],
   error: null,
+  lessonCatalog: [],
 };
 
 async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfileData> {
@@ -152,19 +155,33 @@ async function loadCoachPanelData(studentId: number): Promise<CoachPanelData> {
 
 async function loadAttendanceHistory(studentId: number): Promise<AttendanceHistoryData> {
   noStore();
-  try {
-    const entries = await listStudentAttendanceHistory(studentId);
-    return {
-      entries,
-      error: null,
-    };
-  } catch (error) {
-    console.error("Failed to load student attendance history", error);
-    return {
-      ...ATTENDANCE_HISTORY_FALLBACK,
-      error: "No se pudo cargar el historial de asistencia. Intenta nuevamente más tarde.",
-    };
+  const [entriesResult, catalogResult] = await Promise.allSettled([
+    listStudentAttendanceHistory(studentId),
+    getLevelsWithLessons(),
+  ]);
+
+  let entries: Awaited<ReturnType<typeof listStudentAttendanceHistory>> = [];
+  let lessonCatalog: Awaited<ReturnType<typeof getLevelsWithLessons>> = [];
+  let error: string | null = null;
+
+  if (entriesResult.status === "fulfilled") {
+    entries = entriesResult.value;
+  } else {
+    console.error("Failed to load student attendance history", entriesResult.reason);
+    error = "No se pudo cargar el historial de asistencia. Intenta nuevamente más tarde.";
   }
+
+  if (catalogResult.status === "fulfilled") {
+    lessonCatalog = catalogResult.value;
+  } else {
+    console.error("Failed to load lesson catalog", catalogResult.reason);
+  }
+
+  return {
+    entries,
+    lessonCatalog,
+    error,
+  };
 }
 
 export async function generateMetadata({
@@ -279,6 +296,7 @@ export default async function StudentProfilePage({
                 name={studentName}
                 photoUrl={basicDetails.photoUrl}
                 updatedAt={basicDetails.photoUpdatedAt}
+                size={144}
               />
               <div className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-3">
@@ -317,6 +335,7 @@ export default async function StudentProfilePage({
           coachError={coachPanelData.error}
           attendanceHistory={attendanceData.entries}
           attendanceError={attendanceData.error}
+          lessonCatalog={attendanceData.lessonCatalog}
         />
         </div>
       </main>
