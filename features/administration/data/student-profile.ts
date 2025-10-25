@@ -1,6 +1,11 @@
 import { unstable_noStore as noStore } from "next/cache";
 
-import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
+import {
+  getSqlClient,
+  isMissingRelationError,
+  normalizeRows,
+  SqlRow,
+} from "@/lib/db/client";
 
 export type BasicDetailFieldType =
   | "text"
@@ -302,46 +307,16 @@ export async function getStudentBasicDetails(studentId: number): Promise<Student
   noStore();
   const sql = getSqlClient();
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT
-      s.id                                   AS "studentId",
-      s.full_name                            AS "fullName",
-      s.photo_url                            AS "photoUrl",
-      s.photo_updated_at                     AS "photoUpdatedAt",
-      s.representative_name                  AS "representativeName",
-      s.representative_phone                 AS "representativePhone",
-      s.representative_email                 AS "representativeEmail",
-      s.has_special_needs                    AS "hasSpecialNeeds",
-      s.contract_start                       AS "contractStart",
-      s.contract_end                         AS "contractEnd",
-      s.graduated                            AS "graduated",
-      s.frozen_start                         AS "frozenStart",
-      s.frozen_end                           AS "frozenEnd",
-      s.current_level::text                  AS "currentLevel",
-      s.planned_level_min::text              AS "plannedLevelMin",
-      s.planned_level_max::text              AS "plannedLevelMax",
-      COALESCE(s.is_online, false)           AS "isOnline",
-      COALESCE(sf.is_new_student, false)     AS "isNewStudent",
-      COALESCE(sf.is_exam_approaching, false) AS "isExamApproaching",
-      COALESCE(sf.is_exam_preparation, false) AS "isExamPreparation",
-      COALESCE(sf.is_absent_7d, false)       AS "isAbsent7d",
-      COALESCE(sf.is_absent_7d, false)       AS "isAbsent7Days",
-      COALESCE(sf.is_slow_progress_14d, false) AS "isSlowProgress14d",
-      COALESCE(sf.is_slow_progress_14d, false) AS "isSlowProgress14Days",
-      COALESCE(sf.instructivo_active, false) AS "instructivoActive",
-      COALESCE(sf.instructivo_active, false) AS "hasActiveInstructive",
-      COALESCE(sf.instructivo_overdue, false) AS "instructivoOverdue",
-      COALESCE(sf.instructivo_overdue, false) AS "hasOverdueInstructive",
-      s.last_seen_at                         AS "lastSeenAt",
-      s.last_lesson_id                       AS "lastLessonId",
-      s.status                               AS "status",
-      s.updated_at                           AS "updatedAt",
-      s.created_at                           AS "createdAt"
-    FROM public.students AS s
-    LEFT JOIN public.student_flags AS sf ON sf.student_id = s.id
-    WHERE s.id = ${studentId}::bigint
-    LIMIT 1
-  `);
+  let rows: SqlRow[] = [];
+
+  try {
+    rows = await runBasicDetailsQuery(sql, studentId, "student_flags_v");
+  } catch (error) {
+    if (!isMissingRelationError(error, "student_flags_v")) {
+      throw error;
+    }
+    rows = await runBasicDetailsQuery(sql, studentId, "student_flags");
+  }
 
   if (!rows.length) return null;
 
@@ -2851,6 +2826,55 @@ function mapAttendanceHistoryRow(row: SqlRow): StudentAttendanceHistoryEntry | n
         ? Math.max(0, rawDuration)
         : null,
   } satisfies StudentAttendanceHistoryEntry;
+}
+
+type StudentFlagsRelation = "student_flags_v" | "student_flags";
+
+async function runBasicDetailsQuery(
+  sql: ReturnType<typeof getSqlClient>,
+  studentId: number,
+  relation: StudentFlagsRelation,
+): Promise<SqlRow[]> {
+  return normalizeRows<SqlRow>(await sql`
+    SELECT
+      s.id                                   AS "studentId",
+      s.full_name                            AS "fullName",
+      s.photo_url                            AS "photoUrl",
+      s.photo_updated_at                     AS "photoUpdatedAt",
+      s.representative_name                  AS "representativeName",
+      s.representative_phone                 AS "representativePhone",
+      s.representative_email                 AS "representativeEmail",
+      s.has_special_needs                    AS "hasSpecialNeeds",
+      s.contract_start                       AS "contractStart",
+      s.contract_end                         AS "contractEnd",
+      s.graduated                            AS "graduated",
+      s.frozen_start                         AS "frozenStart",
+      s.frozen_end                           AS "frozenEnd",
+      s.current_level::text                  AS "currentLevel",
+      s.planned_level_min::text              AS "plannedLevelMin",
+      s.planned_level_max::text              AS "plannedLevelMax",
+      COALESCE(s.is_online, false)           AS "isOnline",
+      COALESCE(flags.is_new_student, false)  AS "isNewStudent",
+      COALESCE(flags.is_exam_approaching, false) AS "isExamApproaching",
+      COALESCE(flags.is_exam_preparation, false) AS "isExamPreparation",
+      COALESCE(flags.is_absent_7d, false)    AS "isAbsent7d",
+      COALESCE(flags.is_absent_7d, false)    AS "isAbsent7Days",
+      COALESCE(flags.is_slow_progress_14d, false) AS "isSlowProgress14d",
+      COALESCE(flags.is_slow_progress_14d, false) AS "isSlowProgress14Days",
+      COALESCE(flags.instructivo_active, false) AS "instructivoActive",
+      COALESCE(flags.instructivo_active, false) AS "hasActiveInstructive",
+      COALESCE(flags.instructivo_overdue, false) AS "instructivoOverdue",
+      COALESCE(flags.instructivo_overdue, false) AS "hasOverdueInstructive",
+      s.last_seen_at                         AS "lastSeenAt",
+      s.last_lesson_id                       AS "lastLessonId",
+      s.status                               AS "status",
+      s.updated_at                           AS "updatedAt",
+      s.created_at                           AS "createdAt"
+    FROM public.students AS s
+    LEFT JOIN ${sql.unsafe(`public.${relation}`)} AS flags ON flags.student_id = s.id
+    WHERE s.id = ${studentId}::bigint
+    LIMIT 1
+  `);
 }
 
 export async function listStudentAttendanceHistory(
