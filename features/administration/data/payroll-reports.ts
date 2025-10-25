@@ -9,6 +9,7 @@ import {
 import {
   normalizePayrollTimestamp,
   PAYROLL_TIMEZONE_OFFSET,
+  toPayrollLocalTimestampText,
   toPayrollZonedISOString,
 } from "@/lib/payroll/timezone";
 import {
@@ -52,6 +53,11 @@ export type DaySession = {
   originalSessionId?: number | null;
   replacementSessionId?: number | null;
   isOriginalRecord?: boolean;
+  editedCheckinTime?: string | null;
+  editedCheckoutTime?: string | null;
+  editedByStaffId?: number | null;
+  editNote?: string | null;
+  wasEdited?: boolean;
 };
 
 export type PayrollMonthStatusRow = {
@@ -654,6 +660,15 @@ export async function fetchPayrollMatrix({
   }
 
   const rows = normalizeRows<SqlRow>(await sql`
+    WITH edit_flags AS (
+      SELECT
+        s.staff_id,
+        s.work_date,
+        BOOL_OR(s.was_edited) AS has_edits
+      FROM public.staff_day_sessions_with_edits_v AS s
+      WHERE s.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
+      GROUP BY s.staff_id, s.work_date
+    )
     SELECT
       m.staff_id,
       sm.full_name AS staff_name,
@@ -661,9 +676,11 @@ export async function fetchPayrollMatrix({
       m.horas_mostrar,
       m.approved,
       m.approved_hours,
-      m.total_hours
+      m.total_hours,
+      ef.has_edits
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+    LEFT JOIN edit_flags ef ON ef.staff_id = m.staff_id AND ef.work_date = m.work_date
     WHERE m.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
@@ -816,6 +833,13 @@ export async function fetchDaySessions({
     originalSessionId: toInteger(session.originalSessionId ?? null),
     replacementSessionId: toInteger(session.replacementSessionId ?? null),
     isOriginalRecord: Boolean(session.isOriginalRecord),
+    editedCheckinTime:
+      normalizeTimestampValue(session.editedCheckinLocal) ?? coerceString(session.editedCheckinLocal),
+    editedCheckoutTime:
+      normalizeTimestampValue(session.editedCheckoutLocal) ?? coerceString(session.editedCheckoutLocal),
+    editedByStaffId: toInteger(session.editedByStaffId ?? null),
+    editNote: coerceString(session.editNote),
+    wasEdited: Boolean(session.wasEdited),
   }));
 }
 
@@ -947,6 +971,14 @@ function ensureSessionMatchesDay(
   }
 }
 
+function toLocalTimestampTextOrThrow(label: string, iso: string): string {
+  const localized = toPayrollLocalTimestampText(iso);
+  if (!localized) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+  return localized;
+}
+
 function minutesToHours(minutes: number): number {
   const hours = toHoursFromMinutes(minutes);
   if (hours == null) {
@@ -961,12 +993,16 @@ export async function updateStaffDaySession({
   workDate,
   checkinTime,
   checkoutTime,
+  editorStaffId,
+  note,
 }: {
   sessionId: number;
   staffId: number;
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
+  editorStaffId?: number | null;
+  note?: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
 
@@ -979,39 +1015,13 @@ export async function updateStaffDaySession({
     begin?: (callback: (client: SqlClient) => Promise<void>) => Promise<void>;
   };
 
+  const sanitizedEditorId =
+    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
+  const sanitizedNote = note && note.trim().length ? note.trim() : null;
+
   let recalculatedMinutes = minutes;
-  let previousCheckinValue: unknown = null;
-  let previousCheckoutValue: unknown = null;
-  let previousApprovedBy: string | null = null;
-  let previousApprovedMinutes: number | null = null;
 
   const executeUpdate = async (client: SqlClient) => {
-    const existingRows = normalizeRows<SqlRow>(await client`
-      SELECT checkin_time, checkout_time
-      FROM public.staff_attendance
-      WHERE id = ${sessionId}::bigint
-        AND staff_id = ${staffId}::bigint
-      LIMIT 1
-    `);
-
-    if (!existingRows.length) {
-      throw new Error("No encontramos la sesión indicada.");
-    }
-
-    previousCheckinValue = existingRows[0].checkin_time ?? null;
-    previousCheckoutValue = existingRows[0].checkout_time ?? null;
-
-    const approvalSnapshot = normalizeRows<SqlRow>(await client`
-      SELECT approved_by, approved_minutes
-      FROM payroll_day_approvals
-      WHERE staff_id = ${staffId}::bigint
-        AND work_date = ${normalizedWorkDate}::date
-      LIMIT 1
-    `);
-
-    previousApprovedBy = coerceString(approvalSnapshot[0]?.approved_by ?? null);
-    previousApprovedMinutes = toInteger(approvalSnapshot[0]?.approved_minutes ?? null) ?? null;
-
     await assertNoOverlap(client, {
       staffId,
       workDate: normalizedWorkDate,
@@ -1020,31 +1030,39 @@ export async function updateStaffDaySession({
       ignoreSessionId: sessionId,
     });
 
-    await client`
-      UPDATE public.staff_attendance
-      SET
-        checkin_time = ${checkinIso}::timestamptz,
-        checkout_time = ${checkoutIso}::timestamptz
-      WHERE id = ${sessionId}::bigint
-        AND staff_id = ${staffId}::bigint
-    `;
+    const approvalSnapshot = normalizeRows<SqlRow>(await client`
+      SELECT approved_by
+      FROM payroll_day_approvals
+      WHERE staff_id = ${staffId}::bigint
+        AND work_date = ${normalizedWorkDate}::date
+      LIMIT 1
+    `);
+
+    const previousApprovedBy = coerceString(approvalSnapshot[0]?.approved_by ?? null);
+
+    const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
+    const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
+
+    const updatedRows = normalizeRows<SqlRow>(await client`
+      SELECT *
+      FROM public.edit_staff_session(
+        ${sessionId}::bigint,
+        ${sanitizedEditorId ?? null}::bigint,
+        ${checkinLocal}::text,
+        ${checkoutLocal}::text,
+        ${sanitizedNote ?? null}::text
+      )
+    `);
+
+    if (!updatedRows.length) {
+      throw new Error("No pudimos actualizar la sesión indicada.");
+    }
 
     const recalculatedRows = normalizeRows<SqlRow>(await client`
-      SELECT
-        COALESCE(
-          SUM(
-            GREATEST(
-              EXTRACT(
-                EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time
-              ) / 60.0,
-              0
-            )
-          ),
-          0
-        )::integer AS total_minutes
-      FROM public.staff_attendance sa
-      WHERE sa.staff_id = ${staffId}::bigint
-        AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
+      SELECT COALESCE(SUM(session_minutes), 0)::integer AS total_minutes
+      FROM public.attendance_local_base_v
+      WHERE staff_id = ${staffId}::bigint
+        AND work_date_local = ${normalizedWorkDate}::date
     `);
 
     recalculatedMinutes =
@@ -1054,27 +1072,6 @@ export async function updateStaffDaySession({
       approvedBy: previousApprovedBy,
       preserveApprover: true,
     });
-
-    await logPayrollAuditEvent({
-      action: "update_session",
-      staffId,
-      workDate: normalizedWorkDate,
-      sessionId,
-      details: {
-        replacedSessionId: sessionId,
-        before: {
-          checkinTime: previousCheckinValue,
-          checkoutTime: previousCheckoutValue,
-        },
-        after: {
-          checkinTime: checkinIso,
-          checkoutTime: checkoutIso,
-        },
-        approvalMinutesBefore: previousApprovedMinutes,
-        approvalMinutesAfter: recalculatedMinutes,
-      },
-      sql: client,
-    });
   };
 
   if (typeof transactionalSql.begin === "function") {
@@ -1083,22 +1080,48 @@ export async function updateStaffDaySession({
     await executeUpdate(sql);
   }
 
+  const refreshedRows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.staff_day_sessions_with_edits_v
+    WHERE session_id = ${sessionId}::bigint
+    LIMIT 1
+  `);
+
+  const refreshed = refreshedRows[0];
+  if (!refreshed) {
+    throw new Error("No pudimos recuperar la sesión actualizada.");
+  }
+
+  const currentCheckin = refreshed["checkin_local"];
+  const currentCheckout = refreshed["checkout_local"];
+  const currentMinutes =
+    toInteger(refreshed["session_minutes"] ?? refreshed["minutes"] ?? null) ?? minutes;
+
   return {
     sessionId,
     staffId,
     workDate: normalizedWorkDate,
-    checkinTime: checkinIso,
-    checkoutTime: checkoutIso,
-    minutes,
-    hours: minutesToHours(minutes),
-    originalSessionId: sessionId,
+    checkinTime: normalizeTimestampValue(currentCheckin) ?? coerceString(currentCheckin),
+    checkoutTime: normalizeTimestampValue(currentCheckout) ?? coerceString(currentCheckout),
+    minutes: currentMinutes,
+    hours: minutesToHours(currentMinutes),
+    originalSessionId: toInteger(refreshed["session_id"] ?? null),
     originalCheckinTime:
-      normalizeTimestampValue(previousCheckinValue) ?? coerceString(previousCheckinValue),
+      normalizeTimestampValue(refreshed["original_checkin_local"]) ?? coerceString(refreshed["original_checkin_local"]),
     originalCheckoutTime:
-      normalizeTimestampValue(previousCheckoutValue) ?? coerceString(previousCheckoutValue),
+      normalizeTimestampValue(refreshed["original_checkout_local"]) ?? coerceString(refreshed["original_checkout_local"]),
     replacementSessionId: null,
     isOriginalRecord: false,
+    editedCheckinTime:
+      normalizeTimestampValue(refreshed["edited_checkin_local"]) ?? coerceString(refreshed["edited_checkin_local"]),
+    editedCheckoutTime:
+      normalizeTimestampValue(refreshed["edited_checkout_local"]) ?? coerceString(refreshed["edited_checkout_local"]),
+    editedByStaffId: toInteger(refreshed["edited_by_staff_id"] ?? null),
+    editNote: coerceString(refreshed["edit_note"]),
+    wasEdited: toBoolean(refreshed["was_edited"]),
   };
+}
+
 }
 
 export async function createStaffDaySession({
@@ -1264,6 +1287,8 @@ export async function overrideSessionsAndApprove({
   overrides = [],
   additions = [],
   deletions = [],
+  editorStaffId = null,
+  note = null,
 }: {
   staffId: number;
   workDate: string;
@@ -1277,9 +1302,14 @@ export async function overrideSessionsAndApprove({
     checkoutTime: string;
   }[];
   deletions?: number[];
+  editorStaffId?: number | null;
+  note?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
+  const sanitizedEditorId =
+    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
+  const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
   await sql`BEGIN`;
   try {
@@ -1313,13 +1343,26 @@ export async function overrideSessionsAndApprove({
           "La hora de salida debe ser posterior a la hora de entrada.",
         );
       }
+      await assertNoOverlap(sql, {
+        staffId,
+        workDate: normalizedWorkDate,
+        checkinIso,
+        checkoutIso,
+        ignoreSessionId: override.sessionId,
+      });
+
+      const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
+      const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
 
       await sql`
-        UPDATE public.staff_attendance
-        SET checkin_time = ${checkinIso}::timestamptz,
-            checkout_time = ${checkoutIso}::timestamptz
-        WHERE id = ${override.sessionId}::bigint
-          AND staff_id = ${staffId}::bigint
+        SELECT *
+        FROM public.edit_staff_session(
+          ${override.sessionId}::bigint,
+          ${sanitizedEditorId ?? null}::bigint,
+          ${checkinLocal}::text,
+          ${checkoutLocal}::text,
+          ${sanitizedNote ?? null}::text
+        )
       `;
     }
 
@@ -1370,21 +1413,10 @@ export async function overrideSessionsAndApprove({
     }
 
     const recalculatedRows = normalizeRows<SqlRow>(await sql`
-      SELECT
-        COALESCE(
-          SUM(
-            GREATEST(
-              EXTRACT(
-                EPOCH FROM COALESCE(sa.checkout_time, sa.checkin_time) - sa.checkin_time
-              ) / 60.0,
-              0
-            )
-          ),
-          0
-        )::integer AS total_minutes
-      FROM public.staff_attendance sa
-      WHERE sa.staff_id = ${staffId}::bigint
-        AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
+      SELECT COALESCE(SUM(session_minutes), 0)::integer AS total_minutes
+      FROM public.attendance_local_base_v
+      WHERE staff_id = ${staffId}::bigint
+        AND work_date_local = ${normalizedWorkDate}::date
     `);
 
     const metrics = recalculatedRows[0] ?? {};
