@@ -1,4 +1,9 @@
-import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
+import {
+  getSqlClient,
+  isMissingRelationError,
+  normalizeRows,
+  SqlRow,
+} from "@/lib/db/client";
 
 export type StudentManagementEntry = {
   id: number;
@@ -134,14 +139,51 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
   };
 }
 
+type FlagsRelation = "student_flags_v" | "student_flags";
+
+async function runStudentManagementQuery(
+  sql: ReturnType<typeof getSqlClient>,
+  relation: FlagsRelation,
+  studentId?: number,
+  limitOne = false,
+): Promise<SqlRow[]> {
+  return normalizeRows<SqlRow>(
+    await sql`
+      SELECT
+        s.id AS student_id,
+        s.full_name AS full_name,
+        s.current_level::text AS level,
+        s.status AS state,
+        COALESCE(flags.is_new_student, false) AS is_new_student,
+        COALESCE(flags.is_exam_approaching, false) AS is_exam_approaching,
+        COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
+        COALESCE(flags.has_special_needs, false) AS has_special_needs,
+        COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
+        COALESCE(flags.is_slow_progress_14d, false) AS is_slow_progress_14d,
+        COALESCE(flags.instructivo_active, false) AS instructivo_active,
+        COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
+      FROM public.students AS s
+      LEFT JOIN ${sql.unsafe(`public.${relation}`)} AS flags ON flags.student_id = s.id
+      WHERE TRIM(COALESCE(s.full_name, '')) <> ''
+      ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}
+      ORDER BY s.full_name ASC
+      ${limitOne ? sql`LIMIT 1` : sql``}
+    `,
+  );
+}
+
 export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
   const sql = getSqlClient();
+  let rows: SqlRow[] = [];
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.student_management_v
-    ORDER BY full_name ASC
-  `);
+  try {
+    rows = await runStudentManagementQuery(sql, "student_flags_v");
+  } catch (error) {
+    if (!isMissingRelationError(error, "student_flags_v")) {
+      throw error;
+    }
+    rows = await runStudentManagementQuery(sql, "student_flags");
+  }
 
   return rows
     .map(mapStudentManagementRow)
@@ -152,15 +194,16 @@ export async function getStudentManagementEntry(
   studentId: number,
 ): Promise<StudentManagementEntry | null> {
   const sql = getSqlClient();
+  let rows: SqlRow[] = [];
 
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.student_management_v
-    WHERE student_id = ${studentId}::bigint
-      OR id = ${studentId}::bigint
-    ORDER BY full_name ASC
-    LIMIT 1
-  `);
+  try {
+    rows = await runStudentManagementQuery(sql, "student_flags_v", studentId, true);
+  } catch (error) {
+    if (!isMissingRelationError(error, "student_flags_v")) {
+      throw error;
+    }
+    rows = await runStudentManagementQuery(sql, "student_flags", studentId, true);
+  }
 
   if (!rows.length) {
     return null;
