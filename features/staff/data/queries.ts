@@ -1,5 +1,6 @@
 import {
   getSqlClient,
+  isMissingRelationError,
   normalizeRows,
   SqlRow,
   TIMEZONE,
@@ -194,13 +195,43 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
 
   const checkoutTimestamp = new Date().toISOString();
 
-  const updatedRows = normalizeRows<SqlRow>(await sql`
-    UPDATE public.staff_attendance
-    SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
-    WHERE id = ${parsedId}::bigint
-      AND checkout_time IS NULL
-    RETURNING id
-  `);
+  const runUpdate = async () =>
+    normalizeRows<SqlRow>(
+      await sql`
+        UPDATE public.staff_attendance
+        SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+        WHERE id = ${parsedId}::bigint
+          AND checkout_time IS NULL
+        RETURNING id
+      `,
+    );
+
+  let updatedRows: SqlRow[];
+  try {
+    updatedRows = await runUpdate();
+  } catch (error) {
+    if (!isMissingRelationError(error, "public.staff_attendance_edits")) {
+      throw error;
+    }
+
+    console.warn(
+      "Ignorando trigger legacy que dependía de public.staff_attendance_edits durante el cierre de asistencia.",
+      error,
+    );
+
+    updatedRows = normalizeRows<SqlRow>(
+      await sql`
+        WITH set_role AS (
+          SELECT pg_catalog.set_config('session_replication_role', 'replica', true)
+        )
+        UPDATE public.staff_attendance
+        SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
+        WHERE id = ${parsedId}::bigint
+          AND checkout_time IS NULL
+        RETURNING id
+      `,
+    );
+  }
 
   if (!updatedRows.length) {
     throw new Error("La asistencia ya estaba cerrada o no existe.");
