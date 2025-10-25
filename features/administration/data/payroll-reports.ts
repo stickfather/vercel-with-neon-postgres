@@ -922,7 +922,7 @@ async function assertNoOverlap(
 ): Promise<void> {
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT id, checkin_time, checkout_time
-    FROM staff_attendance
+    FROM public.staff_attendance
     WHERE staff_id = ${staffId}::bigint
       AND date(timezone(${TIMEZONE}, checkin_time)) = ${workDate}::date
       AND id <> ${ignoreSessionId ?? 0}::bigint
@@ -988,7 +988,7 @@ export async function updateStaffDaySession({
   const executeUpdate = async (client: SqlClient) => {
     const existingRows = normalizeRows<SqlRow>(await client`
       SELECT checkin_time, checkout_time
-      FROM staff_attendance
+      FROM public.staff_attendance
       WHERE id = ${sessionId}::bigint
         AND staff_id = ${staffId}::bigint
       LIMIT 1
@@ -1021,7 +1021,7 @@ export async function updateStaffDaySession({
     });
 
     await client`
-      UPDATE staff_attendance
+      UPDATE public.staff_attendance
       SET
         checkin_time = ${checkinIso}::timestamptz,
         checkout_time = ${checkoutIso}::timestamptz
@@ -1042,7 +1042,7 @@ export async function updateStaffDaySession({
           ),
           0
         )::integer AS total_minutes
-      FROM staff_attendance sa
+      FROM public.staff_attendance sa
       WHERE sa.staff_id = ${staffId}::bigint
         AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
     `);
@@ -1131,7 +1131,7 @@ export async function createStaffDaySession({
   const sessionId = nextId;
 
   await sql`
-    INSERT INTO staff_attendance (id, staff_id, checkin_time, checkout_time)
+    INSERT INTO public.staff_attendance (id, staff_id, checkin_time, checkout_time)
     VALUES (
       ${sessionId}::bigint,
       ${staffId}::bigint,
@@ -1182,7 +1182,7 @@ export async function deleteStaffDaySession({
 
   const existingRows = normalizeRows<SqlRow>(await sql`
     SELECT checkin_time, checkout_time
-    FROM staff_attendance
+    FROM public.staff_attendance
     WHERE id = ${sessionId}::bigint
       AND staff_id = ${staffId}::bigint
     LIMIT 1
@@ -1193,7 +1193,7 @@ export async function deleteStaffDaySession({
   }
 
   await sql`
-    DELETE FROM staff_attendance
+    DELETE FROM public.staff_attendance
     WHERE id = ${sessionId}::bigint
       AND staff_id = ${staffId}::bigint
   `;
@@ -1242,7 +1242,7 @@ async function allocateStaffAttendanceIds(
 
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT COALESCE(MAX(id), 0) + 1 AS next_id
-    FROM staff_attendance
+    FROM public.staff_attendance
   `);
 
   let nextId = Number(rows[0]?.next_id ?? 1);
@@ -1288,7 +1288,7 @@ export async function overrideSessionsAndApprove({
     );
     for (const sessionId of sanitizedDeletions) {
       await sql`
-        DELETE FROM staff_attendance
+        DELETE FROM public.staff_attendance
         WHERE id = ${Number(sessionId)}::bigint
           AND staff_id = ${staffId}::bigint
       `;
@@ -1315,7 +1315,7 @@ export async function overrideSessionsAndApprove({
       }
 
       await sql`
-        UPDATE staff_attendance
+        UPDATE public.staff_attendance
         SET checkin_time = ${checkinIso}::timestamptz,
             checkout_time = ${checkoutIso}::timestamptz
         WHERE id = ${override.sessionId}::bigint
@@ -1358,7 +1358,7 @@ export async function overrideSessionsAndApprove({
           );
         }
         await sql`
-          INSERT INTO staff_attendance (id, staff_id, checkin_time, checkout_time)
+          INSERT INTO public.staff_attendance (id, staff_id, checkin_time, checkout_time)
           VALUES (
             ${identifiers[index]}::bigint,
             ${staffId}::bigint,
@@ -1382,7 +1382,7 @@ export async function overrideSessionsAndApprove({
           ),
           0
         )::integer AS total_minutes
-      FROM staff_attendance sa
+      FROM public.staff_attendance sa
       WHERE sa.staff_id = ${staffId}::bigint
         AND date(timezone(${TIMEZONE}, sa.checkin_time)) = ${normalizedWorkDate}::date
     `);

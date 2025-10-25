@@ -1,10 +1,4 @@
-import {
-  getSqlClient,
-  isMissingRelationError,
-  normalizeRows,
-  SqlRow,
-  TIMEZONE,
-} from "@/lib/db/client";
+import { getSqlClient, normalizeRows, SqlRow, TIMEZONE } from "@/lib/db/client";
 
 export type StaffDirectoryEntry = {
   id: number;
@@ -32,14 +26,6 @@ function toNullableNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function isMissingIdDefaultError(error: unknown): boolean {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = String((error as { message?: unknown }).message ?? "");
-    return message.includes("null value in column \"id\"");
-  }
-  return false;
 }
 
 export async function getStaffDirectory(): Promise<StaffDirectoryEntry[]> {
@@ -134,40 +120,18 @@ export async function registerStaffCheckIn({
     throw new Error("Esta persona ya tiene una asistencia abierta.");
   }
 
-  const insertAttendance = async () => {
-    try {
-      return normalizeRows<SqlRow>(await sql`
-        INSERT INTO public.staff_attendance (staff_id, checkin_time)
-        VALUES (${staffId}, now())
-        RETURNING id
-      `);
-    } catch (error) {
-      if (!isMissingIdDefaultError(error)) {
-        throw error;
-      }
-
-      const fallbackRows = normalizeRows<SqlRow>(await sql`
-        SELECT COALESCE(MAX(id), 0) + 1 AS next_id
-        FROM public.staff_attendance
-      `);
-      const fallbackId = Number(fallbackRows[0]?.next_id ?? 1);
-
-      return normalizeRows<SqlRow>(await sql`
-        INSERT INTO public.staff_attendance (id, staff_id, checkin_time)
-        VALUES (${fallbackId}, ${staffId}, now())
-        RETURNING id
-      `);
-    }
-  };
-
-  const insertedRows = await insertAttendance();
+  const insertedRows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT public.staff_checkin(${staffId}::bigint) AS attendance_id
+    `,
+  );
 
   if (!insertedRows.length) {
     throw new Error("No se pudo registrar la asistencia del personal.");
   }
 
-  const insertedId = insertedRows[0].id;
-  if (insertedId == null) {
+  const insertedId = Number(insertedRows[0].attendance_id);
+  if (!Number.isFinite(insertedId)) {
     throw new Error("No se pudo obtener el identificador de la asistencia registrada.");
   }
 
@@ -183,7 +147,7 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   }
 
   const existingRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, checkin_time
+    SELECT id, staff_id, checkin_time, checkout_time
     FROM public.staff_attendance
     WHERE id = ${parsedId}::bigint
     LIMIT 1
@@ -193,48 +157,37 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
     throw new Error("No encontramos la asistencia seleccionada.");
   }
 
-  const checkoutTimestamp = new Date().toISOString();
-
-  const runUpdate = async () =>
-    normalizeRows<SqlRow>(
-      await sql`
-        UPDATE public.staff_attendance
-        SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
-        WHERE id = ${parsedId}::bigint
-          AND checkout_time IS NULL
-        RETURNING id
-      `,
-    );
-
-  let updatedRows: SqlRow[];
-  try {
-    updatedRows = await runUpdate();
-  } catch (error) {
-    if (!isMissingRelationError(error, "public.staff_attendance_edits")) {
-      throw error;
-    }
-
-    console.warn(
-      "Ignorando trigger legacy que dependía de public.staff_attendance_edits durante el cierre de asistencia.",
-      error,
-    );
-
-    updatedRows = normalizeRows<SqlRow>(
-      await sql`
-        WITH set_role AS (
-          SELECT pg_catalog.set_config('session_replication_role', 'replica', true)
-        )
-        UPDATE public.staff_attendance
-        SET checkout_time = GREATEST(checkin_time, ${checkoutTimestamp}::timestamptz)
-        WHERE id = ${parsedId}::bigint
-          AND checkout_time IS NULL
-        RETURNING id
-      `,
-    );
+  if (existingRows[0].checkout_time != null) {
+    throw new Error("La asistencia ya estaba cerrada o no existe.");
   }
 
-  if (!updatedRows.length) {
+  const staffId = Number(existingRows[0].staff_id);
+  if (!Number.isFinite(staffId)) {
+    throw new Error("La asistencia seleccionada no tiene un miembro de personal válido.");
+  }
+
+  const checkoutResult = normalizeRows<SqlRow>(
+    await sql`
+      SELECT public.staff_checkout(${staffId}::bigint) AS did_checkout
+    `,
+  );
+
+  const didCheckout = Boolean(checkoutResult[0]?.did_checkout);
+  if (!didCheckout) {
     throw new Error("La asistencia ya estaba cerrada o no existe.");
+  }
+
+  const verificationRows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT checkout_time
+      FROM public.staff_attendance
+      WHERE id = ${parsedId}::bigint
+      LIMIT 1
+    `,
+  );
+
+  if (!verificationRows.length || verificationRows[0].checkout_time == null) {
+    throw new Error("No se pudo cerrar la asistencia seleccionada.");
   }
 }
 
