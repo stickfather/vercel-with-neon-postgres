@@ -1,7 +1,3 @@
-import { TIMEZONE } from "@/lib/db/client";
-
-const CHECK_IN_START_HOUR = 0;
-const CHECK_IN_END_HOUR = 23;
 const MAX_SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 const TIME_RESTRICTION_INDICATORS = [
   "check-in not allowed before",
@@ -10,40 +6,11 @@ const TIME_RESTRICTION_INDICATORS = [
   "check-in no permitido antes",
 ];
 
-type ZonedTimeParts = {
-  hour: number;
-  minute: number;
-};
-
-function getZonedTimeParts(date = new Date()): ZonedTimeParts {
-  const formatter = new Intl.DateTimeFormat("es-EC", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: TIMEZONE,
-  });
-
-  const parts = formatter.formatToParts(date);
-  const hourPart = parts.find((part) => part.type === "hour");
-  const minutePart = parts.find((part) => part.type === "minute");
-
-  const hour = hourPart ? Number.parseInt(hourPart.value, 10) : 0;
-  const minute = minutePart ? Number.parseInt(minutePart.value, 10) : 0;
-
-  return {
-    hour: Number.isFinite(hour) ? hour : 0,
-    minute: Number.isFinite(minute) ? minute : 0,
-  };
-}
-
 export function isWithinCheckInWindow(date = new Date()): boolean {
-  const { hour, minute } = getZonedTimeParts(date);
-
-  if (hour < CHECK_IN_START_HOUR) return false;
-  if (hour > CHECK_IN_END_HOUR) return false;
-  if (CHECK_IN_END_HOUR < 23 && hour === CHECK_IN_END_HOUR && minute > 0) {
-    return false;
-  }
+  // Check-ins are allowed at any time of day. The parameter is kept for
+  // compatibility with existing call sites, but we deliberately ignore it so
+  // no hour-based restrictions are applied.
+  void date;
   return true;
 }
 

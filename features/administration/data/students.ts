@@ -1,9 +1,6 @@
 import {
   getSqlClient,
-  isFeatureNotSupportedError,
-  isMissingColumnError,
   isMissingRelationError,
-  isPermissionDeniedError,
   normalizeRows,
   SqlRow,
 } from "@/lib/db/client";
@@ -22,84 +19,6 @@ export type StudentManagementEntry = {
   hasActiveInstructive: boolean;
   hasOverdueInstructive: boolean;
 };
-
-export type StudentFlagKey =
-  | "isNewStudent"
-  | "isExamApproaching"
-  | "isExamPreparation"
-  | "hasSpecialNeeds"
-  | "isAbsent7Days"
-  | "isSlowProgress14Days"
-  | "hasActiveInstructive"
-  | "hasOverdueInstructive";
-
-const STUDENT_FLAG_KEYS: readonly StudentFlagKey[] = [
-  "isNewStudent",
-  "isExamApproaching",
-  "isExamPreparation",
-  "hasSpecialNeeds",
-  "isAbsent7Days",
-  "isSlowProgress14Days",
-  "hasActiveInstructive",
-  "hasOverdueInstructive",
-];
-
-const FLAG_SOURCE_COLUMNS: Record<StudentFlagKey, string[]> = {
-  isNewStudent: ["is_new_student", "new_student", "is_new"],
-  isExamApproaching: [
-    "is_exam_approaching",
-    "exam_approaching",
-    "upcoming_exam",
-  ],
-  isExamPreparation: [
-    "is_exam_preparation",
-    "exam_preparation",
-    "is_exam",
-    "preparation",
-  ],
-  hasSpecialNeeds: [
-    "has_special_needs",
-    "special_needs",
-    "is_special_needs",
-  ],
-  isAbsent7Days: [
-    "is_absent_7d",
-    "absent_7d",
-    "is_absent_seven_days",
-    "absent_7_days",
-  ],
-  isSlowProgress14Days: [
-    "is_slow_progress_14d",
-    "slow_progress_14d",
-    "is_slow_progress",
-    "slow_progress",
-  ],
-  hasActiveInstructive: [
-    "instructivo_active",
-    "has_instructive_active",
-    "active_instructive",
-  ],
-  hasOverdueInstructive: [
-    "instructivo_overdue",
-    "has_instructive_overdue",
-    "overdue_instructive",
-  ],
-};
-
-const LEVEL_COLUMN_CANDIDATES = [
-  "level",
-  "current_level",
-  "last_level",
-  "student_level",
-];
-
-const STATE_COLUMN_CANDIDATES = [
-  "state",
-  "status",
-  "student_state",
-];
-
-const NAME_COLUMN_CANDIDATES = ["full_name", "student_name", "name"];
 
 function coerceString(value: unknown): string | null {
   if (typeof value === "string") {
@@ -153,384 +72,96 @@ function pick<T = unknown>(row: SqlRow, keys: string[]): T | null {
   return null;
 }
 
-function extractFlagValues(
-  row: SqlRow,
-): Partial<Record<StudentFlagKey, boolean>> {
-  const result: Partial<Record<StudentFlagKey, boolean>> = {};
-  for (const flagKey of STUDENT_FLAG_KEYS) {
-    const value = coerceBoolean(pick(row, FLAG_SOURCE_COLUMNS[flagKey]));
-    if (value != null) {
-      result[flagKey] = value;
-    }
-  }
-  return result;
-}
-
-function applyFlagValues(
-  entry: StudentManagementEntry,
-  values: Partial<Record<StudentFlagKey, boolean>>,
-) {
-  for (const flagKey of STUDENT_FLAG_KEYS) {
-    if (values[flagKey] != null) {
-      entry[flagKey] = values[flagKey]!;
-    }
-  }
-}
-
-function createEmptyManagementEntry(
-  id: number,
-  fullName: string | null,
-): StudentManagementEntry {
-  return {
-    id,
-    fullName: (fullName ?? "").trim(),
-    level: null,
-    state: null,
-    isNewStudent: false,
-    isExamApproaching: false,
-    isExamPreparation: false,
-    hasSpecialNeeds: false,
-    isAbsent7Days: false,
-    isSlowProgress14Days: false,
-    hasActiveInstructive: false,
-    hasOverdueInstructive: false,
-  };
-}
-
-type StudentFlagSnapshot = {
-  id: number;
-  fullName: string | null;
-  level?: string | null;
-  state?: string | null;
-  flags: Partial<Record<StudentFlagKey, boolean>>;
-};
-
-function mapStudentFlagSnapshot(row: SqlRow): StudentFlagSnapshot | null {
-  const id = Number(row["student_id"] ?? row.id ?? row["id"] ?? 0);
-  if (!Number.isFinite(id) || id <= 0) {
-    return null;
-  }
-
-  const rawName = coerceString(pick(row, NAME_COLUMN_CANDIDATES));
-  const levelValue = coerceString(pick(row, LEVEL_COLUMN_CANDIDATES));
-  const stateValue = coerceString(pick(row, STATE_COLUMN_CANDIDATES));
-
-  return {
-    id,
-    fullName: rawName,
-    ...(levelValue !== null ? { level: normalizeLevelCode(levelValue) } : {}),
-    ...(stateValue !== null ? { state: stateValue } : {}),
-    flags: extractFlagValues(row),
-  };
-}
-
-async function refreshStudentFlagsView() {
-  const sql = getSqlClient();
-
-  const refresh = async (concurrent: boolean) => {
-    if (concurrent) {
-      await sql`REFRESH MATERIALIZED VIEW CONCURRENTLY public.student_flags_v`;
-    } else {
-      await sql`REFRESH MATERIALIZED VIEW public.student_flags_v`;
-    }
-  };
-
-  try {
-    await refresh(true);
-  } catch (error) {
-    if (isMissingRelationError(error, "student_flags_v")) {
-      return;
-    }
-    if (isPermissionDeniedError(error)) {
-      console.warn(
-        "No pudimos refrescar 'student_flags_v' por falta de permisos.",
-        error,
-      );
-      return;
-    }
-    if (isFeatureNotSupportedError(error)) {
-      try {
-        await refresh(false);
-      } catch (fallbackError) {
-        if (isMissingRelationError(fallbackError, "student_flags_v")) {
-          return;
-        }
-        if (isPermissionDeniedError(fallbackError)) {
-          console.warn(
-            "No pudimos refrescar 'student_flags_v' por falta de permisos.",
-            fallbackError,
-          );
-          return;
-        }
-        if (isFeatureNotSupportedError(fallbackError)) {
-          console.warn(
-            "El entorno no soporta refrescar 'student_flags_v'. Se utilizarán los datos existentes.",
-            fallbackError,
-          );
-          return;
-        }
-        console.warn(
-          "No pudimos refrescar 'student_flags_v' por un error inesperado.",
-          fallbackError,
-        );
-        return;
-      }
-      return;
-    }
-    console.warn(
-      "No pudimos refrescar 'student_flags_v' por un error inesperado.",
-      error,
-    );
-  }
-}
-
-async function refreshStudentManagementView() {
-  const sql = getSqlClient();
-
-  const refresh = async (concurrent: boolean) => {
-    if (concurrent) {
-      await sql`REFRESH MATERIALIZED VIEW CONCURRENTLY public.student_management_v`;
-    } else {
-      await sql`REFRESH MATERIALIZED VIEW public.student_management_v`;
-    }
-  };
-
-  try {
-    await refresh(true);
-  } catch (error) {
-    if (isMissingRelationError(error, "student_management_v")) {
-      return;
-    }
-    if (isPermissionDeniedError(error)) {
-      console.warn(
-        "No pudimos refrescar 'student_management_v' por falta de permisos.",
-        error,
-      );
-      return;
-    }
-    if (isFeatureNotSupportedError(error)) {
-      try {
-        await refresh(false);
-      } catch (fallbackError) {
-        if (isMissingRelationError(fallbackError, "student_management_v")) {
-          return;
-        }
-        if (isPermissionDeniedError(fallbackError)) {
-          console.warn(
-            "No pudimos refrescar 'student_management_v' por falta de permisos.",
-            fallbackError,
-          );
-          return;
-        }
-        if (isFeatureNotSupportedError(fallbackError)) {
-          console.warn(
-            "El entorno no soporta refrescar 'student_management_v'. Se utilizarán los datos existentes.",
-            fallbackError,
-          );
-          return;
-        }
-        console.warn(
-          "No pudimos refrescar 'student_management_v' por un error inesperado.",
-          fallbackError,
-        );
-        return;
-      }
-      return;
-    }
-    console.warn(
-      "No pudimos refrescar 'student_management_v' por un error inesperado.",
-      error,
-    );
-  }
-}
-
 function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
   const id = Number(row["student_id"] ?? row.id ?? row["id"] ?? 0);
-  if (!Number.isFinite(id) || id <= 0) {
+  const fullName = ((row.full_name as string | null) ?? "").trim();
+
+  if (!Number.isFinite(id) || id <= 0 || !fullName.length) {
     return null;
   }
 
-  const nameValue = coerceString(pick(row, NAME_COLUMN_CANDIDATES)) ?? "";
-  const trimmedName = nameValue.trim();
-  if (!trimmedName.length) {
-    return null;
-  }
-
-  const entry = createEmptyManagementEntry(id, trimmedName);
-
-  const levelValue = coerceString(pick(row, LEVEL_COLUMN_CANDIDATES));
-  if (levelValue !== null) {
-    entry.level = normalizeLevelCode(levelValue);
-  }
-
-  const stateValue = coerceString(pick(row, STATE_COLUMN_CANDIDATES));
-  if (stateValue !== null) {
-    entry.state = stateValue;
-  }
-
-  applyFlagValues(entry, extractFlagValues(row));
-
-  return entry;
+  return {
+    id,
+    fullName,
+    level:
+      coerceString(
+        pick(row, ["level", "current_level", "last_level", "student_level"]),
+      ) ?? null,
+    state:
+      coerceString(pick(row, ["state", "status", "student_state"])) ?? null,
+    isNewStudent:
+      coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
+      false,
+    isExamApproaching:
+      coerceBoolean(
+        pick(row, ["is_exam_approaching", "exam_approaching", "upcoming_exam"]),
+      ) ?? false,
+    isExamPreparation:
+      coerceBoolean(
+        pick(row, [
+          "is_exam_preparation",
+          "exam_preparation",
+          "is_exam",
+          "preparation",
+        ]),
+      ) ?? false,
+    hasSpecialNeeds:
+      coerceBoolean(
+        pick(row, [
+          "has_special_needs",
+          "special_needs",
+          "is_special_needs",
+        ]),
+      ) ?? false,
+    isAbsent7Days:
+      coerceBoolean(
+        pick(row, [
+          "is_absent_7d",
+          "absent_7d",
+          "is_absent_seven_days",
+          "absent_7_days",
+        ]),
+      ) ?? false,
+    isSlowProgress14Days:
+      coerceBoolean(
+        pick(row, [
+          "is_slow_progress_14d",
+          "slow_progress_14d",
+          "is_slow_progress",
+          "slow_progress",
+        ]),
+      ) ?? false,
+    hasActiveInstructive:
+      coerceBoolean(
+        pick(row, [
+          "instructivo_active",
+          "has_instructive_active",
+          "active_instructive",
+        ]),
+      ) ?? false,
+    hasOverdueInstructive:
+      coerceBoolean(
+        pick(row, [
+          "instructivo_overdue",
+          "has_instructive_overdue",
+          "overdue_instructive",
+        ]),
+      ) ?? false,
+  };
 }
 
 export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
   const sql = getSqlClient();
 
-  await Promise.allSettled([
-    refreshStudentFlagsView(),
-    refreshStudentManagementView(),
-  ]);
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.student_management_v
+    ORDER BY full_name ASC
+  `);
 
-  let managementRows: SqlRow[] = [];
-  try {
-    managementRows = normalizeRows<SqlRow>(await sql`
-      SELECT *
-      FROM public.student_management_v
-      ORDER BY full_name ASC
-    `);
-  } catch (error) {
-    if (isMissingRelationError(error, "student_management_v")) {
-      managementRows = [];
-    } else if (isPermissionDeniedError(error)) {
-      console.warn(
-        "No pudimos acceder a 'student_management_v' por falta de permisos.",
-        error,
-      );
-      managementRows = [];
-    } else {
-      throw error;
-    }
-  }
-
-  if (!managementRows.length) {
-    try {
-      managementRows = normalizeRows<SqlRow>(await sql`
-        SELECT *
-        FROM public.students AS s
-        ORDER BY COALESCE(s.full_name, '') ASC
-      `);
-    } catch (fallbackError) {
-      if (
-        !isMissingRelationError(fallbackError, "students") &&
-        !isMissingColumnError(fallbackError)
-      ) {
-        console.warn(
-          "No pudimos cargar la lista de estudiantes directamente desde 'students'.",
-          fallbackError,
-        );
-      }
-      managementRows = [];
-    }
-  }
-
-  let flagRows: SqlRow[] = [];
-  let needsFlagFallback = false;
-  try {
-    flagRows = normalizeRows<SqlRow>(await sql`
-      SELECT *
-      FROM public.student_flags_v
-      ORDER BY full_name ASC
-    `);
-  } catch (error) {
-    if (isMissingRelationError(error, "student_flags_v")) {
-      needsFlagFallback = true;
-    } else if (isPermissionDeniedError(error)) {
-      console.warn(
-        "No pudimos acceder a 'student_flags_v' por falta de permisos.",
-        error,
-      );
-      needsFlagFallback = true;
-    } else {
-      throw error;
-    }
-  }
-
-  if (needsFlagFallback || !flagRows.length) {
-    try {
-      flagRows = normalizeRows<SqlRow>(await sql`
-        SELECT sf.*, s.*
-        FROM public.student_flags AS sf
-        LEFT JOIN public.students AS s ON s.id = sf.student_id
-        ORDER BY COALESCE(s.full_name, '') ASC
-      `);
-    } catch (fallbackError) {
-      if (isMissingRelationError(fallbackError, "student_flags")) {
-        flagRows = [];
-      } else if (isPermissionDeniedError(fallbackError)) {
-        console.warn(
-          "No pudimos acceder a 'student_flags' por falta de permisos.",
-          fallbackError,
-        );
-        flagRows = [];
-      } else if (isMissingColumnError(fallbackError)) {
-        console.warn(
-          "No pudimos leer todas las columnas de 'student_flags'. Se continuará sin banderas frescas.",
-          fallbackError,
-        );
-        flagRows = [];
-      } else {
-        throw fallbackError;
-      }
-    }
-  }
-
-  const entries = new Map<number, StudentManagementEntry>();
-
-  managementRows
+  return rows
     .map(mapStudentManagementRow)
-    .filter((student): student is StudentManagementEntry => Boolean(student))
-    .forEach((student) => {
-      student.fullName = student.fullName.trim();
-      if (student.level) {
-        student.level = normalizeLevelCode(student.level) ?? null;
-      }
-      if (student.state) {
-        const trimmedState = student.state.trim();
-        student.state = trimmedState.length ? trimmedState : null;
-      }
-      entries.set(student.id, student);
-    });
-
-  flagRows
-    .map(mapStudentFlagSnapshot)
-    .filter((snapshot): snapshot is StudentFlagSnapshot => Boolean(snapshot))
-    .forEach((snapshot) => {
-      const existing = entries.get(snapshot.id);
-      const entry =
-        existing ?? createEmptyManagementEntry(snapshot.id, snapshot.fullName);
-
-      if (snapshot.fullName && snapshot.fullName.trim().length) {
-        entry.fullName = snapshot.fullName.trim();
-      }
-
-      if (snapshot.level !== undefined) {
-        entry.level = snapshot.level ?? null;
-      }
-
-      if (snapshot.state !== undefined) {
-        const trimmedState = snapshot.state?.trim() ?? "";
-        entry.state = trimmedState.length ? trimmedState : null;
-      }
-
-      applyFlagValues(entry, snapshot.flags);
-
-      entries.set(entry.id, entry);
-    });
-
-  const results: StudentManagementEntry[] = [];
-  for (const entry of entries.values()) {
-    const trimmedName = entry.fullName.trim();
-    if (!trimmedName.length) {
-      continue;
-    }
-    entry.fullName = trimmedName;
-    if (entry.level) {
-      entry.level = normalizeLevelCode(entry.level) ?? null;
-    }
-    results.push(entry);
-  }
-
-  return results;
+    .filter((student): student is StudentManagementEntry => Boolean(student));
 }
 
 export async function getStudentManagementEntry(
