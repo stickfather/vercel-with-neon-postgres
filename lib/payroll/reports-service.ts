@@ -298,6 +298,33 @@ function ensureLocalTimestampText(label: string, iso: string): string {
   return localized;
 }
 
+async function assertNoOverlap(
+  sql: SqlClientLike,
+  params: {
+    staffId: number;
+    workDate: string;
+    checkinIso: string;
+    checkoutIso: string;
+    ignoreSessionId?: number | null;
+  },
+): Promise<void> {
+  const rows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT id
+      FROM public.staff_attendance
+      WHERE staff_id = ${params.staffId}::bigint
+        AND date(timezone(${TIMEZONE}, checkin_time)) = ${params.workDate}::date
+        AND id <> ${params.ignoreSessionId ?? 0}::bigint
+        AND ${params.checkoutIso}::timestamptz > checkin_time
+        AND ${params.checkinIso}::timestamptz < COALESCE(checkout_time, ${params.checkoutIso}::timestamptz)
+    `,
+  );
+
+  if (rows.length) {
+    throw new HttpError(400, "Los horarios se superponen con otra sesión registrada.");
+  }
+}
+
 async function executeEditStaffSession(
   sql: SqlClientLike,
   sessionId: number,
@@ -321,7 +348,7 @@ async function executeEditStaffSession(
     `,
   );
   if (!rows.length) {
-    throw new Error("No pudimos actualizar la sesión indicada.");
+    throw new HttpError(404, "No pudimos actualizar la sesión indicada.");
   }
 }
 
@@ -745,22 +772,29 @@ export async function overrideAndApprove(
     throw new Error("SQL client does not support transactions");
   }
   await sql.begin(async (transaction) => {
-    if (payload.deletions.length) {
-      await transaction`
-        DELETE FROM public.staff_attendance
-        WHERE staff_id = ${payload.staffId}::bigint
-          AND id = ANY(${payload.deletions}::bigint[])
-      `;
-      for (const sessionId of payload.deletions) {
-        await logPayrollAudit(transaction, "delete_session", payload.staffId, payload.workDate, sessionId, null);
-      }
-    }
-
     const editorStaffId =
       payload.editorStaffId != null && Number.isFinite(payload.editorStaffId)
         ? Number(payload.editorStaffId)
         : null;
     const editNote = payload.note ?? null;
+
+    if (payload.deletions.length) {
+      for (const sessionId of payload.deletions) {
+        const deleted = normalizeRows<SqlRow>(
+          await transaction`
+            SELECT *
+            FROM public.delete_staff_session(
+              ${sessionId}::bigint,
+              ${editorStaffId ?? null}::bigint,
+              ${editNote ?? null}::text
+            )
+          `,
+        );
+        if (!deleted.length) {
+          throw new HttpError(404, "No encontramos una de las sesiones a eliminar.");
+        }
+      }
+    }
 
     for (const override of payload.overrides) {
       const checkinIso = normalizeTime(override.checkinTime);
@@ -780,18 +814,29 @@ export async function overrideAndApprove(
       const checkinIso = normalizeTime(addition.checkinTime);
       const checkoutIso = normalizeTime(addition.checkoutTime);
       validateSessionRange(checkinIso, checkoutIso, payload.workDate);
-      const inserted = normalizeRows<{ id: number }>(
+      await assertNoOverlap(transaction, {
+        staffId: payload.staffId,
+        workDate: payload.workDate,
+        checkinIso,
+        checkoutIso,
+      });
+      const checkinLocal = ensureLocalTimestampText("entrada", checkinIso);
+      const checkoutLocal = ensureLocalTimestampText("salida", checkoutIso);
+      const inserted = normalizeRows<SqlRow>(
         await transaction`
-          INSERT INTO public.staff_attendance (staff_id, checkin_time, checkout_time)
-          VALUES (${payload.staffId}::bigint, ${checkinIso}::timestamptz, ${checkoutIso}::timestamptz)
-          RETURNING id
+          SELECT *
+          FROM public.add_staff_session(
+            ${payload.staffId}::bigint,
+            ${checkinLocal}::text,
+            ${checkoutLocal}::text,
+            ${editorStaffId ?? null}::bigint,
+            ${editNote ?? null}::text
+          )
         `,
       );
-      const sessionId = Number(inserted[0]?.id ?? 0);
-      await logPayrollAudit(transaction, "create_session", payload.staffId, payload.workDate, sessionId, {
-        checkinTime: checkinIso,
-        checkoutTime: checkoutIso,
-      });
+      if (!inserted.length) {
+        throw new Error("No se pudo crear una de las sesiones solicitadas.");
+      }
     }
 
     const minutes = await fetchApprovedMinutes(transaction, payload.staffId, payload.workDate);

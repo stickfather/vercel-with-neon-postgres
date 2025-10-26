@@ -249,83 +249,6 @@ function resolveWorkDateValue(value: unknown): string | null {
   return zoned ?? normalized;
 }
 
-async function invalidateStaffDayApproval(
-  sql: SqlClient,
-  staffId: number,
-  workDate: string,
-): Promise<void> {
-  await sql`
-    UPDATE payroll_day_approvals
-    SET
-      approved = FALSE,
-      approved_by = NULL,
-      approved_minutes = NULL
-    WHERE staff_id = ${staffId}::bigint
-      AND work_date = ${workDate}::date
-  `;
-}
-
-let payrollAuditReady = false;
-
-async function ensurePayrollAuditTable(sql: SqlClient): Promise<void> {
-  if (payrollAuditReady) return;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.payroll_audit_events (
-      id bigserial PRIMARY KEY,
-      action text NOT NULL,
-      staff_id bigint NOT NULL,
-      work_date date NOT NULL,
-      session_id bigint NULL,
-      details jsonb NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
-
-  payrollAuditReady = true;
-}
-
-type PayrollAuditAction =
-  | "approve_day"
-  | "update_session"
-  | "create_session"
-  | "delete_session";
-
-async function logPayrollAuditEvent({
-  action,
-  staffId,
-  workDate,
-  sessionId,
-  details,
-  sql = getSqlClient(),
-}: {
-  action: PayrollAuditAction;
-  staffId: number;
-  workDate: string;
-  sessionId?: number | null;
-  details?: Record<string, unknown> | null;
-  sql?: SqlClient;
-}): Promise<void> {
-  await ensurePayrollAuditTable(sql);
-
-  await sql`
-    INSERT INTO public.payroll_audit_events (
-      action,
-      staff_id,
-      work_date,
-      session_id,
-      details
-    )
-    VALUES (
-      ${action},
-      ${staffId}::bigint,
-      ${workDate}::date,
-      ${sessionId ?? null}::bigint,
-      ${details ? JSON.stringify(details) : null}::jsonb
-    )
-  `;
-}
-
 /**
  * Generates an array of ISO date strings (YYYY-MM-DD) for each day in the range [from, to] inclusive.
  * Works with date strings directly to avoid timezone conversion issues.
@@ -1019,8 +942,6 @@ export async function updateStaffDaySession({
     editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
-  let recalculatedMinutes = minutes;
-
   const executeUpdate = async (client: SqlClient) => {
     await assertNoOverlap(client, {
       staffId,
@@ -1029,16 +950,6 @@ export async function updateStaffDaySession({
       checkoutIso,
       ignoreSessionId: sessionId,
     });
-
-    const approvalSnapshot = normalizeRows<SqlRow>(await client`
-      SELECT approved_by
-      FROM payroll_day_approvals
-      WHERE staff_id = ${staffId}::bigint
-        AND work_date = ${normalizedWorkDate}::date
-      LIMIT 1
-    `);
-
-    const previousApprovedBy = coerceString(approvalSnapshot[0]?.approved_by ?? null);
 
     const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
     const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
@@ -1057,21 +968,6 @@ export async function updateStaffDaySession({
     if (!updatedRows.length) {
       throw new Error("No pudimos actualizar la sesión indicada.");
     }
-
-    const recalculatedRows = normalizeRows<SqlRow>(await client`
-      SELECT COALESCE(SUM(session_minutes), 0)::integer AS total_minutes
-      FROM public.attendance_local_base_v
-      WHERE staff_id = ${staffId}::bigint
-        AND work_date_local = ${normalizedWorkDate}::date
-    `);
-
-    recalculatedMinutes =
-      toInteger(recalculatedRows[0]?.total_minutes ?? recalculatedRows[0]?.minutes ?? null) ?? 0;
-
-    await applyStaffDayApproval(client, staffId, normalizedWorkDate, recalculatedMinutes, {
-      approvedBy: previousApprovedBy,
-      preserveApprover: true,
-    });
   };
 
   if (typeof transactionalSql.begin === "function") {
@@ -1127,11 +1023,15 @@ export async function createStaffDaySession({
   workDate,
   checkinTime,
   checkoutTime,
+  editorStaffId,
+  note,
 }: {
   staffId: number;
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
+  editorStaffId?: number | null;
+  note?: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
 
@@ -1140,6 +1040,9 @@ export async function createStaffDaySession({
   const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
   ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
   const minutes = computeDurationMinutes(checkinIso, checkoutIso);
+  const sanitizedEditorId =
+    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
+  const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
   await assertNoOverlap(sql, {
     staffId,
@@ -1148,44 +1051,81 @@ export async function createStaffDaySession({
     checkoutIso,
   });
 
-  const [nextId] = await allocateStaffAttendanceIds(sql, 1);
-  const sessionId = nextId;
+  const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
+  const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
 
-  await sql`
-    INSERT INTO public.staff_attendance (id, staff_id, checkin_time, checkout_time)
-    VALUES (
-      ${sessionId}::bigint,
+  const insertedRows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.add_staff_session(
       ${staffId}::bigint,
-      ${checkinIso}::timestamptz,
-      ${checkoutIso}::timestamptz
+      ${checkinLocal}::text,
+      ${checkoutLocal}::text,
+      ${sanitizedEditorId ?? null}::bigint,
+      ${sanitizedNote ?? null}::text
     )
-  `;
+  `);
 
-  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
-  await logPayrollAuditEvent({
-    action: "create_session",
-    staffId,
-    workDate: normalizedWorkDate,
-    sessionId,
-    details: {
-      checkinTime: checkinIso,
-      checkoutTime: checkoutIso,
-      approvalRevoked: true,
-    },
-    sql,
-  });
+  const inserted = insertedRows[0];
+  if (!inserted) {
+    throw new Error("No pudimos crear la sesión solicitada.");
+  }
+
+  const sessionId = toInteger(inserted["session_id"] ?? inserted["id"] ?? null);
+  if (!sessionId) {
+    throw new Error("No pudimos determinar el identificador de la nueva sesión.");
+  }
+
+  const refreshedRows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.staff_day_sessions_with_edits_v
+    WHERE session_id = ${sessionId}::bigint
+    LIMIT 1
+  `);
+
+  const refreshed = refreshedRows[0];
+  const checkinCurrent = refreshed?.["checkin_local"] ?? inserted["checkin_local"];
+  const checkoutCurrent = refreshed?.["checkout_local"] ?? inserted["checkout_local"];
+  const currentMinutes =
+    toInteger(
+      refreshed?.["session_minutes"] ??
+        inserted["session_minutes"] ??
+        inserted["minutes"] ??
+        null,
+    ) ?? minutes;
+
+  const wasEdited = toBoolean(refreshed?.["was_edited"] ?? false);
 
   return {
     sessionId,
     staffId,
     workDate: normalizedWorkDate,
-    checkinTime: checkinIso,
-    checkoutTime: checkoutIso,
-    minutes,
-    hours: minutesToHours(minutes),
+    checkinTime: normalizeTimestampValue(checkinCurrent) ?? coerceString(checkinCurrent) ?? checkinIso,
+    checkoutTime:
+      normalizeTimestampValue(checkoutCurrent) ?? coerceString(checkoutCurrent) ?? checkoutIso,
+    minutes: currentMinutes,
+    hours: minutesToHours(currentMinutes),
     originalSessionId: null,
     replacementSessionId: null,
     isOriginalRecord: false,
+    originalCheckinTime:
+      normalizeTimestampValue(refreshed?.["original_checkin_local"]) ??
+      coerceString(refreshed?.["original_checkin_local"]) ??
+      null,
+    originalCheckoutTime:
+      normalizeTimestampValue(refreshed?.["original_checkout_local"]) ??
+      coerceString(refreshed?.["original_checkout_local"]) ??
+      null,
+    editedCheckinTime:
+      normalizeTimestampValue(refreshed?.["edited_checkin_local"]) ??
+      coerceString(refreshed?.["edited_checkin_local"]) ??
+      null,
+    editedCheckoutTime:
+      normalizeTimestampValue(refreshed?.["edited_checkout_local"]) ??
+      coerceString(refreshed?.["edited_checkout_local"]) ??
+      null,
+    editedByStaffId: toInteger(refreshed?.["edited_by_staff_id"] ?? null),
+    editNote: coerceString(refreshed?.["edit_note"]),
+    wasEdited,
   };
 }
 
@@ -1193,47 +1133,33 @@ export async function deleteStaffDaySession({
   sessionId,
   staffId,
   workDate,
+  editorStaffId,
+  note,
 }: {
   sessionId: number;
   staffId: number;
   workDate: string;
+  editorStaffId?: number | null;
+  note?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
+  const sanitizedEditorId =
+    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
+  const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
-  const existingRows = normalizeRows<SqlRow>(await sql`
-    SELECT checkin_time, checkout_time
-    FROM public.staff_attendance
-    WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
-    LIMIT 1
+  const deletedRows = normalizeRows<SqlRow>(await sql`
+    SELECT *
+    FROM public.delete_staff_session(
+      ${sessionId}::bigint,
+      ${sanitizedEditorId ?? null}::bigint,
+      ${sanitizedNote ?? null}::text
+    )
   `);
 
-  if (!existingRows.length) {
+  if (!deletedRows.length) {
     throw new Error("No encontramos la sesión indicada.");
   }
-
-  await sql`
-    DELETE FROM public.staff_attendance
-    WHERE id = ${sessionId}::bigint
-      AND staff_id = ${staffId}::bigint
-  `;
-
-  await invalidateStaffDayApproval(sql, staffId, normalizedWorkDate);
-  await logPayrollAuditEvent({
-    action: "delete_session",
-    staffId,
-    workDate: normalizedWorkDate,
-    sessionId,
-    details: {
-      removed: {
-        checkinTime: existingRows[0].checkin_time,
-        checkoutTime: existingRows[0].checkout_time,
-      },
-      approvalRevoked: true,
-    },
-    sql,
-  });
 }
 
 export async function approveStaffDay({
@@ -1246,37 +1172,20 @@ export async function approveStaffDay({
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
   await applyStaffDayApproval(sql, staffId, normalizedWorkDate, null);
-  await logPayrollAuditEvent({
-    action: "approve_day",
-    staffId,
-    workDate: normalizedWorkDate,
-    details: { approved: true },
-    sql,
-  });
-}
-
-async function allocateStaffAttendanceIds(
-  sql: SqlClient,
-  count: number,
-): Promise<number[]> {
-  if (count <= 0) return [];
-
-  const rows = normalizeRows<SqlRow>(await sql`
-    SELECT COALESCE(MAX(id), 0) + 1 AS next_id
-    FROM public.staff_attendance
-  `);
-
-  let nextId = Number(rows[0]?.next_id ?? 1);
-  if (!Number.isFinite(nextId) || nextId <= 0) {
-    nextId = 1;
-  }
-
-  const identifiers: number[] = [];
-  for (let index = 0; index < count; index += 1) {
-    identifiers.push(nextId + index);
-  }
-
-  return identifiers;
+  await sql`
+    INSERT INTO public.payroll_audit_events (
+      action,
+      staff_id,
+      work_date,
+      details
+    )
+    VALUES (
+      'approve_day',
+      ${staffId}::bigint,
+      ${normalizedWorkDate}::date,
+      ${JSON.stringify({ approved: true })}::jsonb
+    )
+  `;
 }
 
 export async function overrideSessionsAndApprove({
@@ -1315,11 +1224,17 @@ export async function overrideSessionsAndApprove({
       Number.isFinite(value),
     );
     for (const sessionId of sanitizedDeletions) {
-      await sql`
-        DELETE FROM public.staff_attendance
-        WHERE id = ${Number(sessionId)}::bigint
-          AND staff_id = ${staffId}::bigint
-      `;
+      const result = normalizeRows<SqlRow>(await sql`
+        SELECT *
+        FROM public.delete_staff_session(
+          ${Number(sessionId)}::bigint,
+          ${sanitizedEditorId ?? null}::bigint,
+          ${sanitizedNote ?? null}::text
+        )
+      `);
+      if (!result.length) {
+        throw new Error("No encontramos una de las sesiones a eliminar.");
+      }
     }
 
     for (const override of overrides) {
@@ -1387,9 +1302,7 @@ export async function overrideSessionsAndApprove({
     }
 
     if (validAdditions.length) {
-      const identifiers = await allocateStaffAttendanceIds(sql, validAdditions.length);
-
-      for (const [index, addition] of validAdditions.entries()) {
+      for (const addition of validAdditions) {
         if (
           new Date(addition.checkoutTime).getTime()
           <= new Date(addition.checkinTime).getTime()
@@ -1398,13 +1311,25 @@ export async function overrideSessionsAndApprove({
             "La hora de salida debe ser posterior a la hora de entrada.",
           );
         }
+
+        await assertNoOverlap(sql, {
+          staffId,
+          workDate: normalizedWorkDate,
+          checkinIso: addition.checkinTime,
+          checkoutIso: addition.checkoutTime,
+        });
+
+        const checkinLocal = toLocalTimestampTextOrThrow("entrada", addition.checkinTime);
+        const checkoutLocal = toLocalTimestampTextOrThrow("salida", addition.checkoutTime);
+
         await sql`
-          INSERT INTO public.staff_attendance (id, staff_id, checkin_time, checkout_time)
-          VALUES (
-            ${identifiers[index]}::bigint,
+          SELECT *
+          FROM public.add_staff_session(
             ${staffId}::bigint,
-            ${addition.checkinTime}::timestamptz,
-            ${addition.checkoutTime}::timestamptz
+            ${checkinLocal}::text,
+            ${checkoutLocal}::text,
+            ${sanitizedEditorId ?? null}::bigint,
+            ${sanitizedNote ?? null}::text
           )
         `;
       }

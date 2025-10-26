@@ -72,6 +72,26 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) ae ON TRUE;
 
+-- Edited day lookup for matrix highlighting
+CREATE OR REPLACE VIEW public.staff_day_has_edits_v AS
+SELECT
+  ae.staff_id,
+  ae.work_date,
+  TRUE AS has_edits
+FROM public.payroll_audit_events ae
+WHERE ae.action IN ('update_session', 'add_session', 'delete_session')
+GROUP BY ae.staff_id, ae.work_date;
+
+-- Day totals helper view
+CREATE OR REPLACE VIEW public.staff_day_totals_v AS
+SELECT
+  staff_id,
+  work_date_local AS work_date,
+  SUM(session_minutes)::integer AS total_minutes,
+  ROUND(SUM(session_minutes)::numeric / 60.0, 2) AS total_hours
+FROM public.attendance_local_base_v
+GROUP BY staff_id, work_date_local;
+
 -- Payroll day matrix view
 CREATE OR REPLACE VIEW public.staff_day_matrix_local_v AS
 WITH session_totals AS (
@@ -137,6 +157,7 @@ DECLARE
   v_new_checkin timestamptz;
   v_new_checkout timestamptz;
   v_work_date DATE;
+  v_total_minutes INTEGER;
 BEGIN
   SELECT * INTO v_old
   FROM public.staff_attendance
@@ -183,6 +204,35 @@ BEGIN
     checkout_time = v_new_checkout
   WHERE id = p_session_id;
 
+  SELECT COALESCE(SUM(session_minutes), 0)::integer
+  INTO v_total_minutes
+  FROM public.attendance_local_base_v
+  WHERE staff_id = v_old.staff_id
+    AND work_date_local = v_work_date;
+
+  INSERT INTO public.payroll_day_approvals (
+    staff_id,
+    work_date,
+    approved,
+    approved_minutes,
+    approved_at,
+    approved_by_staff_id
+  )
+  VALUES (
+    v_old.staff_id,
+    v_work_date,
+    TRUE,
+    v_total_minutes,
+    NOW(),
+    p_editor_staff_id
+  )
+  ON CONFLICT (staff_id, work_date) DO UPDATE
+  SET
+    approved = TRUE,
+    approved_minutes = EXCLUDED.approved_minutes,
+    approved_at = NOW(),
+    approved_by_staff_id = COALESCE(EXCLUDED.approved_by_staff_id, public.payroll_day_approvals.approved_by_staff_id);
+
   RETURN QUERY
   SELECT
     a.session_id,
@@ -194,6 +244,201 @@ BEGIN
     a.session_hours
   FROM public.attendance_local_base_v a
   WHERE a.session_id = p_session_id;
+END;
+$$;
+
+-- Add session helper
+CREATE OR REPLACE FUNCTION public.add_staff_session(
+  p_staff_id BIGINT,
+  p_checkin_local TEXT,
+  p_checkout_local TEXT,
+  p_editor_staff_id BIGINT,
+  p_note TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  session_id BIGINT,
+  staff_id BIGINT,
+  work_date DATE,
+  checkin_local TIMESTAMP WITHOUT TIME ZONE,
+  checkout_local TIMESTAMP WITHOUT TIME ZONE,
+  session_minutes INTEGER,
+  session_hours NUMERIC
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_checkin timestamptz;
+  v_checkout timestamptz;
+  v_session_id BIGINT;
+  v_work_date DATE;
+  v_total_minutes INTEGER;
+BEGIN
+  v_checkin := public.to_ec_timestamptz(p_checkin_local);
+  v_checkout := public.to_ec_timestamptz(p_checkout_local);
+
+  IF v_checkout <= v_checkin THEN
+    RAISE EXCEPTION 'Checkout must be after checkin';
+  END IF;
+
+  v_work_date := timezone('America/Guayaquil', v_checkin)::date;
+
+  INSERT INTO public.staff_attendance (staff_id, checkin_time, checkout_time)
+  VALUES (p_staff_id, v_checkin, v_checkout)
+  RETURNING id INTO v_session_id;
+
+  INSERT INTO public.payroll_audit_events (
+    action,
+    staff_id,
+    work_date,
+    session_id,
+    details
+  )
+  VALUES (
+    'add_session',
+    p_staff_id,
+    v_work_date,
+    v_session_id,
+    jsonb_build_object(
+      'after', jsonb_build_object(
+        'checkinTime', timezone('America/Guayaquil', v_checkin),
+        'checkoutTime', timezone('America/Guayaquil', v_checkout)
+      ),
+      'editedByStaffId', p_editor_staff_id,
+      'note', p_note
+    )
+  );
+
+  SELECT COALESCE(SUM(session_minutes), 0)::integer
+  INTO v_total_minutes
+  FROM public.attendance_local_base_v
+  WHERE staff_id = p_staff_id
+    AND work_date_local = v_work_date;
+
+  INSERT INTO public.payroll_day_approvals (
+    staff_id,
+    work_date,
+    approved,
+    approved_minutes,
+    approved_at,
+    approved_by_staff_id
+  )
+  VALUES (
+    p_staff_id,
+    v_work_date,
+    TRUE,
+    v_total_minutes,
+    NOW(),
+    p_editor_staff_id
+  )
+  ON CONFLICT (staff_id, work_date) DO UPDATE
+  SET
+    approved = TRUE,
+    approved_minutes = EXCLUDED.approved_minutes,
+    approved_at = NOW(),
+    approved_by_staff_id = COALESCE(EXCLUDED.approved_by_staff_id, public.payroll_day_approvals.approved_by_staff_id);
+
+  RETURN QUERY
+  SELECT
+    a.session_id,
+    a.staff_id,
+    a.work_date_local AS work_date,
+    a.checkin_local,
+    a.checkout_local,
+    a.session_minutes,
+    a.session_hours
+  FROM public.attendance_local_base_v a
+  WHERE a.session_id = v_session_id;
+END;
+$$;
+
+-- Delete session helper
+CREATE OR REPLACE FUNCTION public.delete_staff_session(
+  p_session_id BIGINT,
+  p_editor_staff_id BIGINT,
+  p_note TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  staff_id BIGINT,
+  work_date DATE,
+  remaining_minutes INTEGER,
+  remaining_hours NUMERIC
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_old public.staff_attendance%ROWTYPE;
+  v_work_date DATE;
+  v_remaining_minutes INTEGER;
+BEGIN
+  SELECT * INTO v_old
+  FROM public.staff_attendance
+  WHERE id = p_session_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session % not found', p_session_id;
+  END IF;
+
+  v_work_date := timezone('America/Guayaquil', v_old.checkin_time)::date;
+
+  DELETE FROM public.staff_attendance
+  WHERE id = p_session_id;
+
+  INSERT INTO public.payroll_audit_events (
+    action,
+    staff_id,
+    work_date,
+    session_id,
+    details
+  )
+  VALUES (
+    'delete_session',
+    v_old.staff_id,
+    v_work_date,
+    p_session_id,
+    jsonb_build_object(
+      'before', jsonb_build_object(
+        'checkinTime', timezone('America/Guayaquil', v_old.checkin_time),
+        'checkoutTime', timezone('America/Guayaquil', v_old.checkout_time)
+      ),
+      'editedByStaffId', p_editor_staff_id,
+      'note', p_note
+    )
+  );
+
+  SELECT COALESCE(SUM(session_minutes), 0)::integer
+  INTO v_remaining_minutes
+  FROM public.attendance_local_base_v
+  WHERE staff_id = v_old.staff_id
+    AND work_date_local = v_work_date;
+
+  INSERT INTO public.payroll_day_approvals (
+    staff_id,
+    work_date,
+    approved,
+    approved_minutes,
+    approved_at,
+    approved_by_staff_id
+  )
+  VALUES (
+    v_old.staff_id,
+    v_work_date,
+    TRUE,
+    v_remaining_minutes,
+    NOW(),
+    p_editor_staff_id
+  )
+  ON CONFLICT (staff_id, work_date) DO UPDATE
+  SET
+    approved = TRUE,
+    approved_minutes = EXCLUDED.approved_minutes,
+    approved_at = NOW(),
+    approved_by_staff_id = COALESCE(EXCLUDED.approved_by_staff_id, public.payroll_day_approvals.approved_by_staff_id);
+
+  RETURN QUERY
+  SELECT
+    v_old.staff_id,
+    v_work_date,
+    v_remaining_minutes,
+    ROUND(v_remaining_minutes::numeric / 60.0, 2)
+  ;
 END;
 $$;
 

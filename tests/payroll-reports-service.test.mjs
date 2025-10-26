@@ -165,15 +165,43 @@ describe("payroll integration", () => {
     const { sql, operations } = createMockSqlClient([
       { match: /FROM public\.staff_members/, rows: [{ exists: true }] },
       {
-        match: /SELECT checkin_time, checkout_time\s+FROM public\.staff_attendance/,
+        match: /SELECT id\s+FROM public\.staff_attendance/,
+        rows: [],
+      },
+      {
+        match: /public\.delete_staff_session/,
+        rows: [
+          { staff_id: 9, work_date: "2025-10-07", remaining_minutes: 210, remaining_hours: 3.5 },
+        ],
+      },
+      {
+        match: /public\.edit_staff_session/,
         rows: [
           {
-            checkin_time: "2025-10-07 07:45:00-05",
-            checkout_time: "2025-10-07 11:45:00-05",
+            session_id: 102,
+            staff_id: 9,
+            work_date: "2025-10-07",
+            checkin_local: "2025-10-07 08:00:00",
+            checkout_local: "2025-10-07 12:00:00",
+            session_minutes: 240,
+            session_hours: 4,
           },
         ],
       },
-      { match: /RETURNING id/, rows: [{ id: 501 }] },
+      {
+        match: /public\.add_staff_session/,
+        rows: [
+          {
+            session_id: 501,
+            staff_id: 9,
+            work_date: "2025-10-07",
+            checkin_local: "2025-10-07 13:00:00",
+            checkout_local: "2025-10-07 15:30:00",
+            session_minutes: 150,
+            session_hours: 2.5,
+          },
+        ],
+      },
       { match: /attendance_local_base_v/, rows: [{ total_minutes: 240 }] },
     ]);
 
@@ -206,42 +234,32 @@ describe("payroll integration", () => {
     assert.notEqual(commitIndex, -1);
     assert(beginIndex < commitIndex);
 
-    const deleteOp = operations.find(
+    const deleteCall = operations.find(
       (op, index) =>
         op.type === "query" &&
-        /DELETE FROM public\.staff_attendance/.test(op.text) &&
+        /SELECT \*\s+FROM public\.delete_staff_session/.test(op.text) &&
         index > beginIndex &&
         index < commitIndex,
     );
-    assert(deleteOp);
+    assert(deleteCall);
 
-    const selectOp = operations.find(
+    const editCall = operations.find(
       (op, index) =>
         op.type === "query" &&
-        /SELECT checkin_time, checkout_time\s+FROM public\.staff_attendance/.test(op.text) &&
+        /SELECT \*\s+FROM public\.edit_staff_session/.test(op.text) &&
         index > beginIndex &&
         index < commitIndex,
     );
-    assert(selectOp);
+    assert(editCall);
 
-    const updateOp = operations.find(
+    const addCall = operations.find(
       (op, index) =>
         op.type === "query" &&
-        /UPDATE public\.staff_attendance/.test(op.text) &&
+        /SELECT \*\s+FROM public\.add_staff_session/.test(op.text) &&
         index > beginIndex &&
         index < commitIndex,
     );
-    assert(updateOp);
-
-    const insertOp = operations.find(
-      (op, index) =>
-        op.type === "query" &&
-        /INSERT INTO public\.staff_attendance/.test(op.text) &&
-        /RETURNING/.test(op.text) &&
-        index > beginIndex &&
-        index < commitIndex,
-    );
-    assert(insertOp);
+    assert(addCall);
 
     const approvalOp = operations.find(
       (op, index) =>
@@ -252,34 +270,13 @@ describe("payroll integration", () => {
     );
     assert(approvalOp);
     assert.equal(approvalOp.values[2], 240);
-
-    const updateAudit = operations.find(
-      (op) =>
-        op.type === "query" &&
-        /INSERT INTO public\.payroll_audit_events/.test(op.text) &&
-        op.values.includes("update_session"),
-    );
-    assert(updateAudit);
-    const [, , , , detailsJson] = updateAudit.values;
-    const parsedDetails = JSON.parse(detailsJson);
-    assert.equal(parsedDetails.replacedSessionId, 102);
-    assert.deepEqual(parsedDetails.before, {
-      checkinTime: "2025-10-07T07:45:00-05:00",
-      checkoutTime: "2025-10-07T11:45:00-05:00",
-    });
-    assert.deepEqual(parsedDetails.after, {
-      checkinTime: "2025-10-07T08:00:00-05:00",
-      checkoutTime: "2025-10-07T12:00:00-05:00",
-    });
   });
 
   it("fails when overriding a session that does not exist", async () => {
     const { sql } = createMockSqlClient([
       { match: /FROM public\.staff_members/, rows: [{ exists: true }] },
-      {
-        match: /SELECT checkin_time, checkout_time\s+FROM public\.staff_attendance/,
-        rows: [],
-      },
+      { match: /SELECT id\s+FROM public\.staff_attendance/, rows: [] },
+      { match: /public\.edit_staff_session/, rows: [] },
       { match: /attendance_local_base_v/, rows: [{ total_minutes: 60 }] },
     ]);
 
