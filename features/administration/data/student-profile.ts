@@ -33,7 +33,6 @@ export type StudentBasicDetails = {
   hasSpecialNeeds: boolean | null;
   isOnline: boolean | null;
   isNewStudent: boolean | null;
-  isExamApproaching: boolean | null;
   isExamPreparation: boolean | null;
   isAbsent7d: boolean | null;
   isAbsent7Days: boolean | null;
@@ -284,7 +283,6 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     hasSpecialNeeds: normalizeFieldValue(row.hasSpecialNeeds, "boolean"),
     isOnline: normalizeFieldValue(row.isOnline, "boolean"),
     isNewStudent: normalizeFieldValue(row.isNewStudent, "boolean"),
-    isExamApproaching: normalizeFieldValue(row.isExamApproaching, "boolean"),
     isExamPreparation: normalizeFieldValue(row.isExamPreparation, "boolean"),
     isAbsent7d: normalizeFieldValue(row.isAbsent7d ?? row.isAbsent7Days, "boolean"),
     isAbsent7Days: normalizeFieldValue(row.isAbsent7Days ?? row.isAbsent7d, "boolean"),
@@ -380,7 +378,6 @@ export async function updateStudentBasicDetails(
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
       NULL::boolean                          AS "isNewStudent",
-      NULL::boolean                          AS "isExamApproaching",
       NULL::boolean                          AS "isExamPreparation",
       NULL::boolean                          AS "isAbsent7Days",
       NULL::boolean                          AS "isSlowProgress14Days",
@@ -2843,7 +2840,6 @@ async function runBasicDetailsQuery(
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
       COALESCE(flags.is_new_student, false)  AS "isNewStudent",
-      COALESCE(flags.is_exam_approaching, false) AS "isExamApproaching",
       COALESCE(flags.is_exam_preparation, false) AS "isExamPreparation",
       COALESCE(flags.is_absent_7d, false)    AS "isAbsent7d",
       COALESCE(flags.is_absent_7d, false)    AS "isAbsent7Days",

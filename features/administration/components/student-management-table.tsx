@@ -15,7 +15,6 @@ type Props = {
 
 export type FlagKey =
   | "isNewStudent"
-  | "isExamApproaching"
   | "isExamPreparation"
   | "hasSpecialNeeds"
   | "isAbsent7Days"
@@ -25,7 +24,6 @@ export type FlagKey =
 
 const FLAG_COLUMNS: ReadonlyArray<{ key: FlagKey; label: string }> = [
   { key: "isNewStudent", label: "Nuevo" },
-  { key: "isExamApproaching", label: "Examen pronto" },
   { key: "isExamPreparation", label: "Prep. examen" },
   { key: "hasSpecialNeeds", label: "Necesidades especiales" },
   { key: "isAbsent7Days", label: "Ausente 7d" },
@@ -248,7 +246,6 @@ function StudentManagementTable({ students }: Props) {
             level: null,
             state: "Pendiente",
             isNewStudent: true,
-            isExamApproaching: false,
             isExamPreparation: false,
             hasSpecialNeeds: false,
             isAbsent7Days: false,

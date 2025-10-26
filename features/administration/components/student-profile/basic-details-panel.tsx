@@ -62,7 +62,6 @@ const FINAL_ROW_FIELD_KEYS = new Set<
 
 type StudentFlagKey =
   | "isNewStudent"
-  | "isExamApproaching"
   | "isExamPreparation"
   | "hasSpecialNeeds"
   | "isAbsent7d"
@@ -72,7 +71,6 @@ type StudentFlagKey =
 
 const FLAG_VALUE_KEYS: Record<StudentFlagKey, Array<keyof StudentBasicDetails>> = {
   isNewStudent: ["isNewStudent"],
-  isExamApproaching: ["isExamApproaching"],
   isExamPreparation: ["isExamPreparation"],
   hasSpecialNeeds: ["hasSpecialNeeds"],
   isAbsent7d: ["isAbsent7d", "isAbsent7Days"],
@@ -92,12 +90,6 @@ const FLAG_DEFINITIONS: ReadonlyArray<{
     label: "Nuevo",
     className: "bg-emerald-100 text-emerald-700",
     dotClass: "bg-emerald-500",
-  },
-  {
-    key: "isExamApproaching",
-    label: "Examen pronto",
-    className: "bg-amber-100 text-amber-700",
-    dotClass: "bg-amber-500",
   },
   {
     key: "isExamPreparation",
@@ -426,7 +418,6 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             return {
               ...nextData,
               isNewStudent: previous.isNewStudent,
-              isExamApproaching: previous.isExamApproaching,
               isExamPreparation: previous.isExamPreparation,
               isAbsent7d: previous.isAbsent7d ?? previous.isAbsent7Days,
               isAbsent7Days: previous.isAbsent7Days ?? previous.isAbsent7d,

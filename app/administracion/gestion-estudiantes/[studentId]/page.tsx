@@ -79,7 +79,6 @@ async function loadPrimaryProfileData(studentId: number): Promise<PrimaryProfile
       basicDetails = {
         ...basicDetails,
         isNewStudent: managementEntry.isNewStudent,
-        isExamApproaching: managementEntry.isExamApproaching,
         isExamPreparation: managementEntry.isExamPreparation,
         isAbsent7d: managementEntry.isAbsent7Days,
         isAbsent7Days: managementEntry.isAbsent7Days,

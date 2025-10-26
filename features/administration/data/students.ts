@@ -10,7 +10,6 @@ export type StudentManagementEntry = {
   level: string | null;
   state: string | null;
   isNewStudent: boolean;
-  isExamApproaching: boolean;
   isExamPreparation: boolean;
   hasSpecialNeeds: boolean;
   isAbsent7Days: boolean;
@@ -80,10 +79,6 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
     isNewStudent:
       coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
       false,
-    isExamApproaching:
-      coerceBoolean(
-        pick(row, ["is_exam_approaching", "exam_approaching", "upcoming_exam"]),
-      ) ?? false,
     isExamPreparation:
       coerceBoolean(
         pick(row, [
@@ -152,7 +147,6 @@ async function runStudentManagementQuery(
         s.current_level::text AS level,
         s.status AS state,
         COALESCE(flags.is_new_student, false) AS is_new_student,
-        COALESCE(flags.is_exam_approaching, false) AS is_exam_approaching,
         COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
         COALESCE(flags.has_special_needs, false) AS has_special_needs,
         COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
