@@ -837,6 +837,7 @@ function ensureWorkDate(value: string): string {
 }
 
 const TIME_ONLY_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+const TIME_WITH_PERIOD_REGEX = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i;
 
 const TIMESTAMP_WITH_OPTIONAL_OFFSET_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
@@ -855,6 +856,7 @@ function ensurePayrollSessionTimestamp(
     throw new Error(`La hora de ${label} no es válida.`);
   }
 
+  const timeWithPeriodMatch = trimmed.match(TIME_WITH_PERIOD_REGEX);
   const timeOnlyMatch = trimmed.match(TIME_ONLY_REGEX);
   let year: string | null = null;
   let month: string | null = null;
@@ -864,7 +866,27 @@ function ensurePayrollSessionTimestamp(
   let second: string | null = null;
   let fractional: string | null = null;
 
-  if (timeOnlyMatch) {
+  if (timeWithPeriodMatch) {
+    const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!workDateMatch) {
+      throw new Error("La sesión debe pertenecer al día seleccionado.");
+    }
+    const [, hourRaw, minuteRaw, secondRaw, periodRaw] = timeWithPeriodMatch;
+    const numericHour = Number(hourRaw);
+    if (!Number.isFinite(numericHour) || numericHour < 1 || numericHour > 12) {
+      throw new Error(`La hora de ${label} no es válida.`);
+    }
+    const period = periodRaw.toUpperCase();
+    const baseHour = numericHour % 12;
+    const offset = period === "PM" ? 12 : 0;
+    const convertedHour = (baseHour + offset) % 24;
+    year = workDateMatch[1];
+    month = workDateMatch[2];
+    day = workDateMatch[3];
+    hour = String(convertedHour).padStart(2, "0");
+    minute = minuteRaw;
+    second = secondRaw ?? "00";
+  } else if (timeOnlyMatch) {
     const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!workDateMatch) {
       throw new Error("La sesión debe pertenecer al día seleccionado.");

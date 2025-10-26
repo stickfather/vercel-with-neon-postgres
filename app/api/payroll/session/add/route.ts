@@ -3,16 +3,18 @@ import { NextResponse } from "next/server.js";
 import { createStaffDaySession } from "@/features/administration/data/payroll-reports";
 import { hasValidPinSession } from "@/lib/security/pin-session";
 
-type SegmentedPayload = {
+type Payload = {
   staffId?: number;
   workDate?: string;
+  checkinLocal?: string | null;
+  checkoutLocal?: string | null;
+  note?: string | null;
   inHour?: string;
   inMinute?: string;
   inAmPm?: string;
   outHour?: string;
   outMinute?: string;
   outAmPm?: string;
-  note?: string | null;
 };
 
 export const dynamic = "force-dynamic";
@@ -52,9 +54,9 @@ export async function POST(request: Request) {
     );
   }
 
-  let payload: SegmentedPayload;
+  let payload: Payload;
   try {
-    payload = (await request.json()) as SegmentedPayload;
+    payload = (await request.json()) as Payload;
   } catch (error) {
     console.error("No se pudo leer el cuerpo de la solicitud", error);
     return NextResponse.json(
@@ -63,7 +65,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const { staffId, workDate, inHour, inMinute, inAmPm, outHour, outMinute, outAmPm, note } = payload;
+  const {
+    staffId,
+    workDate,
+    checkinLocal: explicitCheckinLocal,
+    checkoutLocal: explicitCheckoutLocal,
+    note,
+    inHour,
+    inMinute,
+    inAmPm,
+    outHour,
+    outMinute,
+    outAmPm,
+  } = payload;
 
   if (!Number.isFinite(staffId) || !workDate) {
     return NextResponse.json(
@@ -72,8 +86,17 @@ export async function POST(request: Request) {
     );
   }
 
-  const checkinTime = formatSegment(inHour, inMinute, inAmPm);
-  const checkoutTime = formatSegment(outHour, outMinute, outAmPm);
+  const fallbackCheckin = formatSegment(inHour, inMinute, inAmPm);
+  const fallbackCheckout = formatSegment(outHour, outMinute, outAmPm);
+
+  const checkinTime =
+    typeof explicitCheckinLocal === "string" && explicitCheckinLocal.trim().length
+      ? explicitCheckinLocal.trim()
+      : fallbackCheckin;
+  const checkoutTime =
+    typeof explicitCheckoutLocal === "string" && explicitCheckoutLocal.trim().length
+      ? explicitCheckoutLocal.trim()
+      : fallbackCheckout;
 
   if (!checkinTime || !checkoutTime) {
     return NextResponse.json(

@@ -76,12 +76,6 @@ const TRAILING_COLUMNS_WIDTH =
 const MIN_CELL_WIDTH = 32;
 const PREFERRED_CELL_WIDTH = 68;
 const GRID_PADDING = 16;
-const rowDayFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: PAYROLL_TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
 
 const STATUS_BUTTON_CLASSES: Record<string, string> = {
   pending: "border-[#FF8C42] bg-[#FF8C42] text-white hover:bg-[#ff7a24]",
@@ -833,48 +827,12 @@ function sortSessionRows(rows: SessionRow[]): SessionRow[] {
   });
 }
 
-function validateRowDraft(
-  row: SessionRow,
-  rows: SessionRow[],
-  workDate: string,
-): string | null {
-  const { checkinIso, checkoutIso } = getActiveRowTimes(row);
-  if (!checkinIso || !checkoutIso) {
+function validateRowDraft(row: SessionRow): string | null {
+  const trimmedCheckin = row.isEditing ? row.draftCheckin.trim() : toLocalInputValue(row.checkinTime).trim();
+  const trimmedCheckout = row.isEditing ? row.draftCheckout.trim() : toLocalInputValue(row.checkoutTime).trim();
+  if (!trimmedCheckin || !trimmedCheckout) {
     return "Completa las horas de entrada y salida.";
   }
-
-  const checkinDate = new Date(checkinIso);
-  const checkoutDate = new Date(checkoutIso);
-  if (Number.isNaN(checkinDate.getTime()) || Number.isNaN(checkoutDate.getTime())) {
-    return "Ingresa horas válidas.";
-  }
-  if (checkoutDate.getTime() <= checkinDate.getTime()) {
-    return "La salida debe ser posterior a la entrada.";
-  }
-
-  const checkinDay = rowDayFormatter.format(checkinDate);
-  const checkoutDay = rowDayFormatter.format(checkoutDate);
-  if (checkinDay !== workDate || checkoutDay !== workDate) {
-    return "La sesión debe corresponder al día seleccionado.";
-  }
-
-  for (const candidate of rows) {
-    if (candidate.sessionKey === row.sessionKey) continue;
-    if (candidate.isHistorical) continue;
-    const { checkinIso: otherStart, checkoutIso: otherEnd } = getActiveRowTimes(candidate);
-    if (!otherStart || !otherEnd) continue;
-    const startMs = checkinDate.getTime();
-    const endMs = checkoutDate.getTime();
-    const otherStartMs = new Date(otherStart).getTime();
-    const otherEndMs = new Date(otherEnd).getTime();
-    if (!Number.isFinite(otherStartMs) || !Number.isFinite(otherEndMs)) {
-      continue;
-    }
-    if (endMs > otherStartMs && startMs < otherEndMs) {
-      return "Los horarios se superponen con otra sesión.";
-    }
-  }
-
   return null;
 }
 
@@ -1705,7 +1663,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           if (row.sessionKey !== sessionKey) return row;
           return {
             ...row,
-            validationError: validateRowDraft(row, updated, row.workDate),
+            validationError: validateRowDraft(row),
           };
         });
       });
@@ -1732,7 +1690,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           if (row.sessionKey !== sessionKey) return row;
           return {
             ...row,
-            validationError: validateRowDraft(row, updated, row.workDate),
+            validationError: validateRowDraft(row),
           };
         });
       });
@@ -1774,7 +1732,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           };
           return {
             ...candidate,
-            validationError: validateRowDraft(candidate, previous, row.workDate),
+            validationError: validateRowDraft(candidate),
           };
         });
         return sortSessionRows(updated);
@@ -1792,22 +1750,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!target) return false;
       const previousSessionId = target.sessionId;
 
-      const validation = validateRowDraft(target, rows, target.workDate);
-      if (validation) {
-        setSessionRows((previous) =>
-          previous.map((row) =>
-            row.sessionKey === sessionKey
-              ? { ...row, validationError: validation }
-              : row,
-          ),
-        );
-        return false;
-      }
-
-      const { checkinIso, checkoutIso } = getActiveRowTimes(target);
-      if (!checkinIso || !checkoutIso) {
-        return false;
-      }
+      const checkinValue = target.isEditing ? target.draftCheckin : toLocalInputValue(target.checkinTime);
+      const checkoutValue = target.isEditing ? target.draftCheckout : toLocalInputValue(target.checkoutTime);
+      const checkinLocal = normalizeEditorTime(checkinValue);
+      const checkoutLocal = normalizeEditorTime(checkoutValue);
 
       setSessionRows((previous) =>
         previous.map((row) =>
@@ -1824,25 +1770,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       try {
         const response = await (async () => {
           if (target.isNew) {
-            const checkinSegments = toTimeSegments(target.draftCheckin);
-            const checkoutSegments = toTimeSegments(target.draftCheckout);
-
-            if (!checkinSegments.hour || !checkoutSegments.hour) {
-              throw new Error("Completa las horas de entrada y salida.");
-            }
-
             return performProtectedFetch("/api/payroll/session/add", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 staffId: selectedCell.staffId,
                 workDate: selectedCell.workDate,
-                inHour: checkinSegments.hour,
-                inMinute: checkinSegments.minute,
-                inAmPm: checkinSegments.period,
-                outHour: checkoutSegments.hour,
-                outMinute: checkoutSegments.minute,
-                outAmPm: checkoutSegments.period,
+                checkinLocal: checkinLocal || null,
+                checkoutLocal: checkoutLocal || null,
                 note: target.editNote ?? null,
               }),
             });
@@ -1854,8 +1789,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             body: JSON.stringify({
               staffId: selectedCell.staffId,
               workDate: selectedCell.workDate,
-              checkinTime: checkinIso,
-              checkoutTime: checkoutIso,
+              checkinLocal: checkinLocal || null,
+              checkoutLocal: checkoutLocal || null,
               note: target.editNote ?? null,
             }),
           });
