@@ -518,13 +518,11 @@ function SegmentedTimeInput({
   "aria-describedby": ariaDescribedBy,
 }: SegmentedTimeInputProps) {
   const [segments, setSegments] = useState<TimeSegments>(() => toTimeSegments(value));
+  const hourRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const next = toTimeSegments(value);
-    if (segmentsToValue(next) !== segmentsToValue(segments)) {
-      setSegments(next);
-    }
-  }, [segments, value]);
+    hourRef.current?.focus();
+  }, []);
 
   const updateSegments = useCallback(
     (updater: (previous: TimeSegments) => TimeSegments, options?: { emit?: boolean }) => {
@@ -564,17 +562,6 @@ function SegmentedTimeInput({
     onBlur?.();
   };
 
-  const compiledValue = useMemo(() => segmentsToValue(segments), [segments]);
-
-  useEffect(() => {
-    if (disabled) {
-      return;
-    }
-    if (compiledValue !== value) {
-      onChange(compiledValue);
-    }
-  }, [compiledValue, disabled, onChange, value]);
-
   return (
     <div
       className={`flex items-center justify-between rounded-2xl border border-brand-ink-muted/20 bg-white shadow-sm ${
@@ -593,6 +580,7 @@ function SegmentedTimeInput({
           disabled={disabled}
           required={required}
           aria-describedby={ariaDescribedBy}
+          ref={hourRef}
           className="w-12 rounded-xl border border-transparent bg-transparent text-center text-sm font-semibold text-brand-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed"
         />
         <span className="text-sm font-semibold text-brand-ink-muted">:</span>
@@ -620,7 +608,7 @@ function SegmentedTimeInput({
               onClick={() => handlePeriodChange(periodOption)}
               disabled={disabled}
               aria-pressed={isActive}
-              className={`px-3 py-2 text-[11px] font-semibold uppercase tracking-wide transition first:rounded-l-2xl last:rounded-r-2xl ${
+              className={`inline-flex h-full w-14 items-center justify-center px-0 text-[11px] font-semibold uppercase tracking-wide transition first:rounded-l-2xl last:rounded-r-2xl ${
                 isActive
                   ? "bg-brand-teal-soft text-brand-deep"
                   : "text-brand-ink-muted hover:bg-brand-deep-soft/40"
@@ -1766,11 +1754,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const enableRowEditing = useCallback(
     async (sessionKey: string) => {
       const access = await ensureManagementAccess();
-      if (access !== "granted") return;
+      if (access !== "granted") return false;
       const currentRows = sessionRowsRef.current;
       const targetRow = currentRows.find((row) => row.sessionKey === sessionKey);
       if (!targetRow || targetRow.isHistorical) {
-        return;
+        return false;
       }
       setSessionRows((previous) => {
         const updated = previous.map((row) => {
@@ -1791,6 +1779,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         });
         return sortSessionRows(updated);
       });
+      return true;
     },
     [ensureManagementAccess],
   );
@@ -1981,7 +1970,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!target || target.pendingAction || target.isHistorical) {
         return;
       }
-      await enableRowEditing(sessionKey);
+      const ready = await enableRowEditing(sessionKey);
+      if (!ready) {
+        return;
+      }
       setSessionEditor({ sessionKey });
     },
     [enableRowEditing],
@@ -2107,7 +2099,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     if (!sessionEditor) {
       return null;
     }
-    return sessionRows.find((row) => row.sessionKey === sessionEditor.sessionKey) ?? null;
+    const row = sessionRows.find((candidate) => candidate.sessionKey === sessionEditor.sessionKey);
+    if (!row || !row.isEditing) {
+      return null;
+    }
+    return row;
   }, [sessionEditor, sessionRows]);
 
   const editorPending =
