@@ -17,46 +17,30 @@ type CoachPanelProps = {
 
 const HEATMAP_DAYS = 30;
 
-const LESSON_LEVEL_BUCKETS = [
-  { key: "A1", label: "A1" },
-  { key: "A2", label: "A2" },
-  { key: "B1", label: "B1" },
-  { key: "B2", label: "B2" },
-  { key: "C1", label: "C1" },
-  { key: "C2", label: "C2" },
-  { key: "EXAM", label: "Preparación de examen" },
-] as const;
+const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 
-const LEVEL_RANK: Record<string, number> = {
+type PlanLevel = (typeof PLAN_LEVEL_ORDER)[number];
+
+const PLAN_LEVEL_RANK: Record<PlanLevel, number> = {
   A1: 0,
   A2: 1,
   B1: 2,
   B2: 3,
   C1: 4,
   C2: 5,
-  EXAM: 6,
 };
 
-function resolveLessonBucket(level: string | null | undefined): string {
-  if (!level) return "OTHER";
-  const normalized = level.trim().toUpperCase();
-  if (normalized.startsWith("A1")) return "A1";
-  if (normalized.startsWith("A2")) return "A2";
-  if (normalized.startsWith("B1")) return "B1";
-  if (normalized.startsWith("B2")) return "B2";
-  if (normalized.startsWith("C1")) return "C1";
-  if (normalized.startsWith("C2")) return "C2";
-  if (normalized.includes("EXAM")) return "EXAM";
-  if (normalized.includes("PREP")) return "EXAM";
-  return "OTHER";
-}
-
-function getPlanLevelRank(level: string | null | undefined): number | null {
-  const bucket = resolveLessonBucket(level);
-  if (bucket === "OTHER") {
+function normalizePlanLevel(level: string | null | undefined): PlanLevel | null {
+  if (!level) {
     return null;
   }
-  return LEVEL_RANK[bucket] ?? null;
+  const normalized = level.trim().toUpperCase();
+  for (const value of PLAN_LEVEL_ORDER) {
+    if (normalized.startsWith(value)) {
+      return value;
+    }
+  }
+  return null;
 }
 
 function cx(...classes: Array<string | null | undefined | false>): string {
@@ -230,43 +214,51 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const { profileHeader, lessonJourney, paceForecast } = data;
 
   const journeyLessons = lessonJourney.lessons;
-  const currentGlobalSeq = lessonJourney.currentPosition ?? null;
 
   const lessonRows = useMemo(() => {
-    const baseBuckets: Array<{
-      key: string;
-      label: string;
-      lessons: CoachPanelLessonJourneyEntry[];
-    }> = LESSON_LEVEL_BUCKETS.map((bucket) => ({
-      ...bucket,
-      lessons: [] as CoachPanelLessonJourneyEntry[],
-    }));
-    const otherBucket: {
-      key: string;
-      label: string;
-      lessons: CoachPanelLessonJourneyEntry[];
-    } = {
-      key: "OTHER",
-      label: "Otros",
-      lessons: [] as CoachPanelLessonJourneyEntry[],
-    };
+    const grouped = new Map<string, CoachPanelLessonJourneyEntry[]>();
 
     journeyLessons.forEach((lesson) => {
-      const targetKey = resolveLessonBucket(lesson.level);
-      const target =
-        baseBuckets.find((bucket) => bucket.key === targetKey) ?? otherBucket;
-      target.lessons.push(lesson);
+      const normalized = normalizePlanLevel(lesson.level);
+      const fallback = lesson.level?.trim().toUpperCase() || "OTROS";
+      const key = normalized ?? fallback;
+      const bucket = grouped.get(key) ?? [];
+      bucket.push(lesson);
+      grouped.set(key, bucket);
     });
 
-    const rows = [...baseBuckets];
-    if (otherBucket.lessons.length) {
-      rows.push(otherBucket);
-    }
+    const sortLessons = (entries: CoachPanelLessonJourneyEntry[]) =>
+      entries.sort((a, b) => {
+        const aSeq =
+          (a.seq != null && Number.isFinite(a.seq) ? a.seq : null) ??
+          (a.lessonGlobalSeq != null && Number.isFinite(a.lessonGlobalSeq)
+            ? a.lessonGlobalSeq
+            : Number.POSITIVE_INFINITY);
+        const bSeq =
+          (b.seq != null && Number.isFinite(b.seq) ? b.seq : null) ??
+          (b.lessonGlobalSeq != null && Number.isFinite(b.lessonGlobalSeq)
+            ? b.lessonGlobalSeq
+            : Number.POSITIVE_INFINITY);
+        if (aSeq === bSeq) {
+          return 0;
+        }
+        return aSeq < bSeq ? -1 : 1;
+      });
 
-    const minRank = getPlanLevelRank(profileHeader.planLevelMin);
-    const maxRank = getPlanLevelRank(profileHeader.planLevelMax);
-    let rangeMin = minRank;
-    let rangeMax = maxRank;
+    grouped.forEach((entries, key) => {
+      sortLessons(entries);
+      grouped.set(key, entries);
+    });
+
+    const planMin =
+      normalizePlanLevel(lessonJourney.plannedLevelMin ?? profileHeader.planLevelMin) ??
+      null;
+    const planMax =
+      normalizePlanLevel(lessonJourney.plannedLevelMax ?? profileHeader.planLevelMax) ??
+      null;
+
+    let rangeMin = planMin != null ? PLAN_LEVEL_RANK[planMin] : null;
+    let rangeMax = planMax != null ? PLAN_LEVEL_RANK[planMax] : null;
     if (rangeMin != null && rangeMax != null && rangeMin > rangeMax) {
       const temp = rangeMin;
       rangeMin = rangeMax;
@@ -274,137 +266,100 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     }
     const hasPlanRange = rangeMin != null || rangeMax != null;
 
-    return rows
-      .filter((row) => {
-        if (row.key === "OTHER") {
-          return row.lessons.length > 0;
+    const rows: Array<{
+      key: string;
+      label: string;
+      lessons: CoachPanelLessonJourneyEntry[];
+    }> = [];
+
+    PLAN_LEVEL_ORDER.forEach((level) => {
+      const lessons = grouped.get(level) ?? [];
+      if (!lessons.length) {
+        return;
+      }
+      const rank = PLAN_LEVEL_RANK[level];
+      if (hasPlanRange) {
+        if (rangeMin != null && rank < rangeMin) {
+          return;
         }
-
-        const bucketRank = LEVEL_RANK[row.key] ?? null;
-
-        if (!hasPlanRange) {
-          return row.lessons.length > 0;
+        if (rangeMax != null && rank > rangeMax) {
+          return;
         }
+      }
+      rows.push({ key: level, label: level, lessons });
+      grouped.delete(level);
+    });
 
-        if (bucketRank == null) {
-          return false;
-        }
+    const remainingKeys = Array.from(grouped.keys()).sort();
+    remainingKeys.forEach((key) => {
+      const lessons = grouped.get(key) ?? [];
+      if (!lessons.length) {
+        return;
+      }
+      rows.push({
+        key,
+        label: key === "OTROS" ? "Otros" : key,
+        lessons,
+      });
+    });
 
-        if (rangeMin != null && bucketRank < rangeMin) {
-          return false;
-        }
-
-        if (rangeMax != null && bucketRank > rangeMax) {
-          return false;
-        }
-
-        return true;
-      })
-      .map((row) => ({
-        ...row,
-        lessons: [...row.lessons].sort((a, b) => {
-          const aSeq = a.seq ?? a.lessonGlobalSeq ?? 0;
-          const bSeq = b.seq ?? b.lessonGlobalSeq ?? 0;
-          return aSeq - bSeq;
-        }),
-      }));
+    return rows;
   }, [
     journeyLessons,
+    lessonJourney.plannedLevelMin,
+    lessonJourney.plannedLevelMax,
     profileHeader.planLevelMin,
     profileHeader.planLevelMax,
   ]);
 
-  const renderLessonBubble = (
-    lesson: CoachPanelLessonJourneyEntry,
-    index: number,
-    lessons: CoachPanelLessonJourneyEntry[],
-  ) => {
-    const isExamBubble = index === lessons.length - 1;
-    const isCompleted =
-      lesson.completed ||
-      (currentGlobalSeq != null &&
-        lesson.lessonGlobalSeq != null &&
-        lesson.lessonGlobalSeq < currentGlobalSeq);
-    const isCurrent =
-      currentGlobalSeq != null &&
-      lesson.lessonGlobalSeq === currentGlobalSeq;
-    const effort = lesson.effort;
-    const effortHours =
-      effort?.totalHours != null && Number.isFinite(effort.totalHours)
-        ? effort.totalHours
-        : null;
-    const inLessonMinutes =
-      lesson.minutesInLesson != null && Number.isFinite(lesson.minutesInLesson)
-        ? lesson.minutesInLesson
-        : null;
-    const totalHoursValue =
-      effortHours != null
-        ? effortHours
-        : inLessonMinutes != null
-        ? inLessonMinutes / 60
-        : null;
-    const showHoursBadge = totalHoursValue != null && totalHoursValue > 0;
-    const totalHoursDisplay = showHoursBadge
-      ? totalHoursValue.toFixed(1)
-      : null;
+  const renderLessonBubble = (lesson: CoachPanelLessonJourneyEntry) => {
+    const isExamBubble = lesson.isExam;
+    const isCurrent = lesson.isCurrentLesson;
+    const isCompleted = lesson.isCompleted;
 
-    const tooltipLines: string[] = [];
-    tooltipLines.push(
-      `Nivel ${lesson.level ?? "—"} · Lección ${
-        lesson.seq != null
-          ? formatNumber(lesson.seq, { maximumFractionDigits: 0 })
-          : "—"
-      }`,
-    );
+    const hoursValue =
+      lesson.hoursSpent != null && Number.isFinite(lesson.hoursSpent)
+        ? Math.max(0, lesson.hoursSpent)
+        : 0;
+    const daysValue =
+      lesson.calendarDaysSpent != null && Number.isFinite(lesson.calendarDaysSpent)
+        ? Math.max(0, Math.trunc(lesson.calendarDaysSpent))
+        : 0;
 
-    if (totalHoursValue != null) {
-      tooltipLines.push(`Horas de estudio: ${totalHoursValue.toFixed(2)} h`);
-    }
+    const hasEffort = hoursValue > 0 || daysValue > 0;
 
-    if (effort) {
-      if (
-        effort.sessionsCount != null &&
-        Number.isFinite(effort.sessionsCount)
-      ) {
-        tooltipLines.push(
-          `Sesiones registradas: ${formatNumber(effort.sessionsCount, { maximumFractionDigits: 0 })}`,
-        );
-      }
-      tooltipLines.push(
-        `Primera actividad: ${formatDate(
-          effort.startedOn ?? null,
-        )} · Última actividad: ${formatDate(effort.finishedOn ?? null)}`,
-      );
-    } else if (totalHoursValue == null) {
-      tooltipLines.push("Sin actividad registrada para esta lección.");
-    }
+    const lessonTooltipLines: string[] = [
+      `Nivel ${lesson.level ?? "—"} · ${lesson.lessonName ?? "Lección"}`,
+      `Tiempo dedicado: ${hoursValue.toFixed(1)} horas`,
+      `Días activos: ${formatNumber(daysValue, { maximumFractionDigits: 0 })}`,
+    ];
 
-    const lessonTooltip = tooltipLines.join("\n");
+    const lessonTooltip = lessonTooltipLines.join("\n");
 
-    const bubbleLabel = isExamBubble
-      ? "EXAM"
-      : lesson.seq != null
-      ? formatNumber(lesson.seq, { maximumFractionDigits: 0 })
-      : "?";
+    const bubbleLabel = lesson.isIntroBooklet
+      ? "Intro Booklet"
+      : lesson.isExam
+        ? "EXAM"
+        : lesson.lessonName ??
+          (lesson.seq != null
+            ? `Lección ${formatNumber(lesson.seq, { maximumFractionDigits: 0 })}`
+            : "—");
 
     return (
       <div
-        key={`lesson-${lesson.lessonGlobalSeq ?? `${lesson.level ?? "nivel"}-${index}`}`}
-        className="flex flex-col items-center gap-2 text-center"
+        key={`lesson-${lesson.lessonGlobalSeq ?? `${lesson.level ?? "nivel"}-${lesson.seq ?? "?"}`}`}
+        className="flex flex-col items-center gap-1 text-center"
         title={lessonTooltip}
       >
         <div
           className={cx(
-            "relative flex items-center justify-center rounded-full border-2 font-semibold",
-            isExamBubble ? "h-14 w-14 text-sm" : "h-12 w-12 text-xs",
+            "relative flex h-12 w-12 items-center justify-center rounded-full border-2 px-1 text-[10px] font-semibold",
+            isExamBubble ? "h-12 w-12 uppercase" : "",
             isCurrent
               ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
               : isCompleted
                 ? "border-brand-teal bg-brand-teal text-white shadow-[0_12px_24px_rgba(2,132,199,0.24)]"
                 : "border-brand-teal/50 bg-white text-brand-deep",
-            effort?.isCompletedByPosition
-              ? "ring-2 ring-emerald-300 ring-offset-2 ring-offset-white"
-              : null,
           )}
         >
           {isCurrent ? (
@@ -413,22 +368,19 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse"
             />
           ) : null}
-          <span className={isExamBubble ? "uppercase tracking-wide" : "font-semibold"}>
+          <span className="px-1 text-[10px] font-semibold leading-tight">
             {bubbleLabel}
           </span>
-          <div className="pointer-events-none absolute -bottom-9 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
-            {showHoursBadge ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
-                <span aria-hidden="true">⌛</span>
-                {totalHoursDisplay}h
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full border border-dashed border-brand-ink-muted/40 px-2.5 py-0.5 text-[10px] font-medium text-brand-ink-muted/50">
-                —
-              </span>
-            )}
-          </div>
         </div>
+        <span
+          className={cx(
+            "flex items-center gap-1 text-[10px]",
+            hasEffort ? "text-brand-deep" : "text-brand-ink-muted/60",
+          )}
+        >
+          <span aria-hidden="true">🕒</span>
+          {hoursValue.toFixed(1)}h • {formatNumber(daysValue, { maximumFractionDigits: 0 })}d
+        </span>
       </div>
     );
   };
@@ -495,10 +447,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   {row.label}
                 </span>
                 {row.lessons.length ? (
-                  <div className="flex flex-1 flex-wrap items-center gap-2">
-                    {row.lessons.map((lesson, index) =>
-                      renderLessonBubble(lesson, index, row.lessons),
-                    )}
+                  <div className="flex flex-1 flex-wrap items-center gap-3">
+                    {row.lessons.map((lesson) => renderLessonBubble(lesson))}
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-3 py-2 text-sm text-brand-ink-muted shadow-sm">
