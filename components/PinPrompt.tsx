@@ -10,6 +10,7 @@ type PinPromptProps = {
   onSuccess: () => void;
   description?: string;
   submitLabel?: string;
+  onCancel?: () => void;
 };
 
 export default function PinPrompt({
@@ -18,6 +19,7 @@ export default function PinPrompt({
   onSuccess,
   description,
   submitLabel = "Confirmar",
+  onCancel,
 }: PinPromptProps) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -65,8 +67,26 @@ export default function PinPrompt({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <form
         onSubmit={handleSubmit}
-        className="flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl bg-white p-6 text-center shadow-xl"
+        className="relative flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl bg-white p-6 text-center shadow-xl"
       >
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (isSubmitting) {
+                return;
+              }
+              setPin("");
+              setError(null);
+              onCancel();
+            }}
+            className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-base font-semibold text-slate-500 transition hover:-translate-y-[1px] hover:bg-slate-100"
+            aria-label="Cerrar validación"
+            disabled={isSubmitting}
+          >
+            ×
+          </button>
+        ) : null}
         <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
         {description ? (
           <p className="text-sm text-slate-600">{description}</p>

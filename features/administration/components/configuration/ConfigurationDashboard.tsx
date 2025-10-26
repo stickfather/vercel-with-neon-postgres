@@ -404,7 +404,7 @@ export function ConfigurationDashboard({
             type="button"
             onClick={() => submitPinUpdate("manager")}
             disabled={loadingScope === "manager"}
-            className="cta-ripple mt-4 inline-flex items-center justify-center rounded-full bg-brand-deep px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
+            className="cta-ripple mt-4 inline-flex items-center justify-center rounded-full bg-brand-orange px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:-translate-y-[1px] hover:bg-[#ff7832] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loadingScope === "manager" ? "Guardando…" : "ACTUALIZAR PIN DE GERENCIA"}
           </button>

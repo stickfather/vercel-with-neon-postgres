@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { DateInput } from "@/components/ui/date-input";
@@ -9,6 +9,7 @@ import { getStudentStatusDisplay } from "@/features/administration/constants/stu
 import type { StudentBasicDetails } from "@/features/administration/data/student-profile";
 
 import { queueableFetch } from "@/lib/offline/fetch";
+import PinPrompt from "@/components/PinPrompt";
 
 const FLAG_VALUE_KEYS: Record<
   keyof Pick<
@@ -90,6 +91,22 @@ const FLAG_DEFINITIONS: ReadonlyArray<{
   },
 ];
 
+const ACTION_BUTTON_BASE =
+  "inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
+
+const ACTION_BUTTON_VARIANTS: Record<
+  "terminate" | "graduate" | "freeze" | "reactivate",
+  string
+> = {
+  terminate:
+    "bg-brand-orange hover:bg-[#ff7832] focus-visible:outline-[#ff7832]",
+  graduate:
+    "bg-amber-500 hover:bg-amber-600 focus-visible:outline-amber-500",
+  freeze: "bg-sky-600 hover:bg-sky-700 focus-visible:outline-sky-600",
+  reactivate:
+    "bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600",
+};
+
 type Props = {
   studentId: number;
   details: StudentBasicDetails | null;
@@ -115,11 +132,37 @@ type ToastState = {
   message: string;
 };
 
-type ActionType = "terminate" | "graduate";
+type ActionKind = "terminate" | "graduate" | "freeze" | "reactivate";
 
-type ActionState = {
-  type: ActionType;
+type BaseActionDialogState = {
+  kind: ActionKind;
+  loading: boolean;
+  error: string | null;
+};
+
+type TerminateOrGraduateState = BaseActionDialogState & {
+  kind: "terminate" | "graduate";
   date: string;
+};
+
+type FreezeActionState = BaseActionDialogState & {
+  kind: "freeze";
+  startDate: string;
+  endDate: string;
+};
+
+type ReactivateActionState = BaseActionDialogState & {
+  kind: "reactivate";
+};
+
+type ActionDialogState =
+  | TerminateOrGraduateState
+  | FreezeActionState
+  | ReactivateActionState
+  | null;
+
+type DeleteDialogState = {
+  pin: string;
   loading: boolean;
   error: string | null;
 };
@@ -165,47 +208,113 @@ function createFormState(details: StudentBasicDetails | null): FormState {
 }
 
 type ActionDialogProps = {
-  state: ActionState | null;
+  state: ActionDialogState;
   onCancel: () => void;
-  onDateChange: (value: string) => void;
+  onFieldChange: (field: "date" | "start" | "end", value: string) => void;
   onConfirm: () => void;
 };
 
-function ActionDialog({ state, onCancel, onDateChange, onConfirm }: ActionDialogProps) {
+function ActionDialog({ state, onCancel, onFieldChange, onConfirm }: ActionDialogProps) {
   if (!state) {
     return null;
   }
 
-  const isGraduate = state.type === "graduate";
+  const { kind, loading, error } = state;
+
+  const copy = {
+    title: "",
+    message: "",
+    confirmLabel: "Confirmar",
+    confirmClass:
+      "bg-brand-orange hover:bg-[#ff7832] focus-visible:outline-[#ff7832]",
+  };
+
+  if (kind === "terminate") {
+    copy.title = "¿Terminar este contrato?";
+    copy.message = "¿Estás seguro/a de que quieres terminar este contrato?";
+    copy.confirmLabel = loading ? "Guardando…" : "TERMINAR";
+    copy.confirmClass =
+      "bg-brand-orange hover:bg-[#ff7832] focus-visible:outline-[#ff7832]";
+  } else if (kind === "graduate") {
+    copy.title = "¿Marcar este estudiante como graduado/a?";
+    copy.message = "Confirma la graduación de este estudiante.";
+    copy.confirmLabel = loading ? "Guardando…" : "GRADUAR";
+    copy.confirmClass =
+      "bg-amber-500 hover:bg-amber-600 focus-visible:outline-amber-500";
+  } else if (kind === "freeze") {
+    copy.title = "¿Congelar contrato?";
+    copy.message =
+      "Ingresa el rango de congelamiento. El estudiante no contará como activo durante este período.";
+    copy.confirmLabel = loading ? "Guardando…" : "CONGELAR";
+    copy.confirmClass =
+      "bg-sky-600 hover:bg-sky-700 focus-visible:outline-sky-600";
+  } else {
+    copy.title = "¿Reactivar este estudiante?";
+    copy.message =
+      "Esto reabrirá el contrato y devolverá al estudiante a estado activo.";
+    copy.confirmLabel = loading ? "Guardando…" : "REACTIVAR";
+    copy.confirmClass =
+      "bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600";
+  }
+
+  const confirmDisabled = (() => {
+    if (loading) return true;
+    if (kind === "terminate" || kind === "graduate") {
+      return !state.date.trim().length;
+    }
+    if (kind === "freeze") {
+      return !state.startDate.trim().length || !state.endDate.trim().length;
+    }
+    return false;
+  })();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
-        <h2 className="text-lg font-semibold text-brand-deep">
-          {isGraduate ? "¿Marcar este estudiante como graduado/a?" : "¿Terminar este contrato?"}
-        </h2>
-        <p className="mt-2 text-sm text-brand-ink-muted">
-          {isGraduate
-            ? "Confirma la graduación de este estudiante."
-            : "¿Estás seguro/a de que quieres terminar este contrato?"}
-        </p>
-        <label className="mt-4 flex flex-col gap-2 text-sm font-medium text-brand-deep" htmlFor="action-date">
-          {isGraduate ? "Fecha de graduación" : "Fecha de finalización"}
-          <DateInput
-            id="action-date"
-            value={state.date}
-            onChange={(event) => onDateChange(event.target.value)}
-            disabled={state.loading}
-          />
-        </label>
-        {state.error ? (
-          <p className="mt-2 text-sm font-medium text-rose-600">{state.error}</p>
+        <h2 className="text-lg font-semibold text-brand-deep">{copy.title}</h2>
+        <p className="mt-2 text-sm text-brand-ink-muted">{copy.message}</p>
+        {kind === "terminate" || kind === "graduate" ? (
+          <label
+            className="mt-4 flex flex-col gap-2 text-sm font-medium text-brand-deep"
+            htmlFor="action-date"
+          >
+            {kind === "graduate" ? "Fecha de graduación" : "Fecha de finalización"}
+            <DateInput
+              id="action-date"
+              value={state.date}
+              onChange={(event) => onFieldChange("date", event.target.value)}
+              disabled={loading}
+            />
+          </label>
+        ) : null}
+        {kind === "freeze" ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+              Inicio de congelamiento
+              <DateInput
+                value={state.startDate}
+                onChange={(event) => onFieldChange("start", event.target.value)}
+                disabled={loading}
+              />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+              Fin de congelamiento
+              <DateInput
+                value={state.endDate}
+                onChange={(event) => onFieldChange("end", event.target.value)}
+                disabled={loading}
+              />
+            </label>
+          </div>
+        ) : null}
+        {error ? (
+          <p className="mt-3 text-sm font-medium text-rose-600">{error}</p>
         ) : null}
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button
             type="button"
             onClick={onCancel}
-            disabled={state.loading}
+            disabled={loading}
             className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-ink transition hover:-translate-y-[1px] hover:border-brand-teal hover:text-brand-teal disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancelar
@@ -213,14 +322,80 @@ function ActionDialog({ state, onCancel, onDateChange, onConfirm }: ActionDialog
           <button
             type="button"
             onClick={onConfirm}
-            disabled={state.loading || !state.date.trim().length}
-            className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 ${
-              isGraduate
-                ? "bg-brand-teal hover:bg-[#04a890] focus-visible:outline-[#00bfa6]"
-                : "bg-brand-orange hover:bg-[#ff7832] focus-visible:outline-[#ff7832]"
-            } ${state.loading || !state.date.trim().length ? "disabled:cursor-not-allowed disabled:opacity-60" : ""}`}
+            disabled={confirmDisabled}
+            className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 ${copy.confirmClass} ${
+              confirmDisabled ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
+            }`}
           >
-            {state.loading ? "Guardando…" : isGraduate ? "Graduar" : "Terminar"}
+            {copy.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type DeleteDialogProps = {
+  state: DeleteDialogState | null;
+  onCancel: () => void;
+  onPinChange: (value: string) => void;
+  onConfirm: () => void;
+};
+
+function DeleteDialog({ state, onCancel, onPinChange, onConfirm }: DeleteDialogProps) {
+  if (!state) {
+    return null;
+  }
+
+  const { pin, loading, error } = state;
+  const disabled = loading || pin.trim().length !== 4;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
+        <h2 className="text-lg font-semibold text-brand-deep">¿Eliminar este estudiante?</h2>
+        <p className="mt-2 text-sm text-brand-ink-muted">
+          Esta acción es permanente. Los datos históricos pueden dejar de estar disponibles en los reportes.
+        </p>
+        <label className="mt-4 flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
+          PIN de gerencia
+          <input
+            type="password"
+            inputMode="numeric"
+            value={pin}
+            maxLength={4}
+            pattern="\d{4}"
+            onChange={(event) => onPinChange(event.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+            className="rounded-3xl border border-brand-ink-muted/30 bg-white px-5 py-3 text-base shadow-inner focus:border-brand-orange focus:outline-none"
+            placeholder="••••"
+            autoFocus
+            disabled={loading}
+          />
+          <span className="text-xs font-medium text-brand-ink-muted">
+            Debe tener exactamente 4 dígitos numéricos.
+          </span>
+        </label>
+        {error ? (
+          <p className="mt-3 text-sm font-medium text-rose-600">{error}</p>
+        ) : null}
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-ink transition hover:-translate-y-[1px] hover:border-brand-teal hover:text-brand-teal disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={disabled}
+            className={`inline-flex items-center justify-center rounded-full bg-rose-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-rose-700 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-rose-600 ${
+              disabled ? "disabled:cursor-not-allowed disabled:opacity-60" : ""
+            }`}
+          >
+            {loading ? "Eliminando…" : "ELIMINAR"}
           </button>
         </div>
       </div>
@@ -235,12 +410,51 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [actionState, setActionState] = useState<ActionState | null>(null);
+  const [actionDialog, setActionDialog] = useState<ActionDialogState>(null);
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
+  const pinResolverRef = useRef<((value: boolean) => void) | null>(null);
+  const [pinPrompt, setPinPrompt] = useState<
+    | {
+        title: string;
+        description: string;
+        submitLabel: string;
+      }
+    | null
+  >(null);
 
   useEffect(() => {
     setCurrentDetails(details);
     setFormState(createFormState(details));
   }, [details]);
+
+  const requestManagerPin = useCallback((): Promise<boolean> => {
+    return new Promise((resolve) => {
+      pinResolverRef.current = resolve;
+      setPinPrompt({
+        title: "Confirma el PIN de gerencia",
+        description: "Ingresa el PIN de gerencia para continuar.",
+        submitLabel: "Validar PIN",
+      });
+    });
+  }, []);
+
+  const resolvePinRequest = useCallback((granted: boolean) => {
+    const resolver = pinResolverRef.current;
+    pinResolverRef.current = null;
+    if (resolver) {
+      resolver(granted);
+    }
+  }, []);
+
+  const handlePinSuccess = useCallback(() => {
+    resolvePinRequest(true);
+    setPinPrompt(null);
+  }, [resolvePinRequest]);
+
+  const handlePinCancel = useCallback(() => {
+    resolvePinRequest(false);
+    setPinPrompt(null);
+  }, [resolvePinRequest]);
 
   const statusDisplay = useMemo(() => {
     const display = getStudentStatusDisplay(currentDetails?.status ?? null);
@@ -270,6 +484,12 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       dotClass: flag.dotClass,
     }));
   }, [currentDetails]);
+
+  const canReactivate = useMemo(() => {
+    const key = statusDisplay.key;
+    if (!key) return false;
+    return key === "graduated" || key === "contract_terminated" || key === "frozen";
+  }, [statusDisplay.key]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -330,52 +550,152 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     }
   };
 
-  const openActionDialog = (type: ActionType) => {
+  const openActionDialog = (kind: ActionKind) => {
     if (!currentDetails) {
       return;
     }
-    const defaultDate =
-      type === "graduate"
-        ? currentDetails.graduationDate ?? currentDetails.contractEnd ?? ""
-        : currentDetails.contractEnd ?? "";
-    setActionState({ type, date: defaultDate ?? "", loading: false, error: null });
+    if (kind === "terminate" || kind === "graduate") {
+      const defaultDate =
+        kind === "graduate"
+          ? currentDetails.graduationDate ?? currentDetails.contractEnd ?? ""
+          : currentDetails.contractEnd ?? "";
+      setActionDialog({ kind, date: defaultDate ?? "", loading: false, error: null });
+      return;
+    }
+    if (kind === "freeze") {
+      setActionDialog({
+        kind: "freeze",
+        startDate: currentDetails.frozenStart ?? "",
+        endDate: currentDetails.frozenEnd ?? "",
+        loading: false,
+        error: null,
+      });
+      return;
+    }
+    setActionDialog({ kind: "reactivate", loading: false, error: null });
   };
 
-  const handleActionDateChange = (value: string) => {
-    setActionState((previous) => (previous ? { ...previous, date: value, error: null } : previous));
+  const handleActionFieldChange = (
+    field: "date" | "start" | "end",
+    value: string,
+  ) => {
+    setActionDialog((previous) => {
+      if (!previous) {
+        return previous;
+      }
+      if (previous.kind === "terminate" || previous.kind === "graduate") {
+        if (field !== "date") return previous;
+        return { ...previous, date: value, error: null };
+      }
+      if (previous.kind === "freeze") {
+        if (field === "start") {
+          return { ...previous, startDate: value, error: null };
+        }
+        if (field === "end") {
+          return { ...previous, endDate: value, error: null };
+        }
+      }
+      return previous;
+    });
   };
 
   const handleActionSubmit = async () => {
-    if (!actionState) {
+    if (!actionDialog) {
       return;
     }
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(actionState.date)) {
-      setActionState((previous) =>
-        previous
-          ? {
-              ...previous,
-              error: "Selecciona una fecha válida.",
-            }
-          : previous,
-      );
+    if (actionDialog.kind === "terminate" || actionDialog.kind === "graduate") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(actionDialog.date)) {
+        setActionDialog((previous) =>
+          previous && (previous.kind === "terminate" || previous.kind === "graduate")
+            ? { ...previous, error: "Selecciona una fecha válida." }
+            : previous,
+        );
+        return;
+      }
+    }
+
+    if (actionDialog.kind === "freeze") {
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(actionDialog.startDate) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(actionDialog.endDate)
+      ) {
+        setActionDialog((previous) =>
+          previous && previous.kind === "freeze"
+            ? { ...previous, error: "Selecciona un rango de fechas válido." }
+            : previous,
+        );
+        return;
+      }
+
+      if (actionDialog.startDate > actionDialog.endDate) {
+        setActionDialog((previous) =>
+          previous && previous.kind === "freeze"
+            ? { ...previous, error: "La fecha de inicio debe ser anterior al fin." }
+            : previous,
+        );
+        return;
+      }
+    }
+
+    const authorized = await requestManagerPin();
+    if (!authorized) {
       return;
     }
 
-    setActionState((previous) => (previous ? { ...previous, loading: true, error: null } : previous));
+    setActionDialog((previous) => (previous ? { ...previous, loading: true, error: null } : previous));
 
-    const payload =
-      actionState.type === "graduate"
-        ? {
-            graduation_date: actionState.date,
-            contract_end: actionState.date,
-            archived: true,
-          }
-        : {
-            contract_end: actionState.date,
-            graduation_date: null,
-            archived: true,
-          };
+    let payload: Record<string, unknown> = {};
+    let toastMessage = "";
+    let toastTone: ToastState["tone"] = "success";
+    let formUpdates: Partial<FormState> = {};
+
+    if (actionDialog.kind === "terminate") {
+      payload = {
+        contract_end: actionDialog.date,
+        graduation_date: null,
+        archived: true,
+      };
+      toastMessage = "⚠️ Contrato terminado correctamente.";
+      toastTone = "error";
+      formUpdates = { contractEnd: actionDialog.date };
+    } else if (actionDialog.kind === "graduate") {
+      payload = {
+        graduation_date: actionDialog.date,
+        contract_end: actionDialog.date,
+        archived: true,
+      };
+      toastMessage = "✅ Estudiante graduado correctamente.";
+      toastTone = "success";
+      formUpdates = { contractEnd: actionDialog.date };
+    } else if (actionDialog.kind === "freeze") {
+      payload = {
+        frozen_start: actionDialog.startDate,
+        frozen_end: actionDialog.endDate,
+        archived: true,
+      };
+      toastMessage = "⏸ Contrato congelado.";
+      toastTone = "success";
+      formUpdates = {
+        frozenStart: actionDialog.startDate,
+        frozenEnd: actionDialog.endDate,
+      };
+    } else {
+      payload = {
+        graduation_date: null,
+        contract_end: null,
+        frozen_start: null,
+        frozen_end: null,
+        archived: false,
+      };
+      toastMessage = "✅ Estudiante reactivado.";
+      toastTone = "success";
+      formUpdates = {
+        contractEnd: "",
+        frozenStart: "",
+        frozenEnd: "",
+      };
+    }
 
     try {
       const response = await queueableFetch(`/api/students/${studentId}`, {
@@ -398,47 +718,184 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
         if (!previous) {
           return previous;
         }
-        const nextContractEnd =
-          typeof data?.contract_end === "string"
-            ? data.contract_end
-            : (payload.contract_end as string | null | undefined) ?? previous.contractEnd;
-        const nextGraduationDate =
-          typeof data?.graduation_date === "string"
-            ? data.graduation_date
-            : payload.graduation_date ?? (actionState.type === "graduate" ? payload.contract_end ?? null : null);
+        const resolvedContractEnd = Object.prototype.hasOwnProperty.call(data, "contract_end")
+          ? (typeof data.contract_end === "string" || data.contract_end === null
+              ? data.contract_end
+              : previous.contractEnd)
+          : (payload.contract_end as string | null | undefined) ?? previous.contractEnd;
+        const resolvedGraduationDate = Object.prototype.hasOwnProperty.call(data, "graduation_date")
+          ? (typeof data.graduation_date === "string" || data.graduation_date === null
+              ? data.graduation_date
+              : previous.graduationDate)
+          : (payload.graduation_date as string | null | undefined) ?? previous.graduationDate;
+        const resolvedFrozenStart = Object.prototype.hasOwnProperty.call(data, "frozen_start")
+          ? (typeof data.frozen_start === "string" || data.frozen_start === null
+              ? data.frozen_start
+              : previous.frozenStart)
+          : (payload.frozen_start as string | null | undefined) ?? previous.frozenStart;
+        const resolvedFrozenEnd = Object.prototype.hasOwnProperty.call(data, "frozen_end")
+          ? (typeof data.frozen_end === "string" || data.frozen_end === null
+              ? data.frozen_end
+              : previous.frozenEnd)
+          : (payload.frozen_end as string | null | undefined) ?? previous.frozenEnd;
+        const resolvedStatus =
+          typeof data?.status === "string" ? data.status : previous.status;
+        const resolvedArchived = Object.prototype.hasOwnProperty.call(data, "archived")
+          ? (typeof data.archived === "boolean" ? data.archived : previous.archived)
+          : (typeof payload.archived === "boolean" ? payload.archived : previous.archived);
+
         return {
           ...previous,
-          contractEnd: nextContractEnd ?? null,
-          graduationDate: nextGraduationDate ?? null,
-          status: typeof data?.status === "string" ? data.status : previous.status,
-          archived:
-            typeof data?.archived === "boolean"
-              ? data.archived
-              : previous.archived ?? true,
+          contractEnd: resolvedContractEnd ?? null,
+          graduationDate: resolvedGraduationDate ?? null,
+          frozenStart: resolvedFrozenStart ?? null,
+          frozenEnd: resolvedFrozenEnd ?? null,
+          status: resolvedStatus,
+          archived: resolvedArchived ?? previous.archived ?? null,
         };
       });
 
-      setFormState((previous) => ({
-        ...previous,
-        contractEnd: payload.contract_end ?? previous.contractEnd,
-      }));
+      if (Object.keys(formUpdates).length > 0) {
+        setFormState((previous) => ({
+          ...previous,
+          ...formUpdates,
+        }));
+      }
 
-      setToast({
-        tone: actionState.type === "graduate" ? "success" : "error",
-        message:
-          actionState.type === "graduate"
-            ? "✅ Estudiante graduado correctamente."
-            : "⚠️ Contrato terminado correctamente.",
-      });
+      setToast({ tone: toastTone, message: toastMessage });
 
-      setActionState(null);
+      setActionDialog(null);
       router.refresh();
     } catch (err) {
       const message =
         err instanceof Error
           ? err.message
           : "No se pudo actualizar el estado del estudiante.";
-      setActionState((previous) => (previous ? { ...previous, loading: false, error: message } : previous));
+      setActionDialog((previous) => (previous ? { ...previous, loading: false, error: message } : previous));
+    }
+  };
+
+  const handleDeletePinChange = (value: string) => {
+    setDeleteDialog((previous) =>
+      previous ? { ...previous, pin: value, error: null } : previous,
+    );
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteDialog) {
+      return;
+    }
+
+    const sanitized = deleteDialog.pin.trim();
+    if (!/^\d{4}$/.test(sanitized)) {
+      setDeleteDialog((previous) =>
+        previous
+          ? { ...previous, error: "Ingresa un PIN válido de 4 dígitos." }
+          : previous,
+      );
+      return;
+    }
+
+    setDeleteDialog((previous) =>
+      previous ? { ...previous, loading: true, error: null } : previous,
+    );
+
+    try {
+      const validationResponse = await fetch("/api/admin/security/validate-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "manager", pin: sanitized }),
+      });
+
+      const validationPayload = (await validationResponse
+        .json()
+        .catch(() => ({}))) as { valid?: boolean; error?: string };
+
+      if (!validationResponse.ok || validationPayload?.valid !== true) {
+        throw new Error(validationPayload?.error ?? "PIN incorrecto.");
+      }
+
+      const response = await queueableFetch(`/api/students/${studentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.error === "string"
+            ? data.error
+            : "No se pudo eliminar al estudiante.",
+        );
+      }
+
+      setCurrentDetails((previous) => {
+        if (!previous) return previous;
+        const resolvedContractEnd = Object.prototype.hasOwnProperty.call(
+          data,
+          "contract_end",
+        )
+          ? (typeof data.contract_end === "string" || data.contract_end === null
+              ? data.contract_end
+              : previous.contractEnd)
+          : previous.contractEnd;
+        const resolvedGraduationDate = Object.prototype.hasOwnProperty.call(
+          data,
+          "graduation_date",
+        )
+          ? (typeof data.graduation_date === "string" || data.graduation_date === null
+              ? data.graduation_date
+              : previous.graduationDate)
+          : previous.graduationDate;
+        const resolvedFrozenStart = Object.prototype.hasOwnProperty.call(
+          data,
+          "frozen_start",
+        )
+          ? (typeof data.frozen_start === "string" || data.frozen_start === null
+              ? data.frozen_start
+              : previous.frozenStart)
+          : previous.frozenStart;
+        const resolvedFrozenEnd = Object.prototype.hasOwnProperty.call(
+          data,
+          "frozen_end",
+        )
+          ? (typeof data.frozen_end === "string" || data.frozen_end === null
+              ? data.frozen_end
+              : previous.frozenEnd)
+          : previous.frozenEnd;
+        const resolvedArchived = Object.prototype.hasOwnProperty.call(data, "archived")
+          ? (typeof data.archived === "boolean" ? data.archived : previous.archived)
+          : true;
+
+        return {
+          ...previous,
+          contractEnd: resolvedContractEnd ?? null,
+          graduationDate: resolvedGraduationDate ?? null,
+          frozenStart: resolvedFrozenStart ?? null,
+          frozenEnd: resolvedFrozenEnd ?? null,
+          archived: resolvedArchived ?? true,
+          status:
+            typeof data?.status === "string" ? data.status : previous.status,
+        };
+      });
+
+      setToast({
+        tone: "success",
+        message: "🗑️ Estudiante archivado correctamente.",
+      });
+
+      setDeleteDialog(null);
+      router.refresh();
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "No se pudo validar el PIN de gerencia.";
+      setDeleteDialog((previous) =>
+        previous ? { ...previous, loading: false, error: message } : previous,
+      );
     }
   };
 
@@ -584,7 +1041,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           </label>
         </div>
         <div className="my-2 h-px w-full bg-brand-ink-muted/20" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
             Inicio de contrato
             <DateInput
@@ -603,25 +1060,41 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               }
             />
           </label>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
             <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
               Acciones rápidas
             </span>
-            <div className="flex flex-col gap-2">
+            <div className="grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={() => openActionDialog("terminate")}
-                className="inline-flex items-center justify-center rounded-full bg-brand-orange px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#ff7832] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7832]"
+                className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.terminate}`}
               >
-                Terminar contrato
+                TERMINAR CONTRATO
               </button>
               <button
                 type="button"
                 onClick={() => openActionDialog("graduate")}
-                className="inline-flex items-center justify-center rounded-full bg-brand-teal px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.graduate}`}
               >
-                Graduar
+                GRADUAR
               </button>
+              <button
+                type="button"
+                onClick={() => openActionDialog("freeze")}
+                className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.freeze}`}
+              >
+                CONGELAR CONTRATO
+              </button>
+              {canReactivate ? (
+                <button
+                  type="button"
+                  onClick={() => openActionDialog("reactivate")}
+                  className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.reactivate}`}
+                >
+                  REACTIVAR
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -679,6 +1152,23 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           </button>
         </div>
       </form>
+      <div className="rounded-3xl border border-rose-200 bg-rose-50/80 px-5 py-4 shadow-inner">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-rose-600">
+          Zona de peligro
+        </h3>
+        <p className="mt-2 text-sm text-rose-700">
+          Elimina la ficha del estudiante cuando debas retirarlo definitivamente de la administración.
+        </p>
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setDeleteDialog({ pin: "", loading: false, error: null })}
+            className="inline-flex items-center justify-center rounded-full bg-rose-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-rose-700 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-rose-600"
+          >
+            ELIMINAR ESTUDIANTE
+          </button>
+        </div>
+      </div>
       {toast ? (
         <EphemeralToast
           message={toast.message}
@@ -687,11 +1177,27 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
         />
       ) : null}
       <ActionDialog
-        state={actionState}
-        onCancel={() => setActionState(null)}
-        onDateChange={handleActionDateChange}
+        state={actionDialog}
+        onCancel={() => setActionDialog(null)}
+        onFieldChange={handleActionFieldChange}
         onConfirm={handleActionSubmit}
       />
+      <DeleteDialog
+        state={deleteDialog}
+        onCancel={() => setDeleteDialog(null)}
+        onPinChange={handleDeletePinChange}
+        onConfirm={handleDeleteConfirm}
+      />
+      {pinPrompt ? (
+        <PinPrompt
+          role="manager"
+          title={pinPrompt.title}
+          description={pinPrompt.description}
+          submitLabel={pinPrompt.submitLabel}
+          onSuccess={handlePinSuccess}
+          onCancel={handlePinCancel}
+        />
+      ) : null}
     </section>
   );
 }

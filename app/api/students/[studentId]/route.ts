@@ -69,8 +69,21 @@ export async function PATCH(
     Object.prototype.hasOwnProperty.call(body, "graduation_date") ||
     Object.prototype.hasOwnProperty.call(body, "graduationDate");
   const hasArchived = Object.prototype.hasOwnProperty.call(body, "archived");
+  const hasFrozenStart =
+    Object.prototype.hasOwnProperty.call(body, "frozen_start") ||
+    Object.prototype.hasOwnProperty.call(body, "frozenStart");
+  const hasFrozenEnd =
+    Object.prototype.hasOwnProperty.call(body, "frozen_end") ||
+    Object.prototype.hasOwnProperty.call(body, "frozenEnd");
 
-  if (!hasStatus && !hasContractEnd && !hasGraduationDate && !hasArchived) {
+  if (
+    !hasStatus &&
+    !hasContractEnd &&
+    !hasGraduationDate &&
+    !hasArchived &&
+    !hasFrozenStart &&
+    !hasFrozenEnd
+  ) {
     return NextResponse.json(
       { error: "No se detectaron cambios para guardar." },
       { status: 400 },
@@ -125,6 +138,44 @@ export async function PATCH(
   try {
     if (hasGraduationDate) {
       graduationDate = normalizeDateInput(rawGraduationDate);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Formato de fecha inválido. Usa AAAA-MM-DD.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  const rawFrozenStart = hasFrozenStart
+    ? Object.prototype.hasOwnProperty.call(body, "frozen_start")
+      ? body.frozen_start
+      : body.frozenStart
+    : undefined;
+
+  let frozenStartDate: string | null | undefined;
+  try {
+    if (hasFrozenStart) {
+      frozenStartDate = normalizeDateInput(rawFrozenStart);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Formato de fecha inválido. Usa AAAA-MM-DD.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  const rawFrozenEnd = hasFrozenEnd
+    ? Object.prototype.hasOwnProperty.call(body, "frozen_end")
+      ? body.frozen_end
+      : body.frozenEnd
+    : undefined;
+
+  let frozenEndDate: string | null | undefined;
+  try {
+    if (hasFrozenEnd) {
+      frozenEndDate = normalizeDateInput(rawFrozenEnd);
     }
   } catch (error) {
     const message =
@@ -189,6 +240,14 @@ export async function PATCH(
       values.push(graduationDate);
       updates.push(`graduation_date = $${values.length}::date`);
     }
+    if (frozenStartDate !== undefined) {
+      values.push(frozenStartDate);
+      updates.push(`frozen_start = $${values.length}::date`);
+    }
+    if (frozenEndDate !== undefined) {
+      values.push(frozenEndDate);
+      updates.push(`frozen_end = $${values.length}::date`);
+    }
     if (archivedValue !== undefined) {
       values.push(archivedValue);
       updates.push(`archived = $${values.length}`);
@@ -226,6 +285,8 @@ export async function PATCH(
     return NextResponse.json({
       contract_end: updated.contractEnd,
       graduation_date: updated.graduationDate,
+      frozen_start: updated.frozenStart,
+      frozen_end: updated.frozenEnd,
       status: updated.status,
       archived: updated.archived,
     });

@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, type ReactElement } from "react";
+import { useMemo } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
+  CoachPanelLessonJourneyEntry,
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
 
@@ -15,6 +16,30 @@ type CoachPanelProps = {
 };
 
 const HEATMAP_DAYS = 30;
+
+const LESSON_LEVEL_BUCKETS = [
+  { key: "A1", label: "A1" },
+  { key: "A2", label: "A2" },
+  { key: "B1", label: "B1" },
+  { key: "B2", label: "B2" },
+  { key: "C1", label: "C1" },
+  { key: "C2", label: "C2" },
+  { key: "EXAM", label: "Preparación de examen" },
+] as const;
+
+function resolveLessonBucket(level: string | null | undefined): string {
+  if (!level) return "OTHER";
+  const normalized = level.trim().toUpperCase();
+  if (normalized.startsWith("A1")) return "A1";
+  if (normalized.startsWith("A2")) return "A2";
+  if (normalized.startsWith("B1")) return "B1";
+  if (normalized.startsWith("B2")) return "B2";
+  if (normalized.startsWith("C1")) return "C1";
+  if (normalized.startsWith("C2")) return "C2";
+  if (normalized.includes("EXAM")) return "EXAM";
+  if (normalized.includes("PREP")) return "EXAM";
+  return "OTHER";
+}
 
 function cx(...classes: Array<string | null | undefined | false>): string {
   return classes.filter(Boolean).join(" ");
@@ -189,27 +214,62 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const journeyLessons = lessonJourney.lessons;
   const currentGlobalSeq = lessonJourney.currentPosition ?? null;
 
-  const lessonElements: ReactElement[] = [];
-  let lastLevel: string | null = null;
-  journeyLessons.forEach((lesson, index) => {
-    if (lesson.level && lesson.level !== lastLevel) {
-      lastLevel = lesson.level;
-      lessonElements.push(
-        <div key={`level-${lesson.level}-${index}`} className="flex flex-col items-center gap-2 pr-4">
-          <span className="rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-brand-teal">
-            {lesson.level}
-          </span>
-        </div>,
-      );
+  const lessonRows = useMemo(() => {
+    const baseBuckets: Array<{
+      key: string;
+      label: string;
+      lessons: CoachPanelLessonJourneyEntry[];
+    }> = LESSON_LEVEL_BUCKETS.map((bucket) => ({
+      ...bucket,
+      lessons: [] as CoachPanelLessonJourneyEntry[],
+    }));
+    const otherBucket: {
+      key: string;
+      label: string;
+      lessons: CoachPanelLessonJourneyEntry[];
+    } = {
+      key: "OTHER",
+      label: "Otros",
+      lessons: [] as CoachPanelLessonJourneyEntry[],
+    };
+
+    journeyLessons.forEach((lesson) => {
+      const targetKey = resolveLessonBucket(lesson.level);
+      const target =
+        baseBuckets.find((bucket) => bucket.key === targetKey) ?? otherBucket;
+      target.lessons.push(lesson);
+    });
+
+    const rows = [...baseBuckets];
+    if (otherBucket.lessons.length) {
+      rows.push(otherBucket);
     }
 
-    const nextLessonLevel = journeyLessons[index + 1]?.level ?? null;
-    const isExamBubble = Boolean(lesson.level) && lesson.level !== nextLessonLevel;
-    const isCompleted = lesson.completed || (currentGlobalSeq != null && lesson.lessonGlobalSeq != null && lesson.lessonGlobalSeq < currentGlobalSeq);
-    const isCurrent = currentGlobalSeq != null && lesson.lessonGlobalSeq === currentGlobalSeq;
-    const bubbleLabel = isExamBubble ? "Exam" : lesson.seq ?? "?";
-    const effort = lesson.effort;
+    return rows.map((row) => ({
+      ...row,
+      lessons: [...row.lessons].sort((a, b) => {
+        const aSeq = a.seq ?? a.lessonGlobalSeq ?? 0;
+        const bSeq = b.seq ?? b.lessonGlobalSeq ?? 0;
+        return aSeq - bSeq;
+      }),
+    }));
+  }, [journeyLessons]);
 
+  const renderLessonBubble = (
+    lesson: CoachPanelLessonJourneyEntry,
+    index: number,
+    lessons: CoachPanelLessonJourneyEntry[],
+  ) => {
+    const isExamBubble = index === lessons.length - 1;
+    const isCompleted =
+      lesson.completed ||
+      (currentGlobalSeq != null &&
+        lesson.lessonGlobalSeq != null &&
+        lesson.lessonGlobalSeq < currentGlobalSeq);
+    const isCurrent =
+      currentGlobalSeq != null &&
+      lesson.lessonGlobalSeq === currentGlobalSeq;
+    const effort = lesson.effort;
     const effortHours =
       effort?.totalHours != null && Number.isFinite(effort.totalHours)
         ? effort.totalHours
@@ -222,8 +282,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       effortHours != null
         ? effortHours
         : inLessonMinutes != null
-          ? inLessonMinutes / 60
-          : null;
+        ? inLessonMinutes / 60
+        : null;
     const showHoursBadge = totalHoursValue != null && totalHoursValue > 0;
     const totalHoursDisplay = showHoursBadge
       ? totalHoursValue.toFixed(1)
@@ -232,7 +292,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const tooltipLines: string[] = [];
     tooltipLines.push(
       `Nivel ${lesson.level ?? "—"} · Lección ${
-        lesson.seq != null ? formatNumber(lesson.seq, { maximumFractionDigits: 0 }) : "—"
+        lesson.seq != null
+          ? formatNumber(lesson.seq, { maximumFractionDigits: 0 })
+          : "—"
       }`,
     );
 
@@ -241,15 +303,18 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     }
 
     if (effort) {
-      if (effort.sessionsCount != null && Number.isFinite(effort.sessionsCount)) {
+      if (
+        effort.sessionsCount != null &&
+        Number.isFinite(effort.sessionsCount)
+      ) {
         tooltipLines.push(
           `Sesiones registradas: ${formatNumber(effort.sessionsCount, { maximumFractionDigits: 0 })}`,
         );
       }
       tooltipLines.push(
-        `Primera actividad: ${formatDate(effort.startedOn ?? null)} · Última actividad: ${formatDate(
-          effort.finishedOn ?? null,
-        )}`,
+        `Primera actividad: ${formatDate(
+          effort.startedOn ?? null,
+        )} · Última actividad: ${formatDate(effort.finishedOn ?? null)}`,
       );
     } else if (totalHoursValue == null) {
       tooltipLines.push("Sin actividad registrada para esta lección.");
@@ -257,10 +322,17 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
     const lessonTooltip = tooltipLines.join("\n");
 
-    lessonElements.push(
+    const bubbleLabel = isExamBubble
+      ? "EXAM"
+      : lesson.seq != null
+      ? formatNumber(lesson.seq, { maximumFractionDigits: 0 })
+      : "?";
+
+    return (
       <div
-        key={`lesson-${lesson.lessonGlobalSeq ?? index}`}
-        className="flex flex-col items-center gap-3 pb-12 text-center"
+        key={`lesson-${lesson.lessonGlobalSeq ?? `${lesson.level ?? "nivel"}-${index}`}`}
+        className="flex flex-col items-center gap-3 text-center"
+        title={lessonTooltip}
       >
         <div
           className={cx(
@@ -275,12 +347,16 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               ? "ring-2 ring-emerald-300 ring-offset-2 ring-offset-white"
               : null,
           )}
-          title={lessonTooltip}
         >
           {isCurrent ? (
-            <span className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse" aria-hidden="true" />
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse"
+            />
           ) : null}
-          <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>{bubbleLabel}</span>
+          <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>
+            {bubbleLabel}
+          </span>
           <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
             {showHoursBadge ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
@@ -294,9 +370,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             )}
           </div>
         </div>
-      </div>,
+      </div>
     );
-  });
+  };
+
 
   const paceForecastLabel = paceForecast.forecastMonthsToFinishPlan != null
     ? `${formatNumber(paceForecast.forecastMonthsToFinishPlan, { maximumFractionDigits: 1 })} meses`
@@ -351,14 +428,27 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             Vista general del recorrido planificado y el progreso alcanzado.
           </p>
         </div>
-        <div className="overflow-x-auto pb-2">
-          <div className="flex items-center gap-3">
-            {lessonElements.length ? lessonElements : (
-              <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-6 py-4 text-sm text-brand-ink-muted shadow-sm">
-                No hay lecciones planificadas.
+        <div className="flex flex-col gap-4">
+          {lessonRows.map((row) => (
+            <div key={`lesson-row-${row.key}`} className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                <span className="inline-flex w-fit min-w-[72px] items-center justify-center rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-brand-teal">
+                  {row.label}
+                </span>
+                {row.lessons.length ? (
+                  <div className="grid flex-1 gap-3 [grid-template-columns:repeat(auto-fit,minmax(72px,1fr))]">
+                    {row.lessons.map((lesson, index) =>
+                      renderLessonBubble(lesson, index, row.lessons),
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
+                    Sin lecciones registradas.
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          ))}
         </div>
       </section>
 
