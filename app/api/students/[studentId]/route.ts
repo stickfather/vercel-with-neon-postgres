@@ -11,6 +11,15 @@ function normalizeStudentId(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+const ALLOWED_STATUS_VALUES = new Set([
+  "active",
+  "frozen",
+  "invalid",
+  "online",
+  "graduated",
+  "contract_terminated",
+]);
+
 function normalizeDateInput(value: unknown): string | null {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -52,26 +61,39 @@ export async function PATCH(
   }
 
   const body = payload as Record<string, unknown>;
-  const hasGraduated = Object.prototype.hasOwnProperty.call(body, "graduated");
+  const hasStatus = Object.prototype.hasOwnProperty.call(body, "status");
   const hasContractEnd =
     Object.prototype.hasOwnProperty.call(body, "contract_end") ||
     Object.prototype.hasOwnProperty.call(body, "contractEnd");
 
-  if (!hasGraduated && !hasContractEnd) {
+  if (!hasStatus && !hasContractEnd) {
     return NextResponse.json(
       { error: "No se detectaron cambios para guardar." },
       { status: 400 },
     );
   }
 
-  const rawGraduated = hasGraduated ? body.graduated : undefined;
-
-  if (hasGraduated && typeof rawGraduated !== "boolean") {
-    return NextResponse.json(
-      { error: "El estado de graduación debe ser verdadero o falso." },
-      { status: 400 },
-    );
+  let statusValue: string | null = null;
+  if (hasStatus) {
+    const rawStatus = body.status;
+    if (typeof rawStatus !== "string") {
+      return NextResponse.json(
+        { error: "El estado debe ser un texto válido." },
+        { status: 400 },
+      );
+    }
+    const normalizedStatus = rawStatus.trim().toLowerCase();
+    if (!ALLOWED_STATUS_VALUES.has(normalizedStatus)) {
+      return NextResponse.json(
+        { error: "Estado desconocido para el estudiante." },
+        { status: 400 },
+      );
+    }
+    statusValue = normalizedStatus;
   }
+
+  const requiresEndDate =
+    statusValue === "graduated" || statusValue === "contract_terminated";
 
   const rawContractEnd = hasContractEnd
     ? Object.prototype.hasOwnProperty.call(body, "contract_end")
@@ -92,45 +114,38 @@ export async function PATCH(
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  if (statusValue && requiresEndDate && !hasContractEnd) {
+    return NextResponse.json(
+      { error: "Debes proporcionar la fecha de finalización para este estado." },
+      { status: 400 },
+    );
+  }
+
+  if (statusValue && !requiresEndDate && !hasContractEnd) {
+    contractEndDate = null;
+  }
+
   try {
     const sql = getSqlClient();
 
-    if (hasGraduated) {
-      const graduated = rawGraduated as boolean;
-      const statusValue = graduated ? "graduado" : "activo";
-
-      if (graduated) {
-        if (contractEndDate == null) {
-          await sql`
-            UPDATE public.students
-            SET graduated = true,
-                status = ${statusValue},
-                contract_end = CURRENT_DATE,
-                updated_at = NOW()
-            WHERE id = ${studentId}::bigint
-          `;
-        } else {
-          await sql`
-            UPDATE public.students
-            SET graduated = true,
-                status = ${statusValue},
-                contract_end = ${contractEndDate}::date,
-                updated_at = NOW()
-            WHERE id = ${studentId}::bigint
-          `;
-        }
-      } else {
-        const nextContractEnd = hasContractEnd ? contractEndDate : null;
-        await sql`
-          UPDATE public.students
-          SET graduated = false,
-              status = ${statusValue},
-              contract_end = ${nextContractEnd ?? null}::date,
-              updated_at = NOW()
-          WHERE id = ${studentId}::bigint
-        `;
-      }
-    } else if (hasContractEnd) {
+    if (statusValue && contractEndDate !== undefined) {
+      await sql`
+        UPDATE public.students
+        SET status = ${statusValue},
+            graduated = ${statusValue === "graduated"},
+            contract_end = ${contractEndDate ?? null}::date,
+            updated_at = NOW()
+        WHERE id = ${studentId}::bigint
+      `;
+    } else if (statusValue) {
+      await sql`
+        UPDATE public.students
+        SET status = ${statusValue},
+            graduated = ${statusValue === "graduated"},
+            updated_at = NOW()
+        WHERE id = ${studentId}::bigint
+      `;
+    } else if (contractEndDate !== undefined) {
       await sql`
         UPDATE public.students
         SET contract_end = ${contractEndDate ?? null}::date,
@@ -148,7 +163,7 @@ export async function PATCH(
     revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
 
     return NextResponse.json({
-      graduated: Boolean(updated.graduated),
+      graduated: Boolean(updated.graduated ?? updated.status === "graduated"),
       contract_end: updated.contractEnd,
       status: updated.status,
     });

@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
+import {
+  getStudentStatusDisplay,
+  normalizeStudentStatus,
+  STUDENT_STATUS_CONFIG,
+  STUDENT_STATUS_ORDER,
+  type StudentStatusKey,
+} from "@/features/administration/constants/student-status";
 import type {
   BasicDetailFieldType,
   StudentBasicDetailFieldConfig,
@@ -22,32 +29,6 @@ const BOOLEAN_LABEL: Record<string, string> = {
   true: "Sí",
   false: "No",
 };
-
-const STATUS_STYLE_MAP: Record<string, { label: string; className: string }> = {
-  active: { label: "Activo", className: "bg-emerald-100 text-emerald-700" },
-  activo: { label: "Activo", className: "bg-emerald-100 text-emerald-700" },
-  graduated: { label: "Graduado", className: "bg-sky-100 text-sky-700" },
-  graduado: { label: "Graduado", className: "bg-sky-100 text-sky-700" },
-  slow_progression: { label: "Progreso lento", className: "bg-amber-100 text-amber-700" },
-  progreso_lento: { label: "Progreso lento", className: "bg-amber-100 text-amber-700" },
-  absent: { label: "Ausente", className: "bg-rose-100 text-rose-700" },
-  ausente: { label: "Ausente", className: "bg-rose-100 text-rose-700" },
-  inactive: { label: "Inactivo", className: "bg-slate-200 text-slate-700" },
-  inactivo: { label: "Inactivo", className: "bg-slate-200 text-slate-700" },
-  invalid: { label: "Inválido", className: "bg-rose-200 text-rose-700" },
-  invalido: { label: "Inválido", className: "bg-rose-200 text-rose-700" },
-  on_hold: { label: "En pausa", className: "bg-amber-100 text-amber-700" },
-  paused: { label: "En pausa", className: "bg-amber-100 text-amber-700" },
-  en_pausa: { label: "En pausa", className: "bg-amber-100 text-amber-700" },
-  frozen: { label: "Congelado", className: "bg-cyan-100 text-cyan-700" },
-  congelado: { label: "Congelado", className: "bg-cyan-100 text-cyan-700" },
-  dropout: { label: "Retirado", className: "bg-rose-100 text-rose-700" },
-  retirado: { label: "Retirado", className: "bg-rose-100 text-rose-700" },
-  prospect: { label: "Prospecto", className: "bg-slate-200 text-slate-700" },
-  prospecto: { label: "Prospecto", className: "bg-slate-200 text-slate-700" },
-};
-
-const DEFAULT_STATUS_CLASS = "bg-brand-deep-soft text-brand-deep";
 
 const FINAL_ROW_FIELD_KEYS = new Set<
   StudentBasicDetailFieldConfig["key"]
@@ -186,23 +167,17 @@ function sanitizeValue(value: unknown, type: BasicDetailFieldType): unknown {
   return value;
 }
 
-function normalizeStatusKey(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
+function formatStatusDate(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
 
-function formatStatusLabel(value: string): string {
-  const cleaned = value.replace(/[_-]+/g, " ").replace(/\s{2,}/g, " ").trim();
-  if (!cleaned) return "Estado";
-  return cleaned
-    .split(" ")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+
+  return value;
 }
 
 export function BasicDetailsPanel({ studentId, details }: Props) {
@@ -215,20 +190,23 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     message: string;
     tone: "success" | "error";
   } | null>(null);
-  const [graduationError, setGraduationError] = useState<string | null>(null);
-  const [graduatedState, setGraduatedState] = useState<boolean>(() => Boolean(details?.graduated));
-  const [graduationDate, setGraduationDate] = useState<string>(() => details?.contractEnd ?? "");
-  const [usedTodayFallback, setUsedTodayFallback] = useState<boolean>(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusValue, setStatusValue] = useState<StudentStatusKey>(() =>
+    normalizeStudentStatus(details?.status ?? null) ?? "active",
+  );
+  const [statusDateValue, setStatusDateValue] = useState<string>(
+    () => details?.contractEnd ?? "",
+  );
 
   useEffect(() => {
     setFormState(details);
   }, [details]);
 
   useEffect(() => {
-    setGraduatedState(Boolean(details?.graduated));
-    setGraduationDate(details?.contractEnd ?? "");
-    setUsedTodayFallback(false);
-  }, [details?.contractEnd, details?.graduated]);
+    const nextStatus = normalizeStudentStatus(details?.status ?? null) ?? "active";
+    setStatusValue(nextStatus);
+    setStatusDateValue(details?.contractEnd ?? "");
+  }, [details?.contractEnd, details?.status]);
 
   const editableFields = useMemo(
     () =>
@@ -277,39 +255,13 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     return result;
   }, []);
 
-  const statusBadges = useMemo(() => {
-    if (!formState?.status) {
-      return [] as Array<{ key: string; label: string; className: string }>;
-    }
-
-    const tokens = formState.status
-      .replace(/[;\r\n]+/g, ",")
-      .split(/[,|/]/)
-      .map((token) => token.trim())
-      .filter(Boolean);
-
-    const seen = new Set<string>();
-    const entries: Array<{ key: string; label: string; className: string }> = [];
-
-    tokens.forEach((token, index) => {
-      const normalized = normalizeStatusKey(token);
-      const dedupeKey = normalized || `${token}-${index}`;
-      if (seen.has(dedupeKey)) {
-        return;
-      }
-      seen.add(dedupeKey);
-
-      const style =
-        STATUS_STYLE_MAP[normalized] ?? STATUS_STYLE_MAP[normalized.replace(/s$/, "")] ?? null;
-      entries.push({
-        key: dedupeKey,
-        label: style?.label ?? formatStatusLabel(token),
-        className: style?.className ?? DEFAULT_STATUS_CLASS,
-      });
-    });
-
-    return entries;
-  }, [formState?.status]);
+  const statusDisplay = useMemo(() => {
+    const display = getStudentStatusDisplay(formState?.status ?? null);
+    const formattedDate = display.showEndDate
+      ? formatStatusDate(formState?.contractEnd ?? null)
+      : null;
+    return { ...display, formattedDate };
+  }, [formState?.status, formState?.contractEnd]);
 
   const flagBadges = useMemo(() => {
     if (!formState) {
@@ -366,29 +318,28 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       payload[field.key] = sanitizeValue(rawValue, field.type);
     }
 
-    const graduationPayload: Record<string, unknown> = {
-      graduated: graduatedState,
-    };
-
-    if (graduatedState) {
-      if (graduationDate) {
-        graduationPayload.contract_end = graduationDate;
-      } else {
-        graduationPayload.contract_end = null;
-      }
-    } else {
-      graduationPayload.contract_end = graduationDate ? graduationDate : null;
+    const statusConfig = STUDENT_STATUS_CONFIG[statusValue];
+    if (statusConfig.showEndDate && !statusDateValue) {
+      setStatusError(
+        statusConfig.endDateLabel
+          ? `Ingresa la fecha de ${statusConfig.endDateLabel.toLowerCase()}.`
+          : "Ingresa la fecha de finalización.",
+      );
+      return;
     }
+
+    const statusPayload: Record<string, unknown> = {
+      status: statusValue,
+      contract_end: statusConfig.showEndDate ? statusDateValue || null : null,
+    };
 
     setError(null);
     setStatusMessage(null);
-    setGraduationError(null);
+    setStatusError(null);
     setToast(null);
-    setUsedTodayFallback(graduatedState && !graduationDate);
 
     startTransition(() => {
       void (async () => {
-        let graduationRequested = false;
         try {
           const response = await fetch(
             `/api/students/${studentId}/basic-details`,
@@ -430,53 +381,48 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             };
           });
 
-          graduationRequested = true;
-          const graduationResponse = await fetch(`/api/students/${studentId}`, {
+          const statusResponse = await fetch(`/api/students/${studentId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(graduationPayload),
+            body: JSON.stringify(statusPayload),
           });
 
-          const graduationData = await graduationResponse.json().catch(() => ({}));
+          const statusData = await statusResponse.json().catch(() => ({}));
 
-          if (!graduationResponse.ok) {
+          if (!statusResponse.ok) {
             const message =
-              typeof graduationData?.error === "string"
-                ? graduationData.error
+              typeof statusData?.error === "string"
+                ? statusData.error
                 : "No se pudo actualizar el estado.";
-            setGraduationError(message);
+            setStatusError(message);
             setToast({ message, tone: "error" });
             return;
           }
 
-          const nextGraduated =
-            typeof graduationData?.graduated === "boolean"
-              ? graduationData.graduated
-              : graduatedState;
+          const rawStatus =
+            typeof statusData?.status === "string" && statusData.status.length
+              ? statusData.status
+              : statusValue;
+          const normalizedStatus = normalizeStudentStatus(rawStatus) ?? statusValue;
           const rawContractEnd =
-            typeof graduationData?.contract_end === "string"
-              ? graduationData.contract_end
-              : typeof graduationData?.contractEnd === "string"
-                ? graduationData.contractEnd
-                : null;
+            typeof statusData?.contract_end === "string"
+              ? statusData.contract_end
+              : typeof statusData?.contractEnd === "string"
+                ? statusData.contractEnd
+                : (statusPayload.contract_end as string | null | undefined) ?? null;
           const nextContractEnd = rawContractEnd ?? null;
-          const nextStatus =
-            typeof graduationData?.status === "string" && graduationData.status.length
-              ? graduationData.status
-              : null;
 
-          setGraduatedState(nextGraduated);
-          setGraduationDate(nextContractEnd ?? "");
-          setUsedTodayFallback(nextGraduated && !nextContractEnd);
-          setGraduationError(null);
+          setStatusValue(normalizedStatus);
+          setStatusDateValue(nextContractEnd ?? "");
+          setStatusError(null);
 
           setFormState((previous) => {
             if (!previous) return previous;
             return {
               ...previous,
-              graduated: nextGraduated,
               contractEnd: nextContractEnd,
-              status: nextStatus ?? previous.status,
+              status: rawStatus,
+              graduated: normalizedStatus === "graduated",
             };
           });
 
@@ -489,9 +435,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             err instanceof Error
               ? err.message
               : "No se pudo guardar la información. Inténtalo nuevamente.";
-          if (graduationRequested) {
-            setGraduationError(message);
-          }
+          setStatusError(message);
           setToast({ message, tone: "error" });
           setError(message);
         }
@@ -523,20 +467,17 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             Estado y banderas
           </span>
           <div className="flex flex-wrap items-center gap-1.5">
-            {statusBadges.length ? (
-              statusBadges.map((badge) => (
-                <span
-                  key={badge.key}
-                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${badge.className}`}
-                >
-                  {badge.label}
-                </span>
-              ))
-            ) : (
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${DEFAULT_STATUS_CLASS}`}>
-                Estado no disponible
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${statusDisplay.badgeClassName}`}
+            >
+              {statusDisplay.label}
+            </span>
+            {statusDisplay.formattedDate ? (
+              <span className="inline-flex items-center rounded-full bg-brand-ink-muted/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-ink">
+                {(statusDisplay.endDateLabel ?? "Fecha") + ": "}
+                {statusDisplay.formattedDate}
               </span>
-            )}
+            ) : null}
             {flagBadges.length ? (
               flagBadges.map((badge) => (
                 <span
@@ -669,78 +610,80 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           </span>
           <div className="grid gap-4 md:grid-cols-2">
             <label
-              htmlFor="basic-graduated"
-              className="flex h-full flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner"
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                Graduado/a
-              </span>
-              <span className="flex items-center justify-between gap-4">
-                <span className="text-sm font-semibold text-brand-deep">
-                  {graduatedState ? "Sí" : "No"}
-                </span>
-                <input
-                  id="basic-graduated"
-                  type="checkbox"
-                  checked={graduatedState}
-                  disabled={isPending}
-                  onChange={(event) => {
-                    const nextChecked = event.target.checked;
-                    setGraduatedState(nextChecked);
-                    setFormState((previous) =>
-                      previous ? { ...previous, graduated: nextChecked } : previous,
-                    );
-                    setGraduationError(null);
-                    if (nextChecked) {
-                      if (!graduationDate) {
-                        const today = new Date();
-                        const iso = today.toISOString().slice(0, 10);
-                        setGraduationDate(iso);
-                        setFormState((previous) =>
-                          previous ? { ...previous, contractEnd: iso } : previous,
-                        );
-                        setUsedTodayFallback(true);
-                      } else {
-                        setUsedTodayFallback(false);
-                      }
-                    } else {
-                      setUsedTodayFallback(false);
-                    }
-                  }}
-                  className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
-                />
-              </span>
-            </label>
-            <label
-              htmlFor="basic-contract-end"
+              htmlFor="basic-status"
               className="flex h-full flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner"
             >
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-                Fecha de finalización
+                Estado
               </span>
-              <input
-                id="basic-contract-end"
-                type="date"
+              <select
+                id="basic-status"
+                value={statusValue}
                 disabled={isPending}
-                value={graduationDate}
                 onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setGraduationDate(nextValue);
-                  setGraduationError(null);
-                  setUsedTodayFallback(graduatedState && nextValue === "");
-                  setFormState((previous) =>
-                    previous ? { ...previous, contractEnd: nextValue || null } : previous,
-                  );
+                  const nextStatus = event.target.value as StudentStatusKey;
+                  const nextConfig = STUDENT_STATUS_CONFIG[nextStatus];
+                  const nextDate = nextConfig.showEndDate ? statusDateValue : "";
+                  setStatusValue(nextStatus);
+                  setStatusError(null);
+                  setStatusDateValue(nextDate);
+                  setFormState((previous) => {
+                    if (!previous) return previous;
+                    return {
+                      ...previous,
+                      status: nextStatus,
+                      contractEnd: nextConfig.showEndDate
+                        ? nextDate || previous.contractEnd || null
+                        : null,
+                      graduated: nextStatus === "graduated",
+                    };
+                  });
                 }}
                 className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
-              />
+              >
+                {STUDENT_STATUS_ORDER.map((key) => (
+                  <option key={key} value={key}>
+                    {STUDENT_STATUS_CONFIG[key].label}
+                  </option>
+                ))}
+              </select>
             </label>
+            {STUDENT_STATUS_CONFIG[statusValue].showEndDate ? (
+              <label
+                htmlFor="basic-status-date"
+                className="flex h-full flex-col gap-2 rounded-2xl bg-white/95 p-4 shadow-inner"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                  {(
+                    STUDENT_STATUS_CONFIG[statusValue].endDateLabel ?? "Fecha de finalización"
+                  ).concat(":")}
+                </span>
+                <input
+                  id="basic-status-date"
+                  type="date"
+                  disabled={isPending}
+                  value={statusDateValue}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setStatusDateValue(nextValue);
+                    setStatusError(null);
+                    setFormState((previous) =>
+                      previous ? { ...previous, contractEnd: nextValue || null } : previous,
+                    );
+                  }}
+                  className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                />
+              </label>
+            ) : null}
           </div>
           <div className="flex flex-col gap-1 text-xs text-brand-ink-muted">
-            {graduatedState && usedTodayFallback ? <span>Se usará la fecha de hoy.</span> : null}
-            {graduationError ? (
-              <span className="font-semibold text-rose-600">{graduationError}</span>
-            ) : null}
+            {statusError ? (
+              <span className="font-semibold text-rose-600">{statusError}</span>
+            ) : (
+              <span>
+                Selecciona el estado actual del estudiante. Las fechas solo aplican para graduados o terminados.
+              </span>
+            )}
           </div>
         </div>
 

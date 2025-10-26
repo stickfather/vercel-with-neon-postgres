@@ -8,7 +8,8 @@ export type StudentManagementEntry = {
   id: number;
   fullName: string;
   level: string | null;
-  state: string | null;
+  status: string | null;
+  contractEnd: string | null;
   isNewStudent: boolean;
   isExamPreparation: boolean;
   hasSpecialNeeds: boolean;
@@ -74,8 +75,11 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
       coerceString(
         pick(row, ["level", "current_level", "last_level", "student_level"]),
       ) ?? null,
-    state:
-      coerceString(pick(row, ["state", "status", "student_state"])) ?? null,
+    status:
+      coerceString(pick(row, ["status", "state", "student_state"])) ?? null,
+    contractEnd:
+      coerceString(pick(row, ["contract_end", "contractEnd", "end_date"])) ??
+      null,
     isNewStudent:
       coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
       false,
@@ -145,7 +149,8 @@ async function runStudentManagementQuery(
         s.id AS student_id,
         s.full_name AS full_name,
         s.current_level::text AS level,
-        s.status AS state,
+        s.status AS status,
+        s.contract_end::text AS contract_end,
         COALESCE(flags.is_new_student, false) AS is_new_student,
         COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
         COALESCE(flags.has_special_needs, false) AS has_special_needs,
