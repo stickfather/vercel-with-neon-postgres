@@ -646,17 +646,23 @@ export async function getPayrollMatrix(
 
   const resultRows: PayrollMatrixRow[] = [];
   for (const [, value] of grouped) {
-    const cells = days.map(
-      (day) =>
-        value.cellMap.get(day) ?? {
-          date: day,
-          hours: 0,
-          approved: false,
-          approvedHours: null,
-          hasEdits: false,
-          dayStatus: "pending",
-        },
-    );
+    const cells: PayrollMatrixCell[] = days.map((day) => {
+      const existing = value.cellMap.get(day);
+      if (existing) {
+        return existing;
+      }
+
+      const fallback: PayrollMatrixCell = {
+        date: day,
+        hours: 0,
+        approved: false,
+        approvedHours: null,
+        hasEdits: false,
+        dayStatus: "pending",
+      };
+
+      return fallback;
+    });
     resultRows.push({ staffId: value.staffId, staffName: value.staffName, cells });
   }
 
