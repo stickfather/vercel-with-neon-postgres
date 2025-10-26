@@ -547,7 +547,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     };
 
     try {
-      const response = await fetch(`/api/(administration)/students/${studentId}/basic-details`, {
+      const response = await fetch(`/api/students/${studentId}/basic-details`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

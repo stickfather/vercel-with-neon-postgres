@@ -203,7 +203,7 @@ function StudentManagementTable({ students }: Props) {
 
       setIsSubmittingStudent(true);
       try {
-        const response = await queueableFetch("/api/(administration)/students", {
+        const response = await queueableFetch("/api/students", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

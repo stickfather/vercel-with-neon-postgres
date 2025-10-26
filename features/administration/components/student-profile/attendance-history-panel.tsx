@@ -203,7 +203,7 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
       setIsSubmitting(true);
       try {
         const response = await queueableFetch(
-          `/api/(administration)/students/${studentId}/attendance`,
+          `/api/students/${studentId}/attendance`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
