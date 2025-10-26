@@ -1907,30 +1907,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             ),
           ),
         );
-        setMatrixData((previous) => {
-          if (!previous) return previous;
-          return {
-            ...previous,
-            rows: previous.rows.map((row) => {
-              if (row.staffId !== saved.staffId) {
-                return row;
-              }
-              return {
-                ...row,
-                cells: row.cells.map((cell) =>
-                  cell.date === saved.workDate
-                    ? {
-                        ...cell,
-                        approved: false,
-                        hasEdits: true,
-                        status: "edited_not_approved",
-                      }
-                    : cell,
-                ),
-              };
-            }),
-          };
-        });
         await reloadSessions({ silent: true });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(selectedCell.staffId);
@@ -1958,7 +1934,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       refreshMonthStatusForStaff,
       refreshMonthSummary,
       reloadSessions,
-      setMatrixData,
       selectedCell,
     ],
   );

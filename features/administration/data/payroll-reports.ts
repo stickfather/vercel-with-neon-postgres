@@ -33,6 +33,7 @@ export type MatrixCell = {
   approved: boolean;
   approvedHours: number | null;
   hasEdits?: boolean;
+  editedAfterApproval?: boolean;
   status?: PayrollDayStatus;
 };
 
@@ -366,17 +367,22 @@ function toBoolean(value: unknown): boolean {
   return false;
 }
 
-function normalizeDayStatus(value: unknown): PayrollDayStatus {
-  if (typeof value === "string" && value.trim().length) {
-    const normalized = value.trim().toLowerCase();
-    if (
-      normalized === "pending" ||
-      normalized === "approved" ||
-      normalized === "edited_and_approved" ||
-      normalized === "edited_not_approved"
-    ) {
-      return normalized as PayrollDayStatus;
-    }
+function resolveDayStatus(
+  approved: boolean,
+  hasEdits: boolean,
+  editedAfterApproval: boolean,
+): PayrollDayStatus {
+  if (!approved && !hasEdits) {
+    return "pending";
+  }
+  if (!approved && hasEdits) {
+    return "edited_not_approved";
+  }
+  if (approved && editedAfterApproval) {
+    return "edited_and_approved";
+  }
+  if (approved) {
+    return "approved";
   }
   return "pending";
 }
@@ -610,15 +616,6 @@ export async function fetchPayrollMatrix({
   }
 
   const rows = normalizeRows<SqlRow>(await sql`
-    WITH edit_flags AS (
-      SELECT
-        s.staff_id,
-        s.work_date,
-        BOOL_OR(s.was_edited) AS has_edits
-      FROM public.staff_day_sessions_with_edits_v AS s
-      WHERE s.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
-      GROUP BY s.staff_id, s.work_date
-    )
     SELECT
       m.staff_id,
       sm.full_name AS staff_name,
@@ -627,16 +624,10 @@ export async function fetchPayrollMatrix({
       m.approved,
       m.approved_hours,
       m.total_hours,
-      ef.has_edits,
-      CASE
-        WHEN m.approved = TRUE AND COALESCE(ef.has_edits, FALSE) = TRUE THEN 'edited_and_approved'
-        WHEN m.approved = FALSE AND COALESCE(ef.has_edits, FALSE) = TRUE THEN 'edited_not_approved'
-        WHEN m.approved = TRUE THEN 'approved'
-        ELSE 'pending'
-      END AS day_status
+      m.has_edits,
+      m.edited_after_approval
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-    LEFT JOIN edit_flags ef ON ef.staff_id = m.staff_id AND ef.work_date = m.work_date
     WHERE m.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
@@ -714,9 +705,10 @@ export async function fetchPayrollMatrix({
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
     const hasEdits = toBoolean(readRowValue(row, ["has_edits", "hasEdits"]));
-    const dayStatus = normalizeDayStatus(
-      readRowValue(row, ["day_status", "status", "state", "dayStatus"]),
+    const editedAfterApproval = toBoolean(
+      readRowValue(row, ["edited_after_approval", "editedAfterApproval"]),
     );
+    const dayStatus = resolveDayStatus(approved, hasEdits, editedAfterApproval);
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
@@ -724,6 +716,7 @@ export async function fetchPayrollMatrix({
       approved,
       approvedHours: safeApprovedHours,
       hasEdits,
+      editedAfterApproval,
       status: dayStatus,
     });
   }
@@ -740,6 +733,7 @@ export async function fetchPayrollMatrix({
         approved: false,
         approvedHours: null,
         hasEdits: false,
+        editedAfterApproval: false,
         status: "pending",
       };
     });
@@ -1124,6 +1118,7 @@ export async function createStaffDaySession({
     SELECT *
     FROM public.add_staff_session(
       ${staffId}::bigint,
+      ${normalizedWorkDate}::date,
       ${checkinLocal}::text,
       ${checkoutLocal}::text,
       ${sanitizedEditorId ?? null}::bigint,

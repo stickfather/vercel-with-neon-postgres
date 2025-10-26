@@ -70,17 +70,22 @@ function toBoolean(value: unknown): boolean {
   return false;
 }
 
-function normalizeDayStatus(value: unknown): PayrollDayStatus {
-  if (typeof value === "string" && value.trim().length) {
-    const normalized = value.trim().toLowerCase();
-    if (
-      normalized === "pending" ||
-      normalized === "approved" ||
-      normalized === "edited_and_approved" ||
-      normalized === "edited_not_approved"
-    ) {
-      return normalized as PayrollDayStatus;
-    }
+function resolveDayStatus(
+  approved: boolean,
+  hasEdits: boolean,
+  editedAfterApproval: boolean,
+): PayrollDayStatus {
+  if (!approved && !hasEdits) {
+    return "pending";
+  }
+  if (!approved && hasEdits) {
+    return "edited_not_approved";
+  }
+  if (approved && editedAfterApproval) {
+    return "edited_and_approved";
+  }
+  if (approved) {
+    return "approved";
   }
   return "pending";
 }
@@ -582,22 +587,16 @@ export async function getPayrollMatrix(
       SELECT
         m.staff_id,
         sm.full_name AS staff_name,
-      m.work_date,
-      m.total_hours,
-      m.approved_hours,
-      m.horas_mostrar,
-      m.approved,
-      COALESCE(he.has_edits, FALSE) AS has_edits,
-      CASE
-        WHEN m.approved = TRUE AND COALESCE(he.has_edits, FALSE) = TRUE THEN 'edited_and_approved'
-        WHEN m.approved = FALSE AND COALESCE(he.has_edits, FALSE) = TRUE THEN 'edited_not_approved'
-        WHEN m.approved = TRUE THEN 'approved'
-        ELSE 'pending'
-      END AS day_status
-    FROM public.staff_day_matrix_local_v AS m
-    LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-    LEFT JOIN public.staff_day_has_edits_v he ON he.staff_id = m.staff_id AND he.work_date = m.work_date
-    WHERE m.work_date BETWEEN ${start}::date AND ${end}::date
+        m.work_date,
+        m.total_hours,
+        m.approved_hours,
+        m.horas_mostrar,
+        m.approved,
+        m.has_edits,
+        m.edited_after_approval
+      FROM public.staff_day_matrix_local_v AS m
+      LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+      WHERE m.work_date BETWEEN ${start}::date AND ${end}::date
       ORDER BY m.staff_id, m.work_date
     `,
   );
@@ -634,13 +633,18 @@ export async function getPayrollMatrix(
       });
     }
     const entry = grouped.get(staffId)!;
+    const hasEdits = toBoolean(row["has_edits"]);
+    const editedAfterApproval = toBoolean(row["edited_after_approval"]);
+    const dayStatus = resolveDayStatus(approved, hasEdits, editedAfterApproval);
+
     entry.cellMap.set(workDate, {
       date: workDate,
       approved,
       hours,
       approvedHours,
-      hasEdits: toBoolean(row["has_edits"]),
-      dayStatus: normalizeDayStatus(row["day_status"]),
+      hasEdits,
+      editedAfterApproval,
+      dayStatus,
     });
   }
 
@@ -658,6 +662,7 @@ export async function getPayrollMatrix(
         approved: false,
         approvedHours: null,
         hasEdits: false,
+        editedAfterApproval: false,
         dayStatus: "pending",
       };
 

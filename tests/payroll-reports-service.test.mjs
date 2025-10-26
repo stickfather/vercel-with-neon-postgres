@@ -405,6 +405,7 @@ describe("payroll integration", () => {
             horas_mostrar: 1.5,
             approved: false,
             has_edits: false,
+            edited_after_approval: false,
           },
           {
             staff_id: 1,
@@ -415,6 +416,7 @@ describe("payroll integration", () => {
             horas_mostrar: 2.4,
             approved: true,
             has_edits: false,
+            edited_after_approval: false,
           },
           {
             staff_id: 2,
@@ -425,6 +427,7 @@ describe("payroll integration", () => {
             horas_mostrar: 3,
             approved: false,
             has_edits: false,
+            edited_after_approval: false,
           },
         ],
       },
@@ -464,6 +467,7 @@ describe("payroll integration", () => {
             horas_mostrar: 1,
             approved: false,
             has_edits: false,
+            edited_after_approval: false,
           },
           {
             staff_id: 7,
@@ -474,6 +478,7 @@ describe("payroll integration", () => {
             horas_mostrar: 2,
             approved: false,
             has_edits: false,
+            edited_after_approval: false,
           },
         ],
       },
@@ -485,6 +490,71 @@ describe("payroll integration", () => {
     const onlyRow = matrix.rows[0];
     assert.equal(onlyRow.cells[0].date, "2025-10-01");
     assert.equal(onlyRow.cells[1].date, "2025-10-02");
+  });
+
+  it("derives bubble status using approved, edit, and edited-after-approval flags", async () => {
+    const { sql } = createMockSqlClient([
+      {
+        match: /staff_day_matrix_local_v/,
+        rows: [
+          {
+            staff_id: 4,
+            staff_name: "Estado",
+            work_date: "2025-10-01",
+            total_hours: 1,
+            approved_hours: null,
+            horas_mostrar: 1,
+            approved: false,
+            has_edits: false,
+            edited_after_approval: false,
+          },
+          {
+            staff_id: 4,
+            staff_name: "Estado",
+            work_date: "2025-10-02",
+            total_hours: 1,
+            approved_hours: null,
+            horas_mostrar: 1,
+            approved: false,
+            has_edits: true,
+            edited_after_approval: false,
+          },
+          {
+            staff_id: 4,
+            staff_name: "Estado",
+            work_date: "2025-10-03",
+            total_hours: 1,
+            approved_hours: null,
+            horas_mostrar: 1,
+            approved: true,
+            has_edits: true,
+            edited_after_approval: true,
+          },
+          {
+            staff_id: 4,
+            staff_name: "Estado",
+            work_date: "2025-10-04",
+            total_hours: 1,
+            approved_hours: 1,
+            horas_mostrar: 1,
+            approved: true,
+            has_edits: true,
+            edited_after_approval: false,
+          },
+        ],
+      },
+    ]);
+
+    const matrix = await getPayrollMatrix({ start: "2025-10-01", end: "2025-10-04" }, sql);
+    assert.deepEqual(matrix.days, ["2025-10-01", "2025-10-02", "2025-10-03", "2025-10-04"]);
+    assert.equal(matrix.rows.length, 1);
+    const statuses = matrix.rows[0].cells.map((cell) => cell.dayStatus);
+    assert.deepEqual(statuses, [
+      "pending",
+      "edited_not_approved",
+      "edited_and_approved",
+      "approved",
+    ]);
   });
 });
 
