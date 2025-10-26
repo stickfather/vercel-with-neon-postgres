@@ -350,7 +350,6 @@ async function assertNoOverlap(
 async function executeEditStaffSession(
   sql: SqlClientLike,
   sessionId: number,
-  editorStaffId: number | null,
   checkinIso: string,
   checkoutIso: string,
   note: string | null,
@@ -362,7 +361,6 @@ async function executeEditStaffSession(
       SELECT *
       FROM public.edit_staff_session(
         ${sessionId}::bigint,
-        ${editorStaffId ?? null}::bigint,
         ${checkinLocal}::text,
         ${checkoutLocal}::text,
         ${note ?? null}::text
@@ -465,10 +463,6 @@ export const OverrideAndApproveSchema = z.object({
   overrides: z.array(sessionOverrideSchema).default([]),
   additions: z.array(sessionAdditionSchema).default([]),
   deletions: z.array(z.number().int("El identificador de la sesión no es válido.")).default([]),
-  editorStaffId: z
-    .number()
-    .int("El identificador del editor no es válido.")
-    .optional(),
   note: z
     .string()
     .trim()
@@ -852,10 +846,6 @@ export async function overrideAndApprove(
     throw new Error("SQL client does not support transactions");
   }
   await sql.begin(async (transaction) => {
-    const editorStaffId =
-      payload.editorStaffId != null && Number.isFinite(payload.editorStaffId)
-        ? Number(payload.editorStaffId)
-        : null;
     const editNote = payload.note ?? null;
 
     if (payload.deletions.length) {
@@ -865,7 +855,6 @@ export async function overrideAndApprove(
             SELECT *
             FROM public.delete_staff_session(
               ${sessionId}::bigint,
-              ${editorStaffId ?? null}::bigint,
               ${editNote ?? null}::text
             )
           `,
@@ -883,7 +872,6 @@ export async function overrideAndApprove(
       await executeEditStaffSession(
         transaction,
         override.sessionId,
-        editorStaffId,
         checkinIso,
         checkoutIso,
         editNote,
@@ -907,9 +895,9 @@ export async function overrideAndApprove(
           SELECT *
           FROM public.add_staff_session(
             ${payload.staffId}::bigint,
+            ${payload.workDate}::text,
             ${checkinLocal}::text,
             ${checkoutLocal}::text,
-            ${editorStaffId ?? null}::bigint,
             ${editNote ?? null}::text
           )
         `,

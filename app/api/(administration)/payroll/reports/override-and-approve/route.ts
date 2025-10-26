@@ -38,13 +38,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const { staffId, workDate, overrides, additions, deletions, editorStaffId, note } = (payload ?? {}) as {
+  const { staffId, workDate, overrides, additions, deletions, note } = (payload ?? {}) as {
     staffId?: number;
     workDate?: string;
     overrides?: OverridePayload[];
     additions?: AdditionPayload[];
     deletions?: (number | string | null | undefined)[];
-    editorStaffId?: number | string | null;
     note?: string | null;
   };
 
@@ -112,16 +111,6 @@ export async function POST(request: Request) {
       overrides: sanitizedOverrides,
       additions: sanitizedAdditions,
       deletions: sanitizedDeletions,
-      editorStaffId: (() => {
-        if (typeof editorStaffId === "number" && Number.isFinite(editorStaffId)) {
-          return Number(editorStaffId);
-        }
-        if (typeof editorStaffId === "string" && editorStaffId.trim().length) {
-          const parsed = Number(editorStaffId);
-          return Number.isFinite(parsed) ? parsed : null;
-        }
-        return null;
-      })(),
       note: typeof note === "string" ? note : null,
     });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

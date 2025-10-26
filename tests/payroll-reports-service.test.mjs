@@ -242,6 +242,8 @@ describe("payroll integration", () => {
         index < commitIndex,
     );
     assert(deleteCall);
+    assert.equal(deleteCall.values.length, 2);
+    assert.equal(deleteCall.values[0], 101);
 
     const editCall = operations.find(
       (op, index) =>
@@ -251,6 +253,8 @@ describe("payroll integration", () => {
         index < commitIndex,
     );
     assert(editCall);
+    assert.equal(editCall.values.length, 4);
+    assert.equal(editCall.values[0], 102);
 
     const addCall = operations.find(
       (op, index) =>
@@ -260,6 +264,9 @@ describe("payroll integration", () => {
         index < commitIndex,
     );
     assert(addCall);
+    assert.equal(addCall.values.length, 5);
+    assert.equal(addCall.values[0], 9);
+    assert.equal(addCall.values[1], "2025-10-07");
 
     const approvalOp = operations.find(
       (op, index) =>

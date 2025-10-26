@@ -976,7 +976,6 @@ export async function updateStaffDaySession({
   workDate,
   checkinTime,
   checkoutTime,
-  editorStaffId,
   note,
 }: {
   sessionId: number;
@@ -984,7 +983,6 @@ export async function updateStaffDaySession({
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
@@ -998,8 +996,6 @@ export async function updateStaffDaySession({
     begin?: (callback: (client: SqlClient) => Promise<void>) => Promise<void>;
   };
 
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
   const executeUpdate = async (client: SqlClient) => {
@@ -1018,7 +1014,6 @@ export async function updateStaffDaySession({
       SELECT *
       FROM public.edit_staff_session(
         ${sessionId}::bigint,
-        ${sanitizedEditorId ?? null}::bigint,
         ${checkinLocal}::text,
         ${checkoutLocal}::text,
         ${sanitizedNote ?? null}::text
@@ -1083,14 +1078,12 @@ export async function createStaffDaySession({
   workDate,
   checkinTime,
   checkoutTime,
-  editorStaffId,
   note,
 }: {
   staffId: number;
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
@@ -1100,8 +1093,6 @@ export async function createStaffDaySession({
   const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
   ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
   const minutes = computeDurationMinutes(checkinIso, checkoutIso);
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
   await assertNoOverlap(sql, {
@@ -1118,10 +1109,9 @@ export async function createStaffDaySession({
     SELECT *
     FROM public.add_staff_session(
       ${staffId}::bigint,
-      ${normalizedWorkDate}::date,
+      ${normalizedWorkDate}::text,
       ${checkinLocal}::text,
       ${checkoutLocal}::text,
-      ${sanitizedEditorId ?? null}::bigint,
       ${sanitizedNote ?? null}::text
     )
   `);
@@ -1194,26 +1184,21 @@ export async function deleteStaffDaySession({
   sessionId,
   staffId,
   workDate,
-  editorStaffId,
   note,
 }: {
   sessionId: number;
   staffId: number;
   workDate: string;
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
-  const normalizedWorkDate = ensureWorkDate(workDate);
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
+  ensureWorkDate(workDate);
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
   const deletedRows = normalizeRows<SqlRow>(await sql`
     SELECT *
     FROM public.delete_staff_session(
       ${sessionId}::bigint,
-      ${sanitizedEditorId ?? null}::bigint,
       ${sanitizedNote ?? null}::text
     )
   `);
@@ -1255,7 +1240,6 @@ export async function overrideSessionsAndApprove({
   overrides = [],
   additions = [],
   deletions = [],
-  editorStaffId = null,
   note = null,
 }: {
   staffId: number;
@@ -1270,13 +1254,10 @@ export async function overrideSessionsAndApprove({
     checkoutTime: string;
   }[];
   deletions?: number[];
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
   await sql`BEGIN`;
@@ -1289,7 +1270,6 @@ export async function overrideSessionsAndApprove({
         SELECT *
         FROM public.delete_staff_session(
           ${Number(sessionId)}::bigint,
-          ${sanitizedEditorId ?? null}::bigint,
           ${sanitizedNote ?? null}::text
         )
       `);
@@ -1332,7 +1312,6 @@ export async function overrideSessionsAndApprove({
         SELECT *
         FROM public.edit_staff_session(
           ${override.sessionId}::bigint,
-          ${sanitizedEditorId ?? null}::bigint,
           ${checkinLocal}::text,
           ${checkoutLocal}::text,
           ${sanitizedNote ?? null}::text
@@ -1387,9 +1366,9 @@ export async function overrideSessionsAndApprove({
           SELECT *
           FROM public.add_staff_session(
             ${staffId}::bigint,
+            ${normalizedWorkDate}::text,
             ${checkinLocal}::text,
             ${checkoutLocal}::text,
-            ${sanitizedEditorId ?? null}::bigint,
             ${sanitizedNote ?? null}::text
           )
         `;
