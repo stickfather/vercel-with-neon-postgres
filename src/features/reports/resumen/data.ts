@@ -1,5 +1,9 @@
 import { cache } from "react";
 import { listStudentManagementEntries } from "@/features/administration/data/students";
+import {
+  normalizeStudentStatus,
+  type StudentStatusKey,
+} from "@/features/administration/constants/student-status";
 import type {
   GenHeader,
   LevelBands,
@@ -53,6 +57,15 @@ const LEVEL_STATE_KEYS: LevelStateKey[] = [
 ];
 
 type LevelStateCounts = Record<LevelStateKey, number> & { total: number };
+
+const STATUS_TO_LEVEL_STATE: Record<StudentStatusKey, LevelStateKey> = {
+  active: "activo",
+  online: "activo",
+  frozen: "congelado",
+  invalid: "invalido",
+  graduated: "graduado",
+  contract_terminated: "retirado",
+};
 
 const STATE_LOOKUP = new Map<string, LevelStateKey>();
 
@@ -236,7 +249,11 @@ async function fetchLevelStates(): Promise<LevelStateBreakdown[]> {
 
   for (const entry of entries) {
     const levelLabel = normalizeLevelLabel(entry.level);
-    const stateKey = normalizeStateKey(entry.state);
+    const statusKey = normalizeStudentStatus(entry.status);
+    const fallbackState = (entry as { state?: string | null }).state;
+    const stateKey = statusKey
+      ? STATUS_TO_LEVEL_STATE[statusKey] ?? "otros"
+      : normalizeStateKey(fallbackState);
     const bucket = levelMap.get(levelLabel);
 
     if (!bucket) {
