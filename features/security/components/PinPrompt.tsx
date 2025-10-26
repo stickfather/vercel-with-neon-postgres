@@ -18,7 +18,7 @@ type PinPromptProps = {
   ctaLabel?: string;
 };
 
-const MAX_PIN_LENGTH = 4;
+const MAX_PIN_LENGTH = 6;
 
 export function PinPrompt({
   scope,

@@ -1,4 +1,13 @@
+import { getSqlClient, normalizeRows, type SqlRow } from "@/lib/db/client";
+
 import type { PinScope } from "@/lib/security/pin-session";
+
+type AccessPinRow = SqlRow & {
+  role?: unknown;
+  pin_hash?: unknown;
+  updated_at?: unknown;
+  active?: unknown;
+};
 
 export type PinStatus = {
   scope: PinScope;
@@ -12,102 +21,248 @@ export type SecurityPinsSummary = {
   updatedAt: string | null;
 };
 
-const DEFAULT_PIN = "1234";
-
-type PinRecord = {
-  value: string;
-  updatedAt: string | null;
-};
-
 type PinUpdates = {
   staffPin?: string;
   managerPin?: string;
 };
 
-const pinStore: Record<PinScope, PinRecord> = {
-  staff: { value: DEFAULT_PIN, updatedAt: null },
-  manager: { value: DEFAULT_PIN, updatedAt: null },
-};
+const PIN_PATTERN = /^\d{4,6}$/;
+const BCRYPT_ROUNDS = 12;
 
-function sanitizePin(pin: string): string {
+export function sanitizePin(pin: string): string {
   const trimmed = pin.trim();
-  if (!/^\d{4,8}$/.test(trimmed)) {
-    throw new Error("El PIN debe tener entre 4 y 8 dígitos numéricos.");
+  if (!PIN_PATTERN.test(trimmed)) {
+    throw new Error("El PIN debe contener entre 4 y 6 dígitos numéricos.");
   }
   return trimmed;
 }
 
-function getLatestUpdatedAt(): string | null {
-  const timestamps = Object.values(pinStore)
-    .map((record) => record.updatedAt)
-    .filter((value): value is string => typeof value === "string");
-  if (timestamps.length === 0) {
-    return null;
-  }
-  return timestamps.sort().at(-1) ?? null;
+function toPinScope(value: unknown): PinScope | null {
+  if (typeof value !== "string") return null;
+  if (value === "staff" || value === "manager") return value;
+  return null;
 }
 
-export async function getSecurityPinsSummary(): Promise<SecurityPinsSummary> {
+function normalizeTimestamp(value: unknown): string | null {
+  if (typeof value === "string") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date.toISOString();
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  return null;
+}
+
+async function hashPin(pin: string, sql = getSqlClient()): Promise<string> {
+  const rows = normalizeRows<{ hashed?: unknown }>(
+    await sql`
+      SELECT crypt(${pin}, gen_salt('bf', ${BCRYPT_ROUNDS})) AS hashed
+    `,
+  );
+
+  const hashed = rows[0]?.hashed;
+  if (typeof hashed === "string" && hashed.length > 0) {
+    return hashed;
+  }
+
+  throw new Error("No se pudo generar el hash para el PIN solicitado.");
+}
+
+async function comparePin(
+  pin: string,
+  hash: string,
+  sql = getSqlClient(),
+): Promise<boolean> {
+  const rows = normalizeRows<{ matches?: unknown }>(
+    await sql`
+      SELECT crypt(${pin}, ${hash}) = ${hash} AS matches
+    `,
+  );
+
+  return rows[0]?.matches === true;
+}
+
+async function fetchActivePin(
+  scope: PinScope,
+  sql = getSqlClient(),
+): Promise<AccessPinRow | null> {
+  const rows = normalizeRows<AccessPinRow>(
+    await sql`
+      SELECT role, pin_hash, updated_at, active
+      FROM access_pins
+      WHERE role = ${scope}
+        AND active = TRUE
+      ORDER BY updated_at DESC NULLS LAST
+      LIMIT 1
+    `,
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function getSecurityPinStatuses(
+  sql = getSqlClient(),
+): Promise<PinStatus[]> {
+  const rows = normalizeRows<AccessPinRow>(
+    await sql`
+      SELECT role, pin_hash, updated_at, active
+      FROM access_pins
+      WHERE role IN ('staff', 'manager')
+        AND active = TRUE
+    `,
+  );
+
+  const byScope = new Map<PinScope, PinStatus>();
+
+  for (const row of rows) {
+    const scope = toPinScope(row.role);
+    if (!scope) continue;
+    const updatedAt = normalizeTimestamp(row.updated_at);
+    const isSet = typeof row.pin_hash === "string" && row.pin_hash.length > 0;
+
+    const existing = byScope.get(scope);
+    if (!existing) {
+      byScope.set(scope, { scope, isSet, updatedAt });
+      continue;
+    }
+
+    const latest = [existing.updatedAt, updatedAt]
+      .filter((value): value is string => typeof value === "string")
+      .sort()
+      .at(-1);
+
+    byScope.set(scope, {
+      scope,
+      isSet: existing.isSet || isSet,
+      updatedAt: latest ?? existing.updatedAt ?? updatedAt ?? null,
+    });
+  }
+
+  const defaults: PinStatus[] = [
+    { scope: "manager", isSet: false, updatedAt: null },
+    { scope: "staff", isSet: false, updatedAt: null },
+  ];
+
+  return defaults.map((defaultStatus) => byScope.get(defaultStatus.scope) ?? defaultStatus);
+}
+
+export async function getSecurityPinsSummary(
+  sql = getSqlClient(),
+): Promise<SecurityPinsSummary> {
+  const statuses = await getSecurityPinStatuses(sql);
+
+  const managerStatus = statuses.find((status) => status.scope === "manager");
+  const staffStatus = statuses.find((status) => status.scope === "staff");
+
+  const timestamps = statuses
+    .map((status) => status.updatedAt)
+    .filter((value): value is string => typeof value === "string")
+    .sort();
+
   return {
-    hasManager: pinStore.manager.value.length > 0,
-    hasStaff: pinStore.staff.value.length > 0,
-    updatedAt: getLatestUpdatedAt(),
+    hasManager: Boolean(managerStatus?.isSet),
+    hasStaff: Boolean(staffStatus?.isSet),
+    updatedAt: timestamps.at(-1) ?? null,
   };
 }
 
-export async function getSecurityPinStatuses(): Promise<PinStatus[]> {
-  return [
-    {
-      scope: "manager",
-      isSet: pinStore.manager.value.length > 0,
-      updatedAt: pinStore.manager.updatedAt,
-    },
-    {
-      scope: "staff",
-      isSet: pinStore.staff.value.length > 0,
-      updatedAt: pinStore.staff.updatedAt,
-    },
-  ];
-}
-
-export async function isSecurityPinEnabled(scope: PinScope): Promise<boolean> {
-  return pinStore[scope].value.length > 0;
-}
-
-export async function updateSecurityPins({
-  staffPin,
-  managerPin,
-}: PinUpdates): Promise<void> {
-  const now = new Date().toISOString();
-
-  if (typeof staffPin === "string") {
-    const sanitized = sanitizePin(staffPin);
-    pinStore.staff.value = sanitized;
-    pinStore.staff.updatedAt = now;
-  }
-
-  if (typeof managerPin === "string") {
-    const sanitized = sanitizePin(managerPin);
-    pinStore.manager.value = sanitized;
-    pinStore.manager.updatedAt = now;
-  }
+export async function isSecurityPinEnabled(
+  scope: PinScope,
+  sql = getSqlClient(),
+): Promise<boolean> {
+  const record = await fetchActivePin(scope, sql);
+  return typeof record?.pin_hash === "string" && record.pin_hash.length > 0;
 }
 
 export async function verifySecurityPin(
   scope: PinScope,
   pin: string,
+  sql = getSqlClient(),
 ): Promise<boolean> {
   try {
     const sanitized = sanitizePin(pin);
-    return pinStore[scope].value === sanitized;
+    const record = await fetchActivePin(scope, sql);
+    const storedHash = typeof record?.pin_hash === "string" ? record.pin_hash : null;
+    if (!storedHash) return false;
+    return comparePin(sanitized, storedHash, sql);
   } catch (error) {
     return false;
   }
 }
 
-export function __resetPinsForTests() {
-  pinStore.manager.value = DEFAULT_PIN;
-  pinStore.manager.updatedAt = null;
-  pinStore.staff.value = DEFAULT_PIN;
-  pinStore.staff.updatedAt = null;
+export async function updateSecurityPins(
+  { staffPin, managerPin }: PinUpdates,
+  sql = getSqlClient(),
+): Promise<void> {
+  if (!staffPin && !managerPin) {
+    throw new Error("Debes indicar al menos un PIN para actualizar.");
+  }
+
+  if (typeof staffPin === "string") {
+    await updateAccessPin("staff", staffPin, sql);
+  }
+
+  if (typeof managerPin === "string") {
+    await updateAccessPin("manager", managerPin, sql);
+  }
 }
+
+export async function updateAccessPin(
+  scope: PinScope,
+  pin: string,
+  sql = getSqlClient(),
+): Promise<string> {
+  const sanitized = sanitizePin(pin);
+  const hashed = await hashPin(sanitized, sql);
+
+  const updatedRows = normalizeRows<{ updated_at?: unknown }>(
+    await sql`
+      UPDATE access_pins
+      SET pin_hash = ${hashed},
+          active = TRUE,
+          updated_at = now()
+      WHERE role = ${scope}
+        AND active = TRUE
+      RETURNING updated_at
+    `,
+  );
+
+  const updatedAtCandidate = updatedRows[0]?.updated_at;
+  if (updatedRows.length > 0) {
+    return (
+      normalizeTimestamp(updatedAtCandidate) ?? new Date().toISOString()
+    );
+  }
+
+  const insertedRows = normalizeRows<{ updated_at?: unknown }>(
+    await sql`
+      INSERT INTO access_pins (role, pin_hash, active)
+      VALUES (${scope}, ${hashed}, TRUE)
+      RETURNING updated_at
+    `,
+  );
+
+  const insertedAtCandidate = insertedRows[0]?.updated_at;
+  return normalizeTimestamp(insertedAtCandidate) ?? new Date().toISOString();
+}
+
+export async function validateAccessPin(
+  scope: PinScope,
+  pin: string,
+  sql = getSqlClient(),
+): Promise<boolean> {
+  try {
+    const sanitized = sanitizePin(pin);
+    const record = await fetchActivePin(scope, sql);
+    const storedHash = typeof record?.pin_hash === "string" ? record.pin_hash : null;
+    if (!storedHash) {
+      return false;
+    }
+    return comparePin(sanitized, storedHash, sql);
+  } catch (error) {
+    return false;
+  }
+}
+
+export const __sanitizePinForTests = sanitizePin;

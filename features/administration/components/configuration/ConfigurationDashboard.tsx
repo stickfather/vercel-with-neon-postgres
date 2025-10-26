@@ -22,6 +22,8 @@ type PinFormState = {
   managerPin: string;
 };
 
+type PinFormErrors = Partial<Record<keyof PinFormState, string>>;
+
 const emptyForm: PinFormState = {
   pin: "",
   confirmPin: "",
@@ -65,6 +67,10 @@ export function ConfigurationDashboard({
     staff: { ...emptyForm },
     manager: { ...emptyForm },
   });
+  const [fieldErrors, setFieldErrors] = useState<Record<PinScope, PinFormErrors>>({
+    staff: {},
+    manager: {},
+  });
   const [loadingScope, setLoadingScope] = useState<PinScope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
@@ -88,10 +94,16 @@ export function ConfigurationDashboard({
   }, [managerStatus.isSet, managerUnlocked]);
 
   const handleFormChange = (scope: PinScope, field: keyof PinFormState, value: string) => {
+    const sanitized = value.replace(/[^\d]/g, "").slice(0, 6);
     setForms((previous) => ({
       ...previous,
-      [scope]: { ...previous[scope], [field]: value.replace(/[^\d]/g, "") },
+      [scope]: { ...previous[scope], [field]: sanitized },
     }));
+    setFieldErrors((previous) => ({
+      ...previous,
+      [scope]: { ...previous[scope], [field]: undefined },
+    }));
+    setError(null);
   };
 
   const submitPinUpdate = async (scope: PinScope) => {
@@ -101,12 +113,23 @@ export function ConfigurationDashboard({
     const managerConfirmation =
       scope === "staff" ? forms.staff.managerPin.trim() : form.managerPin.trim();
 
-    if (!pinValue || pinValue.length < 4) {
-      setError("El PIN debe tener al menos 4 dígitos.");
+    setFieldErrors((previous) => ({
+      ...previous,
+      [scope]: {},
+    }));
+
+    if (!pinValue || pinValue.length < 4 || pinValue.length > 6) {
+      setError("El PIN debe tener entre 4 y 6 dígitos.");
       return;
     }
     if (pinValue !== confirmation) {
-      setError("Los PIN ingresados no coinciden.");
+      setFieldErrors((previous) => ({
+        ...previous,
+        [scope]: {
+          ...previous[scope],
+          confirmPin: "Los PIN ingresados no coinciden.",
+        },
+      }));
       return;
     }
 
@@ -114,7 +137,13 @@ export function ConfigurationDashboard({
       scope === "staff" || (scope === "manager" && managerStatus.isSet);
 
     if (requiresManagerVerification && !managerConfirmation) {
-      setError("Ingresa el PIN de gerencia para continuar.");
+      setFieldErrors((previous) => ({
+        ...previous,
+        [scope]: {
+          ...previous[scope],
+          managerPin: "Ingresa el PIN de gerencia para continuar.",
+        },
+      }));
       return;
     }
 
@@ -122,93 +151,72 @@ export function ConfigurationDashboard({
     setError(null);
 
     try {
-      if (requiresManagerVerification && managerConfirmation) {
-        const verifyResponse = await fetch("/api/security/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "manager", pin: managerConfirmation }),
-        });
+      const payload =
+        scope === "staff"
+          ? {
+              targetRole: "staff" as const,
+              managerPin: managerConfirmation,
+              newPin: pinValue,
+            }
+          : {
+              targetRole: "manager" as const,
+              newPin: pinValue,
+              ...(managerStatus.isSet
+                ? { currentManagerPin: managerConfirmation }
+                : {}),
+            };
 
-        const verifyPayload = await verifyResponse.json().catch(() => ({}));
-        if (!verifyResponse.ok || verifyPayload?.valid !== true) {
-          throw new Error(
-            verifyPayload?.error ?? "El PIN de gerencia no es correcto.",
-          );
-        }
-      }
-
-      const body: Record<string, string> = {};
-      if (scope === "staff") {
-        body.staffPin = pinValue;
-      } else {
-        body.managerPin = pinValue;
-      }
-
-      const updateResponse = await fetch("/api/security/pins", {
+      const updateResponse = await fetch("/api/admin/security/update-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
 
-      if (!updateResponse.ok) {
-        const payload = await updateResponse.json().catch(() => ({}));
-        throw new Error(payload?.error ?? "No se pudo actualizar el PIN.");
-      }
+      const responseBody = (await updateResponse.json().catch(() => ({}))) as
+        | { success?: boolean; error?: string; updatedAt?: string }
+        | undefined;
 
-      const statusResponse = await fetch("/api/security/pins", {
-        cache: "no-store",
-      });
-      const statusPayload = (await statusResponse.json().catch(() => null)) as
-        | { hasManager?: unknown; hasStaff?: unknown; updatedAt?: unknown }
-        | null;
+      if (!updateResponse.ok || responseBody?.success !== true) {
+        const message =
+          responseBody?.error ?? "No se pudo actualizar el PIN solicitado.";
 
-      if (statusPayload) {
-        const updatedAt =
-          typeof statusPayload.updatedAt === "string"
-            ? statusPayload.updatedAt
-            : statusPayload.updatedAt instanceof Date
-              ? statusPayload.updatedAt.toISOString()
-              : null;
-        setStatuses([
-          {
-            scope: "staff",
-            isSet: Boolean(statusPayload.hasStaff),
-            updatedAt,
-          },
-          {
-            scope: "manager",
-            isSet: Boolean(statusPayload.hasManager),
-            updatedAt,
-          },
-        ]);
-      } else {
-        setStatuses((previous) => {
-          const other = previous.filter((status) => status.scope !== scope);
-          return [
-            ...other,
-            {
-              scope,
-              isSet: true,
-              updatedAt: new Date().toISOString(),
+        const normalizedMessage = message.toLowerCase();
+
+        if (scope === "staff" && normalizedMessage.includes("gerencia")) {
+          setFieldErrors((previous) => ({
+            ...previous,
+            staff: {
+              ...previous.staff,
+              managerPin: "PIN de gerencia incorrecto.",
             },
-          ];
-        });
+          }));
+        } else if (scope === "manager" && normalizedMessage.includes("actual")) {
+          setFieldErrors((previous) => ({
+            ...previous,
+            manager: {
+              ...previous.manager,
+              managerPin: "PIN actual incorrecto.",
+            },
+          }));
+        } else {
+          setError(message);
+        }
+
+        return;
       }
 
-      setForms((previous) => ({
-        staff:
-          scope === "staff"
-            ? { ...emptyForm }
-            : { ...previous.staff, managerPin: "" },
-        manager:
-          scope === "manager"
-            ? { ...emptyForm }
-            : { ...previous.manager, managerPin: "" },
-      }));
+      const updatedAt =
+        typeof responseBody?.updatedAt === "string"
+          ? new Date(responseBody.updatedAt).toISOString()
+          : new Date().toISOString();
 
-      if (scope === "manager") {
-        setManagerUnlocked(true);
-      }
+      setStatuses((previous) =>
+        previous.map((status) =>
+          status.scope === scope
+            ? { scope, isSet: true, updatedAt }
+            : status,
+        ),
+      );
 
       setToast({
         tone: "success",
@@ -228,6 +236,10 @@ export function ConfigurationDashboard({
       });
     } finally {
       setLoadingScope(null);
+      setForms((previous) => ({
+        ...previous,
+        [scope]: { ...emptyForm },
+      }));
     }
   };
 
@@ -248,6 +260,8 @@ export function ConfigurationDashboard({
 
     const staffForm = forms.staff;
     const managerForm = forms.manager;
+    const staffFieldErrors = fieldErrors.staff;
+    const managerFieldErrors = fieldErrors.manager;
 
     return (
       <div className="flex flex-col gap-8">
@@ -281,7 +295,7 @@ export function ConfigurationDashboard({
                 value={staffForm.pin}
                 onChange={(event) => handleFormChange("staff", "pin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={8}
+                maxLength={6}
               />
             </label>
             <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
@@ -292,8 +306,13 @@ export function ConfigurationDashboard({
                 value={staffForm.confirmPin}
                 onChange={(event) => handleFormChange("staff", "confirmPin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={8}
+                maxLength={6}
               />
+              {staffFieldErrors.confirmPin ? (
+                <span className="text-xs font-medium text-red-600">
+                  {staffFieldErrors.confirmPin}
+                </span>
+              ) : null}
             </label>
             <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
               PIN de gerencia
@@ -303,9 +322,14 @@ export function ConfigurationDashboard({
                 value={staffForm.managerPin}
                 onChange={(event) => handleFormChange("staff", "managerPin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={8}
+                maxLength={6}
                 required
               />
+              {staffFieldErrors.managerPin ? (
+                <span className="text-xs font-medium text-red-600">
+                  {staffFieldErrors.managerPin}
+                </span>
+              ) : null}
             </label>
           </div>
           <button
@@ -339,9 +363,14 @@ export function ConfigurationDashboard({
                     handleFormChange("manager", "managerPin", event.target.value)
                   }
                   className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                  maxLength={8}
+                  maxLength={6}
                   required
                 />
+                {managerFieldErrors.managerPin ? (
+                  <span className="text-xs font-medium text-red-600">
+                    {managerFieldErrors.managerPin}
+                  </span>
+                ) : null}
               </label>
             )}
             <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
@@ -352,7 +381,7 @@ export function ConfigurationDashboard({
                 value={managerForm.pin}
                 onChange={(event) => handleFormChange("manager", "pin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={8}
+                maxLength={6}
                 required
               />
             </label>
@@ -366,9 +395,14 @@ export function ConfigurationDashboard({
                   handleFormChange("manager", "confirmPin", event.target.value)
                 }
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={8}
+                maxLength={6}
                 required
               />
+              {managerFieldErrors.confirmPin ? (
+                <span className="text-xs font-medium text-red-600">
+                  {managerFieldErrors.confirmPin}
+                </span>
+              ) : null}
             </label>
           </div>
           <button
@@ -377,7 +411,7 @@ export function ConfigurationDashboard({
             disabled={loadingScope === "manager"}
             className="cta-ripple mt-4 inline-flex items-center justify-center rounded-full bg-brand-deep px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {loadingScope === "manager" ? "Guardando…" : "Actualizar PIN de gerencia"}
+            {loadingScope === "manager" ? "Guardando…" : "ACTUALIZAR PIN DE GERENCIA"}
           </button>
         </section>
 
