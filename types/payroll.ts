@@ -1,9 +1,17 @@
+export type PayrollDayStatus =
+  | "pending"
+  | "approved"
+  | "edited_and_approved"
+  | "edited_not_approved";
+
 export type PayrollMatrixCell = {
   date: string;
   hours: number;
   approved: boolean;
   approvedHours: number | null;
   hasEdits?: boolean;
+  editedAfterApproval?: boolean;
+  dayStatus?: PayrollDayStatus;
 };
 
 export type PayrollMatrixRow = {
@@ -35,6 +43,11 @@ export type DaySession = {
   editedByStaffId?: number | null;
   editNote?: string | null;
   wasEdited?: boolean;
+};
+
+export type DayTotals = {
+  totalMinutes: number;
+  totalHours: number;
 };
 
 export type MonthSummaryRow = {

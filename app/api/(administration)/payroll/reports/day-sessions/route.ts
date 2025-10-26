@@ -62,13 +62,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const { staffId, workDate, checkinTime, checkoutTime, note, editorStaffId } = (payload ?? {}) as {
+  const {
+    staffId,
+    workDate,
+    checkinLocal,
+    checkoutLocal,
+    checkinTime,
+    checkoutTime,
+    note,
+  } = (payload ?? {}) as {
     staffId?: number;
     workDate?: string;
+    checkinLocal?: string | null;
+    checkoutLocal?: string | null;
     checkinTime?: string | null;
     checkoutTime?: string | null;
     note?: string | null;
-    editorStaffId?: number | null;
   };
 
   if (!Number.isFinite(staffId) || !workDate) {
@@ -82,13 +91,19 @@ export async function POST(request: Request) {
     const session = await createStaffDaySession({
       staffId: Number(staffId),
       workDate,
-      checkinTime: typeof checkinTime === "string" ? checkinTime : null,
-      checkoutTime: typeof checkoutTime === "string" ? checkoutTime : null,
+      checkinTime:
+        typeof checkinLocal === "string" && checkinLocal.trim().length
+          ? checkinLocal.trim()
+          : typeof checkinTime === "string"
+            ? checkinTime
+            : null,
+      checkoutTime:
+        typeof checkoutLocal === "string" && checkoutLocal.trim().length
+          ? checkoutLocal.trim()
+          : typeof checkoutTime === "string"
+            ? checkoutTime
+            : null,
       note: typeof note === "string" ? note : undefined,
-      editorStaffId:
-        Number.isFinite(editorStaffId) && editorStaffId != null
-          ? Number(editorStaffId)
-          : undefined,
     });
     return NextResponse.json(
       { session },

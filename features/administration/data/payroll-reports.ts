@@ -14,10 +14,18 @@ import {
 } from "@/lib/payroll/timezone";
 import {
   DaySessionsQuerySchema as ReportsDaySessionsSchema,
+  DayTotalsQuerySchema as ReportsDayTotalsSchema,
+  executeAddStaffSessionSql,
+  executeDeleteStaffSessionSql,
   getDaySessions as getPayrollDaySessions,
+  getDayTotals as getPayrollDayTotals,
   parseWithSchema as parsePayrollSchema,
 } from "@/lib/payroll/reports-service";
-import type { DaySession as ReportsDaySession } from "@/types/payroll";
+import type {
+  DaySession as ReportsDaySession,
+  DayTotals as ReportsDayTotals,
+  PayrollDayStatus,
+} from "@/types/payroll";
 
 type SqlClient = ReturnType<typeof getSqlClient>;
 
@@ -27,6 +35,8 @@ export type MatrixCell = {
   approved: boolean;
   approvedHours: number | null;
   hasEdits?: boolean;
+  editedAfterApproval?: boolean;
+  status?: PayrollDayStatus;
 };
 
 export type MatrixRow = {
@@ -58,6 +68,11 @@ export type DaySession = {
   editedByStaffId?: number | null;
   editNote?: string | null;
   wasEdited?: boolean;
+};
+
+export type DayTotals = {
+  totalMinutes: number;
+  totalHours: number;
 };
 
 export type PayrollMonthStatusRow = {
@@ -354,6 +369,26 @@ function toBoolean(value: unknown): boolean {
   return false;
 }
 
+function resolveDayStatus(
+  approved: boolean,
+  hasEdits: boolean,
+  editedAfterApproval: boolean,
+): PayrollDayStatus {
+  if (!approved && !hasEdits) {
+    return "pending";
+  }
+  if (!approved && hasEdits) {
+    return "edited_not_approved";
+  }
+  if (approved && editedAfterApproval) {
+    return "edited_and_approved";
+  }
+  if (approved) {
+    return "approved";
+  }
+  return "pending";
+}
+
 function coerceString(value: unknown): string | null {
   if (value == null) return null;
   if (typeof value === "string") {
@@ -583,15 +618,6 @@ export async function fetchPayrollMatrix({
   }
 
   const rows = normalizeRows<SqlRow>(await sql`
-    WITH edit_flags AS (
-      SELECT
-        s.staff_id,
-        s.work_date,
-        BOOL_OR(s.was_edited) AS has_edits
-      FROM public.staff_day_sessions_with_edits_v AS s
-      WHERE s.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
-      GROUP BY s.staff_id, s.work_date
-    )
     SELECT
       m.staff_id,
       sm.full_name AS staff_name,
@@ -600,10 +626,10 @@ export async function fetchPayrollMatrix({
       m.approved,
       m.approved_hours,
       m.total_hours,
-      ef.has_edits
+      m.has_edits,
+      m.edited_after_approval
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-    LEFT JOIN edit_flags ef ON ef.staff_id = m.staff_id AND ef.work_date = m.work_date
     WHERE m.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
@@ -681,6 +707,10 @@ export async function fetchPayrollMatrix({
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
     const hasEdits = toBoolean(readRowValue(row, ["has_edits", "hasEdits"]));
+    const editedAfterApproval = toBoolean(
+      readRowValue(row, ["edited_after_approval", "editedAfterApproval"]),
+    );
+    const dayStatus = resolveDayStatus(approved, hasEdits, editedAfterApproval);
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
@@ -688,6 +718,8 @@ export async function fetchPayrollMatrix({
       approved,
       approvedHours: safeApprovedHours,
       hasEdits,
+      editedAfterApproval,
+      status: dayStatus,
     });
   }
 
@@ -697,7 +729,15 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, approved: false, approvedHours: null, hasEdits: false };
+      return {
+        date: day,
+        hours: 0,
+        approved: false,
+        approvedHours: null,
+        hasEdits: false,
+        editedAfterApproval: false,
+        status: "pending",
+      };
     });
 
     matrixRows.push({
@@ -766,6 +806,28 @@ export async function fetchDaySessions({
   }));
 }
 
+export async function fetchDayTotals({
+  staffId,
+  workDate,
+}: {
+  staffId: number;
+  workDate: string;
+}): Promise<DayTotals> {
+  noStore();
+  const sql = getSqlClient();
+  const params = parsePayrollSchema(ReportsDayTotalsSchema, {
+    staffId,
+    date: workDate,
+  });
+
+  const totals: ReportsDayTotals = await getPayrollDayTotals(params, sql);
+
+  return {
+    totalMinutes: totals.totalMinutes,
+    totalHours: totals.totalHours,
+  };
+}
+
 function ensureWorkDate(value: string): string {
   const normalized = normalizeDateLike(value);
   if (!normalized) {
@@ -774,7 +836,34 @@ function ensureWorkDate(value: string): string {
   return normalized;
 }
 
+function sanitizeClockInput(label: string, value: string | null | undefined): string {
+  const coerced = coerceString(value);
+  if (!coerced) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const condensed = coerced.replace(/\s+/g, " ").trim();
+  if (!condensed.length) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const normalized = condensed
+    .replace(/(a\.m\.|A\.M\.)/g, "AM")
+    .replace(/(p\.m\.|P\.M\.)/g, "PM");
+
+  if (/(\s|^)(am|pm)$/i.test(normalized)) {
+    return normalized.replace(/(am|pm)$/i, (match) => match.toUpperCase());
+  }
+
+  if (/\b(am|pm)\b/i.test(normalized)) {
+    return normalized.replace(/\b(am|pm)\b/gi, (match) => match.toUpperCase());
+  }
+
+  return normalized;
+}
+
 const TIME_ONLY_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+const TIME_WITH_PERIOD_REGEX = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i;
 
 const TIMESTAMP_WITH_OPTIONAL_OFFSET_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
@@ -793,6 +882,7 @@ function ensurePayrollSessionTimestamp(
     throw new Error(`La hora de ${label} no es válida.`);
   }
 
+  const timeWithPeriodMatch = trimmed.match(TIME_WITH_PERIOD_REGEX);
   const timeOnlyMatch = trimmed.match(TIME_ONLY_REGEX);
   let year: string | null = null;
   let month: string | null = null;
@@ -802,7 +892,27 @@ function ensurePayrollSessionTimestamp(
   let second: string | null = null;
   let fractional: string | null = null;
 
-  if (timeOnlyMatch) {
+  if (timeWithPeriodMatch) {
+    const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!workDateMatch) {
+      throw new Error("La sesión debe pertenecer al día seleccionado.");
+    }
+    const [, hourRaw, minuteRaw, secondRaw, periodRaw] = timeWithPeriodMatch;
+    const numericHour = Number(hourRaw);
+    if (!Number.isFinite(numericHour) || numericHour < 1 || numericHour > 12) {
+      throw new Error(`La hora de ${label} no es válida.`);
+    }
+    const period = periodRaw.toUpperCase();
+    const baseHour = numericHour % 12;
+    const offset = period === "PM" ? 12 : 0;
+    const convertedHour = (baseHour + offset) % 24;
+    year = workDateMatch[1];
+    month = workDateMatch[2];
+    day = workDateMatch[3];
+    hour = String(convertedHour).padStart(2, "0");
+    minute = minuteRaw;
+    second = secondRaw ?? "00";
+  } else if (timeOnlyMatch) {
     const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!workDateMatch) {
       throw new Error("La sesión debe pertenecer al día seleccionado.");
@@ -894,12 +1004,29 @@ function ensureSessionMatchesDay(
   }
 }
 
-function toLocalTimestampTextOrThrow(label: string, iso: string): string {
+function toLocalClockTextOrThrow(label: string, iso: string): string {
   const localized = toPayrollLocalTimestampText(iso);
   if (!localized) {
     throw new Error(`La hora de ${label} no es válida.`);
   }
-  return localized;
+
+  const match = localized.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if (!match) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const hour24 = Number(match[4]);
+  const minute = match[5];
+
+  if (!Number.isFinite(hour24)) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const safeHour = String(hour12).padStart(2, "0");
+
+  return `${safeHour}:${minute} ${period}`;
 }
 
 function minutesToHours(minutes: number): number {
@@ -916,7 +1043,6 @@ export async function updateStaffDaySession({
   workDate,
   checkinTime,
   checkoutTime,
-  editorStaffId,
   note,
 }: {
   sessionId: number;
@@ -924,43 +1050,26 @@ export async function updateStaffDaySession({
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
 
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const checkinIso = ensurePayrollSessionTimestamp(checkinTime, normalizedWorkDate, "entrada");
-  const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
-  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
-  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
   const transactionalSql = sql as SqlClient & {
     begin?: (callback: (client: SqlClient) => Promise<void>) => Promise<void>;
   };
 
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
+  const checkinClock = sanitizeClockInput("entrada", checkinTime);
+  const checkoutClock = sanitizeClockInput("salida", checkoutTime);
 
   const executeUpdate = async (client: SqlClient) => {
-    await assertNoOverlap(client, {
-      staffId,
-      workDate: normalizedWorkDate,
-      checkinIso,
-      checkoutIso,
-      ignoreSessionId: sessionId,
-    });
-
-    const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
-    const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
-
     const updatedRows = normalizeRows<SqlRow>(await client`
       SELECT *
       FROM public.edit_staff_session(
         ${sessionId}::bigint,
-        ${sanitizedEditorId ?? null}::bigint,
-        ${checkinLocal}::text,
-        ${checkoutLocal}::text,
+        ${checkinClock}::text,
+        ${checkoutClock}::text,
         ${sanitizedNote ?? null}::text
       )
     `);
@@ -988,17 +1097,19 @@ export async function updateStaffDaySession({
     throw new Error("No pudimos recuperar la sesión actualizada.");
   }
 
-  const currentCheckin = refreshed["checkin_local"];
-  const currentCheckout = refreshed["checkout_local"];
+  const currentCheckin = refreshed["checkin_local"] ?? checkinClock;
+  const currentCheckout = refreshed["checkout_local"] ?? checkoutClock;
   const currentMinutes =
-    toInteger(refreshed["session_minutes"] ?? refreshed["minutes"] ?? null) ?? minutes;
+    toInteger(refreshed["session_minutes"] ?? refreshed["minutes"] ?? null) ?? 0;
 
   return {
     sessionId,
     staffId,
     workDate: normalizedWorkDate,
-    checkinTime: normalizeTimestampValue(currentCheckin) ?? coerceString(currentCheckin),
-    checkoutTime: normalizeTimestampValue(currentCheckout) ?? coerceString(currentCheckout),
+    checkinTime:
+      normalizeTimestampValue(currentCheckin) ?? coerceString(currentCheckin) ?? checkinClock,
+    checkoutTime:
+      normalizeTimestampValue(currentCheckout) ?? coerceString(currentCheckout) ?? checkoutClock,
     minutes: currentMinutes,
     hours: minutesToHours(currentMinutes),
     originalSessionId: toInteger(refreshed["session_id"] ?? null),
@@ -1023,54 +1134,73 @@ export async function createStaffDaySession({
   workDate,
   checkinTime,
   checkoutTime,
-  editorStaffId,
   note,
 }: {
   staffId: number;
   workDate: string;
   checkinTime: string | null;
   checkoutTime: string | null;
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<DaySession> {
   const sql = getSqlClient();
 
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const checkinIso = ensurePayrollSessionTimestamp(checkinTime, normalizedWorkDate, "entrada");
-  const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
-  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
-  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
+  const checkinClock = sanitizeClockInput("entrada", checkinTime);
+  const checkoutClock = sanitizeClockInput("salida", checkoutTime);
 
-  await assertNoOverlap(sql, {
+  const insertedRows = await executeAddStaffSessionSql(sql, {
     staffId,
     workDate: normalizedWorkDate,
-    checkinIso,
-    checkoutIso,
+    checkinClock,
+    checkoutClock,
+    note: sanitizedNote,
   });
-
-  const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
-  const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
-
-  const insertedRows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.add_staff_session(
-      ${staffId}::bigint,
-      ${checkinLocal}::text,
-      ${checkoutLocal}::text,
-      ${sanitizedEditorId ?? null}::bigint,
-      ${sanitizedNote ?? null}::text
-    )
-  `);
 
   const inserted = insertedRows[0];
   if (!inserted) {
     throw new Error("No pudimos crear la sesión solicitada.");
   }
 
-  const sessionId = toInteger(inserted["session_id"] ?? inserted["id"] ?? null);
+  const resolveInsertedSessionId = (row: SqlRow | Record<string, unknown> | null | undefined) => {
+    if (!row) return null;
+    const directMatch = readRowValue(row as SqlRow, [
+      "session_id",
+      "sessionId",
+      "id",
+      "new_session_id",
+      "newSessionId",
+    ]);
+    const directId = toInteger(directMatch);
+    if (directId != null) {
+      return directId;
+    }
+
+    const nestedMatch = readRowValue(row as SqlRow, ["add_staff_session", "addStaffSession"]);
+    if (nestedMatch && typeof nestedMatch === "object") {
+      return resolveInsertedSessionId(nestedMatch as Record<string, unknown>);
+    }
+
+    return null;
+  };
+
+  let sessionId = resolveInsertedSessionId(inserted);
+
+  if (!sessionId) {
+    const fallbackRows = normalizeRows<SqlRow>(
+      await sql`
+        SELECT session_id
+        FROM public.staff_day_sessions_with_edits_v
+        WHERE staff_id = ${staffId}::bigint
+          AND work_date = ${normalizedWorkDate}::date
+        ORDER BY session_id DESC
+        LIMIT 1
+      `,
+    );
+
+    sessionId = toInteger(fallbackRows[0]?.["session_id"] ?? null);
+  }
+
   if (!sessionId) {
     throw new Error("No pudimos determinar el identificador de la nueva sesión.");
   }
@@ -1083,15 +1213,17 @@ export async function createStaffDaySession({
   `);
 
   const refreshed = refreshedRows[0];
-  const checkinCurrent = refreshed?.["checkin_local"] ?? inserted["checkin_local"];
-  const checkoutCurrent = refreshed?.["checkout_local"] ?? inserted["checkout_local"];
+  const checkinCurrent =
+    refreshed?.["checkin_local"] ?? inserted["checkin_local"] ?? checkinClock;
+  const checkoutCurrent =
+    refreshed?.["checkout_local"] ?? inserted["checkout_local"] ?? checkoutClock;
   const currentMinutes =
     toInteger(
       refreshed?.["session_minutes"] ??
         inserted["session_minutes"] ??
         inserted["minutes"] ??
         null,
-    ) ?? minutes;
+    ) ?? 0;
 
   const wasEdited = toBoolean(refreshed?.["was_edited"] ?? false);
 
@@ -1099,9 +1231,9 @@ export async function createStaffDaySession({
     sessionId,
     staffId,
     workDate: normalizedWorkDate,
-    checkinTime: normalizeTimestampValue(checkinCurrent) ?? coerceString(checkinCurrent) ?? checkinIso,
+    checkinTime: normalizeTimestampValue(checkinCurrent) ?? coerceString(checkinCurrent) ?? checkinClock,
     checkoutTime:
-      normalizeTimestampValue(checkoutCurrent) ?? coerceString(checkoutCurrent) ?? checkoutIso,
+      normalizeTimestampValue(checkoutCurrent) ?? coerceString(checkoutCurrent) ?? checkoutClock,
     minutes: currentMinutes,
     hours: minutesToHours(currentMinutes),
     originalSessionId: null,
@@ -1133,29 +1265,21 @@ export async function deleteStaffDaySession({
   sessionId,
   staffId,
   workDate,
-  editorStaffId,
   note,
 }: {
   sessionId: number;
   staffId: number;
   workDate: string;
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
-  const normalizedWorkDate = ensureWorkDate(workDate);
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
+  ensureWorkDate(workDate);
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
-  const deletedRows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.delete_staff_session(
-      ${sessionId}::bigint,
-      ${sanitizedEditorId ?? null}::bigint,
-      ${sanitizedNote ?? null}::text
-    )
-  `);
+  const deletedRows = await executeDeleteStaffSessionSql(sql, {
+    sessionId,
+    note: sanitizedNote,
+  });
 
   if (!deletedRows.length) {
     throw new Error("No encontramos la sesión indicada.");
@@ -1194,7 +1318,6 @@ export async function overrideSessionsAndApprove({
   overrides = [],
   additions = [],
   deletions = [],
-  editorStaffId = null,
   note = null,
 }: {
   staffId: number;
@@ -1209,29 +1332,20 @@ export async function overrideSessionsAndApprove({
     checkoutTime: string;
   }[];
   deletions?: number[];
-  editorStaffId?: number | null;
   note?: string | null;
 }): Promise<void> {
   const sql = getSqlClient();
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const sanitizedEditorId =
-    editorStaffId != null && Number.isFinite(editorStaffId) ? Number(editorStaffId) : null;
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
   await sql`BEGIN`;
   try {
-    const sanitizedDeletions = deletions.filter((value) =>
-      Number.isFinite(value),
-    );
+    const sanitizedDeletions = deletions.filter((value) => Number.isFinite(value));
     for (const sessionId of sanitizedDeletions) {
-      const result = normalizeRows<SqlRow>(await sql`
-        SELECT *
-        FROM public.delete_staff_session(
-          ${Number(sessionId)}::bigint,
-          ${sanitizedEditorId ?? null}::bigint,
-          ${sanitizedNote ?? null}::text
-        )
-      `);
+      const result = await executeDeleteStaffSessionSql(sql, {
+        sessionId: Number(sessionId),
+        note: sanitizedNote,
+      });
       if (!result.length) {
         throw new Error("No encontramos una de las sesiones a eliminar.");
       }
@@ -1264,14 +1378,13 @@ export async function overrideSessionsAndApprove({
         ignoreSessionId: override.sessionId,
       });
 
-      const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
-      const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
+      const checkinLocal = toLocalClockTextOrThrow("entrada", checkinIso);
+      const checkoutLocal = toLocalClockTextOrThrow("salida", checkoutIso);
 
       await sql`
         SELECT *
         FROM public.edit_staff_session(
           ${override.sessionId}::bigint,
-          ${sanitizedEditorId ?? null}::bigint,
           ${checkinLocal}::text,
           ${checkoutLocal}::text,
           ${sanitizedNote ?? null}::text
@@ -1319,19 +1432,19 @@ export async function overrideSessionsAndApprove({
           checkoutIso: addition.checkoutTime,
         });
 
-        const checkinLocal = toLocalTimestampTextOrThrow("entrada", addition.checkinTime);
-        const checkoutLocal = toLocalTimestampTextOrThrow("salida", addition.checkoutTime);
+        const checkinLocal = toLocalClockTextOrThrow("entrada", addition.checkinTime);
+        const checkoutLocal = toLocalClockTextOrThrow("salida", addition.checkoutTime);
 
-        await sql`
-          SELECT *
-          FROM public.add_staff_session(
-            ${staffId}::bigint,
-            ${checkinLocal}::text,
-            ${checkoutLocal}::text,
-            ${sanitizedEditorId ?? null}::bigint,
-            ${sanitizedNote ?? null}::text
-          )
-        `;
+        const inserted = await executeAddStaffSessionSql(sql, {
+          staffId,
+          workDate: normalizedWorkDate,
+          checkinClock: checkinLocal,
+          checkoutClock: checkoutLocal,
+          note: sanitizedNote,
+        });
+        if (!inserted.length) {
+          throw new Error("No pudimos crear la sesión solicitada.");
+        }
       }
     }
 

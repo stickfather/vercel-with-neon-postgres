@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import type {
   DaySession,
+  DayTotals,
   MatrixCell,
   MatrixRow,
   PayrollMonthStatusRow,
@@ -74,12 +76,40 @@ const TRAILING_COLUMNS_WIDTH =
 const MIN_CELL_WIDTH = 32;
 const PREFERRED_CELL_WIDTH = 68;
 const GRID_PADDING = 16;
-const rowDayFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: PAYROLL_TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+
+const STATUS_BUTTON_CLASSES: Record<string, string> = {
+  pending: "border-[#FF8C42] bg-[#FF8C42] text-white hover:bg-[#ff7a24]",
+  approved: "border-[#3CB371] bg-[#3CB371] text-white hover:bg-[#34a368]",
+  edited_and_approved: "border-[#F5D76E] bg-[#F5D76E] text-[#614b00] hover:bg-[#f2cc4b]",
+  edited_not_approved: "border-[#9B59B6] bg-[#9B59B6] text-white hover:bg-[#8e44ad]",
+};
+
+const STATUS_LEGEND: { key: string; label: string; chipClass: string; dotColor: string }[] = [
+  {
+    key: "pending",
+    label: "Pendiente",
+    chipClass: "bg-orange-100 text-orange-900",
+    dotColor: "#FF8C42",
+  },
+  {
+    key: "approved",
+    label: "Aprobado",
+    chipClass: "bg-emerald-100 text-emerald-900",
+    dotColor: "#3CB371",
+  },
+  {
+    key: "edited_and_approved",
+    label: "Editado y aprobado",
+    chipClass: "bg-yellow-100 text-yellow-900",
+    dotColor: "#F5D76E",
+  },
+  {
+    key: "edited_not_approved",
+    label: "Editado sin aprobar",
+    chipClass: "bg-[#F1E4F8] text-[#512c71]",
+    dotColor: "#9B59B6",
+  },
+];
 
 const timeZoneDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: PAYROLL_TIMEZONE,
@@ -98,7 +128,7 @@ function formatSessionTimestampForDisplay(value: string | null): string | null {
     return null;
   }
   const [, hour, minute] = match;
-  return `${hour}:${minute}`;
+  return toEditorDisplayTime(hour, minute);
 }
 
 function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
@@ -188,6 +218,30 @@ function toNumeric(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function normalizeTotalsPayload(value: unknown): DayTotals {
+  const payload = (value ?? {}) as {
+    totalMinutes?: unknown;
+    total_minutes?: unknown;
+    totalHours?: unknown;
+    total_hours?: unknown;
+  };
+
+  const minutesCandidate =
+    toNumeric(payload.totalMinutes) ?? toNumeric(payload.total_minutes);
+  const safeMinutes =
+    minutesCandidate != null && Number.isFinite(minutesCandidate)
+      ? Math.max(0, Math.round(minutesCandidate))
+      : 0;
+  const hoursCandidate =
+    toNumeric(payload.totalHours) ?? toNumeric(payload.total_hours);
+  const safeHours =
+    hoursCandidate != null && Number.isFinite(hoursCandidate)
+      ? Math.round(hoursCandidate * 100) / 100
+      : Math.round((safeMinutes / 60) * 100) / 100;
+
+  return { totalMinutes: safeMinutes, totalHours: safeHours };
+}
+
 function createNoStoreInit(): RequestInit & { next: { revalidate: number } } {
   return {
     cache: "no-store",
@@ -233,7 +287,8 @@ function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
 const TIMESTAMP_INPUT_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
-const TIME_INPUT_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+const FLEXIBLE_TIME_INPUT_REGEX =
+  /^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(am|pm)?$/i;
 
 function normalizeOffset(offset: string | null | undefined): string | null {
   if (!offset || offset === "") {
@@ -282,12 +337,293 @@ function extractTimestampComponents(value: string | null): {
   };
 }
 
+function toEditorDisplayTime(hour24: string, minute: string): string {
+  const numericHour = Number(hour24);
+  if (!Number.isFinite(numericHour)) {
+    return `${hour24}:${minute}`;
+  }
+  const suffix = numericHour >= 12 ? "PM" : "AM";
+  const hour12 = numericHour % 12 === 0 ? 12 : numericHour % 12;
+  return `${String(hour12).padStart(2, "0")}:${minute} ${suffix}`;
+}
+
+function parseFlexibleTimeInput(
+  value: string,
+): { hour: string; minute: string; second: string } | null {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const normalized = trimmed.replace(/\s+/g, " ");
+  const match = normalized.match(FLEXIBLE_TIME_INPUT_REGEX);
+  if (!match) {
+    return null;
+  }
+
+  const [, hourRaw, minuteRaw, secondRaw, meridiemRaw] = match;
+  const minute = minuteRaw != null ? Number(minuteRaw) : 0;
+  const second = secondRaw != null ? Number(secondRaw) : 0;
+
+  if (!Number.isFinite(minute) || minute < 0 || minute > 59) {
+    return null;
+  }
+  if (!Number.isFinite(second) || second < 0 || second > 59) {
+    return null;
+  }
+
+  let hour = Number(hourRaw);
+  if (!Number.isFinite(hour)) {
+    return null;
+  }
+
+  const meridiem = meridiemRaw ? meridiemRaw.toLowerCase() : null;
+  if (meridiem) {
+    if (hour < 1 || hour > 12) {
+      return null;
+    }
+    if (hour === 12) {
+      hour = meridiem === "am" ? 0 : 12;
+    } else if (meridiem === "pm") {
+      hour += 12;
+    }
+  } else if (hour > 23) {
+    return null;
+  }
+
+  const safeHour = String(hour).padStart(2, "0");
+  const safeMinute = String(minute).padStart(2, "0");
+  const safeSecond = String(second).padStart(2, "0");
+
+  return { hour: safeHour, minute: safeMinute, second: safeSecond };
+}
+
+function normalizeEditorTime(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return "";
+  }
+  const parsed = parseFlexibleTimeInput(trimmed);
+  if (!parsed) {
+    return trimmed.toUpperCase();
+  }
+  return toEditorDisplayTime(parsed.hour, parsed.minute);
+}
+
+type TimePeriod = "AM" | "PM";
+
+type TimeSegments = {
+  hour: string;
+  minute: string;
+  period: TimePeriod;
+};
+
+function toTimeSegments(value: string): TimeSegments {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return { hour: "", minute: "", period: "AM" };
+  }
+
+  const parsed = parseFlexibleTimeInput(trimmed);
+  if (!parsed) {
+    return { hour: "", minute: "", period: "AM" };
+  }
+
+  const hour24 = Number(parsed.hour);
+  const minute = parsed.minute;
+  const period: TimePeriod = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+
+  return {
+    hour: String(hour12).padStart(2, "0"),
+    minute,
+    period,
+  };
+}
+
+function segmentsToValue({ hour, minute, period }: TimeSegments): string {
+  if (!hour || !minute) {
+    return "";
+  }
+  const hourNumber = Number(hour);
+  const minuteNumber = Number(minute);
+  if (!Number.isFinite(hourNumber) || hourNumber < 1 || hourNumber > 12) {
+    return "";
+  }
+  if (!Number.isFinite(minuteNumber) || minuteNumber < 0 || minuteNumber > 59) {
+    return "";
+  }
+  const safeHour = String(hourNumber).padStart(2, "0");
+  const safeMinute = String(minuteNumber).padStart(2, "0");
+  const safePeriod: TimePeriod = period === "PM" ? "PM" : "AM";
+  return `${safeHour}:${safeMinute} ${safePeriod}`;
+}
+
+function normalizeHourSegment(value: string): string {
+  const digits = value.replace(/[^\d]/g, "");
+  if (!digits) {
+    return "";
+  }
+  let numeric = Number(digits);
+  if (!Number.isFinite(numeric)) {
+    return "";
+  }
+  if (numeric < 1) {
+    numeric = 1;
+  }
+  if (numeric > 12) {
+    numeric = 12;
+  }
+  return String(numeric).padStart(2, "0");
+}
+
+function normalizeMinuteSegment(value: string): string {
+  const digits = value.replace(/[^\d]/g, "").slice(0, 2);
+  if (!digits) {
+    return "";
+  }
+  let numeric = Number(digits);
+  if (!Number.isFinite(numeric)) {
+    return "";
+  }
+  if (numeric < 0) {
+    numeric = 0;
+  }
+  if (numeric > 59) {
+    numeric = 59;
+  }
+  return String(numeric).padStart(2, "0");
+}
+
+type SegmentedTimeInputProps = {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  disabled?: boolean;
+  required?: boolean;
+  "aria-describedby"?: string;
+};
+
+function SegmentedTimeInput({
+  value,
+  onChange,
+  onBlur,
+  disabled,
+  required,
+  "aria-describedby": ariaDescribedBy,
+}: SegmentedTimeInputProps) {
+  const [segments, setSegments] = useState<TimeSegments>(() => toTimeSegments(value));
+  const hourRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    hourRef.current?.focus();
+  }, []);
+
+  const updateSegments = useCallback(
+    (updater: (previous: TimeSegments) => TimeSegments, options?: { emit?: boolean }) => {
+      setSegments((previous) => {
+        const next = updater(previous);
+        if (options?.emit !== false) {
+          onChange(segmentsToValue(next));
+        }
+        return next;
+      });
+    },
+    [onChange],
+  );
+
+  const handleHourChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const raw = event.target.value.replace(/[^\d]/g, "").slice(0, 2);
+    updateSegments((prev) => ({ ...prev, hour: raw }));
+  };
+
+  const handleHourBlur = () => {
+    updateSegments((prev) => ({ ...prev, hour: normalizeHourSegment(prev.hour) }));
+    onBlur?.();
+  };
+
+  const handleMinuteChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const raw = event.target.value.replace(/[^\d]/g, "").slice(0, 2);
+    updateSegments((prev) => ({ ...prev, minute: raw }));
+  };
+
+  const handleMinuteBlur = () => {
+    updateSegments((prev) => ({ ...prev, minute: normalizeMinuteSegment(prev.minute) }));
+    onBlur?.();
+  };
+
+  const handlePeriodChange = (nextPeriod: TimePeriod) => {
+    updateSegments((prev) => ({ ...prev, period: nextPeriod }));
+    onBlur?.();
+  };
+
+  return (
+    <div
+      className={`flex items-center justify-between rounded-2xl border border-brand-ink-muted/20 bg-white shadow-sm ${
+        disabled ? "opacity-60" : ""
+      }`}
+    >
+      <div className="flex items-center gap-1 px-3 py-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={2}
+          value={segments.hour}
+          onChange={handleHourChange}
+          onBlur={handleHourBlur}
+          disabled={disabled}
+          required={required}
+          aria-describedby={ariaDescribedBy}
+          ref={hourRef}
+          className="w-12 rounded-xl border border-transparent bg-transparent text-center text-sm font-semibold text-brand-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed"
+        />
+        <span className="text-sm font-semibold text-brand-ink-muted">:</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={2}
+          value={segments.minute}
+          onChange={handleMinuteChange}
+          onBlur={handleMinuteBlur}
+          disabled={disabled}
+          required={required}
+          aria-describedby={ariaDescribedBy}
+          className="w-12 rounded-xl border border-transparent bg-transparent text-center text-sm font-semibold text-brand-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed"
+        />
+      </div>
+      <div className="flex h-full">
+        {(["AM", "PM"] as TimePeriod[]).map((periodOption) => {
+          const isActive = segments.period === periodOption;
+          return (
+            <button
+              key={periodOption}
+              type="button"
+              onClick={() => handlePeriodChange(periodOption)}
+              disabled={disabled}
+              aria-pressed={isActive}
+              className={`inline-flex h-full w-14 items-center justify-center px-0 text-[11px] font-semibold uppercase tracking-wide transition first:rounded-l-2xl last:rounded-r-2xl ${
+                isActive
+                  ? "bg-brand-teal-soft text-brand-deep"
+                  : "text-brand-ink-muted hover:bg-brand-deep-soft/40"
+              } ${disabled ? "cursor-not-allowed" : ""}`}
+            >
+              {periodOption}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function toLocalInputValue(value: string | null): string {
   const parts = extractTimestampComponents(value);
   if (!parts) {
     return "";
   }
-  return `${parts.hour}:${parts.minute}`;
+  return toEditorDisplayTime(parts.hour, parts.minute);
 }
 
 function fromLocalInputValue(
@@ -296,17 +632,11 @@ function fromLocalInputValue(
   reference?: string | null,
 ): string | null {
   if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed.length) {
+  const parsed = parseFlexibleTimeInput(value);
+  if (!parsed) {
     return null;
   }
-  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
-  const match = normalized.match(TIME_INPUT_REGEX);
-  if (!match) {
-    return null;
-  }
-  const [, hour, minute, second] = match;
-  const safeSecond = second ?? "00";
+  const { hour, minute, second } = parsed;
   const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const referenceParts = extractTimestampComponents(reference ?? null);
   const year = workDateMatch?.[1] ?? referenceParts?.year;
@@ -316,7 +646,7 @@ function fromLocalInputValue(
     return null;
   }
   const offset = referenceParts?.offset ?? PAYROLL_TIMEZONE_OFFSET;
-  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${offset}`;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {
@@ -497,48 +827,12 @@ function sortSessionRows(rows: SessionRow[]): SessionRow[] {
   });
 }
 
-function validateRowDraft(
-  row: SessionRow,
-  rows: SessionRow[],
-  workDate: string,
-): string | null {
-  const { checkinIso, checkoutIso } = getActiveRowTimes(row);
-  if (!checkinIso || !checkoutIso) {
+function validateRowDraft(row: SessionRow): string | null {
+  const trimmedCheckin = row.isEditing ? row.draftCheckin.trim() : toLocalInputValue(row.checkinTime).trim();
+  const trimmedCheckout = row.isEditing ? row.draftCheckout.trim() : toLocalInputValue(row.checkoutTime).trim();
+  if (!trimmedCheckin || !trimmedCheckout) {
     return "Completa las horas de entrada y salida.";
   }
-
-  const checkinDate = new Date(checkinIso);
-  const checkoutDate = new Date(checkoutIso);
-  if (Number.isNaN(checkinDate.getTime()) || Number.isNaN(checkoutDate.getTime())) {
-    return "Ingresa horas válidas.";
-  }
-  if (checkoutDate.getTime() <= checkinDate.getTime()) {
-    return "La salida debe ser posterior a la entrada.";
-  }
-
-  const checkinDay = rowDayFormatter.format(checkinDate);
-  const checkoutDay = rowDayFormatter.format(checkoutDate);
-  if (checkinDay !== workDate || checkoutDay !== workDate) {
-    return "La sesión debe corresponder al día seleccionado.";
-  }
-
-  for (const candidate of rows) {
-    if (candidate.sessionKey === row.sessionKey) continue;
-    if (candidate.isHistorical) continue;
-    const { checkinIso: otherStart, checkoutIso: otherEnd } = getActiveRowTimes(candidate);
-    if (!otherStart || !otherEnd) continue;
-    const startMs = checkinDate.getTime();
-    const endMs = checkoutDate.getTime();
-    const otherStartMs = new Date(otherStart).getTime();
-    const otherEndMs = new Date(otherEnd).getTime();
-    if (!Number.isFinite(otherStartMs) || !Number.isFinite(otherEndMs)) {
-      continue;
-    }
-    if (endMs > otherStartMs && startMs < otherEndMs) {
-      return "Los horarios se superponen con otra sesión.";
-    }
-  }
-
   return null;
 }
 
@@ -561,6 +855,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionRows, setSessionRows] = useState<SessionRow[]>([]);
+  const [dayTotals, setDayTotals] = useState<DayTotals | null>(null);
   const [sessionEditor, setSessionEditor] = useState<SessionEditorState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -570,15 +865,16 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [accessMode, setAccessMode] = useState<AccessMode>("read-only");
-  const [pinSessionActive, setPinSessionActive] = useState(false);
+  const [isManagerUnlocked, setIsManagerUnlocked] = useState(false);
+  const [hasValidatedPinThisSession, setHasValidatedPinThisSession] = useState(false);
+  const [accessModalOpen, setAccessModalOpen] = useState(true);
   const [pinModalOpen, setPinModalOpen] = useState(false);
-  const [accessGateOpen, setAccessGateOpen] = useState(true);
-  const [hasSelectedAccessMode, setHasSelectedAccessMode] = useState(false);
+  const [initialSelectionComplete, setInitialSelectionComplete] = useState(false);
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
   const sessionLoadTokenRef = useRef(0);
-  const isManagementMode = accessMode === "management";
+  const previousManagerStateRef = useRef<boolean>(isManagerUnlocked);
+  const accessMode: AccessMode = isManagerUnlocked ? "management" : "read-only";
 
   const resolvePinRequest = useCallback((granted: boolean) => {
     const resolver = pinRequestRef.current;
@@ -588,66 +884,67 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     }
   }, []);
 
-  const waitForPin = useCallback((): Promise<boolean> => {
-    if (!hasSelectedAccessMode || accessMode !== "management") {
-      return Promise.resolve(false);
+  const requestManagementPin = useCallback((): Promise<boolean> => {
+    if (hasValidatedPinThisSession) {
+      setIsManagerUnlocked(true);
+      setInitialSelectionComplete(true);
+      return Promise.resolve(true);
     }
 
     return new Promise((resolve) => {
       pinRequestRef.current = resolve;
       setPinModalOpen(true);
     });
-  }, [accessMode, hasSelectedAccessMode]);
+  }, [hasValidatedPinThisSession]);
 
-  useEffect(() => {
-    if (!accessGateOpen) {
-      return;
-    }
+  const resetManagementSession = useCallback(() => {
+    setIsManagerUnlocked(false);
+    setHasValidatedPinThisSession(false);
     setPinModalOpen(false);
-    setPinSessionActive(false);
-    setHasSelectedAccessMode(false);
+    setAccessModalOpen(true);
+    setInitialSelectionComplete(false);
     resolvePinRequest(false);
-  }, [accessGateOpen, resolvePinRequest, setHasSelectedAccessMode]);
+  }, [resolvePinRequest]);
 
   const ensureManagementAccess = useCallback(async (): Promise<AccessCheckResult> => {
-    if (!hasSelectedAccessMode) {
-      setAccessGateOpen(true);
+    if (accessModalOpen) {
       setToast({ message: "Selecciona el modo de acceso para continuar.", tone: "error" });
       return "denied";
     }
-    if (accessMode !== "management") {
+    if (!isManagerUnlocked) {
       setToast({
-        message: "Acceso de solo lectura activo. Cambia a ingreso de gerencia para editar.",
+        message: "Acceso de solo lectura activo. Cambia a modo gerencia para editar.",
         tone: "error",
       });
       return "read-only";
     }
 
-    if (pinSessionActive) {
+    if (hasValidatedPinThisSession) {
       return "granted";
     }
 
-    const granted = await waitForPin();
+    const granted = await requestManagementPin();
     if (granted) {
-      setPinSessionActive(true);
+      setHasValidatedPinThisSession(true);
+      setIsManagerUnlocked(true);
       return "granted";
     }
 
-    setPinSessionActive(false);
+    setIsManagerUnlocked(false);
     return "denied";
   }, [
-    accessMode,
-    hasSelectedAccessMode,
-    pinSessionActive,
-    setAccessGateOpen,
+    accessModalOpen,
+    hasValidatedPinThisSession,
+    isManagerUnlocked,
+    requestManagementPin,
     setToast,
-    waitForPin,
   ]);
 
   const handleUnauthorized = useCallback(async (): Promise<boolean> => {
-    setPinSessionActive(false);
-    return waitForPin();
-  }, [waitForPin]);
+    setHasValidatedPinThisSession(false);
+    setIsManagerUnlocked(false);
+    return requestManagementPin();
+  }, [requestManagementPin]);
 
   const performProtectedFetch = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -673,52 +970,56 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         }
         response = await fetch(input, requestInit);
         if (response.status === 401) {
-          setPinSessionActive(false);
+          resetManagementSession();
           throw new Error("PIN de gerencia requerido.");
         }
       }
 
-      if (response.ok) {
-        setPinSessionActive(true);
-      }
-
       return response;
     },
-    [ensureManagementAccess, handleUnauthorized],
+    [ensureManagementAccess, handleUnauthorized, resetManagementSession],
   );
 
   const handleAccessSelection = useCallback(
     (mode: AccessMode, options?: { fromGate?: boolean }) => {
       if (mode === "read-only") {
-        setHasSelectedAccessMode(true);
-        setAccessMode("read-only");
-        setPinSessionActive(false);
+        setIsManagerUnlocked(false);
+        setHasValidatedPinThisSession(false);
         setPinModalOpen(false);
+        setInitialSelectionComplete(true);
         resolvePinRequest(false);
         if (options?.fromGate) {
-          setAccessGateOpen(false);
+          setAccessModalOpen(false);
         }
         return;
       }
 
-      setHasSelectedAccessMode(true);
-      setAccessMode("management");
       if (options?.fromGate) {
-        setAccessGateOpen(false);
-      }
-      if (pinSessionActive) {
-        return;
+        setAccessModalOpen(false);
       }
 
-      setPinSessionActive(false);
-      void waitForPin();
+      void (async () => {
+        const granted = await requestManagementPin();
+        if (granted) {
+          setIsManagerUnlocked(true);
+          setHasValidatedPinThisSession(true);
+          setInitialSelectionComplete(true);
+        } else {
+          setIsManagerUnlocked(false);
+          setHasValidatedPinThisSession(false);
+          if (options?.fromGate) {
+            setAccessModalOpen(true);
+          }
+        }
+      })();
     },
-    [pinSessionActive, resolvePinRequest, setAccessGateOpen, setHasSelectedAccessMode, waitForPin],
+    [requestManagementPin, resolvePinRequest],
   );
 
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
   const [monthStatusSaving, setMonthStatusSaving] = useState<Record<number, boolean>>({});
   const [monthStatusErrors, setMonthStatusErrors] = useState<Record<number, string | null>>({});
+  const [revealedApprovedRows, setRevealedApprovedRows] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     setPaidAtDrafts((previous) => {
@@ -1199,6 +1500,30 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     void refreshData();
   }, [refreshData]);
 
+  useEffect(() => {
+    if (!isManagerUnlocked && previousManagerStateRef.current) {
+      setRevealedApprovedRows({});
+    }
+    previousManagerStateRef.current = isManagerUnlocked;
+  }, [isManagerUnlocked]);
+
+  useEffect(() => {
+    if (!monthSummaryRows.length) {
+      setRevealedApprovedRows({});
+      return;
+    }
+    setRevealedApprovedRows((previous) => {
+      const allowed = new Set(monthSummaryRows.map((row) => row.staffId));
+      const next: Record<number, boolean> = {};
+      allowed.forEach((staffId) => {
+        if (previous[staffId]) {
+          next[staffId] = true;
+        }
+      });
+      return next;
+    });
+  }, [monthSummaryRows]);
+
   const openModal = useCallback(
     (row: MatrixRow, cell: MatrixCell) => {
       setSelectedCell({
@@ -1212,8 +1537,8 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setSessionsLoading(true);
       setSessionsError(null);
       setSessionRows([]);
+      setDayTotals(null);
       setActionError(null);
-      setPinSessionActive(true);
     },
     [resolveStaffName],
   );
@@ -1223,6 +1548,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setSessionsLoading(false);
     setSessionRows([]);
     setSessionsError(null);
+    setDayTotals(null);
     setActionError(null);
     setActionLoading(false);
     setActionInFlight(null);
@@ -1240,20 +1566,41 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!silent) {
         setSessionsLoading(true);
         setSessionsError(null);
+        setDayTotals(null);
       }
 
       try {
-        const response = await fetch(
-          `/api/payroll/day-sessions?staff_id=${target.staffId}&date=${target.workDate}`,
-          createNoStoreInit(),
-        );
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
+        const [sessionsResponse, totalsResponse] = await Promise.all([
+          fetch(
+            `/api/payroll/day-sessions?staff_id=${target.staffId}&date=${target.workDate}`,
+            createNoStoreInit(),
+          ),
+          fetch(
+            `/api/payroll/day-totals?staff_id=${target.staffId}&date=${target.workDate}`,
+            createNoStoreInit(),
+          ),
+        ]);
+
+        if (!sessionsResponse.ok) {
+          const body = await sessionsResponse.json().catch(() => ({}));
           throw new Error((body as { error?: string }).error ?? "No se pudieron cargar las sesiones.");
         }
-        const data = (await response.json()) as { sessions?: DaySession[] };
+
+        if (!totalsResponse.ok) {
+          const body = await totalsResponse.json().catch(() => ({}));
+          throw new Error((body as { error?: string }).error ?? "No se pudieron cargar los totales del día.");
+        }
+
+        const [sessionsJson, totalsJson] = await Promise.all([
+          sessionsResponse.json().catch(() => ({})),
+          totalsResponse.json().catch(() => ({})),
+        ]);
+
+        const data = (sessionsJson as { sessions?: DaySession[] }).sessions ?? [];
+        const totalsPayload = normalizeTotalsPayload((totalsJson as { totals?: unknown }).totals);
         if (sessionLoadTokenRef.current === requestId) {
-          setSessionRows(sortSessionRows(buildSessionRows(data.sessions ?? [])));
+          setSessionRows(sortSessionRows(buildSessionRows(data)));
+          setDayTotals(totalsPayload);
           setSessionsError(null);
         }
         return true;
@@ -1263,6 +1610,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           error instanceof Error ? error.message : "No se pudieron cargar las sesiones del día.";
         if (sessionLoadTokenRef.current === requestId) {
           setSessionsError((previous) => (silent ? previous ?? message : message));
+          if (!silent) {
+            setDayTotals(null);
+          }
         }
         return false;
       } finally {
@@ -1313,7 +1663,34 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           if (row.sessionKey !== sessionKey) return row;
           return {
             ...row,
-            validationError: validateRowDraft(row, updated, row.workDate),
+            validationError: validateRowDraft(row),
+          };
+        });
+      });
+    },
+    [],
+  );
+
+  const handleDraftBlur = useCallback(
+    (sessionKey: string, field: "checkin" | "checkout") => {
+      setSessionRows((previous) => {
+        const updated = previous.map((row) => {
+          if (row.sessionKey !== sessionKey) return row;
+          const rawValue = field === "checkin" ? row.draftCheckin : row.draftCheckout;
+          const normalizedValue = normalizeEditorTime(rawValue);
+          return {
+            ...row,
+            draftCheckin: field === "checkin" ? normalizedValue : row.draftCheckin,
+            draftCheckout: field === "checkout" ? normalizedValue : row.draftCheckout,
+            feedback: null,
+          };
+        });
+
+        return updated.map((row) => {
+          if (row.sessionKey !== sessionKey) return row;
+          return {
+            ...row,
+            validationError: validateRowDraft(row),
           };
         });
       });
@@ -1335,11 +1712,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const enableRowEditing = useCallback(
     async (sessionKey: string) => {
       const access = await ensureManagementAccess();
-      if (access !== "granted") return;
+      if (access !== "granted") return false;
       const currentRows = sessionRowsRef.current;
       const targetRow = currentRows.find((row) => row.sessionKey === sessionKey);
       if (!targetRow || targetRow.isHistorical) {
-        return;
+        return false;
       }
       setSessionRows((previous) => {
         const updated = previous.map((row) => {
@@ -1355,11 +1732,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           };
           return {
             ...candidate,
-            validationError: validateRowDraft(candidate, previous, row.workDate),
+            validationError: validateRowDraft(candidate),
           };
         });
         return sortSessionRows(updated);
       });
+      return true;
     },
     [ensureManagementAccess],
   );
@@ -1372,22 +1750,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!target) return false;
       const previousSessionId = target.sessionId;
 
-      const validation = validateRowDraft(target, rows, target.workDate);
-      if (validation) {
-        setSessionRows((previous) =>
-          previous.map((row) =>
-            row.sessionKey === sessionKey
-              ? { ...row, validationError: validation }
-              : row,
-          ),
-        );
-        return false;
-      }
-
-      const { checkinIso, checkoutIso } = getActiveRowTimes(target);
-      if (!checkinIso || !checkoutIso) {
-        return false;
-      }
+      const checkinValue = target.isEditing ? target.draftCheckin : toLocalInputValue(target.checkinTime);
+      const checkoutValue = target.isEditing ? target.draftCheckout : toLocalInputValue(target.checkoutTime);
+      const checkinLocal = normalizeEditorTime(checkinValue);
+      const checkoutLocal = normalizeEditorTime(checkoutValue);
 
       setSessionRows((previous) =>
         previous.map((row) =>
@@ -1402,110 +1768,116 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       );
 
       try {
-        const endpoint = target.isNew
-          ? "/api/payroll/reports/day-sessions"
-          : `/api/payroll/reports/day-sessions/${target.sessionId}`;
-        const method = target.isNew ? "POST" : "PATCH";
-        const response = await performProtectedFetch(endpoint, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            staffId: selectedCell.staffId,
-            workDate: selectedCell.workDate,
-            checkinTime: checkinIso,
-            checkoutTime: checkoutIso,
-            note: target.editNote ?? null,
-          }),
-        });
+        const response = await (async () => {
+          if (target.isNew) {
+            return performProtectedFetch("/api/payroll/session/add", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                staffId: selectedCell.staffId,
+                workDate: selectedCell.workDate,
+                checkinLocal: checkinLocal || null,
+                checkoutLocal: checkoutLocal || null,
+                note: target.editNote ?? null,
+              }),
+            });
+          }
+
+          return performProtectedFetch(`/api/payroll/reports/day-sessions/${target.sessionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              staffId: selectedCell.staffId,
+              workDate: selectedCell.workDate,
+              checkinLocal: checkinLocal || null,
+              checkoutLocal: checkoutLocal || null,
+              note: target.editNote ?? null,
+            }),
+          });
+        })();
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
           const message = (payload as { error?: string }).error ?? "No se pudo guardar la sesión.";
           throw new Error(message);
         }
 
-        const saved = (payload as { session?: DaySession }).session;
-        if (!saved) {
+        const body = payload as { session?: DaySession; newSessionId?: number };
+        const saved = body.session ?? null;
+        const createdId =
+          typeof body.newSessionId === "number" && Number.isFinite(body.newSessionId)
+            ? body.newSessionId
+            : null;
+
+        if (!saved && !(target.isNew && createdId != null)) {
           throw new Error("No se recibió la sesión actualizada.");
         }
 
-        setSessionRows((previous) =>
-          sortSessionRows(
-            previous.map((row) =>
-              row.sessionKey === sessionKey
-                ? {
-                    ...row,
-                    sessionId: saved.sessionId,
-                    staffId: saved.staffId,
-                    workDate: saved.workDate,
-                    checkinTime: saved.checkinTime,
-                    checkoutTime: saved.checkoutTime,
-                    ...normalizeSessionDurations(saved.minutes, saved.hours),
-                    draftCheckin: toLocalInputValue(saved.checkinTime),
-                    draftCheckout: toLocalInputValue(saved.checkoutTime),
-                    originalCheckin:
-                      saved.originalCheckinTime
-                        ?? row.originalCheckin
-                        ?? (row.checkinTime && row.checkinTime !== saved.checkinTime
-                          ? row.checkinTime
-                          : null),
-                    originalCheckout:
-                      saved.originalCheckoutTime
-                        ?? row.originalCheckout
-                        ?? (row.checkoutTime && row.checkoutTime !== saved.checkoutTime
-                          ? row.checkoutTime
-                          : null),
-                    originalSessionId:
-                      saved.originalSessionId
-                        ?? row.originalSessionId
-                        ?? (previousSessionId != null ? previousSessionId : null),
-                    replacementSessionId:
-                      saved.replacementSessionId
-                        ?? row.replacementSessionId
-                        ?? null,
-                    isHistorical: Boolean(saved.isOriginalRecord),
-                    editedCheckin:
-                      saved.editedCheckinTime ?? row.editedCheckin ?? saved.checkinTime ?? row.checkinTime ?? null,
-                    editedCheckout:
-                      saved.editedCheckoutTime
-                        ?? row.editedCheckout
-                        ?? saved.checkoutTime
-                        ?? row.checkoutTime
-                        ?? null,
-                    editedByStaffId:
-                      typeof saved.editedByStaffId === "number"
-                        ? saved.editedByStaffId
-                        : row.editedByStaffId ?? null,
-                    editNote: saved.editNote ?? row.editNote ?? null,
-                    wasEdited: saved.wasEdited ?? row.wasEdited ?? false,
-                    isNew: false,
-                    isEditing: false,
-                    validationError: null,
-                    feedback: null,
-                    pendingAction: null,
-                  }
-                : row,
+        if (saved) {
+          setSessionRows((previous) =>
+            sortSessionRows(
+              previous.map((row) =>
+                row.sessionKey === sessionKey
+                  ? {
+                      ...row,
+                      sessionId: saved.sessionId,
+                      staffId: saved.staffId,
+                      workDate: saved.workDate,
+                      checkinTime: saved.checkinTime,
+                      checkoutTime: saved.checkoutTime,
+                      ...normalizeSessionDurations(saved.minutes, saved.hours),
+                      draftCheckin: toLocalInputValue(saved.checkinTime),
+                      draftCheckout: toLocalInputValue(saved.checkoutTime),
+                      originalCheckin:
+                        saved.originalCheckinTime
+                          ?? row.originalCheckin
+                          ?? (row.checkinTime && row.checkinTime !== saved.checkinTime
+                            ? row.checkinTime
+                            : null),
+                      originalCheckout:
+                        saved.originalCheckoutTime
+                          ?? row.originalCheckout
+                          ?? (row.checkoutTime && row.checkoutTime !== saved.checkoutTime
+                            ? row.checkoutTime
+                            : null),
+                      originalSessionId:
+                        saved.originalSessionId
+                          ?? row.originalSessionId
+                          ?? (previousSessionId != null ? previousSessionId : null),
+                      replacementSessionId:
+                        saved.replacementSessionId
+                          ?? row.replacementSessionId
+                          ?? null,
+                      isHistorical: Boolean(saved.isOriginalRecord),
+                      editedCheckin:
+                        saved.editedCheckinTime ?? row.editedCheckin ?? saved.checkinTime ?? row.checkinTime ?? null,
+                      editedCheckout:
+                        saved.editedCheckoutTime
+                          ?? row.editedCheckout
+                          ?? saved.checkoutTime
+                          ?? row.checkoutTime
+                          ?? null,
+                      editedByStaffId:
+                        typeof saved.editedByStaffId === "number"
+                          ? saved.editedByStaffId
+                          : row.editedByStaffId ?? null,
+                      editNote: saved.editNote ?? row.editNote ?? null,
+                      wasEdited: saved.wasEdited ?? row.wasEdited ?? false,
+                      isNew: false,
+                      isEditing: false,
+                      validationError: null,
+                      feedback: null,
+                      pendingAction: null,
+                    }
+                  : row,
+              ),
             ),
-          ),
-        );
-        setMatrixData((previous) => {
-          if (!previous) return previous;
-          return {
-            ...previous,
-            rows: previous.rows.map((row) => {
-              if (row.staffId !== saved.staffId) {
-                return row;
-              }
-              return {
-                ...row,
-                cells: row.cells.map((cell) =>
-                  cell.date === saved.workDate
-                    ? { ...cell, approved: true, hasEdits: true }
-                    : cell,
-                ),
-              };
-            }),
-          };
-        });
+          );
+        } else {
+          setSessionRows((previous) =>
+            previous.filter((row) => row.sessionKey !== sessionKey),
+          );
+        }
+
         await reloadSessions({ silent: true });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(selectedCell.staffId);
@@ -1533,7 +1905,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       refreshMonthStatusForStaff,
       refreshMonthSummary,
       reloadSessions,
-      setMatrixData,
       selectedCell,
     ],
   );
@@ -1545,7 +1916,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!target || target.pendingAction || target.isHistorical) {
         return;
       }
-      await enableRowEditing(sessionKey);
+      const ready = await enableRowEditing(sessionKey);
+      if (!ready) {
+        return;
+      }
       setSessionEditor({ sessionKey });
     },
     [enableRowEditing],
@@ -1671,7 +2045,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     if (!sessionEditor) {
       return null;
     }
-    return sessionRows.find((row) => row.sessionKey === sessionEditor.sessionKey) ?? null;
+    const row = sessionRows.find((candidate) => candidate.sessionKey === sessionEditor.sessionKey);
+    if (!row || !row.isEditing) {
+      return null;
+    }
+    return row;
   }, [sessionEditor, sessionRows]);
 
   const editorPending =
@@ -1831,15 +2209,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     sessionRowsRef.current = sessionRows;
   }, [sessionRows]);
 
-  useEffect(() => {
-    if (!accessGateOpen) {
-      return;
-    }
-    if (accessMode === "management" && pinSessionActive) {
-      setAccessGateOpen(false);
-    }
-  }, [accessGateOpen, accessMode, pinSessionActive]);
-
   const matrixDays = matrixData?.days ?? [];
   const effectiveCellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(cellWidth));
   const cellVariant = useMemo(() => {
@@ -1863,7 +2232,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const compactCellText = cellVariant === "tight";
   const staffCount = matrixData?.rows.length ?? 0;
 
-  const totalMinutes = useMemo(
+  const computedMinutes = useMemo(
     () =>
       sessionRows.reduce((accumulator, row) => {
         const minutes = getRowMinutesForTotals(row);
@@ -1872,7 +2241,20 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [sessionRows],
   );
 
-  const totalHours = useMemo(() => Number((totalMinutes / 60).toFixed(2)), [totalMinutes]);
+  const computedHours = useMemo(
+    () => Math.round((computedMinutes / 60) * 100) / 100,
+    [computedMinutes],
+  );
+
+  const effectiveTotals = useMemo(() => {
+    if (dayTotals) {
+      return dayTotals;
+    }
+    return { totalMinutes: computedMinutes, totalHours: computedHours };
+  }, [computedHours, computedMinutes, dayTotals]);
+
+  const totalMinutes = effectiveTotals.totalMinutes;
+  const totalHours = effectiveTotals.totalHours;
 
   useEffect(() => {
     if (!selectedCell || sessionsLoading) return;
@@ -2066,18 +2448,18 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 ) : (
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-brand-deep">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] text-orange-900">
-                        <span className="h-2 w-2 rounded-full bg-orange-500" />
-                        Pendiente
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-900">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                        Aprobado
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] text-yellow-900">
-                        <span className="h-2 w-2 rounded-full bg-yellow-400" />
-                        Editado y aprobado
-                      </span>
+                      {STATUS_LEGEND.map(({ key, label, chipClass, dotColor }) => (
+                        <span
+                          key={key}
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${chipClass}`}
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: dotColor }}
+                          />
+                          {label}
+                        </span>
+                      ))}
                     </div>
                     <div className="overflow-x-auto overflow-y-hidden rounded-2xl border border-brand-ink-muted/10">
                       <table className="w-full table-fixed border-collapse text-[10px] leading-tight text-brand-deep">
@@ -2153,17 +2535,24 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
-                                  const cellStyle = cell.hasEdits
-                                    ? "border-yellow-400 bg-yellow-100 text-yellow-900 hover:bg-yellow-200"
-                                    : cell.approved
-                                      ? "border-emerald-500 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                                      : "border-orange-500 bg-orange-500/90 text-white hover:bg-orange-500";
+                                  const cellStatus =
+                                    cell.status ??
+                                    (cell as { dayStatus?: string }).dayStatus ??
+                                    (cell.hasEdits
+                                      ? cell.approved
+                                        ? "edited_and_approved"
+                                        : "edited_not_approved"
+                                      : cell.approved
+                                        ? "approved"
+                                        : "pending");
+                                  const cellClass =
+                                    STATUS_BUTTON_CLASSES[cellStatus] ?? STATUS_BUTTON_CLASSES.pending;
                                   return (
                                     <td key={cell.date} className="px-1 py-1 text-center">
                                       <button
                                         type="button"
                                         onClick={() => openModal(row, cell)}
-                                        className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${cellStyle} ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
+                                        className={`inline-flex w-full items-center justify-center rounded-full border font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal-soft ${cellClass} ${cellVisual.height} ${cellVisual.padding} ${cellVisual.font}`}
                                         style={{ minWidth: `${effectiveCellWidth}px` }}
                                       >
                                         <span className="whitespace-nowrap">
@@ -2174,7 +2563,36 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   );
                                 })}
                                 <td className="px-2 py-1 text-right font-semibold text-brand-deep">
-                                  {toCurrency(monthSummary?.approvedAmount ?? null)}
+                                  {isManagerUnlocked ? (
+                                    <span>{toCurrency(monthSummary?.approvedAmount ?? null)}</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRevealedApprovedRows((previous) => ({
+                                          ...previous,
+                                          [row.staffId]: !previous[row.staffId],
+                                        }))
+                                      }
+                                      aria-label={
+                                        revealedApprovedRows[row.staffId]
+                                          ? "Ocultar monto aprobado"
+                                          : "Mostrar monto aprobado"
+                                      }
+                                      className="inline-flex w-full items-center justify-center rounded-full border border-brand-ink-muted/30 bg-brand-deep-soft/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted shadow-inner transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                                    >
+                                      {revealedApprovedRows[row.staffId] ? (
+                                        <span>{toCurrency(monthSummary?.approvedAmount ?? null)}</span>
+                                      ) : (
+                                        <span className="flex w-full flex-col items-center leading-tight">
+                                          <span className="text-base font-black tracking-[0.45em]">•••</span>
+                                          <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wide">
+                                            Haz clic para ver
+                                          </span>
+                                        </span>
+                                      )}
+                                    </button>
+                                  )}
                                 </td>
                                 <td className="px-2 py-1 text-center">
                                   <button
@@ -2287,9 +2705,23 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   {humanDateFormatter.format(new Date(`${selectedCell.workDate}T12:00:00Z`))}
                 </p>
               </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 pr-10 text-brand-deep sm:flex-row sm:items-center sm:justify-between">
               <div className="rounded-[24px] border border-brand-ink-muted/10 bg-brand-deep-soft/30 px-5 py-4 text-sm text-brand-deep">
                 Horas registradas: {hoursFormatter.format(displayHours)} h
               </div>
+              <button
+                type="button"
+                onClick={addBlankSession}
+                disabled={!isManagerUnlocked || sessionsLoading || actionLoading}
+                title={
+                  !isManagerUnlocked ? "Disponible solo en modo gerencia" : undefined
+                }
+                className="inline-flex items-center justify-center rounded-full border border-emerald-500/80 bg-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-emerald-600 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Agregar sesión
+              </button>
             </div>
 
             <div className="mt-6 flex flex-col gap-4">
@@ -2308,19 +2740,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       const isHistorical = session.isHistorical;
                       const editingDisabled =
                         isHistorical
-                        || !isManagementMode
+                        || !isManagerUnlocked
                         || sessionsLoading
                         || actionLoading
                         || session.pendingAction === "delete";
                       const deletingDisabled =
                         isHistorical
-                        || !isManagementMode
+                        || !isManagerUnlocked
                         || sessionsLoading
                         || actionLoading
                         || session.pendingAction === "edit"
                         || session.pendingAction === "create";
-                      const creationDisabled =
-                        !isManagementMode || sessionsLoading || actionLoading;
                       const saving =
                         session.pendingAction === "edit" || session.pendingAction === "create";
                       const editorActive = sessionEditor?.sessionKey === session.sessionKey;
@@ -2386,7 +2816,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                 onClick={() => handleEditClick(session.sessionKey)}
                                 disabled={editingDisabled}
                                 title={
-                                  !isManagementMode
+                                  !isManagerUnlocked
                                     ? "Disponible solo en modo gerencia"
                                     : undefined
                                 }
@@ -2400,23 +2830,10 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                               </button>
                               <button
                                 type="button"
-                                onClick={addBlankSession}
-                                disabled={creationDisabled}
-                                title={
-                                  !isManagementMode
-                                    ? "Disponible solo en modo gerencia"
-                                    : undefined
-                                }
-                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                Agregar sesión
-                              </button>
-                              <button
-                                type="button"
                                 onClick={() => handleDeleteClick(session.sessionKey)}
                                 disabled={deletingDisabled}
                                 title={
-                                  !isManagementMode
+                                  !isManagerUnlocked
                                     ? "Disponible solo en modo gerencia"
                                     : undefined
                                 }
@@ -2525,21 +2942,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   ) : (
                     <div className="rounded-3xl border border-brand-ink-muted/20 bg-brand-deep-soft/40 px-5 py-4 text-sm text-brand-ink-muted">
                       <div>No hay sesiones registradas para este día.</div>
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={addBlankSession}
-                          disabled={!isManagementMode || sessionsLoading || actionLoading}
-                          title={
-                            !isManagementMode
-                              ? "Disponible solo en modo gerencia"
-                              : undefined
-                          }
-                          className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Agregar sesión
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -2564,9 +2966,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                 <button
                   type="button"
                   onClick={handleUnapprove}
-                  disabled={!isManagementMode || actionLoading}
+                  disabled={!isManagerUnlocked || actionLoading}
                   title={
-                    !isManagementMode ? "Disponible solo en modo gerencia" : undefined
+                    !isManagerUnlocked ? "Disponible solo en modo gerencia" : undefined
                   }
                   className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-rose-700 shadow transition hover:-translate-y-[1px] hover:bg-rose-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -2576,9 +2978,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               <button
                 type="button"
                 onClick={handleApprove}
-                disabled={!isManagementMode || actionLoading}
+                disabled={!isManagerUnlocked || actionLoading}
                 title={
-                  !isManagementMode ? "Disponible solo en modo gerencia" : undefined
+                  !isManagerUnlocked ? "Disponible solo en modo gerencia" : undefined
                 }
                 className="inline-flex items-center justify-center rounded-full border border-emerald-500/50 bg-emerald-500/90 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-emerald-500 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -2635,15 +3037,13 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
                         Entrada
                       </span>
-                      <input
-                        type="time"
-                        step={60}
+                      <SegmentedTimeInput
                         value={activeEditorRow.draftCheckin}
-                        onChange={(event) =>
-                          handleDraftChange(activeEditorRow.sessionKey, "checkin", event.target.value)
+                        onChange={(value) =>
+                          handleDraftChange(activeEditorRow.sessionKey, "checkin", value)
                         }
+                        onBlur={() => handleDraftBlur(activeEditorRow.sessionKey, "checkin")}
                         disabled={activeEditorRow.pendingAction != null}
-                        className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                         required
                       />
                     </label>
@@ -2651,15 +3051,13 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
                         Salida
                       </span>
-                      <input
-                        type="time"
-                        step={60}
+                      <SegmentedTimeInput
                         value={activeEditorRow.draftCheckout}
-                        onChange={(event) =>
-                          handleDraftChange(activeEditorRow.sessionKey, "checkout", event.target.value)
+                        onChange={(value) =>
+                          handleDraftChange(activeEditorRow.sessionKey, "checkout", value)
                         }
+                        onBlur={() => handleDraftBlur(activeEditorRow.sessionKey, "checkout")}
                         disabled={activeEditorRow.pendingAction != null}
-                        className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                         required
                       />
                     </label>
@@ -2725,7 +3123,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
         </div>
       ) : null}
 
-      {accessGateOpen ? (
+      {accessModalOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 px-4 py-10 backdrop-blur-sm">
           <div className="relative w-full max-w-md rounded-[32px] border border-white/70 bg-white/95 p-8 text-left shadow-[0_26px_60px_rgba(15,23,42,0.18)]">
             <h2 className="text-2xl font-black text-brand-deep">Selecciona el modo de acceso</h2>
@@ -2759,9 +3157,12 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               type="button"
               onClick={() => {
                 setPinModalOpen(false);
-                setPinSessionActive(false);
-                setHasSelectedAccessMode(false);
-                setAccessGateOpen(true);
+                setHasValidatedPinThisSession(false);
+                setIsManagerUnlocked(false);
+                if (!initialSelectionComplete) {
+                  setAccessModalOpen(true);
+                  setInitialSelectionComplete(false);
+                }
                 resolvePinRequest(false);
               }}
               className="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white text-lg font-semibold text-brand-ink shadow hover:-translate-y-[1px] hover:bg-brand-teal-soft/40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
@@ -2775,8 +3176,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
               description="Confirma el PIN de gerencia para continuar."
               ctaLabel="Validar PIN"
               onSuccess={() => {
-                setPinSessionActive(true);
+                setHasValidatedPinThisSession(true);
+                setIsManagerUnlocked(true);
+                setAccessModalOpen(false);
                 setPinModalOpen(false);
+                setInitialSelectionComplete(true);
                 resolvePinRequest(true);
               }}
             />

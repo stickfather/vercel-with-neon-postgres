@@ -43,12 +43,21 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const { staffId, workDate, checkinTime, checkoutTime, editorStaffId, note } = (payload ?? {}) as {
+  const {
+    staffId,
+    workDate,
+    checkinLocal,
+    checkoutLocal,
+    checkinTime,
+    checkoutTime,
+    note,
+  } = (payload ?? {}) as {
     staffId?: number;
     workDate?: string;
+    checkinLocal?: string | null;
+    checkoutLocal?: string | null;
     checkinTime?: string | null;
     checkoutTime?: string | null;
-    editorStaffId?: number | null;
     note?: string | null;
   };
 
@@ -64,12 +73,18 @@ export async function PATCH(request: Request, context: RouteContext) {
       sessionId: parsedId,
       staffId: Number(staffId),
       workDate,
-      checkinTime: typeof checkinTime === "string" ? checkinTime : null,
-      checkoutTime: typeof checkoutTime === "string" ? checkoutTime : null,
-      editorStaffId:
-        Number.isFinite(editorStaffId) && editorStaffId != null
-          ? Number(editorStaffId)
-          : undefined,
+      checkinTime:
+        typeof checkinLocal === "string" && checkinLocal.trim().length
+          ? checkinLocal.trim()
+          : typeof checkinTime === "string"
+            ? checkinTime
+            : null,
+      checkoutTime:
+        typeof checkoutLocal === "string" && checkoutLocal.trim().length
+          ? checkoutLocal.trim()
+          : typeof checkoutTime === "string"
+            ? checkoutTime
+            : null,
       note: typeof note === "string" ? note : undefined,
     });
     return NextResponse.json(

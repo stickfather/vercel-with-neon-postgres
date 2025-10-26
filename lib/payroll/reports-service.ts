@@ -8,7 +8,9 @@ import { z, ZodError } from "@/lib/validation/zod";
 import type { BaseSchema } from "@/lib/validation/zod";
 import type {
   DaySession,
+  DayTotals,
   MonthSummaryRow,
+  PayrollDayStatus,
   PayrollMatrixCell,
   PayrollMatrixResponse,
   PayrollMatrixRow,
@@ -66,6 +68,143 @@ function toBoolean(value: unknown): boolean {
     return ["t", "true", "1", "yes", "y", "si", "sí"].includes(normalized);
   }
   return false;
+}
+
+function combineWorkDateAndClock(workDate: string, clockText: string): string {
+  const trimmed = clockText.trim();
+  if (!trimmed.length) {
+    return workDate;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed;
+  }
+  return `${workDate} ${trimmed}`;
+}
+
+function shouldFallbackToLegacyAddSession(error: unknown): boolean {
+  if (!(error instanceof Error) || !error.message) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("function public.add_staff_session") ||
+    message.includes("invalid input syntax for type timestamp")
+  );
+}
+
+function shouldFallbackToLegacyDeleteSession(error: unknown): boolean {
+  if (!(error instanceof Error) || !error.message) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("function public.delete_staff_session");
+}
+
+type AddStaffSessionExecutionParams = {
+  staffId: number;
+  workDate: string;
+  checkinClock: string;
+  checkoutClock: string;
+  note: string | null;
+};
+
+export async function executeAddStaffSessionSql(
+  sql: SqlClientLike,
+  params: AddStaffSessionExecutionParams,
+): Promise<SqlRow[]> {
+  const sanitizedNote = params.note && params.note.trim().length ? params.note.trim() : null;
+  try {
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.add_staff_session(
+          ${params.staffId}::bigint,
+          ${params.workDate}::text,
+          ${params.checkinClock}::text,
+          ${params.checkoutClock}::text,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  } catch (error) {
+    if (!shouldFallbackToLegacyAddSession(error)) {
+      throw error;
+    }
+
+    const checkinWithDate = combineWorkDateAndClock(params.workDate, params.checkinClock);
+    const checkoutWithDate = combineWorkDateAndClock(params.workDate, params.checkoutClock);
+
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.add_staff_session(
+          ${params.staffId}::bigint,
+          ${checkinWithDate}::text,
+          ${checkoutWithDate}::text,
+          ${null}::bigint,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  }
+}
+
+type DeleteStaffSessionExecutionParams = {
+  sessionId: number;
+  note: string | null;
+};
+
+export async function executeDeleteStaffSessionSql(
+  sql: SqlClientLike,
+  params: DeleteStaffSessionExecutionParams,
+): Promise<SqlRow[]> {
+  const sanitizedNote = params.note && params.note.trim().length ? params.note.trim() : null;
+  try {
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.delete_staff_session(
+          ${params.sessionId}::bigint,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  } catch (error) {
+    if (!shouldFallbackToLegacyDeleteSession(error)) {
+      throw error;
+    }
+
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.delete_staff_session(
+          ${params.sessionId}::bigint,
+          ${null}::bigint,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  }
+}
+
+function resolveDayStatus(
+  approved: boolean,
+  hasEdits: boolean,
+  editedAfterApproval: boolean,
+): PayrollDayStatus {
+  if (!approved && !hasEdits) {
+    return "pending";
+  }
+  if (!approved && hasEdits) {
+    return "edited_not_approved";
+  }
+  if (approved && editedAfterApproval) {
+    return "edited_and_approved";
+  }
+  if (approved) {
+    return "approved";
+  }
+  return "pending";
 }
 
 function getRowValue(row: SqlRow, candidates: string[]): unknown {
@@ -328,7 +467,6 @@ async function assertNoOverlap(
 async function executeEditStaffSession(
   sql: SqlClientLike,
   sessionId: number,
-  editorStaffId: number | null,
   checkinIso: string,
   checkoutIso: string,
   note: string | null,
@@ -340,7 +478,6 @@ async function executeEditStaffSession(
       SELECT *
       FROM public.edit_staff_session(
         ${sessionId}::bigint,
-        ${editorStaffId ?? null}::bigint,
         ${checkinLocal}::text,
         ${checkoutLocal}::text,
         ${note ?? null}::text
@@ -421,6 +558,11 @@ export const DaySessionsQuerySchema = z.object({
   date: z.string().trim().regex(ISO_DATE_REGEX, "Debes indicar un día válido."),
 });
 
+export const DayTotalsQuerySchema = z.object({
+  staffId: z.number().int("El identificador del colaborador no es válido."),
+  date: z.string().trim().regex(ISO_DATE_REGEX, "Debes indicar un día válido."),
+});
+
 const sessionOverrideSchema = z.object({
   sessionId: z.number().int("El identificador de la sesión no es válido."),
   checkinTime: z.string().trim().nonempty("La hora de entrada es obligatoria."),
@@ -438,10 +580,6 @@ export const OverrideAndApproveSchema = z.object({
   overrides: z.array(sessionOverrideSchema).default([]),
   additions: z.array(sessionAdditionSchema).default([]),
   deletions: z.array(z.number().int("El identificador de la sesión no es válido.")).default([]),
-  editorStaffId: z
-    .number()
-    .int("El identificador del editor no es válido.")
-    .optional(),
   note: z
     .string()
     .trim()
@@ -565,10 +703,10 @@ export async function getPayrollMatrix(
         m.approved_hours,
         m.horas_mostrar,
         m.approved,
-        COALESCE(he.has_edits, FALSE) AS has_edits
+        m.has_edits,
+        m.edited_after_approval
       FROM public.staff_day_matrix_local_v AS m
       LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-      LEFT JOIN public.staff_day_has_edits_v he ON he.staff_id = m.staff_id AND he.work_date = m.work_date
       WHERE m.work_date BETWEEN ${start}::date AND ${end}::date
       ORDER BY m.staff_id, m.work_date
     `,
@@ -606,27 +744,41 @@ export async function getPayrollMatrix(
       });
     }
     const entry = grouped.get(staffId)!;
+    const hasEdits = toBoolean(row["has_edits"]);
+    const editedAfterApproval = toBoolean(row["edited_after_approval"]);
+    const dayStatus = resolveDayStatus(approved, hasEdits, editedAfterApproval);
+
     entry.cellMap.set(workDate, {
       date: workDate,
       approved,
       hours,
       approvedHours,
-      hasEdits: toBoolean(row["has_edits"]),
+      hasEdits,
+      editedAfterApproval,
+      dayStatus,
     });
   }
 
   const resultRows: PayrollMatrixRow[] = [];
   for (const [, value] of grouped) {
-    const cells = days.map(
-      (day) =>
-        value.cellMap.get(day) ?? {
-          date: day,
-          hours: 0,
-          approved: false,
-          approvedHours: null,
-          hasEdits: false,
-        },
-    );
+    const cells: PayrollMatrixCell[] = days.map((day) => {
+      const existing = value.cellMap.get(day);
+      if (existing) {
+        return existing;
+      }
+
+      const fallback: PayrollMatrixCell = {
+        date: day,
+        hours: 0,
+        approved: false,
+        approvedHours: null,
+        hasEdits: false,
+        editedAfterApproval: false,
+        dayStatus: "pending",
+      };
+
+      return fallback;
+    });
     resultRows.push({ staffId: value.staffId, staffName: value.staffName, cells });
   }
 
@@ -740,6 +892,45 @@ export async function getDaySessions(
   });
 }
 
+export async function getDayTotals(
+  params: SchemaInput<typeof DayTotalsQuerySchema>,
+  sqlClient?: SqlClientLike,
+): Promise<DayTotals> {
+  const sql = ensureSqlClient(sqlClient);
+  const rows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT total_minutes, total_hours
+      FROM public.staff_day_totals_v
+      WHERE staff_id = ${params.staffId}::bigint
+        AND work_date = ${params.date}::date
+    `,
+  );
+
+  const row = rows[0] ?? null;
+  const totalMinutesRaw = row?.["total_minutes"];
+  const totalHoursRaw = row?.["total_hours"];
+  const totalMinutesCandidate =
+    typeof totalMinutesRaw === "number"
+      ? totalMinutesRaw
+      : typeof totalMinutesRaw === "string"
+        ? Number(totalMinutesRaw)
+        : null;
+  const safeMinutes =
+    totalMinutesCandidate != null && Number.isFinite(totalMinutesCandidate)
+      ? Math.max(0, Math.round(totalMinutesCandidate))
+      : 0;
+  const parsedHours = toOptionalNumber(totalHoursRaw);
+  const safeHours =
+    parsedHours != null && Number.isFinite(parsedHours)
+      ? Math.round(parsedHours * 100) / 100
+      : roundMinutesToHours(safeMinutes);
+
+  return {
+    totalMinutes: safeMinutes,
+    totalHours: safeHours,
+  };
+}
+
 export async function approveDay(
   payload: SchemaInput<typeof ApproveDaySchema>,
   sqlClient?: SqlClientLike,
@@ -772,24 +963,14 @@ export async function overrideAndApprove(
     throw new Error("SQL client does not support transactions");
   }
   await sql.begin(async (transaction) => {
-    const editorStaffId =
-      payload.editorStaffId != null && Number.isFinite(payload.editorStaffId)
-        ? Number(payload.editorStaffId)
-        : null;
     const editNote = payload.note ?? null;
 
     if (payload.deletions.length) {
       for (const sessionId of payload.deletions) {
-        const deleted = normalizeRows<SqlRow>(
-          await transaction`
-            SELECT *
-            FROM public.delete_staff_session(
-              ${sessionId}::bigint,
-              ${editorStaffId ?? null}::bigint,
-              ${editNote ?? null}::text
-            )
-          `,
-        );
+        const deleted = await executeDeleteStaffSessionSql(transaction, {
+          sessionId,
+          note: editNote ?? null,
+        });
         if (!deleted.length) {
           throw new HttpError(404, "No encontramos una de las sesiones a eliminar.");
         }
@@ -803,7 +984,6 @@ export async function overrideAndApprove(
       await executeEditStaffSession(
         transaction,
         override.sessionId,
-        editorStaffId,
         checkinIso,
         checkoutIso,
         editNote,
@@ -822,18 +1002,13 @@ export async function overrideAndApprove(
       });
       const checkinLocal = ensureLocalTimestampText("entrada", checkinIso);
       const checkoutLocal = ensureLocalTimestampText("salida", checkoutIso);
-      const inserted = normalizeRows<SqlRow>(
-        await transaction`
-          SELECT *
-          FROM public.add_staff_session(
-            ${payload.staffId}::bigint,
-            ${checkinLocal}::text,
-            ${checkoutLocal}::text,
-            ${editorStaffId ?? null}::bigint,
-            ${editNote ?? null}::text
-          )
-        `,
-      );
+      const inserted = await executeAddStaffSessionSql(transaction, {
+        staffId: payload.staffId,
+        workDate: payload.workDate,
+        checkinClock: checkinLocal,
+        checkoutClock: checkoutLocal,
+        note: editNote ?? null,
+      });
       if (!inserted.length) {
         throw new Error("No se pudo crear una de las sesiones solicitadas.");
       }
