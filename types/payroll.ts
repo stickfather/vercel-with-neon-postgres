@@ -23,11 +23,18 @@ export type DaySession = {
   checkoutTimeLocal: string | null;
   minutes: number;
   hours: number;
+  staffId?: number;
+  workDate?: string;
   originalCheckinLocal?: string | null;
   originalCheckoutLocal?: string | null;
   originalSessionId?: number | null;
   replacementSessionId?: number | null;
   isOriginalRecord?: boolean;
+  editedCheckinLocal?: string | null;
+  editedCheckoutLocal?: string | null;
+  editedByStaffId?: number | null;
+  editNote?: string | null;
+  wasEdited?: boolean;
 };
 
 export type MonthSummaryRow = {

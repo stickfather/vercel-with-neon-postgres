@@ -2912,7 +2912,7 @@ export async function listStudentAttendanceHistory(
       l.level AS level_code,
       l.seq AS lesson_seq,
       EXTRACT(EPOCH FROM (sa.checkout_time - sa.checkin_time)) / 60 AS duration_minutes
-    FROM student_attendance sa
+    FROM public.student_attendance sa
     LEFT JOIN lessons l ON l.id = sa.lesson_id
     WHERE sa.student_id = ${studentId}::bigint
     ORDER BY sa.checkin_time DESC
@@ -2965,12 +2965,12 @@ export async function createStudentAttendanceEntry({
   }
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO student_attendance (
+    INSERT INTO public.student_attendance (
       student_id,
       lesson_id,
       checkin_time,
       checkout_time,
-      confirm_override
+      override_ok
     )
     VALUES (
       ${sanitizedStudentId}::bigint,
@@ -3000,7 +3000,7 @@ export async function createStudentAttendanceEntry({
       l.level AS level_code,
       l.seq AS lesson_seq,
       EXTRACT(EPOCH FROM (sa.checkout_time - sa.checkin_time)) / 60 AS duration_minutes
-    FROM student_attendance sa
+    FROM public.student_attendance sa
     LEFT JOIN lessons l ON l.id = sa.lesson_id
     WHERE sa.id = ${insertedId}::bigint
     LIMIT 1

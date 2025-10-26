@@ -43,11 +43,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const { staffId, workDate, checkinTime, checkoutTime } = (payload ?? {}) as {
+  const { staffId, workDate, checkinTime, checkoutTime, editorStaffId, note } = (payload ?? {}) as {
     staffId?: number;
     workDate?: string;
     checkinTime?: string | null;
     checkoutTime?: string | null;
+    editorStaffId?: number | null;
+    note?: string | null;
   };
 
   if (!Number.isFinite(staffId) || !workDate) {
@@ -64,6 +66,11 @@ export async function PATCH(request: Request, context: RouteContext) {
       workDate,
       checkinTime: typeof checkinTime === "string" ? checkinTime : null,
       checkoutTime: typeof checkoutTime === "string" ? checkoutTime : null,
+      editorStaffId:
+        Number.isFinite(editorStaffId) && editorStaffId != null
+          ? Number(editorStaffId)
+          : undefined,
+      note: typeof note === "string" ? note : undefined,
     });
     return NextResponse.json(
       { session },

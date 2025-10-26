@@ -130,6 +130,22 @@ export function toPayrollZonedISOString(date: Date): string | null {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`;
 }
 
+export function toPayrollLocalTimestampText(value: string | Date): string | null {
+  const normalized = normalizePayrollTimestamp(value);
+  if (!normalized) {
+    return null;
+  }
+  const reference = new Date(normalized);
+  if (Number.isNaN(reference.getTime())) {
+    return null;
+  }
+  const parts = getPayrollDateTimeParts(reference);
+  if (!parts) {
+    return null;
+  }
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 const LOCAL_TIMESTAMP_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 

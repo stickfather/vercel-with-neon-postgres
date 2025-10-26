@@ -1,6 +1,7 @@
 import { getSqlClient, normalizeRows, TIMEZONE, type SqlRow } from "@/lib/db/client";
 import {
   normalizePayrollTimestamp,
+  toPayrollLocalTimestampText,
   toPayrollZonedISOString,
 } from "@/lib/payroll/timezone";
 import { z, ZodError } from "@/lib/validation/zod";
@@ -289,6 +290,68 @@ function validateSessionRange(checkinIso: string, checkoutIso: string, workDate:
   }
 }
 
+function ensureLocalTimestampText(label: string, iso: string): string {
+  const localized = toPayrollLocalTimestampText(iso);
+  if (!localized) {
+    throw new HttpError(400, `La hora de ${label} no es válida.`);
+  }
+  return localized;
+}
+
+async function assertNoOverlap(
+  sql: SqlClientLike,
+  params: {
+    staffId: number;
+    workDate: string;
+    checkinIso: string;
+    checkoutIso: string;
+    ignoreSessionId?: number | null;
+  },
+): Promise<void> {
+  const rows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT id
+      FROM public.staff_attendance
+      WHERE staff_id = ${params.staffId}::bigint
+        AND date(timezone(${TIMEZONE}, checkin_time)) = ${params.workDate}::date
+        AND id <> ${params.ignoreSessionId ?? 0}::bigint
+        AND ${params.checkoutIso}::timestamptz > checkin_time
+        AND ${params.checkinIso}::timestamptz < COALESCE(checkout_time, ${params.checkoutIso}::timestamptz)
+    `,
+  );
+
+  if (rows.length) {
+    throw new HttpError(400, "Los horarios se superponen con otra sesión registrada.");
+  }
+}
+
+async function executeEditStaffSession(
+  sql: SqlClientLike,
+  sessionId: number,
+  editorStaffId: number | null,
+  checkinIso: string,
+  checkoutIso: string,
+  note: string | null,
+): Promise<void> {
+  const checkinLocal = ensureLocalTimestampText("entrada", checkinIso);
+  const checkoutLocal = ensureLocalTimestampText("salida", checkoutIso);
+  const rows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT *
+      FROM public.edit_staff_session(
+        ${sessionId}::bigint,
+        ${editorStaffId ?? null}::bigint,
+        ${checkinLocal}::text,
+        ${checkoutLocal}::text,
+        ${note ?? null}::text
+      )
+    `,
+  );
+  if (!rows.length) {
+    throw new HttpError(404, "No pudimos actualizar la sesión indicada.");
+  }
+}
+
 function formatLocalDate(value: string): string {
   const trimmed = value.trim();
   if (!trimmed.length) {
@@ -375,6 +438,15 @@ export const OverrideAndApproveSchema = z.object({
   overrides: z.array(sessionOverrideSchema).default([]),
   additions: z.array(sessionAdditionSchema).default([]),
   deletions: z.array(z.number().int("El identificador de la sesión no es válido.")).default([]),
+  editorStaffId: z
+    .number()
+    .int("El identificador del editor no es válido.")
+    .optional(),
+  note: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => (value && value.length ? value : undefined)),
   approvedBy: z
     .string()
     .trim()
@@ -625,6 +697,21 @@ export async function getDaySessions(
     } else if (rawOriginalFlag != null) {
       isOriginalRecord = toBoolean(rawOriginalFlag);
     }
+    const staffIdRaw = row["staff_id"];
+    const parsedStaffId = Number(staffIdRaw);
+    const sessionStaffId = Number.isFinite(parsedStaffId) ? parsedStaffId : params.staffId;
+
+    const editedByRaw = row["edited_by_staff_id"];
+    const editedByParsed = Number(editedByRaw);
+    const editedByStaffId =
+      editedByRaw != null && String(editedByRaw).trim().length && Number.isFinite(editedByParsed)
+        ? editedByParsed
+        : null;
+
+    const editNoteRaw = row["edit_note"];
+    const editNote =
+      editNoteRaw != null && String(editNoteRaw).trim().length ? String(editNoteRaw).trim() : null;
+
     return {
       sessionId: Number(row["session_id"] ?? 0),
       checkinTimeLocal: row["checkin_local"] ? String(row["checkin_local"]) : null,
@@ -642,6 +729,13 @@ export async function getDaySessions(
           ? Number(replacementSessionIdRaw)
           : null,
       isOriginalRecord,
+      staffId: sessionStaffId,
+      workDate: params.date,
+      editedCheckinLocal: row["edited_checkin_local"] ? String(row["edited_checkin_local"]) : null,
+      editedCheckoutLocal: row["edited_checkout_local"] ? String(row["edited_checkout_local"]) : null,
+      editedByStaffId,
+      editNote,
+      wasEdited: toBoolean(row["was_edited"]),
     };
   });
 }
@@ -678,14 +772,27 @@ export async function overrideAndApprove(
     throw new Error("SQL client does not support transactions");
   }
   await sql.begin(async (transaction) => {
+    const editorStaffId =
+      payload.editorStaffId != null && Number.isFinite(payload.editorStaffId)
+        ? Number(payload.editorStaffId)
+        : null;
+    const editNote = payload.note ?? null;
+
     if (payload.deletions.length) {
-      await transaction`
-        DELETE FROM public.staff_attendance
-        WHERE staff_id = ${payload.staffId}::bigint
-          AND id = ANY(${payload.deletions}::bigint[])
-      `;
       for (const sessionId of payload.deletions) {
-        await logPayrollAudit(transaction, "delete_session", payload.staffId, payload.workDate, sessionId, null);
+        const deleted = normalizeRows<SqlRow>(
+          await transaction`
+            SELECT *
+            FROM public.delete_staff_session(
+              ${sessionId}::bigint,
+              ${editorStaffId ?? null}::bigint,
+              ${editNote ?? null}::text
+            )
+          `,
+        );
+        if (!deleted.length) {
+          throw new HttpError(404, "No encontramos una de las sesiones a eliminar.");
+        }
       }
     }
 
@@ -693,64 +800,43 @@ export async function overrideAndApprove(
       const checkinIso = normalizeTime(override.checkinTime);
       const checkoutIso = normalizeTime(override.checkoutTime);
       validateSessionRange(checkinIso, checkoutIso, payload.workDate);
-
-      const existingSessions = normalizeRows<{
-        checkin_time: string | Date | null;
-        checkout_time: string | Date | null;
-      }>(
-        await transaction`
-          SELECT checkin_time, checkout_time
-          FROM public.staff_attendance
-          WHERE id = ${override.sessionId}::bigint
-            AND staff_id = ${payload.staffId}::bigint
-          FOR UPDATE
-        `,
+      await executeEditStaffSession(
+        transaction,
+        override.sessionId,
+        editorStaffId,
+        checkinIso,
+        checkoutIso,
+        editNote,
       );
-
-      const currentSession = existingSessions[0];
-      if (!currentSession) {
-        throw new HttpError(404, "No encontramos la sesión que intentas editar.");
-      }
-
-      const originalCheckin = toPayrollLogTimestamp(currentSession.checkin_time);
-      const originalCheckout = toPayrollLogTimestamp(currentSession.checkout_time);
-
-      await transaction`
-        UPDATE public.staff_attendance
-        SET checkin_time = ${checkinIso}::timestamptz,
-          checkout_time = ${checkoutIso}::timestamptz
-        WHERE id = ${override.sessionId}::bigint
-          AND staff_id = ${payload.staffId}::bigint
-      `;
-      await logPayrollAudit(transaction, "update_session", payload.staffId, payload.workDate, override.sessionId, {
-        replacedSessionId: override.sessionId,
-        before: {
-          checkinTime: originalCheckin,
-          checkoutTime: originalCheckout,
-        },
-        after: {
-          checkinTime: checkinIso,
-          checkoutTime: checkoutIso,
-        },
-      });
     }
 
     for (const addition of payload.additions) {
       const checkinIso = normalizeTime(addition.checkinTime);
       const checkoutIso = normalizeTime(addition.checkoutTime);
       validateSessionRange(checkinIso, checkoutIso, payload.workDate);
-      const inserted = normalizeRows<{ id: number }>(
+      await assertNoOverlap(transaction, {
+        staffId: payload.staffId,
+        workDate: payload.workDate,
+        checkinIso,
+        checkoutIso,
+      });
+      const checkinLocal = ensureLocalTimestampText("entrada", checkinIso);
+      const checkoutLocal = ensureLocalTimestampText("salida", checkoutIso);
+      const inserted = normalizeRows<SqlRow>(
         await transaction`
-          INSERT INTO public.staff_attendance (staff_id, checkin_time, checkout_time)
-          VALUES (${payload.staffId}::bigint, ${checkinIso}::timestamptz, ${checkoutIso}::timestamptz)
-          RETURNING id
+          SELECT *
+          FROM public.add_staff_session(
+            ${payload.staffId}::bigint,
+            ${checkinLocal}::text,
+            ${checkoutLocal}::text,
+            ${editorStaffId ?? null}::bigint,
+            ${editNote ?? null}::text
+          )
         `,
       );
-      const sessionId = Number(inserted[0]?.id ?? 0);
-      await logPayrollAudit(transaction, "create_session", payload.staffId, payload.workDate, sessionId, {
-        checkinTime: checkinIso,
-        checkoutTime: checkoutIso,
-      });
+      if (!inserted.length) {
+        throw new Error("No se pudo crear una de las sesiones solicitadas.");
+      }
     }
 
     const minutes = await fetchApprovedMinutes(transaction, payload.staffId, payload.workDate);

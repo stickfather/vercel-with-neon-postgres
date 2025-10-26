@@ -41,6 +41,11 @@ type SessionRow = {
   originalSessionId?: number | null;
   replacementSessionId?: number | null;
   isHistorical: boolean;
+  editedCheckin?: string | null;
+  editedCheckout?: string | null;
+  editedByStaffId?: number | null;
+  editNote?: string | null;
+  wasEdited?: boolean;
 };
 
 type SessionEditorState = {
@@ -401,6 +406,14 @@ function buildSessionRows(sessions: DaySession[]): SessionRow[] {
           ? session.replacementSessionId
           : null,
       isHistorical: Boolean(session.isOriginalRecord),
+      editedCheckin: session.editedCheckinTime ?? null,
+      editedCheckout: session.editedCheckoutTime ?? null,
+      editedByStaffId:
+        typeof session.editedByStaffId === "number" && Number.isFinite(session.editedByStaffId)
+          ? session.editedByStaffId
+          : null,
+      editNote: session.editNote ?? null,
+      wasEdited: Boolean(session.wasEdited),
     };
   });
 }
@@ -425,6 +438,11 @@ function createEmptySessionRow(staffId: number, workDate: string): SessionRow {
     originalSessionId: null,
     replacementSessionId: null,
     isHistorical: false,
+    editedCheckin: null,
+    editedCheckout: null,
+    editedByStaffId: null,
+    editNote: null,
+    wasEdited: false,
   };
 }
 
@@ -1396,6 +1414,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             workDate: selectedCell.workDate,
             checkinTime: checkinIso,
             checkoutTime: checkoutIso,
+            note: target.editNote ?? null,
           }),
         });
         const payload = await response.json().catch(() => ({}));
@@ -1444,6 +1463,20 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         ?? row.replacementSessionId
                         ?? null,
                     isHistorical: Boolean(saved.isOriginalRecord),
+                    editedCheckin:
+                      saved.editedCheckinTime ?? row.editedCheckin ?? saved.checkinTime ?? row.checkinTime ?? null,
+                    editedCheckout:
+                      saved.editedCheckoutTime
+                        ?? row.editedCheckout
+                        ?? saved.checkoutTime
+                        ?? row.checkoutTime
+                        ?? null,
+                    editedByStaffId:
+                      typeof saved.editedByStaffId === "number"
+                        ? saved.editedByStaffId
+                        : row.editedByStaffId ?? null,
+                    editNote: saved.editNote ?? row.editNote ?? null,
+                    wasEdited: saved.wasEdited ?? row.wasEdited ?? false,
                     isNew: false,
                     isEditing: false,
                     validationError: null,
@@ -2326,6 +2359,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   {session.pendingAction === "delete" ? "Eliminando…" : "Guardando…"}
                                 </span>
                               ) : null}
+                              {session.wasEdited && !session.isHistorical ? (
+                                <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-800">
+                                  Editada
+                                </span>
+                              ) : null}
                               {isHistorical ? (
                                 <span className="inline-flex items-center rounded-full bg-brand-ink-muted/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-ink-muted">
                                   Registro original
@@ -2453,6 +2491,21 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                       : "—"}
                                   </span>
                                 </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {!isHistorical && session.wasEdited ? (
+                            <div className="mt-2 rounded-2xl border border-yellow-200 bg-yellow-50/70 px-4 py-2 text-xs text-yellow-800">
+                              <div className="font-semibold uppercase tracking-[0.25em] text-yellow-700">
+                                Ajuste registrado
+                              </div>
+                              <div className="mt-1 space-y-1">
+                                {session.editedByStaffId ? (
+                                  <p className="font-medium">{`Editor ID ${session.editedByStaffId}`}</p>
+                                ) : null}
+                                {session.editNote ? (
+                                  <p className="italic text-yellow-900">{session.editNote}</p>
+                                ) : null}
                               </div>
                             </div>
                           ) : null}

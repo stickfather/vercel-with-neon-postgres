@@ -5,66 +5,61 @@ export type StaffDayMatrixRow = {
   work_date: string;
   approved: boolean | null;
   approved_minutes: number | null;
-  approved_by: number | null;
+  approved_by: string | null;
   approved_at: string | null;
   total_minutes: number;
   display_hours: number;
+  has_edits: boolean;
 };
 
 export async function getStaffDayMatrix({ from, to }: { from: string; to: string }) {
   const sql = await getSqlClient();
   const res = await sql.query(
     `
-    WITH session_totals AS (
+    WITH matrix AS (
       SELECT
-        s.staff_id,
-        s.work_date,
-        SUM(COALESCE(s.minutes, 0))::integer AS total_minutes
-      FROM public.staff_day_sessions_v s
-      WHERE s.work_date BETWEEN $1::date AND $2::date
-      GROUP BY s.staff_id, s.work_date
+        m.staff_id,
+        m.work_date,
+        m.total_hours,
+        m.approved_hours,
+        m.approved
+      FROM public.staff_day_matrix_local_v m
+      WHERE m.work_date BETWEEN $1::date AND $2::date
     ),
     approvals AS (
       SELECT
         a.staff_id,
         a.work_date,
-        a.approved,
-        a.approved_minutes,
         a.approved_by,
         a.approved_at
-      FROM payroll_day_approvals a
+      FROM public.payroll_day_approvals a
       WHERE a.work_date BETWEEN $1::date AND $2::date
     ),
-    combined AS (
+    edit_flags AS (
       SELECT
-        COALESCE(st.staff_id, ap.staff_id) AS staff_id,
-        COALESCE(st.work_date, ap.work_date) AS work_date,
-        COALESCE(st.total_minutes, 0) AS total_minutes,
-        ap.approved,
-        ap.approved_minutes,
-        ap.approved_by,
-        ap.approved_at
-      FROM session_totals st
-      FULL OUTER JOIN approvals ap
-        ON ap.staff_id = st.staff_id AND ap.work_date = st.work_date
-      WHERE COALESCE(st.staff_id, ap.staff_id) IS NOT NULL
-        AND COALESCE(st.work_date, ap.work_date) BETWEEN $1::date AND $2::date
+        s.staff_id,
+        s.work_date,
+        BOOL_OR(s.was_edited) AS has_edits
+      FROM public.staff_day_sessions_with_edits_v s
+      WHERE s.work_date BETWEEN $1::date AND $2::date
+      GROUP BY s.staff_id, s.work_date
     )
     SELECT
-      c.staff_id,
-      c.work_date,
-      c.approved,
-      c.approved_minutes,
-      c.approved_by,
-      c.approved_at,
-      c.total_minutes,
-      ROUND(
-        CASE WHEN c.approved IS TRUE
-             THEN COALESCE(c.approved_minutes, c.total_minutes)::numeric / 60.0
-             ELSE c.total_minutes::numeric / 60.0 END, 2
-      ) AS display_hours
-    FROM combined c
-    ORDER BY c.staff_id, c.work_date;`,
+      m.staff_id,
+      m.work_date,
+      m.approved,
+      (CASE WHEN m.approved_hours IS NULL THEN NULL ELSE ROUND(m.approved_hours * 60)::integer END) AS approved_minutes,
+      ap.approved_by,
+      ap.approved_at,
+      ROUND(COALESCE(m.total_hours, 0) * 60)::integer AS total_minutes,
+      ROUND(COALESCE(CASE WHEN m.approved THEN COALESCE(m.approved_hours, m.total_hours) ELSE m.total_hours END, 0)::numeric, 2) AS display_hours,
+      COALESCE(ef.has_edits, FALSE) AS has_edits
+    FROM matrix m
+    LEFT JOIN approvals ap
+      ON ap.staff_id = m.staff_id AND ap.work_date = m.work_date
+    LEFT JOIN edit_flags ef
+      ON ef.staff_id = m.staff_id AND ef.work_date = m.work_date
+    ORDER BY m.staff_id, m.work_date;`,
     [from, to],
   );
   return normalizeRows<StaffDayMatrixRow>(res);
