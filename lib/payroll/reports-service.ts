@@ -10,6 +10,7 @@ import type {
   DaySession,
   DayTotals,
   MonthSummaryRow,
+  PayrollDayStatus,
   PayrollMatrixCell,
   PayrollMatrixResponse,
   PayrollMatrixRow,
@@ -67,6 +68,21 @@ function toBoolean(value: unknown): boolean {
     return ["t", "true", "1", "yes", "y", "si", "sí"].includes(normalized);
   }
   return false;
+}
+
+function normalizeDayStatus(value: unknown): PayrollDayStatus {
+  if (typeof value === "string" && value.trim().length) {
+    const normalized = value.trim().toLowerCase();
+    if (
+      normalized === "pending" ||
+      normalized === "approved" ||
+      normalized === "edited_and_approved" ||
+      normalized === "edited_not_approved"
+    ) {
+      return normalized as PayrollDayStatus;
+    }
+  }
+  return "pending";
 }
 
 function getRowValue(row: SqlRow, candidates: string[]): unknown {
@@ -566,16 +582,22 @@ export async function getPayrollMatrix(
       SELECT
         m.staff_id,
         sm.full_name AS staff_name,
-        m.work_date,
-        m.total_hours,
-        m.approved_hours,
-        m.horas_mostrar,
-        m.approved,
-        COALESCE(he.has_edits, FALSE) AS has_edits
-      FROM public.staff_day_matrix_local_v AS m
-      LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
-      LEFT JOIN public.staff_day_has_edits_v he ON he.staff_id = m.staff_id AND he.work_date = m.work_date
-      WHERE m.work_date BETWEEN ${start}::date AND ${end}::date
+      m.work_date,
+      m.total_hours,
+      m.approved_hours,
+      m.horas_mostrar,
+      m.approved,
+      COALESCE(he.has_edits, FALSE) AS has_edits,
+      CASE
+        WHEN m.approved = TRUE AND COALESCE(he.has_edits, FALSE) = TRUE THEN 'edited_and_approved'
+        WHEN m.approved = FALSE AND COALESCE(he.has_edits, FALSE) = TRUE THEN 'edited_not_approved'
+        WHEN m.approved = TRUE THEN 'approved'
+        ELSE 'pending'
+      END AS day_status
+    FROM public.staff_day_matrix_local_v AS m
+    LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+    LEFT JOIN public.staff_day_has_edits_v he ON he.staff_id = m.staff_id AND he.work_date = m.work_date
+    WHERE m.work_date BETWEEN ${start}::date AND ${end}::date
       ORDER BY m.staff_id, m.work_date
     `,
   );
@@ -618,6 +640,7 @@ export async function getPayrollMatrix(
       hours,
       approvedHours,
       hasEdits: toBoolean(row["has_edits"]),
+      dayStatus: normalizeDayStatus(row["day_status"]),
     });
   }
 
@@ -631,6 +654,7 @@ export async function getPayrollMatrix(
           approved: false,
           approvedHours: null,
           hasEdits: false,
+          dayStatus: "pending",
         },
     );
     resultRows.push({ staffId: value.staffId, staffName: value.staffName, cells });

@@ -22,6 +22,7 @@ import {
 import type {
   DaySession as ReportsDaySession,
   DayTotals as ReportsDayTotals,
+  PayrollDayStatus,
 } from "@/types/payroll";
 
 type SqlClient = ReturnType<typeof getSqlClient>;
@@ -32,6 +33,7 @@ export type MatrixCell = {
   approved: boolean;
   approvedHours: number | null;
   hasEdits?: boolean;
+  status?: PayrollDayStatus;
 };
 
 export type MatrixRow = {
@@ -364,6 +366,21 @@ function toBoolean(value: unknown): boolean {
   return false;
 }
 
+function normalizeDayStatus(value: unknown): PayrollDayStatus {
+  if (typeof value === "string" && value.trim().length) {
+    const normalized = value.trim().toLowerCase();
+    if (
+      normalized === "pending" ||
+      normalized === "approved" ||
+      normalized === "edited_and_approved" ||
+      normalized === "edited_not_approved"
+    ) {
+      return normalized as PayrollDayStatus;
+    }
+  }
+  return "pending";
+}
+
 function coerceString(value: unknown): string | null {
   if (value == null) return null;
   if (typeof value === "string") {
@@ -610,7 +627,13 @@ export async function fetchPayrollMatrix({
       m.approved,
       m.approved_hours,
       m.total_hours,
-      ef.has_edits
+      ef.has_edits,
+      CASE
+        WHEN m.approved = TRUE AND COALESCE(ef.has_edits, FALSE) = TRUE THEN 'edited_and_approved'
+        WHEN m.approved = FALSE AND COALESCE(ef.has_edits, FALSE) = TRUE THEN 'edited_not_approved'
+        WHEN m.approved = TRUE THEN 'approved'
+        ELSE 'pending'
+      END AS day_status
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
     LEFT JOIN edit_flags ef ON ef.staff_id = m.staff_id AND ef.work_date = m.work_date
@@ -691,6 +714,9 @@ export async function fetchPayrollMatrix({
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
     const hasEdits = toBoolean(readRowValue(row, ["has_edits", "hasEdits"]));
+    const dayStatus = normalizeDayStatus(
+      readRowValue(row, ["day_status", "status", "state", "dayStatus"]),
+    );
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
@@ -698,6 +724,7 @@ export async function fetchPayrollMatrix({
       approved,
       approvedHours: safeApprovedHours,
       hasEdits,
+      status: dayStatus,
     });
   }
 
@@ -707,7 +734,14 @@ export async function fetchPayrollMatrix({
     const cells: MatrixCell[] = days.map((day) => {
       const existing = value.cells.get(day);
       if (existing) return existing;
-      return { date: day, hours: 0, approved: false, approvedHours: null, hasEdits: false };
+      return {
+        date: day,
+        hours: 0,
+        approved: false,
+        approvedHours: null,
+        hasEdits: false,
+        status: "pending",
+      };
     });
 
     matrixRows.push({
