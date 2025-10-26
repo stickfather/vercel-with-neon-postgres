@@ -30,6 +30,9 @@ function normalizePin(value: unknown): string | null {
   }
 }
 
+const INVALID_PIN_ERROR = "PIN incorrecto.";
+const PIN_FORMAT_ERROR = "El PIN debe tener exactamente 4 dígitos numéricos.";
+
 function errorResponse(message: string, status = 200) {
   return NextResponse.json(
     { success: false, error: message },
@@ -56,16 +59,16 @@ export async function POST(request: Request) {
     const newPin = normalizePin(payload.newPin);
 
     if (!managerPin) {
-      return errorResponse("PIN de gerencia incorrecto.");
+      return errorResponse(INVALID_PIN_ERROR);
     }
 
     if (!newPin) {
-      return errorResponse("El nuevo PIN debe contener entre 4 y 6 dígitos.");
+      return errorResponse(PIN_FORMAT_ERROR);
     }
 
     const managerValid = await validateAccessPin("manager", managerPin);
     if (!managerValid) {
-      return errorResponse("PIN de gerencia incorrecto.");
+      return errorResponse(INVALID_PIN_ERROR);
     }
 
     const updatedAt = await updateAccessPin("staff", newPin);
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
     const newPin = normalizePin(payload.newPin);
 
     if (!newPin) {
-      return errorResponse("El nuevo PIN debe contener entre 4 y 6 dígitos.");
+      return errorResponse(PIN_FORMAT_ERROR);
     }
 
     const hasExistingManagerPin = await isSecurityPinEnabled("manager");
@@ -88,12 +91,12 @@ export async function POST(request: Request) {
     if (hasExistingManagerPin) {
       const currentPin = normalizePin(payload.currentManagerPin);
       if (!currentPin) {
-        return errorResponse("PIN actual incorrecto.");
+        return errorResponse(INVALID_PIN_ERROR);
       }
 
       const managerValid = await validateAccessPin("manager", currentPin);
       if (!managerValid) {
-        return errorResponse("PIN actual incorrecto.");
+        return errorResponse(INVALID_PIN_ERROR);
       }
     }
 

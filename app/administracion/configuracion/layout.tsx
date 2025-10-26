@@ -9,17 +9,16 @@ type LayoutProps = {
   children: ReactNode;
 };
 
-export default function AdministracionLayout({ children }: LayoutProps) {
+export default function ConfiguracionLayout({ children }: LayoutProps) {
   const [unlocked, setUnlocked] = useState(false);
 
   return (
     <>
       {!unlocked && (
         <PinPrompt
-          role="staff"
-          title="Introduce tu PIN del personal para continuar."
-          description="Solo el equipo autorizado puede acceder a Administración."
-          submitLabel="Acceder"
+          role="manager"
+          title="Introduce el PIN de gerencia para acceder a la configuración"
+          submitLabel="Desbloquear"
           onSuccess={() => setUnlocked(true)}
         />
       )}

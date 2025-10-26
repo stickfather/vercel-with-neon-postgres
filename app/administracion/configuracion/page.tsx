@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { listStaffMembers } from "@/features/staff/data/queries";
 import { getSecurityPinStatuses } from "@/features/security/data/pins";
-import { hasValidPinSession } from "@/lib/security/pin-session";
 import { ConfigurationDashboard } from "@/features/administration/components/configuration/ConfigurationDashboard";
 
 export const revalidate = 0;
@@ -10,7 +9,6 @@ export default async function ConfiguracionPage() {
   let staffMembers = [] as Awaited<ReturnType<typeof listStaffMembers>>;
   let pinStatuses = [] as Awaited<ReturnType<typeof getSecurityPinStatuses>>;
   let loadError: string | null = null;
-  let managerUnlocked = false;
 
   try {
     staffMembers = await listStaffMembers();
@@ -29,8 +27,6 @@ export default async function ConfiguracionPage() {
       { scope: "manager", isSet: false, updatedAt: null },
     ];
   }
-
-  managerUnlocked = await hasValidPinSession("manager");
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white">
@@ -62,7 +58,6 @@ export default async function ConfiguracionPage() {
           initialStaff={staffMembers}
           staffError={loadError}
           pinStatuses={pinStatuses}
-          hasManagerSession={managerUnlocked}
         />
       </main>
     </div>
