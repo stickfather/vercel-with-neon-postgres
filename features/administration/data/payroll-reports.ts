@@ -14,10 +14,15 @@ import {
 } from "@/lib/payroll/timezone";
 import {
   DaySessionsQuerySchema as ReportsDaySessionsSchema,
+  DayTotalsQuerySchema as ReportsDayTotalsSchema,
   getDaySessions as getPayrollDaySessions,
+  getDayTotals as getPayrollDayTotals,
   parseWithSchema as parsePayrollSchema,
 } from "@/lib/payroll/reports-service";
-import type { DaySession as ReportsDaySession } from "@/types/payroll";
+import type {
+  DaySession as ReportsDaySession,
+  DayTotals as ReportsDayTotals,
+} from "@/types/payroll";
 
 type SqlClient = ReturnType<typeof getSqlClient>;
 
@@ -58,6 +63,11 @@ export type DaySession = {
   editedByStaffId?: number | null;
   editNote?: string | null;
   wasEdited?: boolean;
+};
+
+export type DayTotals = {
+  totalMinutes: number;
+  totalHours: number;
 };
 
 export type PayrollMonthStatusRow = {
@@ -764,6 +774,28 @@ export async function fetchDaySessions({
     editNote: coerceString(session.editNote),
     wasEdited: Boolean(session.wasEdited),
   }));
+}
+
+export async function fetchDayTotals({
+  staffId,
+  workDate,
+}: {
+  staffId: number;
+  workDate: string;
+}): Promise<DayTotals> {
+  noStore();
+  const sql = getSqlClient();
+  const params = parsePayrollSchema(ReportsDayTotalsSchema, {
+    staffId,
+    date: workDate,
+  });
+
+  const totals: ReportsDayTotals = await getPayrollDayTotals(params, sql);
+
+  return {
+    totalMinutes: totals.totalMinutes,
+    totalHours: totals.totalHours,
+  };
 }
 
 function ensureWorkDate(value: string): string {

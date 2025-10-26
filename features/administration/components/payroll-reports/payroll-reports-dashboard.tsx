@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DaySession,
+  DayTotals,
   MatrixCell,
   MatrixRow,
   PayrollMonthStatusRow,
@@ -98,7 +99,7 @@ function formatSessionTimestampForDisplay(value: string | null): string | null {
     return null;
   }
   const [, hour, minute] = match;
-  return `${hour}:${minute}`;
+  return toEditorDisplayTime(hour, minute);
 }
 
 function getPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
@@ -188,6 +189,30 @@ function toNumeric(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function normalizeTotalsPayload(value: unknown): DayTotals {
+  const payload = (value ?? {}) as {
+    totalMinutes?: unknown;
+    total_minutes?: unknown;
+    totalHours?: unknown;
+    total_hours?: unknown;
+  };
+
+  const minutesCandidate =
+    toNumeric(payload.totalMinutes) ?? toNumeric(payload.total_minutes);
+  const safeMinutes =
+    minutesCandidate != null && Number.isFinite(minutesCandidate)
+      ? Math.max(0, Math.round(minutesCandidate))
+      : 0;
+  const hoursCandidate =
+    toNumeric(payload.totalHours) ?? toNumeric(payload.total_hours);
+  const safeHours =
+    hoursCandidate != null && Number.isFinite(hoursCandidate)
+      ? Math.round(hoursCandidate * 100) / 100
+      : Math.round((safeMinutes / 60) * 100) / 100;
+
+  return { totalMinutes: safeMinutes, totalHours: safeHours };
+}
+
 function createNoStoreInit(): RequestInit & { next: { revalidate: number } } {
   return {
     cache: "no-store",
@@ -233,7 +258,8 @@ function formatDayLabel(dateString: string, formatter: Intl.DateTimeFormat) {
 const TIMESTAMP_INPUT_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(?:([+-]\d{2}(?::?\d{2})?|Z))?$/;
 
-const TIME_INPUT_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+const FLEXIBLE_TIME_INPUT_REGEX =
+  /^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(am|pm)?$/i;
 
 function normalizeOffset(offset: string | null | undefined): string | null {
   if (!offset || offset === "") {
@@ -282,12 +308,84 @@ function extractTimestampComponents(value: string | null): {
   };
 }
 
+function toEditorDisplayTime(hour24: string, minute: string): string {
+  const numericHour = Number(hour24);
+  if (!Number.isFinite(numericHour)) {
+    return `${hour24}:${minute}`;
+  }
+  const suffix = numericHour >= 12 ? "PM" : "AM";
+  const hour12 = numericHour % 12 === 0 ? 12 : numericHour % 12;
+  return `${String(hour12).padStart(2, "0")}:${minute} ${suffix}`;
+}
+
+function parseFlexibleTimeInput(
+  value: string,
+): { hour: string; minute: string; second: string } | null {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+  const normalized = trimmed.replace(/\s+/g, " ");
+  const match = normalized.match(FLEXIBLE_TIME_INPUT_REGEX);
+  if (!match) {
+    return null;
+  }
+
+  const [, hourRaw, minuteRaw, secondRaw, meridiemRaw] = match;
+  const minute = minuteRaw != null ? Number(minuteRaw) : 0;
+  const second = secondRaw != null ? Number(secondRaw) : 0;
+
+  if (!Number.isFinite(minute) || minute < 0 || minute > 59) {
+    return null;
+  }
+  if (!Number.isFinite(second) || second < 0 || second > 59) {
+    return null;
+  }
+
+  let hour = Number(hourRaw);
+  if (!Number.isFinite(hour)) {
+    return null;
+  }
+
+  const meridiem = meridiemRaw ? meridiemRaw.toLowerCase() : null;
+  if (meridiem) {
+    if (hour < 1 || hour > 12) {
+      return null;
+    }
+    if (hour === 12) {
+      hour = meridiem === "am" ? 0 : 12;
+    } else if (meridiem === "pm") {
+      hour += 12;
+    }
+  } else if (hour > 23) {
+    return null;
+  }
+
+  const safeHour = String(hour).padStart(2, "0");
+  const safeMinute = String(minute).padStart(2, "0");
+  const safeSecond = String(second).padStart(2, "0");
+
+  return { hour: safeHour, minute: safeMinute, second: safeSecond };
+}
+
+function normalizeEditorTime(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return "";
+  }
+  const parsed = parseFlexibleTimeInput(trimmed);
+  if (!parsed) {
+    return trimmed.toUpperCase();
+  }
+  return toEditorDisplayTime(parsed.hour, parsed.minute);
+}
+
 function toLocalInputValue(value: string | null): string {
   const parts = extractTimestampComponents(value);
   if (!parts) {
     return "";
   }
-  return `${parts.hour}:${parts.minute}`;
+  return toEditorDisplayTime(parts.hour, parts.minute);
 }
 
 function fromLocalInputValue(
@@ -296,17 +394,11 @@ function fromLocalInputValue(
   reference?: string | null,
 ): string | null {
   if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed.length) {
+  const parsed = parseFlexibleTimeInput(value);
+  if (!parsed) {
     return null;
   }
-  const normalized = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
-  const match = normalized.match(TIME_INPUT_REGEX);
-  if (!match) {
-    return null;
-  }
-  const [, hour, minute, second] = match;
-  const safeSecond = second ?? "00";
+  const { hour, minute, second } = parsed;
   const workDateMatch = workDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const referenceParts = extractTimestampComponents(reference ?? null);
   const year = workDateMatch?.[1] ?? referenceParts?.year;
@@ -316,7 +408,7 @@ function fromLocalInputValue(
     return null;
   }
   const offset = referenceParts?.offset ?? PAYROLL_TIMEZONE_OFFSET;
-  return `${year}-${month}-${day}T${hour}:${minute}:${safeSecond}${offset}`;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
 }
 
 function toIsoDateOnly(value: string | null | undefined): string | null {
@@ -561,6 +653,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [sessionRows, setSessionRows] = useState<SessionRow[]>([]);
+  const [dayTotals, setDayTotals] = useState<DayTotals | null>(null);
   const [sessionEditor, setSessionEditor] = useState<SessionEditorState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -1212,6 +1305,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setSessionsLoading(true);
       setSessionsError(null);
       setSessionRows([]);
+      setDayTotals(null);
       setActionError(null);
       setPinSessionActive(true);
     },
@@ -1223,6 +1317,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setSessionsLoading(false);
     setSessionRows([]);
     setSessionsError(null);
+    setDayTotals(null);
     setActionError(null);
     setActionLoading(false);
     setActionInFlight(null);
@@ -1240,20 +1335,41 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       if (!silent) {
         setSessionsLoading(true);
         setSessionsError(null);
+        setDayTotals(null);
       }
 
       try {
-        const response = await fetch(
-          `/api/payroll/day-sessions?staff_id=${target.staffId}&date=${target.workDate}`,
-          createNoStoreInit(),
-        );
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
+        const [sessionsResponse, totalsResponse] = await Promise.all([
+          fetch(
+            `/api/payroll/day-sessions?staff_id=${target.staffId}&date=${target.workDate}`,
+            createNoStoreInit(),
+          ),
+          fetch(
+            `/api/payroll/day-totals?staff_id=${target.staffId}&date=${target.workDate}`,
+            createNoStoreInit(),
+          ),
+        ]);
+
+        if (!sessionsResponse.ok) {
+          const body = await sessionsResponse.json().catch(() => ({}));
           throw new Error((body as { error?: string }).error ?? "No se pudieron cargar las sesiones.");
         }
-        const data = (await response.json()) as { sessions?: DaySession[] };
+
+        if (!totalsResponse.ok) {
+          const body = await totalsResponse.json().catch(() => ({}));
+          throw new Error((body as { error?: string }).error ?? "No se pudieron cargar los totales del día.");
+        }
+
+        const [sessionsJson, totalsJson] = await Promise.all([
+          sessionsResponse.json().catch(() => ({})),
+          totalsResponse.json().catch(() => ({})),
+        ]);
+
+        const data = (sessionsJson as { sessions?: DaySession[] }).sessions ?? [];
+        const totalsPayload = normalizeTotalsPayload((totalsJson as { totals?: unknown }).totals);
         if (sessionLoadTokenRef.current === requestId) {
-          setSessionRows(sortSessionRows(buildSessionRows(data.sessions ?? [])));
+          setSessionRows(sortSessionRows(buildSessionRows(data)));
+          setDayTotals(totalsPayload);
           setSessionsError(null);
         }
         return true;
@@ -1263,6 +1379,9 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           error instanceof Error ? error.message : "No se pudieron cargar las sesiones del día.";
         if (sessionLoadTokenRef.current === requestId) {
           setSessionsError((previous) => (silent ? previous ?? message : message));
+          if (!silent) {
+            setDayTotals(null);
+          }
         }
         return false;
       } finally {
@@ -1305,6 +1424,33 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
             ...row,
             draftCheckin: field === "checkin" ? value : row.draftCheckin,
             draftCheckout: field === "checkout" ? value : row.draftCheckout,
+            feedback: null,
+          };
+        });
+
+        return updated.map((row) => {
+          if (row.sessionKey !== sessionKey) return row;
+          return {
+            ...row,
+            validationError: validateRowDraft(row, updated, row.workDate),
+          };
+        });
+      });
+    },
+    [],
+  );
+
+  const handleDraftBlur = useCallback(
+    (sessionKey: string, field: "checkin" | "checkout") => {
+      setSessionRows((previous) => {
+        const updated = previous.map((row) => {
+          if (row.sessionKey !== sessionKey) return row;
+          const rawValue = field === "checkin" ? row.draftCheckin : row.draftCheckout;
+          const normalizedValue = normalizeEditorTime(rawValue);
+          return {
+            ...row,
+            draftCheckin: field === "checkin" ? normalizedValue : row.draftCheckin,
+            draftCheckout: field === "checkout" ? normalizedValue : row.draftCheckout,
             feedback: null,
           };
         });
@@ -1863,7 +2009,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const compactCellText = cellVariant === "tight";
   const staffCount = matrixData?.rows.length ?? 0;
 
-  const totalMinutes = useMemo(
+  const computedMinutes = useMemo(
     () =>
       sessionRows.reduce((accumulator, row) => {
         const minutes = getRowMinutesForTotals(row);
@@ -1872,7 +2018,20 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     [sessionRows],
   );
 
-  const totalHours = useMemo(() => Number((totalMinutes / 60).toFixed(2)), [totalMinutes]);
+  const computedHours = useMemo(
+    () => Math.round((computedMinutes / 60) * 100) / 100,
+    [computedMinutes],
+  );
+
+  const effectiveTotals = useMemo(() => {
+    if (dayTotals) {
+      return dayTotals;
+    }
+    return { totalMinutes: computedMinutes, totalHours: computedHours };
+  }, [computedHours, computedMinutes, dayTotals]);
+
+  const totalMinutes = effectiveTotals.totalMinutes;
+  const totalHours = effectiveTotals.totalHours;
 
   useEffect(() => {
     if (!selectedCell || sessionsLoading) return;
@@ -2636,13 +2795,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Entrada
                       </span>
                       <input
-                        type="time"
-                        step={60}
+                        type="text"
+                        inputMode="text"
+                        autoComplete="off"
+                        spellCheck={false}
                         value={activeEditorRow.draftCheckin}
                         onChange={(event) =>
                           handleDraftChange(activeEditorRow.sessionKey, "checkin", event.target.value)
                         }
+                        onBlur={() => handleDraftBlur(activeEditorRow.sessionKey, "checkin")}
                         disabled={activeEditorRow.pendingAction != null}
+                        placeholder="HH:MM AM"
                         className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                         required
                       />
@@ -2652,13 +2815,17 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         Salida
                       </span>
                       <input
-                        type="time"
-                        step={60}
+                        type="text"
+                        inputMode="text"
+                        autoComplete="off"
+                        spellCheck={false}
                         value={activeEditorRow.draftCheckout}
                         onChange={(event) =>
                           handleDraftChange(activeEditorRow.sessionKey, "checkout", event.target.value)
                         }
+                        onBlur={() => handleDraftBlur(activeEditorRow.sessionKey, "checkout")}
                         disabled={activeEditorRow.pendingAction != null}
+                        placeholder="HH:MM PM"
                         className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                         required
                       />

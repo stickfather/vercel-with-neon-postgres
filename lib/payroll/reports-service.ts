@@ -8,6 +8,7 @@ import { z, ZodError } from "@/lib/validation/zod";
 import type { BaseSchema } from "@/lib/validation/zod";
 import type {
   DaySession,
+  DayTotals,
   MonthSummaryRow,
   PayrollMatrixCell,
   PayrollMatrixResponse,
@@ -421,6 +422,11 @@ export const DaySessionsQuerySchema = z.object({
   date: z.string().trim().regex(ISO_DATE_REGEX, "Debes indicar un día válido."),
 });
 
+export const DayTotalsQuerySchema = z.object({
+  staffId: z.number().int("El identificador del colaborador no es válido."),
+  date: z.string().trim().regex(ISO_DATE_REGEX, "Debes indicar un día válido."),
+});
+
 const sessionOverrideSchema = z.object({
   sessionId: z.number().int("El identificador de la sesión no es válido."),
   checkinTime: z.string().trim().nonempty("La hora de entrada es obligatoria."),
@@ -738,6 +744,45 @@ export async function getDaySessions(
       wasEdited: toBoolean(row["was_edited"]),
     };
   });
+}
+
+export async function getDayTotals(
+  params: SchemaInput<typeof DayTotalsQuerySchema>,
+  sqlClient?: SqlClientLike,
+): Promise<DayTotals> {
+  const sql = ensureSqlClient(sqlClient);
+  const rows = normalizeRows<SqlRow>(
+    await sql`
+      SELECT total_minutes, total_hours
+      FROM public.staff_day_totals_v
+      WHERE staff_id = ${params.staffId}::bigint
+        AND work_date = ${params.date}::date
+    `,
+  );
+
+  const row = rows[0] ?? null;
+  const totalMinutesRaw = row?.["total_minutes"];
+  const totalHoursRaw = row?.["total_hours"];
+  const totalMinutesCandidate =
+    typeof totalMinutesRaw === "number"
+      ? totalMinutesRaw
+      : typeof totalMinutesRaw === "string"
+        ? Number(totalMinutesRaw)
+        : null;
+  const safeMinutes =
+    totalMinutesCandidate != null && Number.isFinite(totalMinutesCandidate)
+      ? Math.max(0, Math.round(totalMinutesCandidate))
+      : 0;
+  const parsedHours = toOptionalNumber(totalHoursRaw);
+  const safeHours =
+    parsedHours != null && Number.isFinite(parsedHours)
+      ? Math.round(parsedHours * 100) / 100
+      : roundMinutesToHours(safeMinutes);
+
+  return {
+    totalMinutes: safeMinutes,
+    totalHours: safeHours,
+  };
 }
 
 export async function approveDay(

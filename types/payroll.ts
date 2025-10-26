@@ -37,6 +37,11 @@ export type DaySession = {
   wasEdited?: boolean;
 };
 
+export type DayTotals = {
+  totalMinutes: number;
+  totalHours: number;
+};
+
 export type MonthSummaryRow = {
   staffId: number;
   staffName: string | null;
