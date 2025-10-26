@@ -380,6 +380,157 @@ function normalizeEditorTime(value: string): string {
   return toEditorDisplayTime(parsed.hour, parsed.minute);
 }
 
+const TIME_PICKER_OPTIONS: string[] = (() => {
+  const options: string[] = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    for (const minute of [0, 15, 30, 45]) {
+      options.push(toEditorDisplayTime(String(hour).padStart(2, "0"), String(minute).padStart(2, "0")));
+    }
+  }
+  return options;
+})();
+
+type TimePickerFieldProps = {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  disabled?: boolean;
+  placeholder?: string;
+  name?: string;
+  id?: string;
+  required?: boolean;
+  "aria-describedby"?: string;
+};
+
+function TimePickerField({
+  value,
+  onChange,
+  onBlur,
+  disabled,
+  placeholder,
+  name,
+  id,
+  required,
+  "aria-describedby": ariaDescribedBy,
+}: TimePickerFieldProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const normalizedValue = useMemo(() => normalizeEditorTime(value), [value]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        inputRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const handleSelect = useCallback(
+    (selection: string) => {
+      onChange(selection);
+      onBlur?.();
+      setOpen(false);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+    },
+    [onBlur, onChange],
+  );
+
+  const toggleOpen = useCallback(() => {
+    if (disabled) {
+      return;
+    }
+    setOpen((previous) => !previous);
+  }, [disabled]);
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="text"
+        autoComplete="off"
+        spellCheck={false}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={() => onBlur?.()}
+        disabled={disabled}
+        placeholder={placeholder}
+        name={name}
+        id={id}
+        required={required}
+        aria-describedby={ariaDescribedBy}
+        className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 pr-12 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+      />
+      <button
+        type="button"
+        onClick={toggleOpen}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-brand-teal-soft/60 bg-brand-teal-soft/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[2px] hover:bg-brand-teal-soft focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        Seleccionar
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-10 rounded-2xl border border-brand-ink-muted/15 bg-white shadow-lg">
+          <ul className="max-h-64 overflow-y-auto py-2" role="listbox">
+            {TIME_PICKER_OPTIONS.map((option) => {
+              const isActive = normalizedValue === option;
+              return (
+                <li key={option}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(option)}
+                    className={`flex w-full items-center justify-between px-4 py-2 text-sm font-medium transition hover:bg-brand-deep-soft/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#00bfa6] ${
+                      isActive ? "text-brand-deep" : "text-brand-ink"
+                    }`}
+                    role="option"
+                    aria-selected={isActive}
+                  >
+                    <span>{option}</span>
+                    {isActive ? (
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-teal">Actual</span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function toLocalInputValue(value: string | null): string {
   const parts = extractTimestampComponents(value);
   if (!parts) {
@@ -671,6 +822,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const pinRequestRef = useRef<((value: boolean) => void) | null>(null);
   const sessionRowsRef = useRef<SessionRow[]>([]);
   const sessionLoadTokenRef = useRef(0);
+  const previousAccessModeRef = useRef<AccessMode>(accessMode);
   const isManagementMode = accessMode === "management";
 
   const resolvePinRequest = useCallback((granted: boolean) => {
@@ -736,6 +888,25 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     setToast,
     waitForPin,
   ]);
+
+  useEffect(() => {
+    const handleVisibilityReset = () => {
+      if (document.hidden) {
+        setPinSessionActive(false);
+      }
+    };
+    const handlePageHide = () => {
+      setPinSessionActive(false);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityReset);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityReset);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, []);
 
   const handleUnauthorized = useCallback(async (): Promise<boolean> => {
     setPinSessionActive(false);
@@ -812,6 +983,7 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
   const [staffNames, setStaffNames] = useState<Record<number, string>>({});
   const [monthStatusSaving, setMonthStatusSaving] = useState<Record<number, boolean>>({});
   const [monthStatusErrors, setMonthStatusErrors] = useState<Record<number, string | null>>({});
+  const [revealedApprovedRows, setRevealedApprovedRows] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     setPaidAtDrafts((previous) => {
@@ -1292,6 +1464,30 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
     void refreshData();
   }, [refreshData]);
 
+  useEffect(() => {
+    if (accessMode === "read-only" && previousAccessModeRef.current !== "read-only") {
+      setRevealedApprovedRows({});
+    }
+    previousAccessModeRef.current = accessMode;
+  }, [accessMode]);
+
+  useEffect(() => {
+    if (!monthSummaryRows.length) {
+      setRevealedApprovedRows({});
+      return;
+    }
+    setRevealedApprovedRows((previous) => {
+      const allowed = new Set(monthSummaryRows.map((row) => row.staffId));
+      const next: Record<number, boolean> = {};
+      allowed.forEach((staffId) => {
+        if (previous[staffId]) {
+          next[staffId] = true;
+        }
+      });
+      return next;
+    });
+  }, [monthSummaryRows]);
+
   const openModal = useCallback(
     (row: MatrixRow, cell: MatrixCell) => {
       setSelectedCell({
@@ -1307,7 +1503,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       setSessionRows([]);
       setDayTotals(null);
       setActionError(null);
-      setPinSessionActive(true);
     },
     [resolveStaffName],
   );
@@ -2333,7 +2528,23 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   );
                                 })}
                                 <td className="px-2 py-1 text-right font-semibold text-brand-deep">
-                                  {toCurrency(monthSummary?.approvedAmount ?? null)}
+                                  {isManagementMode || revealedApprovedRows[row.staffId] ? (
+                                    <span>{toCurrency(monthSummary?.approvedAmount ?? null)}</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRevealedApprovedRows((previous) => ({
+                                          ...previous,
+                                          [row.staffId]: true,
+                                        }))
+                                      }
+                                      aria-label="Mostrar monto aprobado"
+                                      className="inline-flex w-full items-center justify-center rounded-full border border-brand-ink-muted/30 bg-brand-deep-soft/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted shadow-inner transition hover:-translate-y-[1px] hover:bg-brand-deep-soft/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                                    >
+                                      Haz clic para ver
+                                    </button>
+                                  )}
                                 </td>
                                 <td className="px-2 py-1 text-center">
                                   <button
@@ -2446,9 +2657,23 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   {humanDateFormatter.format(new Date(`${selectedCell.workDate}T12:00:00Z`))}
                 </p>
               </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 pr-10 text-brand-deep sm:flex-row sm:items-center sm:justify-between">
               <div className="rounded-[24px] border border-brand-ink-muted/10 bg-brand-deep-soft/30 px-5 py-4 text-sm text-brand-deep">
                 Horas registradas: {hoursFormatter.format(displayHours)} h
               </div>
+              <button
+                type="button"
+                onClick={addBlankSession}
+                disabled={!isManagementMode || sessionsLoading || actionLoading}
+                title={
+                  !isManagementMode ? "Disponible solo en modo gerencia" : undefined
+                }
+                className="inline-flex items-center justify-center rounded-full border border-emerald-500/80 bg-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-emerald-600 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Agregar sesión
+              </button>
             </div>
 
             <div className="mt-6 flex flex-col gap-4">
@@ -2478,8 +2703,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                         || actionLoading
                         || session.pendingAction === "edit"
                         || session.pendingAction === "create";
-                      const creationDisabled =
-                        !isManagementMode || sessionsLoading || actionLoading;
                       const saving =
                         session.pendingAction === "edit" || session.pendingAction === "create";
                       const editorActive = sessionEditor?.sessionKey === session.sessionKey;
@@ -2556,19 +2779,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   : editorActive
                                     ? "Editando…"
                                     : "Editar"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={addBlankSession}
-                                disabled={creationDisabled}
-                                title={
-                                  !isManagementMode
-                                    ? "Disponible solo en modo gerencia"
-                                    : undefined
-                                }
-                                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                Agregar sesión
                               </button>
                               <button
                                 type="button"
@@ -2684,21 +2894,6 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                   ) : (
                     <div className="rounded-3xl border border-brand-ink-muted/20 bg-brand-deep-soft/40 px-5 py-4 text-sm text-brand-ink-muted">
                       <div>No hay sesiones registradas para este día.</div>
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={addBlankSession}
-                          disabled={!isManagementMode || sessionsLoading || actionLoading}
-                          title={
-                            !isManagementMode
-                              ? "Disponible solo en modo gerencia"
-                              : undefined
-                          }
-                          className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/20 bg-brand-teal-soft/30 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Agregar sesión
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -2794,19 +2989,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
                         Entrada
                       </span>
-                      <input
-                        type="text"
-                        inputMode="text"
-                        autoComplete="off"
-                        spellCheck={false}
+                      <TimePickerField
                         value={activeEditorRow.draftCheckin}
-                        onChange={(event) =>
-                          handleDraftChange(activeEditorRow.sessionKey, "checkin", event.target.value)
+                        onChange={(value) =>
+                          handleDraftChange(activeEditorRow.sessionKey, "checkin", value)
                         }
                         onBlur={() => handleDraftBlur(activeEditorRow.sessionKey, "checkin")}
                         disabled={activeEditorRow.pendingAction != null}
                         placeholder="HH:MM AM"
-                        className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                         required
                       />
                     </label>
@@ -2814,19 +3004,14 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                       <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
                         Salida
                       </span>
-                      <input
-                        type="text"
-                        inputMode="text"
-                        autoComplete="off"
-                        spellCheck={false}
+                      <TimePickerField
                         value={activeEditorRow.draftCheckout}
-                        onChange={(event) =>
-                          handleDraftChange(activeEditorRow.sessionKey, "checkout", event.target.value)
+                        onChange={(value) =>
+                          handleDraftChange(activeEditorRow.sessionKey, "checkout", value)
                         }
                         onBlur={() => handleDraftBlur(activeEditorRow.sessionKey, "checkout")}
                         disabled={activeEditorRow.pendingAction != null}
                         placeholder="HH:MM PM"
-                        className="rounded-2xl border border-brand-ink-muted/20 bg-white px-3 py-2 text-sm font-medium text-brand-deep shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
                         required
                       />
                     </label>
