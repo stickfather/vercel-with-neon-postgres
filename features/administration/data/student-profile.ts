@@ -1107,7 +1107,7 @@ export type CoachPanelLessonJourneyEntry = {
   isIntroBooklet: boolean;
   isExam: boolean;
   isCurrentLesson: boolean;
-  isCompleted: boolean;
+  isCompletedVisual: boolean;
 };
 
 export type CoachPanelLessonJourney = {
@@ -1551,25 +1551,19 @@ export async function getStudentLessonRecorrido(
     safeQuery(
       sql`
         SELECT
-          v.lesson_id,
-          v.level,
-          v.seq,
-          v.lesson_name,
-          v.hours_spent,
-          v.calendar_days_spent,
-          v.is_intro_booklet,
-          v.is_exam,
-          v.is_current_lesson,
-          v.is_completed,
-          lg.lesson_global_seq
-        FROM mart.student_recorrido_v v
-        LEFT JOIN mart.lessons_global_v lg
-          ON lg.lesson_id = v.lesson_id
-        WHERE v.student_id = ${studentId}::bigint
-        ORDER BY
-          lg.lesson_global_seq NULLS LAST,
-          v.level,
-          v.seq
+          lesson_id,
+          level,
+          seq,
+          lesson_name,
+          hours_spent,
+          calendar_days_spent,
+          is_intro_booklet,
+          is_exam,
+          is_current_lesson,
+          is_completed_visual
+        FROM mart.student_recorrido_v
+        WHERE student_id = ${studentId}::bigint
+        ORDER BY level, seq
       `,
       "mart.student_recorrido_v",
     ),
@@ -1605,7 +1599,7 @@ export async function getStudentLessonRecorrido(
 
       return {
         lessonId: normalizeInteger(payload.lesson_id),
-        lessonGlobalSeq: normalizeInteger(payload.lesson_global_seq),
+        lessonGlobalSeq: null,
         level: extractString(payload, ["level", "level_code"]),
         seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_number"]),
         lessonName: extractString(payload, ["lesson_name", "lesson", "lesson_label"]),
@@ -1622,8 +1616,8 @@ export async function getStudentLessonRecorrido(
         isCurrentLesson: coerceBoolean(
           extractBoolean(payload, ["is_current_lesson", "current_lesson"]),
         ),
-        isCompleted: coerceBoolean(
-          extractBoolean(payload, ["is_completed", "completed"]),
+        isCompletedVisual: coerceBoolean(
+          extractBoolean(payload, ["is_completed_visual", "completed_visual"]),
         ),
       } satisfies CoachPanelLessonJourneyEntry;
     })

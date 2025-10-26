@@ -216,38 +216,36 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const journeyLessons = lessonJourney.lessons;
 
   const lessonRows = useMemo(() => {
-    const grouped = new Map<string, CoachPanelLessonJourneyEntry[]>();
+    const lessonsByLevel = new Map<string, CoachPanelLessonJourneyEntry[]>();
+
+    const pushLesson = (levelKey: string, lesson: CoachPanelLessonJourneyEntry) => {
+      const bucket = lessonsByLevel.get(levelKey) ?? [];
+      bucket.push(lesson);
+      lessonsByLevel.set(levelKey, bucket);
+    };
 
     journeyLessons.forEach((lesson) => {
-      const normalized = normalizePlanLevel(lesson.level);
-      const fallback = lesson.level?.trim().toUpperCase() || "OTROS";
-      const key = normalized ?? fallback;
-      const bucket = grouped.get(key) ?? [];
-      bucket.push(lesson);
-      grouped.set(key, bucket);
+      const normalizedLevel = normalizePlanLevel(lesson.level);
+      const key = normalizedLevel ?? lesson.level?.trim().toUpperCase() ?? "OTROS";
+      pushLesson(key, lesson);
     });
 
-    const sortLessons = (entries: CoachPanelLessonJourneyEntry[]) =>
-      entries.sort((a, b) => {
-        const aSeq =
-          (a.seq != null && Number.isFinite(a.seq) ? a.seq : null) ??
-          (a.lessonGlobalSeq != null && Number.isFinite(a.lessonGlobalSeq)
-            ? a.lessonGlobalSeq
-            : Number.POSITIVE_INFINITY);
-        const bSeq =
-          (b.seq != null && Number.isFinite(b.seq) ? b.seq : null) ??
-          (b.lessonGlobalSeq != null && Number.isFinite(b.lessonGlobalSeq)
-            ? b.lessonGlobalSeq
-            : Number.POSITIVE_INFINITY);
-        if (aSeq === bSeq) {
-          return 0;
-        }
-        return aSeq < bSeq ? -1 : 1;
-      });
+    const orderValueForLesson = (lesson: CoachPanelLessonJourneyEntry) => {
+      if (lesson.seq != null && Number.isFinite(lesson.seq)) {
+        return lesson.seq;
+      }
+      if (lesson.lessonGlobalSeq != null && Number.isFinite(lesson.lessonGlobalSeq)) {
+        return lesson.lessonGlobalSeq;
+      }
+      if (lesson.lessonId != null && Number.isFinite(lesson.lessonId)) {
+        return lesson.lessonId;
+      }
+      return Number.POSITIVE_INFINITY;
+    };
 
-    grouped.forEach((entries, key) => {
-      sortLessons(entries);
-      grouped.set(key, entries);
+    lessonsByLevel.forEach((entries, key) => {
+      const sorted = [...entries].sort((a, b) => orderValueForLesson(a) - orderValueForLesson(b));
+      lessonsByLevel.set(key, sorted);
     });
 
     const planMin =
@@ -260,11 +258,24 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     let rangeMin = planMin != null ? PLAN_LEVEL_RANK[planMin] : null;
     let rangeMax = planMax != null ? PLAN_LEVEL_RANK[planMax] : null;
     if (rangeMin != null && rangeMax != null && rangeMin > rangeMax) {
-      const temp = rangeMin;
+      const swap = rangeMin;
       rangeMin = rangeMax;
-      rangeMax = temp;
+      rangeMax = swap;
     }
-    const hasPlanRange = rangeMin != null || rangeMax != null;
+
+    const isLevelVisible = (level: string) => {
+      const rank = PLAN_LEVEL_RANK[level as PlanLevel];
+      if (rank == null) {
+        return true;
+      }
+      if (rangeMin != null && rank < rangeMin) {
+        return false;
+      }
+      if (rangeMax != null && rank > rangeMax) {
+        return false;
+      }
+      return true;
+    };
 
     const rows: Array<{
       key: string;
@@ -273,34 +284,26 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     }> = [];
 
     PLAN_LEVEL_ORDER.forEach((level) => {
-      const lessons = grouped.get(level) ?? [];
-      if (!lessons.length) {
+      if (!lessonsByLevel.has(level)) {
         return;
       }
-      const rank = PLAN_LEVEL_RANK[level];
-      if (hasPlanRange) {
-        if (rangeMin != null && rank < rangeMin) {
-          return;
-        }
-        if (rangeMax != null && rank > rangeMax) {
-          return;
-        }
+      if (!isLevelVisible(level)) {
+        lessonsByLevel.delete(level);
+        return;
       }
-      rows.push({ key: level, label: level, lessons });
-      grouped.delete(level);
+      rows.push({ key: level, label: level, lessons: lessonsByLevel.get(level) ?? [] });
+      lessonsByLevel.delete(level);
     });
 
-    const remainingKeys = Array.from(grouped.keys()).sort();
-    remainingKeys.forEach((key) => {
-      const lessons = grouped.get(key) ?? [];
+    const remaining = Array.from(lessonsByLevel.entries()).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+
+    remaining.forEach(([key, lessons]) => {
       if (!lessons.length) {
         return;
       }
-      rows.push({
-        key,
-        label: key === "OTROS" ? "Otros" : key,
-        lessons,
-      });
+      rows.push({ key, label: key === "OTROS" ? "Otros" : key, lessons });
     });
 
     return rows;
@@ -315,7 +318,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const renderLessonBubble = (lesson: CoachPanelLessonJourneyEntry) => {
     const isExamBubble = lesson.isExam;
     const isCurrent = lesson.isCurrentLesson;
-    const isCompleted = lesson.isCompleted;
+    const isCompleted = lesson.isCompletedVisual;
 
     const hoursValue =
       lesson.hoursSpent != null && Number.isFinite(lesson.hoursSpent)
@@ -356,16 +359,18 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             "relative flex h-12 w-12 items-center justify-center rounded-full border-2 px-1 text-[10px] font-semibold",
             isExamBubble ? "h-12 w-12 uppercase" : "",
             isCurrent
-              ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
-              : isCompleted
-                ? "border-brand-teal bg-brand-teal text-white shadow-[0_12px_24px_rgba(2,132,199,0.24)]"
-                : "border-brand-teal/50 bg-white text-brand-deep",
+              ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(10,164,154,0.35)]"
+              : isExamBubble
+                ? "border-brand-orange bg-brand-orange text-white"
+                : isCompleted
+                  ? "border-brand-teal/40 bg-brand-ink-muted/5 text-brand-ink-muted"
+                  : "border-brand-ink-muted/40 bg-white text-brand-deep",
           )}
         >
           {isCurrent ? (
             <span
               aria-hidden="true"
-              className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse"
+              className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/40 animate-pulse"
             />
           ) : null}
           <span className="px-1 text-[10px] font-semibold leading-tight">

@@ -22,12 +22,24 @@ export async function GET(
 
   try {
     const recorrido = await getStudentLessonRecorrido(studentId);
+    const lessons = recorrido.lessons.map((lesson) => ({
+      lesson_id: lesson.lessonId,
+      level: lesson.level,
+      seq: lesson.seq,
+      lesson_name: lesson.lessonName,
+      is_intro_booklet: lesson.isIntroBooklet,
+      is_exam: lesson.isExam,
+      is_current_lesson: lesson.isCurrentLesson,
+      is_completed_visual: lesson.isCompletedVisual,
+      hours_spent: lesson.hoursSpent,
+      calendar_days_spent: lesson.calendarDaysSpent,
+    }));
     return NextResponse.json(
       {
         student_id: studentId,
         planned_level_min: recorrido.plannedLevelMin,
         planned_level_max: recorrido.plannedLevelMax,
-        lessons: recorrido.lessons,
+        lessons,
       },
       {
         headers: {
