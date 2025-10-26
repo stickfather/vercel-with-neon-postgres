@@ -14,6 +14,31 @@ export type BasicDetailFieldType =
   | "boolean"
   | "datetime";
 
+export interface Student {
+  id: number;
+  full_name: string;
+  representative_name?: string | null;
+  representative_phone?: string | null;
+  representative_email?: string | null;
+  contract_start?: string | null;
+  contract_end?: string | null;
+  graduation_date?: string | null;
+  frozen_start?: string | null;
+  frozen_end?: string | null;
+  planned_level_min?: string | null;
+  planned_level_max?: string | null;
+  special_needs?: boolean | null;
+  is_online?: boolean | null;
+  archived?: boolean | null;
+  status:
+    | "invalid"
+    | "graduated"
+    | "contract_terminated"
+    | "frozen"
+    | "online"
+    | "active";
+}
+
 export type StudentBasicDetails = {
   studentId: number;
   fullName: string | null;
@@ -24,7 +49,7 @@ export type StudentBasicDetails = {
   representativeEmail: string | null;
   contractStart: string | null;
   contractEnd: string | null;
-  graduated: boolean | null;
+  graduationDate: string | null;
   frozenStart: string | null;
   frozenEnd: string | null;
   currentLevel: string | null;
@@ -43,10 +68,7 @@ export type StudentBasicDetails = {
   instructivoOverdue: boolean | null;
   hasOverdueInstructive: boolean | null;
   status: string | null;
-  lastSeenAt: string | null;
-  lastLessonId: string | null;
-  updatedAt: string | null;
-  createdAt: string | null;
+  archived: boolean | null;
 };
 
 export type StudentBasicDetailFieldConfig = {
@@ -87,6 +109,20 @@ export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldC
     editable: true,
   },
   {
+    key: "hasSpecialNeeds",
+    dbColumn: "hasSpecialNeeds",
+    label: "Necesidades especiales",
+    type: "boolean",
+    editable: true,
+  },
+  {
+    key: "isOnline",
+    dbColumn: "isOnline",
+    label: "Modalidad en línea",
+    type: "boolean",
+    editable: true,
+  },
+  {
     key: "contractStart",
     dbColumn: "contractStart",
     label: "Inicio de contrato",
@@ -115,13 +151,6 @@ export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldC
     editable: true,
   },
   {
-    key: "currentLevel",
-    dbColumn: "currentLevel",
-    label: "Nivel actual",
-    type: "text",
-    editable: true,
-  },
-  {
     key: "plannedLevelMin",
     dbColumn: "plannedLevelMin",
     label: "Nivel planificado mínimo",
@@ -135,48 +164,6 @@ export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldC
     type: "text",
     editable: true,
   },
-  {
-    key: "hasSpecialNeeds",
-    dbColumn: "hasSpecialNeeds",
-    label: "Necesidades especiales",
-    type: "boolean",
-    editable: true,
-  },
-  {
-    key: "isOnline",
-    dbColumn: "isOnline",
-    label: "Modalidad en línea",
-    type: "boolean",
-    editable: true,
-  },
-  {
-    key: "lastLessonId",
-    dbColumn: "lastLessonId",
-    label: "Última lección",
-    type: "text",
-    editable: false,
-  },
-  {
-    key: "lastSeenAt",
-    dbColumn: "lastSeenAt",
-    label: "Última asistencia",
-    type: "datetime",
-    editable: false,
-  },
-  {
-    key: "updatedAt",
-    dbColumn: "updatedAt",
-    label: "Actualizado el",
-    type: "datetime",
-    editable: false,
-  },
-  {
-    key: "createdAt",
-    dbColumn: "createdAt",
-    label: "Creado el",
-    type: "datetime",
-    editable: false,
-  },
 ];
 
 const STUDENT_BASIC_DETAIL_COLUMN_MAP = {
@@ -189,7 +176,6 @@ const STUDENT_BASIC_DETAIL_COLUMN_MAP = {
   contractEnd: "contract_end",
   frozenStart: "frozen_start",
   frozenEnd: "frozen_end",
-  currentLevel: "current_level",
   plannedLevelMin: "planned_level_min",
   plannedLevelMax: "planned_level_max",
   isOnline: "is_online",
@@ -274,7 +260,7 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     representativeEmail: normalizeFieldValue(row.representativeEmail, "text"),
     contractStart: normalizeFieldValue(row.contractStart, "date"),
     contractEnd: normalizeFieldValue(row.contractEnd, "date"),
-    graduated: normalizeFieldValue(row.graduated, "boolean"),
+    graduationDate: normalizeFieldValue(row.graduationDate, "date"),
     frozenStart: normalizeFieldValue(row.frozenStart, "date"),
     frozenEnd: normalizeFieldValue(row.frozenEnd, "date"),
     currentLevel: normalizeFieldValue(row.currentLevel, "text"),
@@ -293,10 +279,7 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     instructivoOverdue: normalizeFieldValue(row.instructivoOverdue ?? row.hasOverdueInstructive, "boolean"),
     hasOverdueInstructive: normalizeFieldValue(row.hasOverdueInstructive ?? row.instructivoOverdue, "boolean"),
     status: normalizeFieldValue(row.status, "text"),
-    lastSeenAt: normalizeFieldValue(row.lastSeenAt, "datetime"),
-    lastLessonId: normalizeFieldValue(row.lastLessonId, "text"),
-    updatedAt: normalizeFieldValue(row.updatedAt, "datetime"),
-    createdAt: normalizeFieldValue(row.createdAt, "datetime"),
+    archived: normalizeFieldValue(row.archived, "boolean"),
   };
 }
 
@@ -316,7 +299,6 @@ export type StudentBasicDetailsEditablePayload = Partial<
 >;
 
 const LEVEL_CODE_FIELDS = new Set<StudentBasicDetailEditableKey>([
-  "currentLevel",
   "plannedLevelMin",
   "plannedLevelMax",
 ]);
@@ -370,24 +352,21 @@ export async function updateStudentBasicDetails(
       s.has_special_needs                    AS "hasSpecialNeeds",
       s.contract_start                       AS "contractStart",
       s.contract_end                         AS "contractEnd",
-      s.graduated                            AS "graduated",
+      s.graduation_date                     AS "graduationDate",
       s.frozen_start                         AS "frozenStart",
       s.frozen_end                           AS "frozenEnd",
       s.current_level::text                  AS "currentLevel",
       s.planned_level_min::text              AS "plannedLevelMin",
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
+      COALESCE(s.archived, false)            AS "archived",
       NULL::boolean                          AS "isNewStudent",
       NULL::boolean                          AS "isExamPreparation",
       NULL::boolean                          AS "isAbsent7Days",
       NULL::boolean                          AS "isSlowProgress14Days",
       NULL::boolean                          AS "hasActiveInstructive",
       NULL::boolean                          AS "hasOverdueInstructive",
-      s.status                               AS "status",
-      s.last_seen_at                         AS "lastSeenAt",
-      s.last_lesson_id                       AS "lastLessonId",
-      s.updated_at                           AS "updatedAt",
-      s.created_at                           AS "createdAt"
+      s.status                               AS "status"
   `;
 
   const rows = normalizeRows<SqlRow>(
@@ -2832,13 +2811,14 @@ async function runBasicDetailsQuery(
       s.has_special_needs                    AS "hasSpecialNeeds",
       s.contract_start                       AS "contractStart",
       s.contract_end                         AS "contractEnd",
-      s.graduated                            AS "graduated",
+      s.graduation_date                      AS "graduationDate",
       s.frozen_start                         AS "frozenStart",
       s.frozen_end                           AS "frozenEnd",
       s.current_level::text                  AS "currentLevel",
       s.planned_level_min::text              AS "plannedLevelMin",
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
+      COALESCE(s.archived, false)            AS "archived",
       COALESCE(flags.is_new_student, false)  AS "isNewStudent",
       COALESCE(flags.is_exam_preparation, false) AS "isExamPreparation",
       COALESCE(flags.is_absent_7d, false)    AS "isAbsent7d",
@@ -2849,11 +2829,7 @@ async function runBasicDetailsQuery(
       COALESCE(flags.instructivo_active, false) AS "hasActiveInstructive",
       COALESCE(flags.instructivo_overdue, false) AS "instructivoOverdue",
       COALESCE(flags.instructivo_overdue, false) AS "hasOverdueInstructive",
-      s.last_seen_at                         AS "lastSeenAt",
-      s.last_lesson_id                       AS "lastLessonId",
-      s.status                               AS "status",
-      s.updated_at                           AS "updatedAt",
-      s.created_at                           AS "createdAt"
+      s.status                               AS "status"
     FROM public.students AS s
     LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
     WHERE s.id = ${studentId}::bigint

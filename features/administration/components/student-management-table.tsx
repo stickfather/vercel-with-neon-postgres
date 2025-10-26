@@ -237,6 +237,7 @@ function StudentManagementTable({ students }: Props) {
             level: null,
             status: null,
             contractEnd: null,
+            graduationDate: null,
             isNewStudent: true,
             isExamPreparation: false,
             hasSpecialNeeds: false,
@@ -244,6 +245,7 @@ function StudentManagementTable({ students }: Props) {
             isSlowProgress14Days: false,
             hasActiveInstructive: false,
             hasOverdueInstructive: false,
+            archived: false,
             isPending: true,
           };
           addStudentToList(pendingEntry);
@@ -380,8 +382,13 @@ function StudentManagementTable({ students }: Props) {
           <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
             {paginatedStudents.map((student) => {
               const statusDisplay = getStudentStatusDisplay(student.status);
-              const statusDate = statusDisplay.showEndDate
-                ? formatStatusDate(student.contractEnd)
+              const statusDateSource = statusDisplay.showEndDate
+                ? statusDisplay.dateField === "graduationDate"
+                  ? student.graduationDate
+                  : student.contractEnd
+                : null;
+              const statusDate = statusDateSource
+                ? formatStatusDate(statusDateSource)
                 : null;
               return (
                 <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">

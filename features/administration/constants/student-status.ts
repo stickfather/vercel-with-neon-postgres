@@ -11,6 +11,7 @@ export type StudentStatusConfig = {
   badgeClassName: string;
   showEndDate: boolean;
   endDateLabel?: string;
+  dateField?: "contractEnd" | "graduationDate";
 };
 
 export const STUDENT_STATUS_ORDER: StudentStatusKey[] = [
@@ -51,12 +52,14 @@ export const STUDENT_STATUS_CONFIG: Record<
     badgeClassName: "bg-amber-100 text-amber-700",
     showEndDate: true,
     endDateLabel: "Graduación",
+    dateField: "graduationDate",
   },
   contract_terminated: {
     label: "terminado",
     badgeClassName: "bg-slate-200 text-slate-700",
     showEndDate: true,
     endDateLabel: "Salida",
+    dateField: "contractEnd",
   },
 };
 

@@ -65,15 +65,19 @@ export async function PATCH(
   const hasContractEnd =
     Object.prototype.hasOwnProperty.call(body, "contract_end") ||
     Object.prototype.hasOwnProperty.call(body, "contractEnd");
+  const hasGraduationDate =
+    Object.prototype.hasOwnProperty.call(body, "graduation_date") ||
+    Object.prototype.hasOwnProperty.call(body, "graduationDate");
+  const hasArchived = Object.prototype.hasOwnProperty.call(body, "archived");
 
-  if (!hasStatus && !hasContractEnd) {
+  if (!hasStatus && !hasContractEnd && !hasGraduationDate && !hasArchived) {
     return NextResponse.json(
       { error: "No se detectaron cambios para guardar." },
       { status: 400 },
     );
   }
 
-  let statusValue: string | null = null;
+  let statusValue: string | undefined;
   if (hasStatus) {
     const rawStatus = body.status;
     if (typeof rawStatus !== "string") {
@@ -91,9 +95,6 @@ export async function PATCH(
     }
     statusValue = normalizedStatus;
   }
-
-  const requiresEndDate =
-    statusValue === "graduated" || statusValue === "contract_terminated";
 
   const rawContractEnd = hasContractEnd
     ? Object.prototype.hasOwnProperty.call(body, "contract_end")
@@ -114,45 +115,105 @@ export async function PATCH(
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  if (statusValue && requiresEndDate && !hasContractEnd) {
-    return NextResponse.json(
-      { error: "Debes proporcionar la fecha de finalización para este estado." },
-      { status: 400 },
-    );
+  const rawGraduationDate = hasGraduationDate
+    ? Object.prototype.hasOwnProperty.call(body, "graduation_date")
+      ? body.graduation_date
+      : body.graduationDate
+    : undefined;
+
+  let graduationDate: string | null | undefined;
+  try {
+    if (hasGraduationDate) {
+      graduationDate = normalizeDateInput(rawGraduationDate);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Formato de fecha inválido. Usa AAAA-MM-DD.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  if (statusValue && !requiresEndDate && !hasContractEnd) {
-    contractEndDate = null;
+  let archivedValue: boolean | null | undefined;
+  if (hasArchived) {
+    const rawArchived = body.archived;
+    if (rawArchived === null) {
+      archivedValue = null;
+    } else if (typeof rawArchived === "boolean") {
+      archivedValue = rawArchived;
+    } else if (typeof rawArchived === "number") {
+      if (rawArchived === 1) archivedValue = true;
+      else if (rawArchived === 0) archivedValue = false;
+      else {
+        return NextResponse.json(
+          { error: "El valor de archivado no es válido." },
+          { status: 400 },
+        );
+      }
+    } else if (typeof rawArchived === "string") {
+      const normalized = rawArchived.trim().toLowerCase();
+      if (["true", "t", "1", "sí", "si", "yes"].includes(normalized)) {
+        archivedValue = true;
+      } else if (["false", "f", "0", "no", "n"].includes(normalized)) {
+        archivedValue = false;
+      } else if (!normalized.length) {
+        archivedValue = null;
+      } else {
+        return NextResponse.json(
+          { error: "El valor de archivado no es válido." },
+          { status: 400 },
+        );
+      }
+    } else {
+      return NextResponse.json(
+        { error: "El valor de archivado no es válido." },
+        { status: 400 },
+      );
+    }
   }
 
   try {
     const sql = getSqlClient();
+    const updates: string[] = [];
+    const values: unknown[] = [];
 
-    if (statusValue && contractEndDate !== undefined) {
-      await sql`
-        UPDATE public.students
-        SET status = ${statusValue},
-            graduated = ${statusValue === "graduated"},
-            contract_end = ${contractEndDate ?? null}::date,
-            updated_at = NOW()
-        WHERE id = ${studentId}::bigint
-      `;
-    } else if (statusValue) {
-      await sql`
-        UPDATE public.students
-        SET status = ${statusValue},
-            graduated = ${statusValue === "graduated"},
-            updated_at = NOW()
-        WHERE id = ${studentId}::bigint
-      `;
-    } else if (contractEndDate !== undefined) {
-      await sql`
-        UPDATE public.students
-        SET contract_end = ${contractEndDate ?? null}::date,
-            updated_at = NOW()
-        WHERE id = ${studentId}::bigint
-      `;
+    if (statusValue !== undefined) {
+      values.push(statusValue);
+      updates.push(`status = $${values.length}`);
     }
+    if (contractEndDate !== undefined) {
+      values.push(contractEndDate);
+      updates.push(`contract_end = $${values.length}::date`);
+    }
+    if (graduationDate !== undefined) {
+      values.push(graduationDate);
+      updates.push(`graduation_date = $${values.length}::date`);
+    }
+    if (archivedValue !== undefined) {
+      values.push(archivedValue);
+      updates.push(`archived = $${values.length}`);
+    }
+
+    if (!updates.length) {
+      return NextResponse.json(
+        { error: "No se detectaron cambios para guardar." },
+        { status: 400 },
+      );
+    }
+
+    updates.push(`updated_at = NOW()`);
+
+    const query = `
+      UPDATE public.students
+      SET ${updates.join(", ")}
+      WHERE id = $${values.length + 1}::bigint
+    `;
+
+    await sql.query(query, [...values, studentId]);
+
+    await sql`
+      SELECT public.recompute_status_for_student(${studentId}::bigint)
+    `;
 
     const updated = await getStudentBasicDetails(studentId);
 
@@ -163,9 +224,10 @@ export async function PATCH(
     revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);
 
     return NextResponse.json({
-      graduated: Boolean(updated.graduated ?? updated.status === "graduated"),
       contract_end: updated.contractEnd,
+      graduation_date: updated.graduationDate,
       status: updated.status,
+      archived: updated.archived,
     });
   } catch (error) {
     console.error("Error updating student graduation state", error);

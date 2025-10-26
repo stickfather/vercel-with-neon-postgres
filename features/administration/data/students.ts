@@ -10,6 +10,7 @@ export type StudentManagementEntry = {
   level: string | null;
   status: string | null;
   contractEnd: string | null;
+  graduationDate: string | null;
   isNewStudent: boolean;
   isExamPreparation: boolean;
   hasSpecialNeeds: boolean;
@@ -17,6 +18,7 @@ export type StudentManagementEntry = {
   isSlowProgress14Days: boolean;
   hasActiveInstructive: boolean;
   hasOverdueInstructive: boolean;
+  archived: boolean;
 };
 
 function coerceString(value: unknown): string | null {
@@ -80,6 +82,10 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
     contractEnd:
       coerceString(pick(row, ["contract_end", "contractEnd", "end_date"])) ??
       null,
+    graduationDate:
+      coerceString(
+        pick(row, ["graduation_date", "graduationDate", "grad_date"]),
+      ) ?? null,
     isNewStudent:
       coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
       false,
@@ -134,6 +140,8 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
           "overdue_instructive",
         ]),
       ) ?? false,
+    archived:
+      coerceBoolean(pick(row, ["archived", "is_archived"])) ?? false,
   };
 }
 
@@ -149,9 +157,11 @@ async function runStudentManagementQuery(
         s.id AS student_id,
         s.full_name AS full_name,
         s.current_level::text AS level,
-        s.status AS status,
-        s.contract_end::text AS contract_end,
-        COALESCE(flags.is_new_student, false) AS is_new_student,
+      s.status AS status,
+      s.contract_end::text AS contract_end,
+      s.graduation_date::text AS graduation_date,
+      COALESCE(s.archived, false) AS archived,
+      COALESCE(flags.is_new_student, false) AS is_new_student,
         COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
         COALESCE(flags.has_special_needs, false) AS has_special_needs,
         COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
