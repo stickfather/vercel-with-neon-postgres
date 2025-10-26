@@ -27,6 +27,16 @@ const LESSON_LEVEL_BUCKETS = [
   { key: "EXAM", label: "Preparación de examen" },
 ] as const;
 
+const LEVEL_RANK: Record<string, number> = {
+  A1: 0,
+  A2: 1,
+  B1: 2,
+  B2: 3,
+  C1: 4,
+  C2: 5,
+  EXAM: 6,
+};
+
 function resolveLessonBucket(level: string | null | undefined): string {
   if (!level) return "OTHER";
   const normalized = level.trim().toUpperCase();
@@ -39,6 +49,14 @@ function resolveLessonBucket(level: string | null | undefined): string {
   if (normalized.includes("EXAM")) return "EXAM";
   if (normalized.includes("PREP")) return "EXAM";
   return "OTHER";
+}
+
+function getPlanLevelRank(level: string | null | undefined): number | null {
+  const bucket = resolveLessonBucket(level);
+  if (bucket === "OTHER") {
+    return null;
+  }
+  return LEVEL_RANK[bucket] ?? null;
 }
 
 function cx(...classes: Array<string | null | undefined | false>): string {
@@ -245,15 +263,56 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       rows.push(otherBucket);
     }
 
-    return rows.map((row) => ({
-      ...row,
-      lessons: [...row.lessons].sort((a, b) => {
-        const aSeq = a.seq ?? a.lessonGlobalSeq ?? 0;
-        const bSeq = b.seq ?? b.lessonGlobalSeq ?? 0;
-        return aSeq - bSeq;
-      }),
-    }));
-  }, [journeyLessons]);
+    const minRank = getPlanLevelRank(profileHeader.planLevelMin);
+    const maxRank = getPlanLevelRank(profileHeader.planLevelMax);
+    let rangeMin = minRank;
+    let rangeMax = maxRank;
+    if (rangeMin != null && rangeMax != null && rangeMin > rangeMax) {
+      const temp = rangeMin;
+      rangeMin = rangeMax;
+      rangeMax = temp;
+    }
+    const hasPlanRange = rangeMin != null || rangeMax != null;
+
+    return rows
+      .filter((row) => {
+        if (row.key === "OTHER") {
+          return row.lessons.length > 0;
+        }
+
+        const bucketRank = LEVEL_RANK[row.key] ?? null;
+
+        if (!hasPlanRange) {
+          return row.lessons.length > 0;
+        }
+
+        if (bucketRank == null) {
+          return false;
+        }
+
+        if (rangeMin != null && bucketRank < rangeMin) {
+          return false;
+        }
+
+        if (rangeMax != null && bucketRank > rangeMax) {
+          return false;
+        }
+
+        return true;
+      })
+      .map((row) => ({
+        ...row,
+        lessons: [...row.lessons].sort((a, b) => {
+          const aSeq = a.seq ?? a.lessonGlobalSeq ?? 0;
+          const bSeq = b.seq ?? b.lessonGlobalSeq ?? 0;
+          return aSeq - bSeq;
+        }),
+      }));
+  }, [
+    journeyLessons,
+    profileHeader.planLevelMin,
+    profileHeader.planLevelMax,
+  ]);
 
   const renderLessonBubble = (
     lesson: CoachPanelLessonJourneyEntry,
@@ -331,17 +390,17 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     return (
       <div
         key={`lesson-${lesson.lessonGlobalSeq ?? `${lesson.level ?? "nivel"}-${index}`}`}
-        className="flex flex-col items-center gap-3 text-center"
+        className="flex flex-col items-center gap-2 text-center"
         title={lessonTooltip}
       >
         <div
           className={cx(
             "relative flex items-center justify-center rounded-full border-2 font-semibold",
-            isExamBubble ? "h-16 w-16 text-base" : "h-14 w-14 text-sm",
+            isExamBubble ? "h-14 w-14 text-sm" : "h-12 w-12 text-xs",
             isCurrent
               ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
               : isCompleted
-                ? "border-brand-teal bg-brand-teal text-white shadow-[0_14px_30px_rgba(2,132,199,0.28)]"
+                ? "border-brand-teal bg-brand-teal text-white shadow-[0_12px_24px_rgba(2,132,199,0.24)]"
                 : "border-brand-teal/50 bg-white text-brand-deep",
             effort?.isCompletedByPosition
               ? "ring-2 ring-emerald-300 ring-offset-2 ring-offset-white"
@@ -354,17 +413,17 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse"
             />
           ) : null}
-          <span className={isExamBubble ? "uppercase tracking-wide" : undefined}>
+          <span className={isExamBubble ? "uppercase tracking-wide" : "font-semibold"}>
             {bubbleLabel}
           </span>
-          <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
+          <div className="pointer-events-none absolute -bottom-9 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
             {showHoursBadge ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-brand-deep shadow-sm ring-1 ring-brand-teal/10">
                 <span aria-hidden="true">⌛</span>
                 {totalHoursDisplay}h
               </span>
             ) : (
-              <span className="inline-flex items-center rounded-full border border-dashed border-brand-ink-muted/40 px-3 py-1 text-[11px] font-medium text-brand-ink-muted/50">
+              <span className="inline-flex items-center rounded-full border border-dashed border-brand-ink-muted/40 px-2.5 py-0.5 text-[10px] font-medium text-brand-ink-muted/50">
                 —
               </span>
             )}
@@ -428,21 +487,21 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             Vista general del recorrido planificado y el progreso alcanzado.
           </p>
         </div>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {lessonRows.map((row) => (
             <div key={`lesson-row-${row.key}`} className="flex flex-col gap-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-                <span className="inline-flex w-fit min-w-[72px] items-center justify-center rounded-full bg-brand-teal-soft px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-brand-teal">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:gap-4">
+                <span className="inline-flex w-fit min-w-[60px] items-center justify-center rounded-full bg-brand-teal-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-teal">
                   {row.label}
                 </span>
                 {row.lessons.length ? (
-                  <div className="grid flex-1 gap-3 [grid-template-columns:repeat(auto-fit,minmax(72px,1fr))]">
+                  <div className="flex flex-1 flex-wrap items-center gap-2">
                     {row.lessons.map((lesson, index) =>
                       renderLessonBubble(lesson, index, row.lessons),
                     )}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
+                  <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-3 py-2 text-sm text-brand-ink-muted shadow-sm">
                     Sin lecciones registradas.
                   </div>
                 )}

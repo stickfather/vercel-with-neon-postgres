@@ -95,7 +95,7 @@ const ACTION_BUTTON_BASE =
   "inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2";
 
 const ACTION_BUTTON_VARIANTS: Record<
-  "terminate" | "graduate" | "freeze" | "reactivate",
+  "terminate" | "graduate" | "freeze" | "reactivate" | "unfreeze",
   string
 > = {
   terminate:
@@ -104,6 +104,8 @@ const ACTION_BUTTON_VARIANTS: Record<
     "bg-amber-500 hover:bg-amber-600 focus-visible:outline-amber-500",
   freeze: "bg-sky-600 hover:bg-sky-700 focus-visible:outline-sky-600",
   reactivate:
+    "bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600",
+  unfreeze:
     "bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600",
 };
 
@@ -120,9 +122,6 @@ type FormState = {
   hasSpecialNeeds: boolean;
   isOnline: boolean;
   contractStart: string;
-  contractEnd: string;
-  frozenStart: string;
-  frozenEnd: string;
   plannedLevelMin: string;
   plannedLevelMax: string;
 };
@@ -132,7 +131,13 @@ type ToastState = {
   message: string;
 };
 
-type ActionKind = "terminate" | "graduate" | "freeze" | "reactivate";
+type ActionKind =
+  | "terminate"
+  | "graduate"
+  | "freeze"
+  | "reactivate_contract"
+  | "reactivate_graduation"
+  | "unfreeze";
 
 type BaseActionDialogState = {
   kind: ActionKind;
@@ -151,14 +156,14 @@ type FreezeActionState = BaseActionDialogState & {
   endDate: string;
 };
 
-type ReactivateActionState = BaseActionDialogState & {
-  kind: "reactivate";
+type SimpleActionState = BaseActionDialogState & {
+  kind: "reactivate_contract" | "reactivate_graduation" | "unfreeze";
 };
 
 type ActionDialogState =
   | TerminateOrGraduateState
   | FreezeActionState
-  | ReactivateActionState
+  | SimpleActionState
   | null;
 
 type DeleteDialogState = {
@@ -166,6 +171,28 @@ type DeleteDialogState = {
   loading: boolean;
   error: string | null;
 };
+
+type ReadOnlyPillFieldProps = {
+  label: string;
+  value: string | null;
+};
+
+function ReadOnlyPillField({ label, value }: ReadOnlyPillFieldProps) {
+  const displayValue = value ?? "—";
+
+  return (
+    <div className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+      <span>{label}</span>
+      <div className="flex items-center justify-between rounded-full border border-brand-ink-muted/30 bg-brand-ivory px-4 py-2 text-sm font-semibold text-brand-deep">
+        <span className="text-brand-deep">{displayValue}</span>
+        <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-brand-ink-muted/70">
+          <span aria-hidden="true">🔒</span>
+          Bloqueado
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function formatIsoDate(value: string | null | undefined): string | null {
   if (!value) {
@@ -199,9 +226,6 @@ function createFormState(details: StudentBasicDetails | null): FormState {
     hasSpecialNeeds: Boolean(details?.hasSpecialNeeds ?? false),
     isOnline: Boolean(details?.isOnline ?? false),
     contractStart: details?.contractStart ?? "",
-    contractEnd: details?.contractEnd ?? "",
-    frozenStart: details?.frozenStart ?? "",
-    frozenEnd: details?.frozenEnd ?? "",
     plannedLevelMin: details?.plannedLevelMin ?? "",
     plannedLevelMax: details?.plannedLevelMax ?? "",
   };
@@ -221,41 +245,50 @@ function ActionDialog({ state, onCancel, onFieldChange, onConfirm }: ActionDialo
 
   const { kind, loading, error } = state;
 
-  const copy = {
-    title: "",
-    message: "",
-    confirmLabel: "Confirmar",
-    confirmClass:
-      "bg-brand-orange hover:bg-[#ff7832] focus-visible:outline-[#ff7832]",
-  };
-
-  if (kind === "terminate") {
-    copy.title = "¿Terminar este contrato?";
-    copy.message = "¿Estás seguro/a de que quieres terminar este contrato?";
-    copy.confirmLabel = loading ? "Guardando…" : "TERMINAR";
-    copy.confirmClass =
-      "bg-brand-orange hover:bg-[#ff7832] focus-visible:outline-[#ff7832]";
-  } else if (kind === "graduate") {
-    copy.title = "¿Marcar este estudiante como graduado/a?";
-    copy.message = "Confirma la graduación de este estudiante.";
-    copy.confirmLabel = loading ? "Guardando…" : "GRADUAR";
-    copy.confirmClass =
-      "bg-amber-500 hover:bg-amber-600 focus-visible:outline-amber-500";
-  } else if (kind === "freeze") {
-    copy.title = "¿Congelar contrato?";
-    copy.message =
-      "Ingresa el rango de congelamiento. El estudiante no contará como activo durante este período.";
-    copy.confirmLabel = loading ? "Guardando…" : "CONGELAR";
-    copy.confirmClass =
-      "bg-sky-600 hover:bg-sky-700 focus-visible:outline-sky-600";
-  } else {
-    copy.title = "¿Reactivar este estudiante?";
-    copy.message =
-      "Esto reabrirá el contrato y devolverá al estudiante a estado activo.";
-    copy.confirmLabel = loading ? "Guardando…" : "REACTIVAR";
-    copy.confirmClass =
-      "bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600";
-  }
+  const copy = (() => {
+    switch (kind) {
+      case "terminate":
+        return {
+          title: "¿Terminar este contrato?",
+          message: "¿Estás seguro/a de que quieres terminar este contrato?",
+          confirmLabel: loading ? "Guardando…" : "TERMINAR",
+          confirmClass: ACTION_BUTTON_VARIANTS.terminate,
+        };
+      case "graduate":
+        return {
+          title: "¿Marcar este estudiante como graduado/a?",
+          message: "Confirma la graduación de este estudiante.",
+          confirmLabel: loading ? "Guardando…" : "GRADUAR",
+          confirmClass: ACTION_BUTTON_VARIANTS.graduate,
+        };
+      case "freeze":
+        return {
+          title: "¿Congelar contrato?",
+          message:
+            "Ingresa el rango de congelamiento. El estudiante no contará como activo durante este período.",
+          confirmLabel: loading ? "Guardando…" : "CONGELAR",
+          confirmClass: ACTION_BUTTON_VARIANTS.freeze,
+        };
+      case "reactivate_contract":
+      case "reactivate_graduation":
+        return {
+          title: "¿Reactivar este estudiante?",
+          message:
+            "Esto reabrirá el contrato y devolverá al estudiante a estado activo.",
+          confirmLabel: loading ? "Guardando…" : "REACTIVAR",
+          confirmClass: ACTION_BUTTON_VARIANTS.reactivate,
+        };
+      case "unfreeze":
+      default:
+        return {
+          title: "¿Quitar congelamiento y reactivar el contrato?",
+          message:
+            "Esto eliminará las fechas de congelamiento y reactivará al estudiante.",
+          confirmLabel: loading ? "Guardando…" : "DESCONGELAR",
+          confirmClass: ACTION_BUTTON_VARIANTS.unfreeze,
+        };
+    }
+  })();
 
   const confirmDisabled = (() => {
     if (loading) return true;
@@ -355,7 +388,7 @@ function DeleteDialog({ state, onCancel, onPinChange, onConfirm }: DeleteDialogP
       <div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
         <h2 className="text-lg font-semibold text-brand-deep">¿Eliminar este estudiante?</h2>
         <p className="mt-2 text-sm text-brand-ink-muted">
-          Esta acción es permanente. Los datos históricos pueden dejar de estar disponibles en los reportes.
+          Esta acción es permanente. Solo gerencia puede continuar.
         </p>
         <label className="mt-4 flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
           PIN de gerencia
@@ -485,11 +518,15 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     }));
   }, [currentDetails]);
 
-  const canReactivate = useMemo(() => {
-    const key = statusDisplay.key;
-    if (!key) return false;
-    return key === "graduated" || key === "contract_terminated" || key === "frozen";
-  }, [statusDisplay.key]);
+  const statusKey = statusDisplay.key;
+  const contractEndDisplay = formatIsoDate(currentDetails?.contractEnd ?? null);
+  const graduationDateDisplay = formatIsoDate(currentDetails?.graduationDate ?? null);
+  const frozenStartDisplay = formatIsoDate(currentDetails?.frozenStart ?? null);
+  const frozenEndDisplay = formatIsoDate(currentDetails?.frozenEnd ?? null);
+  const freezeHasDates = Boolean(currentDetails?.frozenStart || currentDetails?.frozenEnd);
+  const showContractReactivate = statusKey === "contract_terminated";
+  const showGraduationReactivate = statusKey === "graduated";
+  const showUnfreeze = statusKey === "frozen" || freezeHasDates;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -509,9 +546,6 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       hasSpecialNeeds: formState.hasSpecialNeeds,
       isOnline: formState.isOnline,
       contractStart: sanitizeDate(formState.contractStart),
-      contractEnd: sanitizeDate(formState.contractEnd),
-      frozenStart: sanitizeDate(formState.frozenStart),
-      frozenEnd: sanitizeDate(formState.frozenEnd),
       plannedLevelMin: sanitizeText(formState.plannedLevelMin),
       plannedLevelMax: sanitizeText(formState.plannedLevelMax),
     };
@@ -554,6 +588,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     if (!currentDetails) {
       return;
     }
+
     if (kind === "terminate" || kind === "graduate") {
       const defaultDate =
         kind === "graduate"
@@ -562,6 +597,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       setActionDialog({ kind, date: defaultDate ?? "", loading: false, error: null });
       return;
     }
+
     if (kind === "freeze") {
       setActionDialog({
         kind: "freeze",
@@ -572,7 +608,8 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       });
       return;
     }
-    setActionDialog({ kind: "reactivate", loading: false, error: null });
+
+    setActionDialog({ kind, loading: false, error: null });
   };
 
   const handleActionFieldChange = (
@@ -648,53 +685,57 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
     let payload: Record<string, unknown> = {};
     let toastMessage = "";
     let toastTone: ToastState["tone"] = "success";
-    let formUpdates: Partial<FormState> = {};
 
-    if (actionDialog.kind === "terminate") {
-      payload = {
-        contract_end: actionDialog.date,
-        graduation_date: null,
-        archived: true,
-      };
-      toastMessage = "⚠️ Contrato terminado correctamente.";
-      toastTone = "error";
-      formUpdates = { contractEnd: actionDialog.date };
-    } else if (actionDialog.kind === "graduate") {
-      payload = {
-        graduation_date: actionDialog.date,
-        contract_end: actionDialog.date,
-        archived: true,
-      };
-      toastMessage = "✅ Estudiante graduado correctamente.";
-      toastTone = "success";
-      formUpdates = { contractEnd: actionDialog.date };
-    } else if (actionDialog.kind === "freeze") {
-      payload = {
-        frozen_start: actionDialog.startDate,
-        frozen_end: actionDialog.endDate,
-        archived: true,
-      };
-      toastMessage = "⏸ Contrato congelado.";
-      toastTone = "success";
-      formUpdates = {
-        frozenStart: actionDialog.startDate,
-        frozenEnd: actionDialog.endDate,
-      };
-    } else {
-      payload = {
-        graduation_date: null,
-        contract_end: null,
-        frozen_start: null,
-        frozen_end: null,
-        archived: false,
-      };
-      toastMessage = "✅ Estudiante reactivado.";
-      toastTone = "success";
-      formUpdates = {
-        contractEnd: "",
-        frozenStart: "",
-        frozenEnd: "",
-      };
+    switch (actionDialog.kind) {
+      case "terminate":
+        payload = {
+          contract_end: actionDialog.date,
+          graduation_date: null,
+          archived: true,
+        };
+        toastMessage = "⚠️ Contrato terminado correctamente.";
+        toastTone = "error";
+        break;
+      case "graduate":
+        payload = {
+          graduation_date: actionDialog.date,
+          contract_end: actionDialog.date,
+          archived: true,
+        };
+        toastMessage = "✅ Estudiante graduado correctamente.";
+        break;
+      case "freeze":
+        payload = {
+          frozen_start: actionDialog.startDate,
+          frozen_end: actionDialog.endDate,
+          archived: true,
+        };
+        toastMessage = "⏸ Contrato congelado.";
+        break;
+      case "reactivate_contract":
+        payload = {
+          contract_end: null,
+          archived: false,
+        };
+        toastMessage = "✅ Estudiante reactivado.";
+        break;
+      case "reactivate_graduation":
+        payload = {
+          graduation_date: null,
+          contract_end: null,
+          archived: false,
+        };
+        toastMessage = "✅ Estudiante reactivado.";
+        break;
+      case "unfreeze":
+      default:
+        payload = {
+          frozen_start: null,
+          frozen_end: null,
+          archived: false,
+        };
+        toastMessage = "✅ Congelamiento eliminado.";
+        break;
     }
 
     try {
@@ -755,13 +796,6 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
         };
       });
 
-      if (Object.keys(formUpdates).length > 0) {
-        setFormState((previous) => ({
-          ...previous,
-          ...formUpdates,
-        }));
-      }
-
       setToast({ tone: toastTone, message: toastMessage });
 
       setActionDialog(null);
@@ -815,10 +849,22 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
         throw new Error(validationPayload?.error ?? "PIN incorrecto.");
       }
 
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const fallbackContractEnd =
+        (currentDetails?.contractEnd && formatIsoDate(currentDetails.contractEnd)) ?? todayIso;
+      const deletePayload = {
+        archived: true,
+        contract_end: fallbackContractEnd,
+        graduation_date: null,
+        frozen_start: null,
+        frozen_end: null,
+      };
+
+      // TODO: Reemplazar por un DELETE dedicado cuando el backend lo exponga.
       const response = await queueableFetch(`/api/students/${studentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ archived: true }),
+        body: JSON.stringify(deletePayload),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -840,7 +886,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           ? (typeof data.contract_end === "string" || data.contract_end === null
               ? data.contract_end
               : previous.contractEnd)
-          : previous.contractEnd;
+          : (deletePayload.contract_end as string | null | undefined) ?? previous.contractEnd;
         const resolvedGraduationDate = Object.prototype.hasOwnProperty.call(
           data,
           "graduation_date",
@@ -848,7 +894,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           ? (typeof data.graduation_date === "string" || data.graduation_date === null
               ? data.graduation_date
               : previous.graduationDate)
-          : previous.graduationDate;
+          : (deletePayload.graduation_date as string | null | undefined) ?? previous.graduationDate;
         const resolvedFrozenStart = Object.prototype.hasOwnProperty.call(
           data,
           "frozen_start",
@@ -856,7 +902,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           ? (typeof data.frozen_start === "string" || data.frozen_start === null
               ? data.frozen_start
               : previous.frozenStart)
-          : previous.frozenStart;
+          : (deletePayload.frozen_start as string | null | undefined) ?? previous.frozenStart;
         const resolvedFrozenEnd = Object.prototype.hasOwnProperty.call(
           data,
           "frozen_end",
@@ -864,10 +910,12 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           ? (typeof data.frozen_end === "string" || data.frozen_end === null
               ? data.frozen_end
               : previous.frozenEnd)
-          : previous.frozenEnd;
+          : (deletePayload.frozen_end as string | null | undefined) ?? previous.frozenEnd;
         const resolvedArchived = Object.prototype.hasOwnProperty.call(data, "archived")
           ? (typeof data.archived === "boolean" ? data.archived : previous.archived)
-          : true;
+          : (typeof deletePayload.archived === "boolean"
+              ? deletePayload.archived
+              : previous.archived);
 
         return {
           ...previous,
@@ -887,7 +935,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       });
 
       setDeleteDialog(null);
-      router.refresh();
+      router.push("/administracion/gestion-estudiantes");
     } catch (err) {
       const message =
         err instanceof Error
@@ -960,7 +1008,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
         </div>
       </div>
       <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3">
           <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
             Nombre completo
             <input
@@ -995,7 +1043,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             />
           </label>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
             Correo del representante
             <input
@@ -1007,11 +1055,10 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
             />
           </label>
-          <label className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner text-sm font-medium text-brand-deep">
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-              Necesidades especiales
-            </span>
-            <span className="flex items-center gap-2 text-sm text-brand-ink">
+          <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+            Necesidades especiales
+            <span className="flex items-center justify-between rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm">
+              <span className="text-brand-ink">{formState.hasSpecialNeeds ? "Sí" : "No"}</span>
               <input
                 type="checkbox"
                 className="h-4 w-4 rounded border-brand-deep-soft/40 text-brand-teal focus:ring-brand-teal"
@@ -1020,14 +1067,12 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
                   setFormState((previous) => ({ ...previous, hasSpecialNeeds: event.target.checked }))
                 }
               />
-              <span>{formState.hasSpecialNeeds ? "Sí" : "No"}</span>
             </span>
           </label>
-          <label className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner text-sm font-medium text-brand-deep">
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-              Modalidad en línea
-            </span>
-            <span className="flex items-center gap-2 text-sm text-brand-ink">
+          <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
+            Modalidad en línea
+            <span className="flex items-center justify-between rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm">
+              <span className="text-brand-ink">{formState.isOnline ? "Sí" : "No"}</span>
               <input
                 type="checkbox"
                 className="h-4 w-4 rounded border-brand-deep-soft/40 text-brand-teal focus:ring-brand-teal"
@@ -1036,12 +1081,8 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
                   setFormState((previous) => ({ ...previous, isOnline: event.target.checked }))
                 }
               />
-              <span>{formState.isOnline ? "Sí" : "No"}</span>
             </span>
           </label>
-        </div>
-        <div className="my-2 h-px w-full bg-brand-ink-muted/20" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
             Inicio de contrato
             <DateInput
@@ -1051,20 +1092,17 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               }
             />
           </label>
-          <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
-            Fin de contrato
-            <DateInput
-              value={formState.contractEnd}
-              onChange={(event) =>
-                setFormState((previous) => ({ ...previous, contractEnd: event.target.value }))
-              }
-            />
-          </label>
-          <div className="flex flex-col gap-3 rounded-2xl bg-white/95 p-4 shadow-inner">
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
-              Acciones rápidas
-            </span>
-            <div className="grid gap-2 sm:grid-cols-2">
+        </div>
+        <div className="my-4 h-px w-full bg-brand-ink-muted/20" />
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="flex flex-col gap-4 rounded-3xl border border-brand-ink-muted/15 bg-white/95 p-5 shadow-inner">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                Estado de contrato
+              </span>
+              <ReadOnlyPillField label="Fin de contrato" value={contractEndDisplay} />
+            </div>
+            <div className="grid gap-2">
               <button
                 type="button"
                 onClick={() => openActionDialog("terminate")}
@@ -1072,24 +1110,10 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               >
                 TERMINAR CONTRATO
               </button>
-              <button
-                type="button"
-                onClick={() => openActionDialog("graduate")}
-                className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.graduate}`}
-              >
-                GRADUAR
-              </button>
-              <button
-                type="button"
-                onClick={() => openActionDialog("freeze")}
-                className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.freeze}`}
-              >
-                CONGELAR CONTRATO
-              </button>
-              {canReactivate ? (
+              {showContractReactivate ? (
                 <button
                   type="button"
-                  onClick={() => openActionDialog("reactivate")}
+                  onClick={() => openActionDialog("reactivate_contract")}
                   className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.reactivate}`}
                 >
                   REACTIVAR
@@ -1097,27 +1121,63 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
               ) : null}
             </div>
           </div>
+          <div className="flex flex-col gap-4 rounded-3xl border border-brand-ink-muted/15 bg-white/95 p-5 shadow-inner">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                Graduación
+              </span>
+              <ReadOnlyPillField label="Fecha de graduación" value={graduationDateDisplay} />
+            </div>
+            <div className="grid gap-2">
+              <button
+                type="button"
+                onClick={() => openActionDialog("graduate")}
+                className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.graduate}`}
+              >
+                GRADUAR
+              </button>
+              {showGraduationReactivate ? (
+                <button
+                  type="button"
+                  onClick={() => openActionDialog("reactivate_graduation")}
+                  className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.reactivate}`}
+                >
+                  REACTIVAR
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-col gap-4 rounded-3xl border border-brand-ink-muted/15 bg-white/95 p-5 shadow-inner">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                Congelamiento actual
+              </span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ReadOnlyPillField label="Inicio de congelamiento" value={frozenStartDisplay} />
+                <ReadOnlyPillField label="Fin de congelamiento" value={frozenEndDisplay} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <button
+                type="button"
+                onClick={() => openActionDialog("freeze")}
+                className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.freeze}`}
+              >
+                CONGELAR CONTRATO
+              </button>
+              {showUnfreeze ? (
+                <button
+                  type="button"
+                  onClick={() => openActionDialog("unfreeze")}
+                  className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_VARIANTS.unfreeze}`}
+                >
+                  DESCONGELAR
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
-            Inicio de congelamiento
-            <DateInput
-              value={formState.frozenStart}
-              onChange={(event) =>
-                setFormState((previous) => ({ ...previous, frozenStart: event.target.value }))
-              }
-            />
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
-            Fin de congelamiento
-            <DateInput
-              value={formState.frozenEnd}
-              onChange={(event) =>
-                setFormState((previous) => ({ ...previous, frozenEnd: event.target.value }))
-              }
-            />
-          </label>
-        </div>
+        <div className="my-4 h-px w-full bg-brand-ink-muted/20" />
         <div className="grid gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
             Nivel planificado mínimo
@@ -1157,7 +1217,8 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           Zona de peligro
         </h3>
         <p className="mt-2 text-sm text-rose-700">
-          Elimina la ficha del estudiante cuando debas retirarlo definitivamente de la administración.
+          Elimina la ficha del estudiante cuando debas retirarlo definitivamente de la administración. Solo gerencia puede
+          autorizar esta acción.
         </p>
         <div className="mt-3 flex justify-end">
           <button
