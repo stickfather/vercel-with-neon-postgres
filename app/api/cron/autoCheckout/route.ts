@@ -8,36 +8,39 @@ export async function GET() {
     const sql = neon(process.env.DATABASE_URL!);
 
     // --- Auto-checkout students ---
-    const students = await sql(`
+    const studentRows = await sql<{ id: number }>`
       UPDATE student_attendance
       SET checkout_time = date_trunc('day', checkin_time) + interval '20 hours 15 minutes',
           auto_checkout = TRUE
       WHERE checkout_time IS NULL
         AND checkin_time::date = current_date
       RETURNING id;
-    `);
+    `;
 
     // --- Auto-checkout staff ---
-    const staff = await sql(`
+    const staffRows = await sql<{ id: number }>`
       UPDATE staff_attendance
       SET checkout_time = date_trunc('day', checkin_time) + interval '20 hours 15 minutes',
           auto_checkout = TRUE
       WHERE checkout_time IS NULL
         AND checkin_time::date = current_date
       RETURNING id;
-    `);
+    `;
+
+    const studentsUpdated = studentRows.length;
+    const staffUpdated = staffRows.length;
 
     // --- Log run into audit table ---
-    await sql(`
+    await sql`
       INSERT INTO auto_checkout_log (students_updated, staff_updated)
-      VALUES (${students.length}, ${staff.length});
-    `);
+      VALUES (${studentsUpdated}, ${staffUpdated});
+    `;
 
     return NextResponse.json({
       success: true,
       message: "Auto-checkout completed and logged.",
-      studentsUpdated: students.length,
-      staffUpdated: staff.length,
+      studentsUpdated,
+      staffUpdated,
     });
   } catch (err: any) {
     console.error("Auto-checkout error:", err);
