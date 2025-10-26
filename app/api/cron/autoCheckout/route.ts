@@ -8,24 +8,24 @@ export async function GET() {
     const sql = neon(process.env.DATABASE_URL!);
 
     // --- Auto-checkout students ---
-    const studentRows = await sql<{ id: number }>`
+    const studentRows = (await sql`
       UPDATE student_attendance
       SET checkout_time = date_trunc('day', checkin_time) + interval '20 hours 15 minutes',
           auto_checkout = TRUE
       WHERE checkout_time IS NULL
         AND checkin_time::date = current_date
       RETURNING id;
-    `;
+    `) as { id: number }[];
 
     // --- Auto-checkout staff ---
-    const staffRows = await sql<{ id: number }>`
+    const staffRows = (await sql`
       UPDATE staff_attendance
       SET checkout_time = date_trunc('day', checkin_time) + interval '20 hours 15 minutes',
           auto_checkout = TRUE
       WHERE checkout_time IS NULL
         AND checkin_time::date = current_date
       RETURNING id;
-    `;
+    `) as { id: number }[];
 
     const studentsUpdated = studentRows.length;
     const staffUpdated = staffRows.length;
