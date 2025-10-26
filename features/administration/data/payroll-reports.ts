@@ -1162,7 +1162,45 @@ export async function createStaffDaySession({
     throw new Error("No pudimos crear la sesión solicitada.");
   }
 
-  const sessionId = toInteger(inserted["session_id"] ?? inserted["id"] ?? null);
+  const resolveInsertedSessionId = (row: SqlRow | Record<string, unknown> | null | undefined) => {
+    if (!row) return null;
+    const directMatch = readRowValue(row as SqlRow, [
+      "session_id",
+      "sessionId",
+      "id",
+      "new_session_id",
+      "newSessionId",
+    ]);
+    const directId = toInteger(directMatch);
+    if (directId != null) {
+      return directId;
+    }
+
+    const nestedMatch = readRowValue(row as SqlRow, ["add_staff_session", "addStaffSession"]);
+    if (nestedMatch && typeof nestedMatch === "object") {
+      return resolveInsertedSessionId(nestedMatch as Record<string, unknown>);
+    }
+
+    return null;
+  };
+
+  let sessionId = resolveInsertedSessionId(inserted);
+
+  if (!sessionId) {
+    const fallbackRows = normalizeRows<SqlRow>(
+      await sql`
+        SELECT session_id
+        FROM public.staff_day_sessions_with_edits_v
+        WHERE staff_id = ${staffId}::bigint
+          AND work_date = ${normalizedWorkDate}::date
+        ORDER BY session_id DESC
+        LIMIT 1
+      `,
+    );
+
+    sessionId = toInteger(fallbackRows[0]?.["session_id"] ?? null);
+  }
+
   if (!sessionId) {
     throw new Error("No pudimos determinar el identificador de la nueva sesión.");
   }
