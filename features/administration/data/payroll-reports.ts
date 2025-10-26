@@ -954,12 +954,29 @@ function ensureSessionMatchesDay(
   }
 }
 
-function toLocalTimestampTextOrThrow(label: string, iso: string): string {
+function toLocalClockTextOrThrow(label: string, iso: string): string {
   const localized = toPayrollLocalTimestampText(iso);
   if (!localized) {
     throw new Error(`La hora de ${label} no es válida.`);
   }
-  return localized;
+
+  const match = localized.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if (!match) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const hour24 = Number(match[4]);
+  const minute = match[5];
+
+  if (!Number.isFinite(hour24)) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const safeHour = String(hour12).padStart(2, "0");
+
+  return `${safeHour}:${minute} ${period}`;
 }
 
 function minutesToHours(minutes: number): number {
@@ -1007,8 +1024,8 @@ export async function updateStaffDaySession({
       ignoreSessionId: sessionId,
     });
 
-    const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
-    const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
+    const checkinLocal = toLocalClockTextOrThrow("entrada", checkinIso);
+    const checkoutLocal = toLocalClockTextOrThrow("salida", checkoutIso);
 
     const updatedRows = normalizeRows<SqlRow>(await client`
       SELECT *
@@ -1102,8 +1119,8 @@ export async function createStaffDaySession({
     checkoutIso,
   });
 
-  const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
-  const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
+  const checkinLocal = toLocalClockTextOrThrow("entrada", checkinIso);
+  const checkoutLocal = toLocalClockTextOrThrow("salida", checkoutIso);
 
   const insertedRows = normalizeRows<SqlRow>(await sql`
     SELECT *
@@ -1305,8 +1322,8 @@ export async function overrideSessionsAndApprove({
         ignoreSessionId: override.sessionId,
       });
 
-      const checkinLocal = toLocalTimestampTextOrThrow("entrada", checkinIso);
-      const checkoutLocal = toLocalTimestampTextOrThrow("salida", checkoutIso);
+      const checkinLocal = toLocalClockTextOrThrow("entrada", checkinIso);
+      const checkoutLocal = toLocalClockTextOrThrow("salida", checkoutIso);
 
       await sql`
         SELECT *
@@ -1359,8 +1376,8 @@ export async function overrideSessionsAndApprove({
           checkoutIso: addition.checkoutTime,
         });
 
-        const checkinLocal = toLocalTimestampTextOrThrow("entrada", addition.checkinTime);
-        const checkoutLocal = toLocalTimestampTextOrThrow("salida", addition.checkoutTime);
+        const checkinLocal = toLocalClockTextOrThrow("entrada", addition.checkinTime);
+        const checkoutLocal = toLocalClockTextOrThrow("salida", addition.checkoutTime);
 
         await sql`
           SELECT *

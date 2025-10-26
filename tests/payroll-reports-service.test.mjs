@@ -255,6 +255,8 @@ describe("payroll integration", () => {
     assert(editCall);
     assert.equal(editCall.values.length, 4);
     assert.equal(editCall.values[0], 102);
+    assert.equal(editCall.values[1], "08:00 AM");
+    assert.equal(editCall.values[2], "12:00 PM");
 
     const addCall = operations.find(
       (op, index) =>
@@ -267,6 +269,8 @@ describe("payroll integration", () => {
     assert.equal(addCall.values.length, 5);
     assert.equal(addCall.values[0], 9);
     assert.equal(addCall.values[1], "2025-10-07");
+    assert.equal(addCall.values[2], "01:00 PM");
+    assert.equal(addCall.values[3], "03:30 PM");
 
     const approvalOp = operations.find(
       (op, index) =>
