@@ -134,21 +134,21 @@ export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldC
     dbColumn: "contractEnd",
     label: "Fin de contrato",
     type: "date",
-    editable: true,
+    editable: false,
   },
   {
     key: "frozenStart",
     dbColumn: "frozenStart",
     label: "Inicio de congelamiento",
     type: "date",
-    editable: true,
+    editable: false,
   },
   {
     key: "frozenEnd",
     dbColumn: "frozenEnd",
     label: "Fin de congelamiento",
     type: "date",
-    editable: true,
+    editable: false,
   },
   {
     key: "plannedLevelMin",
@@ -181,7 +181,20 @@ const STUDENT_BASIC_DETAIL_COLUMN_MAP = {
   isOnline: "is_online",
 } as const;
 
-type StudentBasicDetailEditableKey = keyof typeof STUDENT_BASIC_DETAIL_COLUMN_MAP;
+type StudentBasicDetailColumnKey = keyof typeof STUDENT_BASIC_DETAIL_COLUMN_MAP;
+
+type StudentBasicDetailEditableKey = Extract<
+  StudentBasicDetailColumnKey,
+  | "fullName"
+  | "representativeName"
+  | "representativePhone"
+  | "representativeEmail"
+  | "hasSpecialNeeds"
+  | "isOnline"
+  | "contractStart"
+  | "plannedLevelMin"
+  | "plannedLevelMax"
+>;
 
 export const EDITABLE_STUDENT_BASIC_DETAIL_KEYS: ReadonlyArray<
   StudentBasicDetailEditableKey

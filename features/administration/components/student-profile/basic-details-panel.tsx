@@ -183,12 +183,8 @@ function ReadOnlyPillField({ label, value }: ReadOnlyPillFieldProps) {
   return (
     <div className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
       <span>{label}</span>
-      <div className="flex items-center justify-between rounded-full border border-brand-ink-muted/30 bg-brand-ivory px-4 py-2 text-sm font-semibold text-brand-deep">
+      <div className="rounded-full border border-brand-ink-muted/30 bg-brand-ivory px-4 py-2 text-sm font-semibold text-brand-deep">
         <span className="text-brand-deep">{displayValue}</span>
-        <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-brand-ink-muted/70">
-          <span aria-hidden="true">🔒</span>
-          Bloqueado
-        </span>
       </div>
     </div>
   );
