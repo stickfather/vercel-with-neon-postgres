@@ -172,13 +172,13 @@ export function ConfigurationDashboard({
         body: JSON.stringify(payload),
       });
 
-      const payload = (await updateResponse.json().catch(() => ({}))) as
+      const responseBody = (await updateResponse.json().catch(() => ({}))) as
         | { success?: boolean; error?: string; updatedAt?: string }
         | undefined;
 
-      if (!updateResponse.ok || payload?.success !== true) {
+      if (!updateResponse.ok || responseBody?.success !== true) {
         const message =
-          payload?.error ?? "No se pudo actualizar el PIN solicitado.";
+          responseBody?.error ?? "No se pudo actualizar el PIN solicitado.";
 
         const normalizedMessage = message.toLowerCase();
 
@@ -206,8 +206,8 @@ export function ConfigurationDashboard({
       }
 
       const updatedAt =
-        typeof payload?.updatedAt === "string"
-          ? new Date(payload.updatedAt).toISOString()
+        typeof responseBody?.updatedAt === "string"
+          ? new Date(responseBody.updatedAt).toISOString()
           : new Date().toISOString();
 
       setStatuses((previous) =>
