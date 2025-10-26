@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
+import {
+  buildStudentStatusSummary,
+  getStudentStatusDisplay,
+  normalizeStudentStatus,
+  type StudentStatusKey,
+} from "@/features/administration/constants/student-status";
 import { StudentManagementGraphs } from "./student-management-graphs";
 import { queueableFetch } from "@/lib/offline/fetch";
 import { useOfflineStatus } from "@/components/offline/offline-provider";
@@ -15,7 +21,6 @@ type Props = {
 
 export type FlagKey =
   | "isNewStudent"
-  | "isExamApproaching"
   | "isExamPreparation"
   | "hasSpecialNeeds"
   | "isAbsent7Days"
@@ -25,7 +30,6 @@ export type FlagKey =
 
 const FLAG_COLUMNS: ReadonlyArray<{ key: FlagKey; label: string }> = [
   { key: "isNewStudent", label: "Nuevo" },
-  { key: "isExamApproaching", label: "Examen pronto" },
   { key: "isExamPreparation", label: "Prep. examen" },
   { key: "hasSpecialNeeds", label: "Necesidades especiales" },
   { key: "isAbsent7Days", label: "Ausente 7d" },
@@ -33,16 +37,6 @@ const FLAG_COLUMNS: ReadonlyArray<{ key: FlagKey; label: string }> = [
   { key: "hasActiveInstructive", label: "Instructivo activo" },
   { key: "hasOverdueInstructive", label: "Instructivo vencido" },
 ];
-
-const STATE_TRANSLATIONS: Record<string, string> = {
-  active: "activo",
-  frozen: "congelado",
-  contract_terminated: "contrato terminado",
-  online: "en línea",
-  invalid: "inválido",
-};
-
-const UNKNOWN_STATE_KEY = "__unknown__";
 
 const PAGE_SIZE = 40;
 
@@ -55,16 +49,17 @@ type ToastState = {
   message: string;
 };
 
-function normalizeStateKey(state: string | null): string {
-  if (!state) return UNKNOWN_STATE_KEY;
-  return state.toLowerCase();
-}
+function formatStatusDate(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
 
-function translateState(state: string | null): string {
-  const key = normalizeStateKey(state);
-  if (STATE_TRANSLATIONS[key]) return STATE_TRANSLATIONS[key];
-  if (key === UNKNOWN_STATE_KEY) return "sin estado";
-  return key.replace(/_/g, " ");
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  return value;
 }
 
 function FlagIndicator({ active, label }: { active: boolean; label: string }) {
@@ -82,7 +77,7 @@ function StudentManagementTable({ students }: Props) {
   const router = useRouter();
   const { lastSyncAt } = useOfflineStatus();
   const [studentList, setStudentList] = useState<ManagedStudent[]>(students);
-  const [stateFilters, setStateFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<StudentStatusKey[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -115,22 +110,15 @@ function StudentManagementTable({ students }: Props) {
   const totalStudents = studentList.length;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
-  const stateTotals = useMemo(() => {
-    const counts = new Map<string, number>();
-    studentList.forEach((student) => {
-      const key = normalizeStateKey(student.state);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    });
-    return Array.from(counts.entries())
-      .map(([key, count]) => ({
-        key,
-        label: translateState(key === UNKNOWN_STATE_KEY ? null : key),
-        count,
-        percentage: totalStudents ? Math.round((count / totalStudents) * 100) : 0,
-        selected: stateFilters.includes(key),
-      }))
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [studentList, totalStudents, stateFilters]);
+  const statusTotals = useMemo(() => {
+    return buildStudentStatusSummary(studentList).map((item) => ({
+      key: item.status,
+      label: item.label,
+      count: item.count,
+      percentage: item.percentage,
+      selected: statusFilters.includes(item.status),
+    }));
+  }, [studentList, statusFilters]);
 
   const flagTotals = useMemo(() => {
     return FLAG_COLUMNS.map((flag) => {
@@ -150,20 +138,21 @@ function StudentManagementTable({ students }: Props) {
 
   const filteredStudents = useMemo(() => {
     return studentList.filter((student) => {
-      const stateKey = normalizeStateKey(student.state);
-      const matchesState =
-        stateFilters.length === 0 || stateFilters.includes(stateKey);
+      const statusKey = normalizeStudentStatus(student.status);
+      const matchesStatus =
+        statusFilters.length === 0 ||
+        (statusKey != null && statusFilters.includes(statusKey));
       const matchesFlags = flagFilters.every((flag) => Boolean(student[flag]));
       const matchesSearch =
         !normalizedSearchTerm.length ||
         student.fullName.toLowerCase().includes(normalizedSearchTerm);
-      return matchesState && matchesFlags && matchesSearch;
+      return matchesStatus && matchesFlags && matchesSearch;
     });
-  }, [studentList, stateFilters, flagFilters, normalizedSearchTerm]);
+  }, [studentList, statusFilters, flagFilters, normalizedSearchTerm]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [stateFilters, flagFilters, normalizedSearchTerm, studentList.length]);
+  }, [statusFilters, flagFilters, normalizedSearchTerm, studentList.length]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
@@ -214,7 +203,7 @@ function StudentManagementTable({ students }: Props) {
 
       setIsSubmittingStudent(true);
       try {
-        const response = await queueableFetch("/api/(administration)/students", {
+        const response = await queueableFetch("/api/students", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -246,15 +235,17 @@ function StudentManagementTable({ students }: Props) {
             id: -Date.now(),
             fullName: name,
             level: null,
-            state: "Pendiente",
+            status: null,
+            contractEnd: null,
+            graduationDate: null,
             isNewStudent: true,
-            isExamApproaching: false,
             isExamPreparation: false,
             hasSpecialNeeds: false,
             isAbsent7Days: false,
             isSlowProgress14Days: false,
             hasActiveInstructive: false,
             hasOverdueInstructive: false,
+            archived: false,
             isPending: true,
           };
           addStudentToList(pendingEntry);
@@ -288,8 +279,8 @@ function StudentManagementTable({ students }: Props) {
     ],
   );
 
-  const toggleStateFilter = (key: string) => {
-    setStateFilters((previous) =>
+  const toggleStatusFilter = (key: StudentStatusKey) => {
+    setStatusFilters((previous) =>
       previous.includes(key)
         ? previous.filter((item) => item !== key)
         : [...previous, key],
@@ -305,11 +296,11 @@ function StudentManagementTable({ students }: Props) {
   };
 
   const clearFilters = () => {
-    setStateFilters([]);
+    setStatusFilters([]);
     setFlagFilters([]);
   };
 
-  const hasActiveFilters = stateFilters.length > 0 || flagFilters.length > 0;
+  const hasActiveFilters = statusFilters.length > 0 || flagFilters.length > 0;
   const hasSearch = normalizedSearchTerm.length > 0;
 
   return (
@@ -324,9 +315,9 @@ function StudentManagementTable({ students }: Props) {
       <StudentManagementGraphs
         totalStudents={totalStudents}
         filteredStudents={filteredStudents.length}
-        stateData={stateTotals}
+        statusData={statusTotals}
         flagData={flagTotals}
-        onToggleState={toggleStateFilter}
+        onToggleStatus={toggleStatusFilter}
         onToggleFlag={toggleFlagFilter}
         onClearFilters={clearFilters}
         hasActiveFilters={hasActiveFilters}
@@ -390,7 +381,15 @@ function StudentManagementTable({ students }: Props) {
           </thead>
           <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
             {paginatedStudents.map((student) => {
-              const stateLabel = translateState(student.state);
+              const statusDisplay = getStudentStatusDisplay(student.status);
+              const statusDateSource = statusDisplay.showEndDate
+                ? statusDisplay.dateField === "graduationDate"
+                  ? student.graduationDate
+                  : student.contractEnd
+                : null;
+              const statusDate = statusDateSource
+                ? formatStatusDate(statusDateSource)
+                : null;
               return (
                 <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
                   <td className="px-5 py-3 align-top">
@@ -411,9 +410,19 @@ function StudentManagementTable({ students }: Props) {
                     </div>
                   </td>
                   <td className="px-3 py-3 align-top">
-                    <span className="font-semibold text-brand-deep-soft capitalize whitespace-pre-wrap break-words leading-snug">
-                      {stateLabel}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span
+                        className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${statusDisplay.badgeClassName}`}
+                      >
+                        {statusDisplay.label}
+                      </span>
+                      {statusDate ? (
+                        <span className="text-xs text-brand-ink-muted">
+                          {(statusDisplay.endDateLabel ?? "Finalización") + ": "}
+                          {statusDate}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   {FLAG_COLUMNS.map((flag) => {
                     const isActive = Boolean(student[flag.key]);

@@ -8,15 +8,17 @@ export type StudentManagementEntry = {
   id: number;
   fullName: string;
   level: string | null;
-  state: string | null;
+  status: string | null;
+  contractEnd: string | null;
+  graduationDate: string | null;
   isNewStudent: boolean;
-  isExamApproaching: boolean;
   isExamPreparation: boolean;
   hasSpecialNeeds: boolean;
   isAbsent7Days: boolean;
   isSlowProgress14Days: boolean;
   hasActiveInstructive: boolean;
   hasOverdueInstructive: boolean;
+  archived: boolean;
 };
 
 function coerceString(value: unknown): string | null {
@@ -60,6 +62,19 @@ function pick<T = unknown>(row: SqlRow, keys: string[]): T | null {
   return null;
 }
 
+function isMissingColumnError(error: unknown, column: string): boolean {
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (code === "42703") {
+      return true;
+    }
+    if (typeof message === "string") {
+      return message.toLowerCase().includes(`column ${column}`.toLowerCase());
+    }
+  }
+  return false;
+}
+
 function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
   const id = Number(row["student_id"] ?? row.id ?? row["id"] ?? 0);
   const fullName = ((row.full_name as string | null) ?? "").trim();
@@ -73,17 +88,20 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
     fullName,
     level:
       coerceString(
-        pick(row, ["level", "current_level", "last_level", "student_level"]),
+        pick(row, ["level", "planned_level_max", "planned_level_min", "student_level"]),
       ) ?? null,
-    state:
-      coerceString(pick(row, ["state", "status", "student_state"])) ?? null,
+    status:
+      coerceString(pick(row, ["status", "state", "student_state"])) ?? null,
+    contractEnd:
+      coerceString(pick(row, ["contract_end", "contractEnd", "end_date"])) ??
+      null,
+    graduationDate:
+      coerceString(
+        pick(row, ["graduation_date", "graduationDate", "grad_date"]),
+      ) ?? null,
     isNewStudent:
       coerceBoolean(pick(row, ["is_new_student", "new_student", "is_new"])) ??
       false,
-    isExamApproaching:
-      coerceBoolean(
-        pick(row, ["is_exam_approaching", "exam_approaching", "upcoming_exam"]),
-      ) ?? false,
     isExamPreparation:
       coerceBoolean(
         pick(row, [
@@ -135,6 +153,8 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
           "overdue_instructive",
         ]),
       ) ?? false,
+    archived:
+      coerceBoolean(pick(row, ["archived", "is_archived"])) ?? false,
   };
 }
 
@@ -143,30 +163,54 @@ async function runStudentManagementQuery(
   relation: (typeof STUDENT_FLAG_RELATION_CANDIDATES)[number],
   studentId?: number,
   limitOne = false,
+  includeArchivedColumn = true,
 ): Promise<SqlRow[]> {
-  return normalizeRows<SqlRow>(
-    await sql`
-      SELECT
-        s.id AS student_id,
-        s.full_name AS full_name,
-        s.current_level::text AS level,
-        s.status AS state,
-        COALESCE(flags.is_new_student, false) AS is_new_student,
-        COALESCE(flags.is_exam_approaching, false) AS is_exam_approaching,
-        COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
-        COALESCE(flags.has_special_needs, false) AS has_special_needs,
-        COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
-        COALESCE(flags.is_slow_progress_14d, false) AS is_slow_progress_14d,
-        COALESCE(flags.instructivo_active, false) AS instructivo_active,
-        COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
-      FROM public.students AS s
-      LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
-      WHERE TRIM(COALESCE(s.full_name, '')) <> ''
-      ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}
-      ORDER BY s.full_name ASC
-      ${limitOne ? sql`LIMIT 1` : sql``}
-    `,
-  );
+  const archivedSelection = includeArchivedColumn
+    ? sql`COALESCE(s.archived, false) AS archived,`
+    : sql`false AS archived,`;
+
+  try {
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT
+          s.id AS student_id,
+          s.full_name AS full_name,
+          COALESCE(s.planned_level_max::text, s.planned_level_min::text) AS level,
+          s.status AS status,
+          s.contract_end::text AS contract_end,
+          s.graduation_date::text AS graduation_date,
+          ${archivedSelection}
+          COALESCE(flags.is_new_student, false) AS is_new_student,
+          COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
+          COALESCE(flags.has_special_needs, false) AS has_special_needs,
+          COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
+          COALESCE(flags.is_slow_progress_14d, false) AS is_slow_progress_14d,
+          COALESCE(flags.instructivo_active, false) AS instructivo_active,
+          COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
+        FROM public.students AS s
+        LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
+        WHERE TRIM(COALESCE(s.full_name, '')) <> ''
+        ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}
+        ORDER BY s.full_name ASC
+        ${limitOne ? sql`LIMIT 1` : sql``}
+      `,
+    );
+  } catch (error) {
+    if (includeArchivedColumn && isMissingColumnError(error, "archived")) {
+      console.warn(
+        "La columna archived no está disponible en public.students. Continuaremos sin ese campo hasta que la base de datos se actualice.",
+        error,
+      );
+      return runStudentManagementQuery(
+        sql,
+        relation,
+        studentId,
+        limitOne,
+        false,
+      );
+    }
+    throw error;
+  }
 }
 
 export async function listStudentManagementEntries(): Promise<StudentManagementEntry[]> {
@@ -247,7 +291,7 @@ export async function createStudentManagementEntry({
 
   const insertRows = normalizeRows<SqlRow>(await sql`
     INSERT INTO public.students (full_name, planned_level_min, planned_level_max, status)
-    VALUES (${sanitizedName}, ${sanitizedMin}, ${sanitizedMax}, 'Activo')
+    VALUES (${sanitizedName}, ${sanitizedMin}, ${sanitizedMax}, 'active')
     RETURNING id
   `);
 

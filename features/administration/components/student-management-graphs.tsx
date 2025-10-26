@@ -1,7 +1,8 @@
+import type { StudentStatusKey } from "@/features/administration/constants/student-status";
 import type { FlagKey } from "./student-management-table";
 
-type StateGraphItem = {
-  key: string;
+type StatusGraphItem = {
+  key: StudentStatusKey;
   label: string;
   count: number;
   percentage: number;
@@ -19,9 +20,9 @@ type FlagGraphItem = {
 type Props = {
   totalStudents: number;
   filteredStudents: number;
-  stateData: StateGraphItem[];
+  statusData: StatusGraphItem[];
   flagData: FlagGraphItem[];
-  onToggleState: (key: string) => void;
+  onToggleStatus: (key: StudentStatusKey) => void;
   onToggleFlag: (key: FlagKey) => void;
   onClearFilters: () => void;
   hasActiveFilters: boolean;
@@ -78,9 +79,9 @@ function GraphButton({
 export function StudentManagementGraphs({
   totalStudents,
   filteredStudents,
-  stateData,
+  statusData,
   flagData,
-  onToggleState,
+  onToggleStatus,
   onToggleFlag,
   onClearFilters,
   hasActiveFilters,
@@ -107,17 +108,17 @@ export function StudentManagementGraphs({
         <div className="flex flex-1 flex-col gap-3">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Estados de estudiantes</h3>
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
-            {stateData.map((item) => (
+            {statusData.map((item) => (
               <GraphButton
                 key={item.key}
                 label={item.label}
                 count={item.count}
                 percentage={item.percentage}
                 selected={item.selected}
-                onClick={() => onToggleState(item.key)}
+                onClick={() => onToggleStatus(item.key)}
               />
             ))}
-            {!stateData.length && (
+            {!statusData.length && (
               <p className="rounded-2xl border border-brand-ink-muted/20 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted">
                 No hay datos de estado disponibles.
               </p>

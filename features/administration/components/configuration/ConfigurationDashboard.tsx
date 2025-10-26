@@ -1,19 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { StaffMemberRecord } from "@/features/staff/data/queries";
 import { StaffSettingsPanel } from "@/features/staff/components/staff-settings-panel";
 import type { PinScope } from "@/lib/security/pin-session";
 import type { PinStatus } from "@/features/security/data/pins";
-import { PinPrompt } from "@/features/security/components/PinPrompt";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
 type ConfigurationDashboardProps = {
   initialStaff: StaffMemberRecord[];
   staffError: string | null;
   pinStatuses: PinStatus[];
-  hasManagerSession: boolean;
 };
 
 type PinFormState = {
@@ -59,7 +57,6 @@ export function ConfigurationDashboard({
   initialStaff,
   staffError,
   pinStatuses,
-  hasManagerSession,
 }: ConfigurationDashboardProps) {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("staff");
   const [statuses, setStatuses] = useState(pinStatuses);
@@ -76,7 +73,6 @@ export function ConfigurationDashboard({
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
-  const [managerUnlocked, setManagerUnlocked] = useState(hasManagerSession);
 
   const staffStatus = useMemo(
     () => findStatus(statuses, "staff"),
@@ -87,14 +83,8 @@ export function ConfigurationDashboard({
     [statuses],
   );
 
-  useEffect(() => {
-    if (!managerStatus.isSet && !managerUnlocked) {
-      setManagerUnlocked(true);
-    }
-  }, [managerStatus.isSet, managerUnlocked]);
-
   const handleFormChange = (scope: PinScope, field: keyof PinFormState, value: string) => {
-    const sanitized = value.replace(/[^\d]/g, "").slice(0, 6);
+    const sanitized = value.replace(/[^\d]/g, "").slice(0, 4);
     setForms((previous) => ({
       ...previous,
       [scope]: { ...previous[scope], [field]: sanitized },
@@ -118,8 +108,8 @@ export function ConfigurationDashboard({
       [scope]: {},
     }));
 
-    if (!pinValue || pinValue.length < 4 || pinValue.length > 6) {
-      setError("El PIN debe tener entre 4 y 6 dígitos.");
+    if (!pinValue || pinValue.length !== 4) {
+      setError("El PIN debe tener exactamente 4 dígitos numéricos.");
       return;
     }
     if (pinValue !== confirmation) {
@@ -136,12 +126,12 @@ export function ConfigurationDashboard({
     const requiresManagerVerification =
       scope === "staff" || (scope === "manager" && managerStatus.isSet);
 
-    if (requiresManagerVerification && !managerConfirmation) {
+    if (requiresManagerVerification && managerConfirmation.length !== 4) {
       setFieldErrors((previous) => ({
         ...previous,
         [scope]: {
           ...previous[scope],
-          managerPin: "Ingresa el PIN de gerencia para continuar.",
+          managerPin: "Debe tener exactamente 4 dígitos numéricos.",
         },
       }));
       return;
@@ -182,20 +172,20 @@ export function ConfigurationDashboard({
 
         const normalizedMessage = message.toLowerCase();
 
-        if (scope === "staff" && normalizedMessage.includes("gerencia")) {
+        if (scope === "staff" && normalizedMessage.includes("pin")) {
           setFieldErrors((previous) => ({
             ...previous,
             staff: {
               ...previous.staff,
-              managerPin: "PIN de gerencia incorrecto.",
+              managerPin: "PIN incorrecto.",
             },
           }));
-        } else if (scope === "manager" && normalizedMessage.includes("actual")) {
+        } else if (scope === "manager" && normalizedMessage.includes("pin")) {
           setFieldErrors((previous) => ({
             ...previous,
             manager: {
               ...previous.manager,
-              managerPin: "PIN actual incorrecto.",
+              managerPin: "PIN incorrecto.",
             },
           }));
         } else {
@@ -244,20 +234,6 @@ export function ConfigurationDashboard({
   };
 
   const renderSecurityPanel = () => {
-    if (!managerUnlocked) {
-      return (
-        <div className="flex flex-col items-center justify-center gap-6">
-          <PinPrompt
-            scope="manager"
-            title="Protegido con PIN de gerencia"
-            description="Ingresa el PIN de gerencia para gestionar los accesos de seguridad."
-            ctaLabel="Desbloquear"
-            onSuccess={() => setManagerUnlocked(true)}
-          />
-        </div>
-      );
-    }
-
     const staffForm = forms.staff;
     const managerForm = forms.manager;
     const staffFieldErrors = fieldErrors.staff;
@@ -295,8 +271,13 @@ export function ConfigurationDashboard({
                 value={staffForm.pin}
                 onChange={(event) => handleFormChange("staff", "pin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={6}
+                maxLength={4}
+                pattern="\d{4}"
+                placeholder="••••"
               />
+              <span className="text-xs font-medium text-brand-ink-muted">
+                Debe tener exactamente 4 dígitos numéricos.
+              </span>
             </label>
             <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
               Confirmar PIN
@@ -306,7 +287,8 @@ export function ConfigurationDashboard({
                 value={staffForm.confirmPin}
                 onChange={(event) => handleFormChange("staff", "confirmPin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={6}
+                maxLength={4}
+                pattern="\d{4}"
               />
               {staffFieldErrors.confirmPin ? (
                 <span className="text-xs font-medium text-red-600">
@@ -322,7 +304,8 @@ export function ConfigurationDashboard({
                 value={staffForm.managerPin}
                 onChange={(event) => handleFormChange("staff", "managerPin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={6}
+                maxLength={4}
+                pattern="\d{4}"
                 required
               />
               {staffFieldErrors.managerPin ? (
@@ -330,6 +313,9 @@ export function ConfigurationDashboard({
                   {staffFieldErrors.managerPin}
                 </span>
               ) : null}
+              <span className="text-xs font-medium text-brand-ink-muted">
+                Debe tener exactamente 4 dígitos numéricos.
+              </span>
             </label>
           </div>
           <button
@@ -363,7 +349,8 @@ export function ConfigurationDashboard({
                     handleFormChange("manager", "managerPin", event.target.value)
                   }
                   className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                  maxLength={6}
+                  maxLength={4}
+                  pattern="\d{4}"
                   required
                 />
                 {managerFieldErrors.managerPin ? (
@@ -371,6 +358,9 @@ export function ConfigurationDashboard({
                     {managerFieldErrors.managerPin}
                   </span>
                 ) : null}
+                <span className="text-xs font-medium text-brand-ink-muted">
+                  Debe tener exactamente 4 dígitos numéricos.
+                </span>
               </label>
             )}
             <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
@@ -381,9 +371,13 @@ export function ConfigurationDashboard({
                 value={managerForm.pin}
                 onChange={(event) => handleFormChange("manager", "pin", event.target.value)}
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={6}
+                maxLength={4}
+                pattern="\d{4}"
                 required
               />
+              <span className="text-xs font-medium text-brand-ink-muted">
+                Debe tener exactamente 4 dígitos numéricos.
+              </span>
             </label>
             <label className="flex flex-col gap-2 text-sm font-semibold uppercase tracking-wide text-brand-deep">
               Confirmar PIN
@@ -395,7 +389,8 @@ export function ConfigurationDashboard({
                   handleFormChange("manager", "confirmPin", event.target.value)
                 }
                 className="rounded-3xl border border-brand-teal-soft bg-white px-5 py-3 text-base shadow-inner focus:border-brand-teal"
-                maxLength={6}
+                maxLength={4}
+                pattern="\d{4}"
                 required
               />
               {managerFieldErrors.confirmPin ? (
@@ -409,7 +404,7 @@ export function ConfigurationDashboard({
             type="button"
             onClick={() => submitPinUpdate("manager")}
             disabled={loadingScope === "manager"}
-            className="cta-ripple mt-4 inline-flex items-center justify-center rounded-full bg-brand-deep px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
+            className="cta-ripple mt-4 inline-flex items-center justify-center rounded-full bg-brand-orange px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:-translate-y-[1px] hover:bg-[#ff7832] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loadingScope === "manager" ? "Guardando…" : "ACTUALIZAR PIN DE GERENCIA"}
           </button>
@@ -436,7 +431,7 @@ export function ConfigurationDashboard({
             </div>
           </div>
           <p className="mt-3 text-sm text-brand-ink-muted">
-            Toda verificación se realiza en el servidor, con sesiones temporales por tipo de PIN y sin almacenar códigos en texto plano.
+            Cada verificación se valida en el servidor sin almacenar sesiones persistentes, por lo que deberás ingresar el PIN en cada visita.
           </p>
         </section>
       </div>

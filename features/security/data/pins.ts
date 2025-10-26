@@ -1,4 +1,5 @@
 import { getSqlClient, normalizeRows, type SqlRow } from "@/lib/db/client";
+import bcrypt from "@/lib/security/bcrypt";
 
 import type { PinScope } from "@/lib/security/pin-session";
 
@@ -26,13 +27,12 @@ type PinUpdates = {
   managerPin?: string;
 };
 
-const PIN_PATTERN = /^\d{4,6}$/;
-const BCRYPT_ROUNDS = 12;
+const PIN_PATTERN = /^\d{4}$/;
 
 export function sanitizePin(pin: string): string {
   const trimmed = pin.trim();
   if (!PIN_PATTERN.test(trimmed)) {
-    throw new Error("El PIN debe contener entre 4 y 6 dígitos numéricos.");
+    throw new Error("El PIN debe tener exactamente 4 dígitos numéricos.");
   }
   return trimmed;
 }
@@ -52,35 +52,6 @@ function normalizeTimestamp(value: unknown): string | null {
     return value.toISOString();
   }
   return null;
-}
-
-async function hashPin(pin: string, sql = getSqlClient()): Promise<string> {
-  const rows = normalizeRows<{ hashed?: unknown }>(
-    await sql`
-      SELECT crypt(${pin}, gen_salt('bf', ${BCRYPT_ROUNDS})) AS hashed
-    `,
-  );
-
-  const hashed = rows[0]?.hashed;
-  if (typeof hashed === "string" && hashed.length > 0) {
-    return hashed;
-  }
-
-  throw new Error("No se pudo generar el hash para el PIN solicitado.");
-}
-
-async function comparePin(
-  pin: string,
-  hash: string,
-  sql = getSqlClient(),
-): Promise<boolean> {
-  const rows = normalizeRows<{ matches?: unknown }>(
-    await sql`
-      SELECT crypt(${pin}, ${hash}) = ${hash} AS matches
-    `,
-  );
-
-  return rows[0]?.matches === true;
 }
 
 async function fetchActivePin(
@@ -185,7 +156,7 @@ export async function verifySecurityPin(
     const record = await fetchActivePin(scope, sql);
     const storedHash = typeof record?.pin_hash === "string" ? record.pin_hash : null;
     if (!storedHash) return false;
-    return comparePin(sanitized, storedHash, sql);
+    return bcrypt.compare(sanitized, storedHash, sql);
   } catch (error) {
     return false;
   }
@@ -214,7 +185,7 @@ export async function updateAccessPin(
   sql = getSqlClient(),
 ): Promise<string> {
   const sanitized = sanitizePin(pin);
-  const hashed = await hashPin(sanitized, sql);
+  const hashed = await bcrypt.hash(sanitized, sql);
 
   const updatedRows = normalizeRows<{ updated_at?: unknown }>(
     await sql`
@@ -259,7 +230,7 @@ export async function validateAccessPin(
     if (!storedHash) {
       return false;
     }
-    return comparePin(sanitized, storedHash, sql);
+    return bcrypt.compare(sanitized, storedHash, sql);
   } catch (error) {
     return false;
   }

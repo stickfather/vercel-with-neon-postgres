@@ -18,7 +18,7 @@ type PinPromptProps = {
   ctaLabel?: string;
 };
 
-const MAX_PIN_LENGTH = 6;
+const MAX_PIN_LENGTH = 4;
 
 export function PinPrompt({
   scope,
@@ -87,8 +87,8 @@ export function PinPrompt({
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedPin = pin.trim();
-    if (!trimmedPin) {
-      setError("Ingresa el PIN para continuar.");
+    if (!/^\d{4}$/.test(trimmedPin)) {
+      setError("El PIN debe tener exactamente 4 dígitos.");
       return;
     }
 
@@ -104,7 +104,7 @@ export function PinPrompt({
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.valid !== true) {
-        throw new Error(payload?.error ?? "El PIN no es correcto.");
+        throw new Error(payload?.error ?? "PIN incorrecto.");
       }
 
       setPin("");
