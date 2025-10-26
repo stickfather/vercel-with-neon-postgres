@@ -1801,70 +1801,83 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
           throw new Error(message);
         }
 
-        const saved = (payload as { session?: DaySession }).session;
-        if (!saved) {
+        const body = payload as { session?: DaySession; newSessionId?: number };
+        const saved = body.session ?? null;
+        const createdId =
+          typeof body.newSessionId === "number" && Number.isFinite(body.newSessionId)
+            ? body.newSessionId
+            : null;
+
+        if (!saved && !(target.isNew && createdId != null)) {
           throw new Error("No se recibió la sesión actualizada.");
         }
 
-        setSessionRows((previous) =>
-          sortSessionRows(
-            previous.map((row) =>
-              row.sessionKey === sessionKey
-                ? {
-                    ...row,
-                    sessionId: saved.sessionId,
-                    staffId: saved.staffId,
-                    workDate: saved.workDate,
-                    checkinTime: saved.checkinTime,
-                    checkoutTime: saved.checkoutTime,
-                    ...normalizeSessionDurations(saved.minutes, saved.hours),
-                    draftCheckin: toLocalInputValue(saved.checkinTime),
-                    draftCheckout: toLocalInputValue(saved.checkoutTime),
-                    originalCheckin:
-                      saved.originalCheckinTime
-                        ?? row.originalCheckin
-                        ?? (row.checkinTime && row.checkinTime !== saved.checkinTime
-                          ? row.checkinTime
-                          : null),
-                    originalCheckout:
-                      saved.originalCheckoutTime
-                        ?? row.originalCheckout
-                        ?? (row.checkoutTime && row.checkoutTime !== saved.checkoutTime
-                          ? row.checkoutTime
-                          : null),
-                    originalSessionId:
-                      saved.originalSessionId
-                        ?? row.originalSessionId
-                        ?? (previousSessionId != null ? previousSessionId : null),
-                    replacementSessionId:
-                      saved.replacementSessionId
-                        ?? row.replacementSessionId
-                        ?? null,
-                    isHistorical: Boolean(saved.isOriginalRecord),
-                    editedCheckin:
-                      saved.editedCheckinTime ?? row.editedCheckin ?? saved.checkinTime ?? row.checkinTime ?? null,
-                    editedCheckout:
-                      saved.editedCheckoutTime
-                        ?? row.editedCheckout
-                        ?? saved.checkoutTime
-                        ?? row.checkoutTime
-                        ?? null,
-                    editedByStaffId:
-                      typeof saved.editedByStaffId === "number"
-                        ? saved.editedByStaffId
-                        : row.editedByStaffId ?? null,
-                    editNote: saved.editNote ?? row.editNote ?? null,
-                    wasEdited: saved.wasEdited ?? row.wasEdited ?? false,
-                    isNew: false,
-                    isEditing: false,
-                    validationError: null,
-                    feedback: null,
-                    pendingAction: null,
-                  }
-                : row,
+        if (saved) {
+          setSessionRows((previous) =>
+            sortSessionRows(
+              previous.map((row) =>
+                row.sessionKey === sessionKey
+                  ? {
+                      ...row,
+                      sessionId: saved.sessionId,
+                      staffId: saved.staffId,
+                      workDate: saved.workDate,
+                      checkinTime: saved.checkinTime,
+                      checkoutTime: saved.checkoutTime,
+                      ...normalizeSessionDurations(saved.minutes, saved.hours),
+                      draftCheckin: toLocalInputValue(saved.checkinTime),
+                      draftCheckout: toLocalInputValue(saved.checkoutTime),
+                      originalCheckin:
+                        saved.originalCheckinTime
+                          ?? row.originalCheckin
+                          ?? (row.checkinTime && row.checkinTime !== saved.checkinTime
+                            ? row.checkinTime
+                            : null),
+                      originalCheckout:
+                        saved.originalCheckoutTime
+                          ?? row.originalCheckout
+                          ?? (row.checkoutTime && row.checkoutTime !== saved.checkoutTime
+                            ? row.checkoutTime
+                            : null),
+                      originalSessionId:
+                        saved.originalSessionId
+                          ?? row.originalSessionId
+                          ?? (previousSessionId != null ? previousSessionId : null),
+                      replacementSessionId:
+                        saved.replacementSessionId
+                          ?? row.replacementSessionId
+                          ?? null,
+                      isHistorical: Boolean(saved.isOriginalRecord),
+                      editedCheckin:
+                        saved.editedCheckinTime ?? row.editedCheckin ?? saved.checkinTime ?? row.checkinTime ?? null,
+                      editedCheckout:
+                        saved.editedCheckoutTime
+                          ?? row.editedCheckout
+                          ?? saved.checkoutTime
+                          ?? row.checkoutTime
+                          ?? null,
+                      editedByStaffId:
+                        typeof saved.editedByStaffId === "number"
+                          ? saved.editedByStaffId
+                          : row.editedByStaffId ?? null,
+                      editNote: saved.editNote ?? row.editNote ?? null,
+                      wasEdited: saved.wasEdited ?? row.wasEdited ?? false,
+                      isNew: false,
+                      isEditing: false,
+                      validationError: null,
+                      feedback: null,
+                      pendingAction: null,
+                    }
+                  : row,
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          setSessionRows((previous) =>
+            previous.filter((row) => row.sessionKey !== sessionKey),
+          );
+        }
+
         await reloadSessions({ silent: true });
         await refreshMatrixOnly();
         await refreshMonthStatusForStaff(selectedCell.staffId);

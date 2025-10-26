@@ -836,6 +836,32 @@ function ensureWorkDate(value: string): string {
   return normalized;
 }
 
+function sanitizeClockInput(label: string, value: string | null | undefined): string {
+  const coerced = coerceString(value);
+  if (!coerced) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const condensed = coerced.replace(/\s+/g, " ").trim();
+  if (!condensed.length) {
+    throw new Error(`La hora de ${label} no es válida.`);
+  }
+
+  const normalized = condensed
+    .replace(/(a\.m\.|A\.M\.)/g, "AM")
+    .replace(/(p\.m\.|P\.M\.)/g, "PM");
+
+  if (/(\s|^)(am|pm)$/i.test(normalized)) {
+    return normalized.replace(/(am|pm)$/i, (match) => match.toUpperCase());
+  }
+
+  if (/\b(am|pm)\b/i.test(normalized)) {
+    return normalized.replace(/\b(am|pm)\b/gi, (match) => match.toUpperCase());
+  }
+
+  return normalized;
+}
+
 const TIME_ONLY_REGEX = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
 const TIME_WITH_PERIOD_REGEX = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i;
 
@@ -1029,34 +1055,21 @@ export async function updateStaffDaySession({
   const sql = getSqlClient();
 
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const checkinIso = ensurePayrollSessionTimestamp(checkinTime, normalizedWorkDate, "entrada");
-  const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
-  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
-  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
   const transactionalSql = sql as SqlClient & {
     begin?: (callback: (client: SqlClient) => Promise<void>) => Promise<void>;
   };
 
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
+  const checkinClock = sanitizeClockInput("entrada", checkinTime);
+  const checkoutClock = sanitizeClockInput("salida", checkoutTime);
 
   const executeUpdate = async (client: SqlClient) => {
-    await assertNoOverlap(client, {
-      staffId,
-      workDate: normalizedWorkDate,
-      checkinIso,
-      checkoutIso,
-      ignoreSessionId: sessionId,
-    });
-
-    const checkinLocal = toLocalClockTextOrThrow("entrada", checkinIso);
-    const checkoutLocal = toLocalClockTextOrThrow("salida", checkoutIso);
-
     const updatedRows = normalizeRows<SqlRow>(await client`
       SELECT *
       FROM public.edit_staff_session(
         ${sessionId}::bigint,
-        ${checkinLocal}::text,
-        ${checkoutLocal}::text,
+        ${checkinClock}::text,
+        ${checkoutClock}::text,
         ${sanitizedNote ?? null}::text
       )
     `);
@@ -1084,17 +1097,19 @@ export async function updateStaffDaySession({
     throw new Error("No pudimos recuperar la sesión actualizada.");
   }
 
-  const currentCheckin = refreshed["checkin_local"];
-  const currentCheckout = refreshed["checkout_local"];
+  const currentCheckin = refreshed["checkin_local"] ?? checkinClock;
+  const currentCheckout = refreshed["checkout_local"] ?? checkoutClock;
   const currentMinutes =
-    toInteger(refreshed["session_minutes"] ?? refreshed["minutes"] ?? null) ?? minutes;
+    toInteger(refreshed["session_minutes"] ?? refreshed["minutes"] ?? null) ?? 0;
 
   return {
     sessionId,
     staffId,
     workDate: normalizedWorkDate,
-    checkinTime: normalizeTimestampValue(currentCheckin) ?? coerceString(currentCheckin),
-    checkoutTime: normalizeTimestampValue(currentCheckout) ?? coerceString(currentCheckout),
+    checkinTime:
+      normalizeTimestampValue(currentCheckin) ?? coerceString(currentCheckin) ?? checkinClock,
+    checkoutTime:
+      normalizeTimestampValue(currentCheckout) ?? coerceString(currentCheckout) ?? checkoutClock,
     minutes: currentMinutes,
     hours: minutesToHours(currentMinutes),
     originalSessionId: toInteger(refreshed["session_id"] ?? null),
@@ -1130,27 +1145,15 @@ export async function createStaffDaySession({
   const sql = getSqlClient();
 
   const normalizedWorkDate = ensureWorkDate(workDate);
-  const checkinIso = ensurePayrollSessionTimestamp(checkinTime, normalizedWorkDate, "entrada");
-  const checkoutIso = ensurePayrollSessionTimestamp(checkoutTime, normalizedWorkDate, "salida");
-  ensureSessionMatchesDay(checkinIso, checkoutIso, normalizedWorkDate);
-  const minutes = computeDurationMinutes(checkinIso, checkoutIso);
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
-
-  await assertNoOverlap(sql, {
-    staffId,
-    workDate: normalizedWorkDate,
-    checkinIso,
-    checkoutIso,
-  });
-
-  const checkinLocal = toLocalClockTextOrThrow("entrada", checkinIso);
-  const checkoutLocal = toLocalClockTextOrThrow("salida", checkoutIso);
+  const checkinClock = sanitizeClockInput("entrada", checkinTime);
+  const checkoutClock = sanitizeClockInput("salida", checkoutTime);
 
   const insertedRows = await executeAddStaffSessionSql(sql, {
     staffId,
     workDate: normalizedWorkDate,
-    checkinClock: checkinLocal,
-    checkoutClock: checkoutLocal,
+    checkinClock,
+    checkoutClock,
     note: sanitizedNote,
   });
 
@@ -1172,15 +1175,17 @@ export async function createStaffDaySession({
   `);
 
   const refreshed = refreshedRows[0];
-  const checkinCurrent = refreshed?.["checkin_local"] ?? inserted["checkin_local"];
-  const checkoutCurrent = refreshed?.["checkout_local"] ?? inserted["checkout_local"];
+  const checkinCurrent =
+    refreshed?.["checkin_local"] ?? inserted["checkin_local"] ?? checkinClock;
+  const checkoutCurrent =
+    refreshed?.["checkout_local"] ?? inserted["checkout_local"] ?? checkoutClock;
   const currentMinutes =
     toInteger(
       refreshed?.["session_minutes"] ??
         inserted["session_minutes"] ??
         inserted["minutes"] ??
         null,
-    ) ?? minutes;
+    ) ?? 0;
 
   const wasEdited = toBoolean(refreshed?.["was_edited"] ?? false);
 
@@ -1188,9 +1193,9 @@ export async function createStaffDaySession({
     sessionId,
     staffId,
     workDate: normalizedWorkDate,
-    checkinTime: normalizeTimestampValue(checkinCurrent) ?? coerceString(checkinCurrent) ?? checkinIso,
+    checkinTime: normalizeTimestampValue(checkinCurrent) ?? coerceString(checkinCurrent) ?? checkinClock,
     checkoutTime:
-      normalizeTimestampValue(checkoutCurrent) ?? coerceString(checkoutCurrent) ?? checkoutIso,
+      normalizeTimestampValue(checkoutCurrent) ?? coerceString(checkoutCurrent) ?? checkoutClock,
     minutes: currentMinutes,
     hours: minutesToHours(currentMinutes),
     originalSessionId: null,
