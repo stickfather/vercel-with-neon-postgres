@@ -1822,21 +1822,44 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
       );
 
       try {
-        const endpoint = target.isNew
-          ? "/api/payroll/reports/day-sessions"
-          : `/api/payroll/reports/day-sessions/${target.sessionId}`;
-        const method = target.isNew ? "POST" : "PATCH";
-        const response = await performProtectedFetch(endpoint, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            staffId: selectedCell.staffId,
-            workDate: selectedCell.workDate,
-            checkinTime: checkinIso,
-            checkoutTime: checkoutIso,
-            note: target.editNote ?? null,
-          }),
-        });
+        const response = await (async () => {
+          if (target.isNew) {
+            const checkinSegments = toTimeSegments(target.draftCheckin);
+            const checkoutSegments = toTimeSegments(target.draftCheckout);
+
+            if (!checkinSegments.hour || !checkoutSegments.hour) {
+              throw new Error("Completa las horas de entrada y salida.");
+            }
+
+            return performProtectedFetch("/api/payroll/session/add", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                staffId: selectedCell.staffId,
+                workDate: selectedCell.workDate,
+                inHour: checkinSegments.hour,
+                inMinute: checkinSegments.minute,
+                inAmPm: checkinSegments.period,
+                outHour: checkoutSegments.hour,
+                outMinute: checkoutSegments.minute,
+                outAmPm: checkoutSegments.period,
+                note: target.editNote ?? null,
+              }),
+            });
+          }
+
+          return performProtectedFetch(`/api/payroll/reports/day-sessions/${target.sessionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              staffId: selectedCell.staffId,
+              workDate: selectedCell.workDate,
+              checkinTime: checkinIso,
+              checkoutTime: checkoutIso,
+              note: target.editNote ?? null,
+            }),
+          });
+        })();
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
           const message = (payload as { error?: string }).error ?? "No se pudo guardar la sesión.";
