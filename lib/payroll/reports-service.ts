@@ -70,6 +70,123 @@ function toBoolean(value: unknown): boolean {
   return false;
 }
 
+function combineWorkDateAndClock(workDate: string, clockText: string): string {
+  const trimmed = clockText.trim();
+  if (!trimmed.length) {
+    return workDate;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed;
+  }
+  return `${workDate} ${trimmed}`;
+}
+
+function shouldFallbackToLegacyAddSession(error: unknown): boolean {
+  if (!(error instanceof Error) || !error.message) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("function public.add_staff_session") ||
+    message.includes("invalid input syntax for type timestamp")
+  );
+}
+
+function shouldFallbackToLegacyDeleteSession(error: unknown): boolean {
+  if (!(error instanceof Error) || !error.message) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("function public.delete_staff_session");
+}
+
+type AddStaffSessionExecutionParams = {
+  staffId: number;
+  workDate: string;
+  checkinClock: string;
+  checkoutClock: string;
+  note: string | null;
+};
+
+export async function executeAddStaffSessionSql(
+  sql: SqlClientLike,
+  params: AddStaffSessionExecutionParams,
+): Promise<SqlRow[]> {
+  const sanitizedNote = params.note && params.note.trim().length ? params.note.trim() : null;
+  try {
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.add_staff_session(
+          ${params.staffId}::bigint,
+          ${params.workDate}::text,
+          ${params.checkinClock}::text,
+          ${params.checkoutClock}::text,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  } catch (error) {
+    if (!shouldFallbackToLegacyAddSession(error)) {
+      throw error;
+    }
+
+    const checkinWithDate = combineWorkDateAndClock(params.workDate, params.checkinClock);
+    const checkoutWithDate = combineWorkDateAndClock(params.workDate, params.checkoutClock);
+
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.add_staff_session(
+          ${params.staffId}::bigint,
+          ${checkinWithDate}::text,
+          ${checkoutWithDate}::text,
+          ${null}::bigint,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  }
+}
+
+type DeleteStaffSessionExecutionParams = {
+  sessionId: number;
+  note: string | null;
+};
+
+export async function executeDeleteStaffSessionSql(
+  sql: SqlClientLike,
+  params: DeleteStaffSessionExecutionParams,
+): Promise<SqlRow[]> {
+  const sanitizedNote = params.note && params.note.trim().length ? params.note.trim() : null;
+  try {
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.delete_staff_session(
+          ${params.sessionId}::bigint,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  } catch (error) {
+    if (!shouldFallbackToLegacyDeleteSession(error)) {
+      throw error;
+    }
+
+    return normalizeRows<SqlRow>(
+      await sql`
+        SELECT *
+        FROM public.delete_staff_session(
+          ${params.sessionId}::bigint,
+          ${null}::bigint,
+          ${sanitizedNote ?? null}::text
+        )
+      `,
+    );
+  }
+}
+
 function resolveDayStatus(
   approved: boolean,
   hasEdits: boolean,
@@ -850,15 +967,10 @@ export async function overrideAndApprove(
 
     if (payload.deletions.length) {
       for (const sessionId of payload.deletions) {
-        const deleted = normalizeRows<SqlRow>(
-          await transaction`
-            SELECT *
-            FROM public.delete_staff_session(
-              ${sessionId}::bigint,
-              ${editNote ?? null}::text
-            )
-          `,
-        );
+        const deleted = await executeDeleteStaffSessionSql(transaction, {
+          sessionId,
+          note: editNote ?? null,
+        });
         if (!deleted.length) {
           throw new HttpError(404, "No encontramos una de las sesiones a eliminar.");
         }
@@ -890,18 +1002,13 @@ export async function overrideAndApprove(
       });
       const checkinLocal = ensureLocalTimestampText("entrada", checkinIso);
       const checkoutLocal = ensureLocalTimestampText("salida", checkoutIso);
-      const inserted = normalizeRows<SqlRow>(
-        await transaction`
-          SELECT *
-          FROM public.add_staff_session(
-            ${payload.staffId}::bigint,
-            ${payload.workDate}::text,
-            ${checkinLocal}::text,
-            ${checkoutLocal}::text,
-            ${editNote ?? null}::text
-          )
-        `,
-      );
+      const inserted = await executeAddStaffSessionSql(transaction, {
+        staffId: payload.staffId,
+        workDate: payload.workDate,
+        checkinClock: checkinLocal,
+        checkoutClock: checkoutLocal,
+        note: editNote ?? null,
+      });
       if (!inserted.length) {
         throw new Error("No se pudo crear una de las sesiones solicitadas.");
       }

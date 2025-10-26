@@ -14,6 +14,8 @@ import {
   getMonthSummary,
   getPayrollMatrix,
   HttpError,
+  executeAddStaffSessionSql,
+  executeDeleteStaffSessionSql,
 } from "../lib/payroll/reports-service.ts";
 import { ZodError } from "../lib/validation/zod.ts";
 
@@ -29,6 +31,11 @@ function createMockSqlClient(responders = []) {
       typeof entry.match === "function" ? entry.match(text) : entry.match.test(text),
     );
     if (responder) {
+      if (responder.error) {
+        throw (responder.error instanceof Error
+          ? responder.error
+          : new Error(String(responder.error)));
+      }
       return responder.rows;
     }
     return [];
@@ -566,6 +573,84 @@ describe("payroll integration", () => {
       "edited_and_approved",
       "approved",
     ]);
+  });
+
+  it("falls back to the legacy add session signature when needed", async () => {
+    let addAttempts = 0;
+    const { sql, operations } = createMockSqlClient([
+      {
+        match: (text) => /public\.add_staff_session/.test(text) && addAttempts++ === 0,
+        error: new Error(
+          "function public.add_staff_session(bigint, text, text, text, text) does not exist",
+        ),
+      },
+      {
+        match: /public\.add_staff_session/,
+        rows: [
+          {
+            session_id: 77,
+            staff_id: 7,
+            work_date: "2025-10-21",
+            checkin_local: "2025-10-21 08:00:00",
+            checkout_local: "2025-10-21 09:00:00",
+            session_minutes: 60,
+            session_hours: 1,
+          },
+        ],
+      },
+    ]);
+
+    const rows = await executeAddStaffSessionSql(sql, {
+      staffId: 7,
+      workDate: "2025-10-21",
+      checkinClock: "08:00 AM",
+      checkoutClock: "09:00 AM",
+      note: null,
+    });
+
+    assert.equal(rows.length, 1);
+    const addCalls = operations.filter(
+      (op) => op.type === "query" && /public\.add_staff_session/.test(op.text),
+    );
+    assert.equal(addCalls.length, 2);
+    assert.equal(addCalls[0].values[1], "2025-10-21");
+    assert.equal(addCalls[0].values[2], "08:00 AM");
+    assert.equal(addCalls[1].values[1], "2025-10-21 08:00 AM");
+    assert.equal(addCalls[1].values[2], "2025-10-21 09:00 AM");
+  });
+
+  it("falls back to the legacy delete session signature when needed", async () => {
+    let deleteAttempts = 0;
+    const { sql, operations } = createMockSqlClient([
+      {
+        match: (text) => /public\.delete_staff_session/.test(text) && deleteAttempts++ === 0,
+        error: new Error(
+          "function public.delete_staff_session(bigint, text) does not exist",
+        ),
+      },
+      {
+        match: /public\.delete_staff_session/,
+        rows: [
+          {
+            staff_id: 7,
+            work_date: "2025-10-21",
+            remaining_minutes: 0,
+            remaining_hours: 0,
+          },
+        ],
+      },
+    ]);
+
+    const rows = await executeDeleteStaffSessionSql(sql, { sessionId: 12, note: null });
+
+    assert.equal(rows.length, 1);
+    const deleteCalls = operations.filter(
+      (op) => op.type === "query" && /public\.delete_staff_session/.test(op.text),
+    );
+    assert.equal(deleteCalls.length, 2);
+    assert.equal(deleteCalls[0].values.length, 2);
+    assert.equal(deleteCalls[1].values.length, 3);
+    assert.strictEqual(deleteCalls[1].values[1], null);
   });
 });
 

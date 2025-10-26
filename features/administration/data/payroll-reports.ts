@@ -15,6 +15,8 @@ import {
 import {
   DaySessionsQuerySchema as ReportsDaySessionsSchema,
   DayTotalsQuerySchema as ReportsDayTotalsSchema,
+  executeAddStaffSessionSql,
+  executeDeleteStaffSessionSql,
   getDaySessions as getPayrollDaySessions,
   getDayTotals as getPayrollDayTotals,
   parseWithSchema as parsePayrollSchema,
@@ -1122,16 +1124,13 @@ export async function createStaffDaySession({
   const checkinLocal = toLocalClockTextOrThrow("entrada", checkinIso);
   const checkoutLocal = toLocalClockTextOrThrow("salida", checkoutIso);
 
-  const insertedRows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.add_staff_session(
-      ${staffId}::bigint,
-      ${normalizedWorkDate}::text,
-      ${checkinLocal}::text,
-      ${checkoutLocal}::text,
-      ${sanitizedNote ?? null}::text
-    )
-  `);
+  const insertedRows = await executeAddStaffSessionSql(sql, {
+    staffId,
+    workDate: normalizedWorkDate,
+    checkinClock: checkinLocal,
+    checkoutClock: checkoutLocal,
+    note: sanitizedNote,
+  });
 
   const inserted = insertedRows[0];
   if (!inserted) {
@@ -1212,13 +1211,10 @@ export async function deleteStaffDaySession({
   ensureWorkDate(workDate);
   const sanitizedNote = note && note.trim().length ? note.trim() : null;
 
-  const deletedRows = normalizeRows<SqlRow>(await sql`
-    SELECT *
-    FROM public.delete_staff_session(
-      ${sessionId}::bigint,
-      ${sanitizedNote ?? null}::text
-    )
-  `);
+  const deletedRows = await executeDeleteStaffSessionSql(sql, {
+    sessionId,
+    note: sanitizedNote,
+  });
 
   if (!deletedRows.length) {
     throw new Error("No encontramos la sesión indicada.");
@@ -1279,17 +1275,12 @@ export async function overrideSessionsAndApprove({
 
   await sql`BEGIN`;
   try {
-    const sanitizedDeletions = deletions.filter((value) =>
-      Number.isFinite(value),
-    );
+    const sanitizedDeletions = deletions.filter((value) => Number.isFinite(value));
     for (const sessionId of sanitizedDeletions) {
-      const result = normalizeRows<SqlRow>(await sql`
-        SELECT *
-        FROM public.delete_staff_session(
-          ${Number(sessionId)}::bigint,
-          ${sanitizedNote ?? null}::text
-        )
-      `);
+      const result = await executeDeleteStaffSessionSql(sql, {
+        sessionId: Number(sessionId),
+        note: sanitizedNote,
+      });
       if (!result.length) {
         throw new Error("No encontramos una de las sesiones a eliminar.");
       }
@@ -1379,16 +1370,16 @@ export async function overrideSessionsAndApprove({
         const checkinLocal = toLocalClockTextOrThrow("entrada", addition.checkinTime);
         const checkoutLocal = toLocalClockTextOrThrow("salida", addition.checkoutTime);
 
-        await sql`
-          SELECT *
-          FROM public.add_staff_session(
-            ${staffId}::bigint,
-            ${normalizedWorkDate}::text,
-            ${checkinLocal}::text,
-            ${checkoutLocal}::text,
-            ${sanitizedNote ?? null}::text
-          )
-        `;
+        const inserted = await executeAddStaffSessionSql(sql, {
+          staffId,
+          workDate: normalizedWorkDate,
+          checkinClock: checkinLocal,
+          checkoutClock: checkoutLocal,
+          note: sanitizedNote,
+        });
+        if (!inserted.length) {
+          throw new Error("No pudimos crear la sesión solicitada.");
+        }
       }
     }
 
