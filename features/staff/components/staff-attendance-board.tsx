@@ -279,7 +279,13 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   };
 
   if (showFarewell) {
-    return <FarewellOverlay message="¡Gracias por tu jornada! ¡Hasta la próxima!" />;
+    return (
+      <FarewellOverlay
+        message="¡Excelente trabajo hoy!"
+        subtitle="Gracias por tu dedicación"
+        emoji="👏"
+      />
+    );
   }
 
   if (shouldHideBubbles) {

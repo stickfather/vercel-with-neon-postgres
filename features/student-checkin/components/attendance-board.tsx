@@ -294,7 +294,13 @@ export function AttendanceBoard({ attendances }: Props) {
   };
 
   if (showFarewell) {
-    return <FarewellOverlay />;
+    return (
+      <FarewellOverlay
+        message="¡Buen trabajo en clase!"
+        subtitle="Sigue así, nos vemos pronto"
+        emoji="🌟"
+      />
+    );
   }
 
   if (shouldHideBubbles) {
