@@ -11,8 +11,6 @@ import {
 import { useRouter } from "next/navigation";
 import type {
   LessonCatalogItem,
-  LevelLessons,
-  LessonOption,
   StudentLastLesson,
   StudentName,
 } from "@/features/student-checkin/data/queries";
@@ -27,76 +25,13 @@ import { queueableFetch } from "@/lib/offline/fetch";
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
 const EXAM_LESSON_NAME_LOWER = "preparación para el examen";
+const LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 
 function isExamLessonLabel(label: string) {
   return label.trim().toLocaleLowerCase("es") === EXAM_LESSON_NAME_LOWER;
 }
 
-function buildLessonCatalog(entries: LessonCatalogItem[]): LevelLessons[] {
-  const grouped = new Map<string, LessonOption[]>();
-  const order: string[] = [];
-
-  for (const entry of entries) {
-    const lessonName = (entry.lesson ?? "").trim();
-    const levelName = (entry.level ?? "").trim();
-
-    if (!lessonName || !levelName || !Number.isFinite(entry.id)) {
-      continue;
-    }
-
-    if (!grouped.has(levelName)) {
-      grouped.set(levelName, []);
-      order.push(levelName);
-    }
-
-    const seqValue =
-      entry.seq == null || Number.isNaN(Number(entry.seq))
-        ? null
-        : Number(entry.seq);
-
-    grouped.get(levelName)!.push({
-      id: entry.id,
-      lesson: lessonName,
-      level: levelName,
-      sequence: seqValue,
-      globalSequence: seqValue,
-    });
-  }
-
-  return order.map((levelName) => {
-    const lessons = grouped.get(levelName) ?? [];
-    const sorted = [...lessons].sort((a, b) => {
-      const seqA =
-        a.sequence != null && Number.isFinite(a.sequence)
-          ? a.sequence
-          : Number.MAX_SAFE_INTEGER;
-      const seqB =
-        b.sequence != null && Number.isFinite(b.sequence)
-          ? b.sequence
-          : Number.MAX_SAFE_INTEGER;
-
-      if (seqA === seqB) {
-        return a.id - b.id;
-      }
-
-      return seqA - seqB;
-    });
-
-    return {
-      level: levelName,
-      lessons: sorted.map((lesson, index) => ({
-        ...lesson,
-        sequence:
-          lesson.sequence != null && Number.isFinite(lesson.sequence)
-            ? lesson.sequence
-            : index,
-      })),
-    } satisfies LevelLessons;
-  });
-}
-
 type Props = {
-  levels: LevelLessons[];
   disabled?: boolean;
   initialError?: string | null;
   lessonsError?: string | null;
@@ -124,7 +59,6 @@ type LessonOverridePrompt = {
 };
 
 export function CheckInForm({
-  levels: initialLevels,
   disabled = false,
   initialError = null,
   lessonsError = null,
@@ -132,9 +66,7 @@ export function CheckInForm({
   const router = useRouter();
   const [studentQuery, setStudentQuery] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentName | null>(null);
-  const [defaultLessonCatalog, setDefaultLessonCatalog] =
-    useState<LevelLessons[]>(initialLevels);
-  const [lessonCatalog, setLessonCatalog] = useState<LevelLessons[]>(initialLevels);
+  const [allLessons, setAllLessons] = useState<LessonCatalogItem[]>([]);
   const [suggestions, setSuggestions] = useState<StudentName[]>([]);
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
   const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
@@ -163,23 +95,126 @@ export function CheckInForm({
 
   const isFormDisabled = disabled || Boolean(initialError);
 
-  useEffect(() => {
-    setDefaultLessonCatalog(initialLevels);
-  }, [initialLevels]);
+  const lessonsAbortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    if (!selectedStudent) {
-      setLessonCatalog(defaultLessonCatalog);
+  const normalizeSequence = useCallback((value: unknown): number | null => {
+    if (value == null) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, []);
+
+  const compareLevels = useCallback((a: string, b: string) => {
+    const normalizedA = a.trim().toUpperCase();
+    const normalizedB = b.trim().toUpperCase();
+    const indexA = LEVEL_ORDER.findIndex((level) =>
+      normalizedA.startsWith(level),
+    );
+    const indexB = LEVEL_ORDER.findIndex((level) =>
+      normalizedB.startsWith(level),
+    );
+
+    if (indexA >= 0 && indexB >= 0) {
+      if (indexA !== indexB) {
+        return indexA - indexB;
+      }
+    } else if (indexA >= 0) {
+      return -1;
+    } else if (indexB >= 0) {
+      return 1;
     }
-  }, [defaultLessonCatalog, selectedStudent]);
 
-  useEffect(() => {
+    return normalizedA.localeCompare(normalizedB, "es", { sensitivity: "base" });
+  }, []);
+
+  const sortLessons = useCallback(
+    (lessons: LessonCatalogItem[]) => {
+      return [...lessons].sort((lessonA, lessonB) => {
+        const levelComparison = compareLevels(lessonA.level, lessonB.level);
+        if (levelComparison !== 0) {
+          return levelComparison;
+        }
+
+        const seqA =
+          lessonA.seq != null && Number.isFinite(lessonA.seq)
+            ? lessonA.seq
+            : Number.MAX_SAFE_INTEGER;
+        const seqB =
+          lessonB.seq != null && Number.isFinite(lessonB.seq)
+            ? lessonB.seq
+            : Number.MAX_SAFE_INTEGER;
+
+        if (seqA !== seqB) {
+          return seqA - seqB;
+        }
+
+        return lessonA.id - lessonB.id;
+      });
+    },
+    [compareLevels],
+  );
+
+  const loadGlobalLessons = useCallback(async () => {
+    lessonsAbortRef.current?.abort();
     const controller = new AbortController();
-    let isMounted = true;
+    lessonsAbortRef.current = controller;
 
-    (async () => {
+    try {
+      const response = await fetch("/api/lessons", {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo obtener el catálogo de lecciones.");
+      }
+
+      const payload = (await response.json().catch(() => [])) as unknown;
+      if (!Array.isArray(payload)) {
+        setAllLessons([]);
+        return;
+      }
+
+      const normalized = (payload as LessonCatalogItem[])
+        .map((entry) => {
+          const lessonName = (entry.lesson ?? "").trim();
+          const levelName = (entry.level ?? "").trim();
+          const id = Number(entry.id);
+          if (!lessonName || !levelName || !Number.isFinite(id)) {
+            return null;
+          }
+
+          return {
+            id,
+            lesson: lessonName,
+            level: levelName,
+            seq: normalizeSequence(entry.seq),
+          } satisfies LessonCatalogItem;
+        })
+        .filter(
+          (
+            value: LessonCatalogItem | null,
+          ): value is LessonCatalogItem => value !== null,
+        );
+
+      setAllLessons(sortLessons(normalized));
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      console.error("No se pudo obtener el catálogo global de lecciones", error);
+      setAllLessons([]);
+    }
+  }, [sortLessons]);
+
+  const loadStudentLessons = useCallback(
+    async (studentId: number) => {
+      lessonsAbortRef.current?.abort();
+      const controller = new AbortController();
+      lessonsAbortRef.current = controller;
+
       try {
-        const response = await fetch("/api/lessons", {
+        const response = await fetch(`/api/checkin/lessons/${studentId}`, {
           method: "GET",
           cache: "no-store",
           signal: controller.signal,
@@ -189,30 +224,90 @@ export function CheckInForm({
           throw new Error("No se pudo obtener el catálogo de lecciones.");
         }
 
-        const payload = (await response.json().catch(() => [])) as unknown;
-        if (!isMounted || controller.signal.aborted) {
+        const payload = await response.json().catch(() => ({}));
+        if (controller.signal.aborted) {
           return;
         }
 
-        const catalog = Array.isArray(payload)
-          ? (payload as LessonCatalogItem[])
-          : [];
+        const levels = Array.isArray(payload?.levels) ? payload.levels : [];
+        if (!levels.length) {
+          await loadGlobalLessons();
+          return;
+        }
 
-        const normalized = buildLessonCatalog(catalog);
-        setDefaultLessonCatalog(normalized);
+        const lessons: LessonCatalogItem[] = [];
+
+        for (const entry of levels) {
+          const levelLabel =
+            typeof entry?.level === "string"
+              ? entry.level.trim()
+              : typeof entry?.level_code === "string"
+                ? entry.level_code.trim()
+                : "";
+
+          if (!levelLabel) {
+            continue;
+          }
+
+          const levelLessons = Array.isArray(entry?.lessons)
+            ? entry.lessons
+            : [];
+
+          for (const rawLesson of levelLessons) {
+            const lessonId = Number(rawLesson?.lesson_id ?? rawLesson?.id);
+            if (!Number.isFinite(lessonId)) {
+              continue;
+            }
+
+            const lessonName =
+              typeof rawLesson?.lesson_name === "string"
+                ? rawLesson.lesson_name.trim()
+                : typeof rawLesson?.display_name === "string"
+                  ? rawLesson.display_name.trim()
+                  : typeof rawLesson?.lesson === "string"
+                    ? rawLesson.lesson.trim()
+                    : "";
+
+            if (!lessonName) {
+              continue;
+            }
+
+            const seqCandidate =
+              rawLesson?.sequence ?? rawLesson?.seq ?? rawLesson?.lesson_seq;
+
+            lessons.push({
+              id: lessonId,
+              lesson: lessonName,
+              level: levelLabel,
+              seq: normalizeSequence(seqCandidate),
+            });
+          }
+        }
+
+        if (!lessons.length) {
+          await loadGlobalLessons();
+          return;
+        }
+
+        setAllLessons(sortLessons(lessons));
       } catch (error) {
         if (controller.signal.aborted) {
           return;
         }
-        console.error("No se pudo obtener el catálogo global de lecciones", error);
+        console.error("No se pudo cargar el catálogo de lecciones", error);
+        await loadGlobalLessons();
       }
-    })();
+    },
+    [loadGlobalLessons, normalizeSequence, sortLessons],
+  );
+
+  useEffect(() => {
+    loadGlobalLessons();
 
     return () => {
-      isMounted = false;
-      controller.abort();
+      lessonsAbortRef.current?.abort();
     };
-  }, []);
+  }, [loadGlobalLessons]);
 
   useEffect(() => {
     if (!blockedAccountMessage) {
@@ -269,11 +364,11 @@ export function CheckInForm({
       }
 
       const normalizedLevel = suggestion.level.trim().toLowerCase();
-      const levelEntry = lessonCatalog.find(
-        (entry) => entry.level.trim().toLowerCase() === normalizedLevel,
+      const levelMatch = allLessons.find((lesson) =>
+        lesson.level.trim().toLowerCase() === normalizedLevel,
       );
 
-      if (!levelEntry) {
+      if (!levelMatch) {
         setSuggestedLesson(null);
         setLastLessonError(
           "La lección sugerida ya no está disponible. Selecciónala manualmente.",
@@ -281,12 +376,14 @@ export function CheckInForm({
         return;
       }
 
-      const lessonEntry = levelEntry.lessons.find(
-        (lesson) => lesson.id === suggestion.lessonId,
+      const lessonEntry = allLessons.find(
+        (lesson) =>
+          lesson.id === suggestion.lessonId &&
+          lesson.level.trim().toLowerCase() === normalizedLevel,
       );
 
       setStatus(null);
-      setSelectedLevel(levelEntry.level);
+      setSelectedLevel(levelMatch.level);
 
       if (lessonEntry) {
         setSelectedLesson(String(lessonEntry.id));
@@ -298,126 +395,17 @@ export function CheckInForm({
         );
       }
     },
-    [isFormDisabled, lessonCatalog],
+    [allLessons, isFormDisabled],
   );
 
   useEffect(() => {
     if (!selectedStudent) {
-      setLessonCatalog(defaultLessonCatalog);
+      loadGlobalLessons();
       return;
     }
 
-    const controller = new AbortController();
-    let isMounted = true;
-
-    (async () => {
-      try {
-        const response = await fetch(
-          `/api/checkin/lessons/${selectedStudent.id}`,
-          {
-            method: "GET",
-            cache: "no-store",
-            signal: controller.signal,
-          },
-        );
-
-        if (!response.ok) {
-          throw new Error("No se pudo obtener el catálogo de lecciones.");
-        }
-
-        const payload = await response.json().catch(() => ({}));
-        if (controller.signal.aborted || !isMounted) {
-          return;
-        }
-
-        const levels = Array.isArray(payload?.levels) ? payload.levels : [];
-        const normalized = levels
-          .map((entry: any): LevelLessons | null => {
-            const levelLabel =
-              typeof entry?.level === "string"
-                ? entry.level.trim()
-                : typeof entry?.level_code === "string"
-                  ? entry.level_code.trim()
-                  : "";
-
-            if (!levelLabel) {
-              return null;
-            }
-
-            const lessons = Array.isArray(entry?.lessons)
-              ? entry.lessons
-                  .map((lesson: any): LessonOption | null => {
-                    const lessonId = Number(lesson?.lesson_id ?? lesson?.id);
-                    if (!Number.isFinite(lessonId)) {
-                      return null;
-                    }
-
-                    const lessonName =
-                      typeof lesson?.lesson_name === "string"
-                        ? lesson.lesson_name.trim()
-                        : typeof lesson?.display_name === "string"
-                          ? lesson.display_name.trim()
-                          : typeof lesson?.lesson === "string"
-                            ? lesson.lesson.trim()
-                            : "";
-
-                    const sequenceValue =
-                      lesson?.sequence == null
-                        ? null
-                        : Number(lesson.sequence);
-                    const globalSequenceValue =
-                      lesson?.global_sequence == null
-                        ? null
-                        : Number(lesson.global_sequence);
-
-                    const candidate: LessonOption = {
-                      id: lessonId,
-                      lesson: lessonName,
-                      level: levelLabel,
-                      sequence:
-                        sequenceValue != null && Number.isFinite(sequenceValue)
-                          ? sequenceValue
-                          : null,
-                      globalSequence:
-                        globalSequenceValue != null &&
-                        Number.isFinite(globalSequenceValue)
-                          ? globalSequenceValue
-                          : null,
-                    };
-
-                    return candidate;
-                  })
-                  .filter((value: LessonOption | null): value is LessonOption => Boolean(value))
-              : [];
-
-            const result: LevelLessons = {
-              level: levelLabel,
-              lessons,
-            };
-
-            return result;
-          })
-          .filter((value: LevelLessons | null): value is LevelLessons => Boolean(value?.level));
-
-        if (normalized.length) {
-          setLessonCatalog(normalized);
-        } else {
-          setLessonCatalog(defaultLessonCatalog);
-        }
-      } catch (error) {
-        if (controller.signal.aborted || !isMounted) {
-          return;
-        }
-        console.error("No se pudo cargar el catálogo de lecciones", error);
-        setLessonCatalog(defaultLessonCatalog);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [defaultLessonCatalog, selectedStudent]);
+    loadStudentLessons(selectedStudent.id);
+  }, [loadGlobalLessons, loadStudentLessons, selectedStudent]);
 
   useEffect(() => {
     return () => {
@@ -579,25 +567,45 @@ export function CheckInForm({
     }
   }, [studentQuery, selectedStudent]);
 
+  const orderedLevels = useMemo(() => {
+    const uniqueLevels = Array.from(
+      new Set(
+        allLessons
+          .map((lesson) => (lesson.level ?? "").trim())
+          .filter((level) => level.length > 0),
+      ),
+    );
+
+    return uniqueLevels.sort(compareLevels);
+  }, [allLessons, compareLevels]);
+
   const lessonsForLevel = useMemo(() => {
-    return lessonCatalog.find((level) => level.level === selectedLevel)?.lessons ?? [];
-  }, [lessonCatalog, selectedLevel]);
+    const normalizedLevel = selectedLevel.trim().toLowerCase();
+    if (!normalizedLevel) {
+      return [] as LessonCatalogItem[];
+    }
+
+    return allLessons.filter(
+      (lesson) => lesson.level.trim().toLowerCase() === normalizedLevel,
+    );
+  }, [allLessons, selectedLevel]);
 
   const sortedLessons = useMemo(() => {
     return [...lessonsForLevel].sort((a, b) => {
       const aSeq =
-        a.sequence != null && Number.isFinite(a.sequence)
-          ? a.sequence
-          : a.globalSequence != null && Number.isFinite(a.globalSequence)
-            ? a.globalSequence
-            : Number.MAX_SAFE_INTEGER;
+        a.seq != null && Number.isFinite(a.seq)
+          ? a.seq
+          : Number.MAX_SAFE_INTEGER;
       const bSeq =
-        b.sequence != null && Number.isFinite(b.sequence)
-          ? b.sequence
-          : b.globalSequence != null && Number.isFinite(b.globalSequence)
-            ? b.globalSequence
-            : Number.MAX_SAFE_INTEGER;
-      return aSeq - bSeq;
+        b.seq != null && Number.isFinite(b.seq)
+          ? b.seq
+          : Number.MAX_SAFE_INTEGER;
+
+      if (aSeq !== bSeq) {
+        return aSeq - bSeq;
+      }
+
+      return a.id - b.id;
     });
   }, [lessonsForLevel]);
 
@@ -615,32 +623,34 @@ export function CheckInForm({
         return previous;
       }
       const prioritized =
-        sortedLessons.find((lesson) => lesson.sequence !== null) ?? sortedLessons[0];
+        sortedLessons.find((lesson) => lesson.seq !== null) ?? sortedLessons[0];
       return prioritized.id.toString();
     });
   }, [selectedLevel, sortedLessons]);
 
   useEffect(() => {
-    if (!lessonCatalog.length) {
+    if (!orderedLevels.length) {
+      setSelectedLevel("");
       return;
     }
 
     if (!selectedLevel) {
-      setSelectedLevel(lessonCatalog[0]?.level ?? "");
+      setSelectedLevel(orderedLevels[0]);
       return;
     }
 
-    const exists = lessonCatalog.some(
-      (entry) => entry.level.trim().toLowerCase() === selectedLevel.trim().toLowerCase(),
+    const normalized = selectedLevel.trim().toLowerCase();
+    const exists = orderedLevels.some(
+      (level) => level.trim().toLowerCase() === normalized,
     );
 
     if (!exists) {
-      setSelectedLevel(lessonCatalog[0]?.level ?? "");
+      setSelectedLevel(orderedLevels[0]);
     }
-  }, [lessonCatalog, selectedLevel]);
+  }, [orderedLevels, selectedLevel]);
 
   const canChooseProgression =
-    Boolean(selectedStudent) && !disabled && !initialError && Boolean(lessonCatalog.length);
+    Boolean(selectedStudent) && !disabled && !initialError && Boolean(orderedLevels.length);
 
   const handleSuggestionSelection = (student: StudentName) => {
     setStudentQuery(student.fullName);
@@ -1070,15 +1080,15 @@ export function CheckInForm({
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
           {canChooseProgression ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              {lessonCatalog.map((level) => {
-                const levelAccent = getLevelAccent(level.level);
-                const isActive = selectedLevel === level.level;
+              {orderedLevels.map((levelName) => {
+                const levelAccent = getLevelAccent(levelName);
+                const isActive = selectedLevel === levelName;
                 return (
                   <button
-                    key={level.level}
+                    key={levelName}
                     type="button"
                     onClick={() => {
-                      setSelectedLevel(level.level);
+                      setSelectedLevel(levelName);
                       setStatus(null);
                     }}
                     className={`flex min-h-[68px] items-center justify-center rounded-full border px-6 text-center text-base font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
@@ -1099,7 +1109,7 @@ export function CheckInForm({
                     disabled={isFormDisabled || !canChooseProgression}
                   >
                     <span className="text-lg font-black">
-                      {level.level}
+                      {levelName}
                     </span>
                   </button>
                 );
@@ -1198,7 +1208,7 @@ export function CheckInForm({
         </div>
       </div>
 
-      {!lessonCatalog.length && !initialError && (
+      {!allLessons.length && !initialError && (
         <div className="rounded-3xl border border-brand-orange bg-white/75 px-5 py-3 text-sm font-medium text-brand-ink">
           {lessonsError ??
             "Aún no hay lecciones disponibles para seleccionar. Nuestro equipo lo resolverá en breve."}

@@ -63,7 +63,6 @@ export default async function RegistroPage() {
 
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)] xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.1fr)]">
           <CheckInForm
-            levels={levels}
             disabled={Boolean(formError)}
             initialError={formError}
             lessonsError={lessonsError}
