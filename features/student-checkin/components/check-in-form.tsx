@@ -568,15 +568,50 @@ export function CheckInForm({
   }, [studentQuery, selectedStudent]);
 
   const orderedLevels = useMemo(() => {
-    const uniqueLevels = Array.from(
-      new Set(
-        allLessons
-          .map((lesson) => (lesson.level ?? "").trim())
-          .filter((level) => level.length > 0),
-      ),
+    if (!allLessons.length) {
+      return [] as string[];
+    }
+
+    const normalizedLevels = new Map<string, string>();
+
+    for (const lesson of allLessons) {
+      const rawLevel = (lesson.level ?? "").trim();
+      if (!rawLevel) {
+        continue;
+      }
+
+      const normalized = rawLevel.toUpperCase();
+      if (!normalizedLevels.has(normalized)) {
+        normalizedLevels.set(normalized, rawLevel);
+      }
+    }
+
+    const orderedByCefr = LEVEL_ORDER.reduce<string[]>((accumulator, levelCode) => {
+      const normalizedCode = levelCode.toUpperCase();
+
+      for (const [normalized, original] of normalizedLevels.entries()) {
+        if (normalized.startsWith(normalizedCode)) {
+          if (!accumulator.includes(original)) {
+            accumulator.push(original);
+          }
+          break;
+        }
+      }
+
+      return accumulator;
+    }, []);
+
+    const orderedNormalized = new Set(
+      orderedByCefr.map((level) => level.toUpperCase()),
     );
 
-    return uniqueLevels.sort(compareLevels);
+    const extras = Array.from(normalizedLevels.entries())
+      .filter(([normalized]) => !orderedNormalized.has(normalized))
+      .map(([, original]) => original);
+
+    const sortedExtras = extras.sort(compareLevels);
+
+    return [...orderedByCefr, ...sortedExtras];
   }, [allLessons, compareLevels]);
 
   const lessonsForLevel = useMemo(() => {
