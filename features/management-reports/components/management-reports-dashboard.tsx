@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   useCallback,
   useEffect,
@@ -165,6 +167,124 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
       >
         Reintentar
       </button>
+    </div>
+  );
+}
+
+type ManagementRefreshHeaderProps = {
+  onRefreshComplete?: () => void;
+};
+
+function ManagementRefreshHeader({ onRefreshComplete }: ManagementRefreshHeaderProps) {
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch("/api/last-refresh", { cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            typeof payload?.error === "string"
+              ? payload.error
+              : "No se pudo cargar la última actualización.",
+          );
+        }
+
+        if (!cancelled) {
+          setLastRefreshedAt(
+            typeof payload?.refreshed_at === "string" ? payload.refreshed_at : null,
+          );
+          setErrorMsg(null);
+        }
+      } catch (loadError) {
+        console.error("failed to load last refresh", loadError);
+        if (!cancelled) {
+          setErrorMsg("No se pudo cargar la última actualización.");
+          setLastRefreshedAt(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const formatTimestamp = useCallback((timestamp: string | null) => {
+    if (!timestamp) return "—";
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleString("es-EC", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+  }, []);
+
+  const handleManualRefresh = useCallback(async () => {
+    try {
+      setIsRefreshing(true);
+      setErrorMsg(null);
+
+      const response = await fetch("/api/refresh-mvs", {
+        method: "POST",
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok || !payload?.ok) {
+        throw new Error(
+          typeof payload?.error === "string" ? payload.error : "Fallo al refrescar.",
+        );
+      }
+
+      const refreshedAt =
+        typeof payload?.refreshed_at === "string" ? payload.refreshed_at : null;
+      setLastRefreshedAt(refreshedAt);
+      onRefreshComplete?.();
+    } catch (refreshError) {
+      console.error("manual refresh failed", refreshError);
+      setErrorMsg("Error al actualizar los datos.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [onRefreshComplete]);
+
+  return (
+    <div className="flex w-full flex-col gap-3 rounded-3xl border border-slate-800/60 bg-slate-900/60 p-5 shadow-[0_22px_65px_rgba(2,6,23,0.4)] sm:max-w-sm">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-slate-400">
+        Estado de datos
+      </span>
+      <div className="text-sm text-slate-300">
+        Última actualización:{" "}
+        <span className="font-semibold text-white">
+          {formatTimestamp(lastRefreshedAt)}
+        </span>
+      </div>
+      {errorMsg ? (
+        <p className="text-xs text-rose-300">{errorMsg}</p>
+      ) : null}
+      <button
+        type="button"
+        onClick={handleManualRefresh}
+        disabled={isRefreshing}
+        className={classNames(
+          "inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] transition",
+          isRefreshing
+            ? "cursor-not-allowed bg-slate-700/70 text-slate-300"
+            : "bg-emerald-400 text-slate-900 shadow hover:-translate-y-[1px]",
+        )}
+      >
+        {isRefreshing ? "Actualizando..." : "Actualizar datos"}
+      </button>
+      <p className="text-[11px] text-slate-400">
+        Esto vuelve a calcular los KPIs desde la base de datos.
+      </p>
     </div>
   );
 }
@@ -1052,6 +1172,12 @@ export function ManagementReportsDashboard() {
     enabled: activeTab === "personal",
   });
 
+  const { reload: reloadLearning } = learning;
+  const { reload: reloadEngagement } = engagement;
+  const { reload: reloadFinance } = finance;
+  const { reload: reloadExams } = exams;
+  const { reload: reloadPersonnel } = personnel;
+
   const handleSelectTab = useCallback(
     (tab: TabKey) => {
       if (tab === "finanzas" && !financeUnlocked) {
@@ -1075,8 +1201,25 @@ export function ManagementReportsDashboard() {
     setPinVisible(false);
     setFinanceDenied(false);
     setActiveTab("finanzas");
-    finance.reload();
-  }, [finance]);
+    reloadFinance();
+  }, [reloadFinance]);
+
+  const handleRefreshComplete = useCallback(() => {
+    reloadLearning();
+    reloadEngagement();
+    reloadExams();
+    reloadPersonnel();
+    if (financeUnlocked) {
+      reloadFinance();
+    }
+  }, [
+    financeUnlocked,
+    reloadEngagement,
+    reloadExams,
+    reloadFinance,
+    reloadLearning,
+    reloadPersonnel,
+  ]);
 
   const renderPanel = useMemo(() => {
     switch (activeTab) {
@@ -1093,17 +1236,28 @@ export function ManagementReportsDashboard() {
       default:
         return null;
     }
-    }, [activeTab, engagement, exams, finance, financeUnlocked, learning, personnel]);
+  }, [activeTab, engagement, exams, finance, financeUnlocked, learning, personnel]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#05070f] via-[#0b1220] to-[#111827] text-white">
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-12 md:px-10 lg:px-16">
-        <header className="flex flex-col gap-3">
-          <span className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300">Administración</span>
-          <h1 className="text-4xl font-black sm:text-[44px]">Reportes gerenciales</h1>
-          <p className="max-w-3xl text-sm text-slate-300">
-            Visión del centro: aprendizaje, engagement, finanzas, exámenes y personal en tiempo real.
-          </p>
+        <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex max-w-3xl flex-col gap-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300">
+              Administración
+            </span>
+            <h1 className="text-4xl font-black sm:text-[44px]">Reportes gerenciales</h1>
+            <p className="text-sm text-slate-300">
+              Visión del centro: aprendizaje, engagement, finanzas, exámenes y personal en tiempo real.
+            </p>
+            <Link
+              href="/administracion"
+              className="mt-2 inline-flex w-fit items-center gap-2 rounded-full border border-slate-800/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] text-slate-200 transition hover:-translate-y-[1px] hover:bg-slate-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+            >
+              ← Volver al panel
+            </Link>
+          </div>
+          <ManagementRefreshHeader onRefreshComplete={handleRefreshComplete} />
         </header>
 
         <div className="flex flex-wrap gap-2 rounded-full border border-slate-800/60 bg-slate-900/50 p-1">
