@@ -3,7 +3,7 @@ import {
   getActiveAttendances,
   getLevelsWithLessons,
 } from "@/features/student-checkin/data/queries";
-import { AttendanceBoard } from "@/features/student-checkin/components/attendance-board";
+import { StudentAttendancePanel } from "@/features/student-checkin/components/attendance-panel";
 import { CheckInForm } from "@/features/student-checkin/components/check-in-form";
 
 const quickLinkBaseClass =
@@ -84,7 +84,7 @@ export default async function RegistroPage() {
                 {attendanceError}
               </p>
             )}
-            <AttendanceBoard attendances={attendances} />
+            <StudentAttendancePanel attendances={attendances} />
           </aside>
         </div>
 

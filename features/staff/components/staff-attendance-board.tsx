@@ -10,10 +10,10 @@ import {
 } from "@/lib/time/check-in-window";
 import { queueableFetch } from "@/lib/offline/fetch";
 import { FullScreenModal } from "@/components/ui/full-screen-modal";
-import { FarewellOverlay } from "@/components/ui/farewell-overlay";
 
 type Props = {
   attendances: ActiveStaffAttendance[];
+  onCheckoutComplete?: () => void;
 };
 
 const accentPalette = [
@@ -32,7 +32,7 @@ function formatTime(value: string, formatter: Intl.DateTimeFormat) {
   return formatter.format(date);
 }
 
-export function StaffAttendanceBoard({ attendances }: Props) {
+export function StaffAttendanceBoard({ attendances, onCheckoutComplete }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [pendingCheckout, setPendingCheckout] = useState<ActiveStaffAttendance | null>(
@@ -49,8 +49,6 @@ export function StaffAttendanceBoard({ attendances }: Props) {
     isAfterBubbleHideTime(),
   );
   const [checkoutPreview, setCheckoutPreview] = useState<Date | null>(null);
-  const [showFarewell, setShowFarewell] = useState(false);
-  const farewellTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setActiveAttendances(attendances);
@@ -132,9 +130,6 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       clearInterval(interval);
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
-      }
-      if (farewellTimeoutRef.current) {
-        clearTimeout(farewellTimeoutRef.current);
       }
     };
   }, []);
@@ -259,13 +254,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
       }
-      setShowFarewell(true);
-      if (farewellTimeoutRef.current) {
-        clearTimeout(farewellTimeoutRef.current);
-      }
-      farewellTimeoutRef.current = setTimeout(() => {
-        router.push("/");
-      }, 500);
+      onCheckoutComplete?.();
     } catch (error) {
       console.error(error);
       setError(
@@ -277,16 +266,6 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       setLoadingId(null);
     }
   };
-
-  if (showFarewell) {
-    return (
-      <FarewellOverlay
-        message="¡Excelente trabajo hoy!"
-        subtitle="Gracias por tu dedicación"
-        emoji="👏"
-      />
-    );
-  }
 
   if (shouldHideBubbles) {
     return (

@@ -3,7 +3,7 @@ import {
   getActiveStaffAttendances,
   getStaffDirectory,
 } from "@/features/staff/data/queries";
-import { StaffAttendanceBoard } from "@/features/staff/components/staff-attendance-board";
+import { StaffAttendancePanel } from "@/features/staff/components/attendance-panel";
 import { StaffCheckInForm } from "@/features/staff/components/staff-check-in-form";
 
 export const revalidate = 0;
@@ -90,7 +90,7 @@ export default async function RegistroPersonalPage() {
                   {boardError}
                 </p>
               ) : (
-                <StaffAttendanceBoard attendances={attendances} />
+                <StaffAttendancePanel attendances={attendances} />
               )}
             </div>
           </section>

@@ -11,10 +11,10 @@ import {
 } from "@/lib/time/check-in-window";
 import { queueableFetch } from "@/lib/offline/fetch";
 import { FullScreenModal } from "@/components/ui/full-screen-modal";
-import { FarewellOverlay } from "@/components/ui/farewell-overlay";
 
 type Props = {
   attendances: ActiveAttendance[];
+  onCheckoutComplete?: () => void;
 };
 
 function splitName(fullName: string): [string, string | null] {
@@ -35,7 +35,7 @@ function splitName(fullName: string): [string, string | null] {
   return [top, bottom || null];
 }
 
-export function AttendanceBoard({ attendances }: Props) {
+export function AttendanceBoard({ attendances, onCheckoutComplete }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +52,6 @@ export function AttendanceBoard({ attendances }: Props) {
     isAfterBubbleHideTime(),
   );
   const [checkoutPreview, setCheckoutPreview] = useState<Date | null>(null);
-  const [showFarewell, setShowFarewell] = useState(false);
-  const farewellTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setActiveAttendances(attendances);
@@ -88,9 +86,6 @@ export function AttendanceBoard({ attendances }: Props) {
       clearInterval(interval);
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
-      }
-      if (farewellTimeoutRef.current) {
-        clearTimeout(farewellTimeoutRef.current);
       }
     };
   }, []);
@@ -268,13 +263,7 @@ export function AttendanceBoard({ attendances }: Props) {
         clearTimeout(refreshTimeoutRef.current);
       }
 
-      setShowFarewell(true);
-      if (farewellTimeoutRef.current) {
-        clearTimeout(farewellTimeoutRef.current);
-      }
-      farewellTimeoutRef.current = setTimeout(() => {
-        router.push("/");
-      }, 500);
+      onCheckoutComplete?.();
     } catch (err) {
       console.error(err);
       setError(
@@ -292,16 +281,6 @@ export function AttendanceBoard({ attendances }: Props) {
     setError(null);
     setCheckoutPreview(null);
   };
-
-  if (showFarewell) {
-    return (
-      <FarewellOverlay
-        message="¡Buen trabajo en clase!"
-        subtitle="Sigue así, nos vemos pronto"
-        emoji="🌟"
-      />
-    );
-  }
 
   if (shouldHideBubbles) {
     return (
