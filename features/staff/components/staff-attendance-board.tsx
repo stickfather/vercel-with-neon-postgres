@@ -10,6 +10,7 @@ import {
 } from "@/lib/time/check-in-window";
 import { queueableFetch } from "@/lib/offline/fetch";
 import { FullScreenModal } from "@/components/ui/full-screen-modal";
+import { FarewellOverlay } from "@/components/ui/farewell-overlay";
 
 type Props = {
   attendances: ActiveStaffAttendance[];
@@ -48,6 +49,8 @@ export function StaffAttendanceBoard({ attendances }: Props) {
     isAfterBubbleHideTime(),
   );
   const [checkoutPreview, setCheckoutPreview] = useState<Date | null>(null);
+  const [showFarewell, setShowFarewell] = useState(false);
+  const farewellTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setActiveAttendances(attendances);
@@ -129,6 +132,9 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       clearInterval(interval);
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
+      }
+      if (farewellTimeoutRef.current) {
+        clearTimeout(farewellTimeoutRef.current);
       }
     };
   }, []);
@@ -253,10 +259,13 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
       }
-
-      refreshTimeoutRef.current = setTimeout(() => {
-        router.refresh();
-      }, 320);
+      setShowFarewell(true);
+      if (farewellTimeoutRef.current) {
+        clearTimeout(farewellTimeoutRef.current);
+      }
+      farewellTimeoutRef.current = setTimeout(() => {
+        router.push("/");
+      }, 500);
     } catch (error) {
       console.error(error);
       setError(
@@ -268,6 +277,10 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       setLoadingId(null);
     }
   };
+
+  if (showFarewell) {
+    return <FarewellOverlay message="¡Gracias por tu jornada! ¡Hasta la próxima!" />;
+  }
 
   if (shouldHideBubbles) {
     return (

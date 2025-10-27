@@ -11,6 +11,7 @@ import {
 } from "@/lib/time/check-in-window";
 import { queueableFetch } from "@/lib/offline/fetch";
 import { FullScreenModal } from "@/components/ui/full-screen-modal";
+import { FarewellOverlay } from "@/components/ui/farewell-overlay";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -51,6 +52,8 @@ export function AttendanceBoard({ attendances }: Props) {
     isAfterBubbleHideTime(),
   );
   const [checkoutPreview, setCheckoutPreview] = useState<Date | null>(null);
+  const [showFarewell, setShowFarewell] = useState(false);
+  const farewellTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setActiveAttendances(attendances);
@@ -85,6 +88,9 @@ export function AttendanceBoard({ attendances }: Props) {
       clearInterval(interval);
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
+      }
+      if (farewellTimeoutRef.current) {
+        clearTimeout(farewellTimeoutRef.current);
       }
     };
   }, []);
@@ -262,9 +268,13 @@ export function AttendanceBoard({ attendances }: Props) {
         clearTimeout(refreshTimeoutRef.current);
       }
 
-      refreshTimeoutRef.current = setTimeout(() => {
-        router.refresh();
-      }, 320);
+      setShowFarewell(true);
+      if (farewellTimeoutRef.current) {
+        clearTimeout(farewellTimeoutRef.current);
+      }
+      farewellTimeoutRef.current = setTimeout(() => {
+        router.push("/");
+      }, 500);
     } catch (err) {
       console.error(err);
       setError(
@@ -282,6 +292,10 @@ export function AttendanceBoard({ attendances }: Props) {
     setError(null);
     setCheckoutPreview(null);
   };
+
+  if (showFarewell) {
+    return <FarewellOverlay />;
+  }
 
   if (shouldHideBubbles) {
     return (
