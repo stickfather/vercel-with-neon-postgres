@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useState,
   useTransition,
+  type Dispatch,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -13,12 +13,8 @@ import type { StudentPaymentScheduleEntry } from "@/features/administration/data
 type Props = {
   studentId: number;
   entries: StudentPaymentScheduleEntry[];
-};
-
-type AddFormState = {
-  dueDate: string;
-  amount: string;
-  note: string;
+  onEntriesChange: Dispatch<React.SetStateAction<StudentPaymentScheduleEntry[]>>;
+  onRequestAdd: () => void;
 };
 
 type EditFormState = {
@@ -27,19 +23,13 @@ type EditFormState = {
   note: string;
 };
 
-type ActiveRequest = "create" | "edit" | "delete" | null;
+type ActiveRequest = "edit" | "delete" | null;
 
 type ModalProps = {
   title: string;
   description?: string;
   onClose: () => void;
   children: ReactNode;
-};
-
-const INITIAL_ADD_FORM: AddFormState = {
-  dueDate: "",
-  amount: "",
-  note: "",
 };
 
 const INITIAL_EDIT_FORM: EditFormState = {
@@ -92,29 +82,19 @@ function Modal({ title, description, onClose, children }: ModalProps) {
   );
 }
 
-function parseAmount(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed.replace(",", "."));
-  if (!Number.isFinite(parsed)) return null;
-  return parsed;
-}
-
-export function PaymentSchedulePanel({ studentId, entries }: Props) {
+export function PaymentSchedulePanel({
+  studentId,
+  entries,
+  onEntriesChange,
+  onRequestAdd,
+}: Props) {
   const router = useRouter();
-  const [items, setItems] = useState<StudentPaymentScheduleEntry[]>(entries);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState<AddFormState>(INITIAL_ADD_FORM);
   const [editingItem, setEditingItem] = useState<StudentPaymentScheduleEntry | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>(INITIAL_EDIT_FORM);
-
-  useEffect(() => {
-    setItems(entries);
-  }, [entries]);
 
   const currencyFormatter = useMemo(
     () =>
@@ -127,18 +107,12 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
   );
 
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    return [...entries].sort((a, b) => {
       const aKey = a.dueDate ?? "";
       const bKey = b.dueDate ?? "";
       return aKey.localeCompare(bKey);
     });
-  }, [items]);
-
-  const closeAddModal = () => {
-    if (isPending && activeRequest === "create") return;
-    setIsAddOpen(false);
-    setAddForm(INITIAL_ADD_FORM);
-  };
+  }, [entries]);
 
   const closeEditModal = () => {
     if (isPending && activeRequest === "edit") return;
@@ -146,11 +120,10 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
     setEditForm(INITIAL_EDIT_FORM);
   };
 
-  const openAddModal = () => {
+  const handleAddRequest = () => {
     setError(null);
     setMessage(null);
-    setAddForm(INITIAL_ADD_FORM);
-    setIsAddOpen(true);
+    onRequestAdd();
   };
 
   const openEditModal = (entry: StudentPaymentScheduleEntry) => {
@@ -161,60 +134,6 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
       isPaid: entry.isPaid,
       receivedDate: entry.receivedDate ?? "",
       note: entry.note ?? "",
-    });
-  };
-
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (activeRequest) return;
-
-    const dueDate = addForm.dueDate.trim();
-    if (!dueDate) {
-      setError("Debes ingresar una fecha de vencimiento.");
-      return;
-    }
-
-    const amountNumber = parseAmount(addForm.amount);
-    if (amountNumber == null || amountNumber <= 0) {
-      setError("El monto debe ser un número mayor a cero.");
-      return;
-    }
-
-    setError(null);
-    setMessage(null);
-    setActiveRequest("create");
-
-    startTransition(() => {
-      void (async () => {
-        try {
-          const response = await fetch(`/api/students/${studentId}/payment-schedule`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              dueDate,
-              amount: amountNumber,
-              note: addForm.note.trim() || null,
-            }),
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo crear el pago.");
-          }
-          setItems((previous) => [...previous, payload as StudentPaymentScheduleEntry]);
-          setMessage("Pago agregado correctamente.");
-          closeAddModal();
-          router.refresh();
-        } catch (err) {
-          console.error(err);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "No se pudo crear el pago. Inténtalo nuevamente.",
-          );
-        } finally {
-          setActiveRequest(null);
-        }
-      })();
     });
   };
 
@@ -254,7 +173,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
             throw new Error(payload?.error ?? "No se pudo actualizar el pago.");
           }
           const updatedEntry = payload as StudentPaymentScheduleEntry;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.map((item) => (item.id === updatedEntry.id ? updatedEntry : item)),
           );
           setMessage("Pago actualizado correctamente.");
@@ -276,7 +195,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
 
   const handleDelete = async (entryId: number) => {
     if (activeRequest) return;
-    const target = items.find((item) => item.id === entryId);
+    const target = entries.find((item) => item.id === entryId);
     if (!target) return;
 
     const confirmation = globalThis.confirm?.(
@@ -300,7 +219,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
             throw new Error(payload?.error ?? "No se pudo eliminar el pago.");
           }
           const deletedEntry = payload as StudentPaymentScheduleEntry | null;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.filter((item) => item.id !== (deletedEntry?.id ?? entryId)),
           );
           setMessage("Pago eliminado.");
@@ -342,7 +261,7 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={openAddModal}
+          onClick={handleAddRequest}
           className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
         >
           Agregar pago
@@ -423,71 +342,6 @@ export function PaymentSchedulePanel({ studentId, entries }: Props) {
           </tbody>
         </table>
       </div>
-
-      {isAddOpen && (
-        <Modal
-          title="Agregar pago"
-          description="Define la fecha límite y el monto que debe cancelar el representante."
-          onClose={closeAddModal}
-        >
-          <form className="flex flex-col gap-4" onSubmit={handleCreate}>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Fecha límite
-              <input
-                type="date"
-                value={addForm.dueDate}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, dueDate: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Monto
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={addForm.amount}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, amount: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Nota (opcional)
-              <textarea
-                value={addForm.note}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, note: event.target.value }))
-                }
-                rows={3}
-                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                placeholder="Añade un recordatorio o detalle"
-              />
-            </label>
-            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={closeAddModal}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={activeRequest === "create" && isPending}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {activeRequest === "create" && isPending ? "Guardando…" : "Guardar"}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
 
       {editingItem && (
         <Modal

@@ -156,7 +156,7 @@ async function loadAttendanceHistory(studentId: number): Promise<AttendanceHisto
   noStore();
   const [entriesResult, catalogResult] = await Promise.allSettled([
     listStudentAttendanceHistory(studentId),
-    getLevelsWithLessons(),
+    getLevelsWithLessons(studentId),
   ]);
 
   let entries: Awaited<ReturnType<typeof listStudentAttendanceHistory>> = [];

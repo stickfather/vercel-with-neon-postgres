@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useState,
   useTransition,
+  type Dispatch,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -13,9 +13,11 @@ import type { StudentNote } from "@/features/administration/data/student-profile
 type Props = {
   studentId: number;
   notes: StudentNote[];
+  onEntriesChange: Dispatch<React.SetStateAction<StudentNote[]>>;
+  onRequestAdd: () => void;
 };
 
-type ActiveRequest = "create" | "edit" | "delete" | null;
+type ActiveRequest = "edit" | "delete" | null;
 
 type ModalProps = {
   title: string;
@@ -68,34 +70,27 @@ function Modal({ title, description, onClose, children }: ModalProps) {
   );
 }
 
-export function NotesPanel({ studentId, notes }: Props) {
+export function NotesPanel({
+  studentId,
+  notes,
+  onEntriesChange,
+  onRequestAdd,
+}: Props) {
   const router = useRouter();
-  const [items, setItems] = useState<StudentNote[]>(notes);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
-  const [isAddOpen, setIsAddOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [editingNote, setEditingNote] = useState<StudentNote | null>(null);
 
-  useEffect(() => {
-    setItems(notes);
-  }, [notes]);
-
   const sortedNotes = useMemo(() => {
-    return [...items].sort((a, b) => {
+    return [...notes].sort((a, b) => {
       const aDate = a.createdAt ?? "";
       const bDate = b.createdAt ?? "";
       return bDate.localeCompare(aDate);
     });
-  }, [items]);
-
-  const closeAddModal = () => {
-    if (isPending && activeRequest === "create") return;
-    setIsAddOpen(false);
-    setDraft("");
-  };
+  }, [notes]);
 
   const closeEditModal = () => {
     if (isPending && activeRequest === "edit") return;
@@ -103,11 +98,10 @@ export function NotesPanel({ studentId, notes }: Props) {
     setDraft("");
   };
 
-  const openAddModal = () => {
+  const handleAddRequest = () => {
     setError(null);
     setMessage(null);
-    setDraft("");
-    setIsAddOpen(true);
+    onRequestAdd();
   };
 
   const openEditModal = (note: StudentNote) => {
@@ -115,49 +109,6 @@ export function NotesPanel({ studentId, notes }: Props) {
     setMessage(null);
     setEditingNote(note);
     setDraft(note.note);
-  };
-
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (activeRequest) return;
-
-    if (!draft.trim()) {
-      setError("La observación no puede estar vacía.");
-      return;
-    }
-
-    setError(null);
-    setMessage(null);
-    setActiveRequest("create");
-
-    startTransition(() => {
-      void (async () => {
-        try {
-          const response = await fetch(`/api/students/${studentId}/notes`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ note: draft.trim() }),
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo crear la observación.");
-          }
-          setItems((previous) => [payload as StudentNote, ...previous]);
-          setMessage("Observación agregada.");
-          closeAddModal();
-          router.refresh();
-        } catch (err) {
-          console.error(err);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "No se pudo crear la observación. Inténtalo nuevamente.",
-          );
-        } finally {
-          setActiveRequest(null);
-        }
-      })();
-    });
   };
 
   const handleUpdate = (event: React.FormEvent<HTMLFormElement>) => {
@@ -189,7 +140,7 @@ export function NotesPanel({ studentId, notes }: Props) {
             throw new Error(payload?.error ?? "No se pudo actualizar la observación.");
           }
           const updatedNote = payload as StudentNote;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.map((item) => (item.id === updatedNote.id ? updatedNote : item)),
           );
           setMessage("Observación actualizada.");
@@ -229,7 +180,7 @@ export function NotesPanel({ studentId, notes }: Props) {
             throw new Error(payload?.error ?? "No se pudo eliminar la observación.");
           }
           const deletedNote = payload as StudentNote | null;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.filter((item) => item.id !== (deletedNote?.id ?? noteId)),
           );
           setMessage("Observación eliminada.");
@@ -271,7 +222,7 @@ export function NotesPanel({ studentId, notes }: Props) {
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={openAddModal}
+          onClick={handleAddRequest}
           className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
         >
           Agregar observación
@@ -316,44 +267,6 @@ export function NotesPanel({ studentId, notes }: Props) {
           ))
         )}
       </div>
-
-      {isAddOpen && (
-        <Modal
-          title="Agregar observación"
-          description="Comparte detalles relevantes para el seguimiento académico o administrativo."
-          onClose={closeAddModal}
-        >
-            <form className="flex flex-col gap-4" onSubmit={handleCreate}>
-              <label className="flex flex-col gap-2 text-left text-sm font-semibold text-brand-deep">
-                Observación
-              <textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                rows={4}
-                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                placeholder="Describe la interacción o el seguimiento"
-                required
-              />
-            </label>
-            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={closeAddModal}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={activeRequest === "create" && isPending}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {activeRequest === "create" && isPending ? "Guardando…" : "Guardar"}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
 
       {editingNote && (
         <Modal

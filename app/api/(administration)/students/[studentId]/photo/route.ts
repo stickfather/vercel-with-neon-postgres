@@ -3,6 +3,11 @@ import { NextResponse } from "next/server.js";
 import { del, put } from "@vercel/blob";
 
 import { getSqlClient, normalizeRows } from "@/lib/db/client";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +27,10 @@ type ExistingPhotoRow = {
   photoUrl: string | null;
 };
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ studentId: string }> },
-) {
-  const resolvedParams = await params;
-  const studentId = normalizeStudentId(resolvedParams.studentId);
+export async function POST(request: Request, context: any) {
+  const params = await resolveRouteParams(context);
+  const studentParam = readRouteParam(params, "studentId");
+  const studentId = normalizeStudentId(studentParam ?? "");
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });

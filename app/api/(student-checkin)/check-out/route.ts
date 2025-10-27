@@ -12,9 +12,9 @@ export async function POST(request: Request) {
       );
     }
 
-    await registerCheckOut(Number(attendanceId));
+    const attendances = await registerCheckOut(Number(attendanceId));
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, attendances });
   } catch (error) {
     console.error("Error en check-out", error);
     const message =

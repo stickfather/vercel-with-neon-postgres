@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useState,
   useTransition,
+  type Dispatch,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -13,29 +13,17 @@ import type { StudentInstructivo } from "@/features/administration/data/student-
 type Props = {
   studentId: number;
   instructivos: StudentInstructivo[];
+  onEntriesChange: Dispatch<React.SetStateAction<StudentInstructivo[]>>;
+  onRequestAdd: () => void;
 };
 
-type ActiveRequest = "create" | "edit" | "delete" | null;
-
-type AddFormState = {
-  title: string;
-  dueDate: string;
-  completed: boolean;
-  note: string;
-};
+type ActiveRequest = "edit" | "delete" | null;
 
 type ModalProps = {
   title: string;
   description?: string;
   onClose: () => void;
   children: ReactNode;
-};
-
-const INITIAL_ADD_FORM: AddFormState = {
-  title: "",
-  dueDate: "",
-  completed: false,
-  note: "",
 };
 
 function formatDate(value: string | null): string {
@@ -80,24 +68,27 @@ function Modal({ title, description, onClose, children }: ModalProps) {
   );
 }
 
-export function InstructivosPanel({ studentId, instructivos }: Props) {
+export function InstructivosPanel({
+  studentId,
+  instructivos,
+  onEntriesChange,
+  onRequestAdd,
+}: Props) {
   const router = useRouter();
-  const [items, setItems] = useState<StudentInstructivo[]>(instructivos);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState<AddFormState>(INITIAL_ADD_FORM);
   const [editingItem, setEditingItem] = useState<StudentInstructivo | null>(null);
-  const [editForm, setEditForm] = useState<AddFormState>(INITIAL_ADD_FORM);
-
-  useEffect(() => {
-    setItems(instructivos);
-  }, [instructivos]);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    dueDate: "",
+    completed: false,
+    note: "",
+  });
 
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    return [...instructivos].sort((a, b) => {
       const aDue = a.dueDate ?? "";
       const bDue = b.dueDate ?? "";
       if (aDue && bDue) return aDue.localeCompare(bDue);
@@ -107,25 +98,18 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
       const bCreated = b.createdAt ?? "";
       return bCreated.localeCompare(aCreated);
     });
-  }, [items]);
-
-  const closeAddModal = () => {
-    if (isPending && activeRequest === "create") return;
-    setIsAddOpen(false);
-    setAddForm(INITIAL_ADD_FORM);
-  };
+  }, [instructivos]);
 
   const closeEditModal = () => {
     if (isPending && activeRequest === "edit") return;
     setEditingItem(null);
-    setEditForm(INITIAL_ADD_FORM);
+    setEditForm({ title: "", dueDate: "", completed: false, note: "" });
   };
 
-  const openAddModal = () => {
+  const handleAddRequest = () => {
     setError(null);
     setMessage(null);
-    setAddForm(INITIAL_ADD_FORM);
-    setIsAddOpen(true);
+    onRequestAdd();
   };
 
   const openEditModal = (item: StudentInstructivo) => {
@@ -137,59 +121,6 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
       dueDate: item.dueDate ?? "",
       completed: Boolean(item.completed),
       note: item.note ?? "",
-    });
-  };
-
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (activeRequest) return;
-
-    if (!addForm.title.trim()) {
-      setError("El título es obligatorio.");
-      return;
-    }
-
-    if (!addForm.note.trim()) {
-      setError("Debes ingresar la descripción o nota del instructivo.");
-      return;
-    }
-
-    setError(null);
-    setMessage(null);
-    setActiveRequest("create");
-
-    startTransition(() => {
-      void (async () => {
-        try {
-          const response = await fetch(`/api/students/${studentId}/instructivos`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: addForm.title.trim(),
-              dueDate: addForm.dueDate.trim() || null,
-              completed: addForm.completed,
-              note: addForm.note.trim() || null,
-            }),
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo crear el instructivo.");
-          }
-          setItems((previous) => [payload as StudentInstructivo, ...previous]);
-          setMessage("Instructivo asignado.");
-          closeAddModal();
-          router.refresh();
-        } catch (err) {
-          console.error(err);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "No se pudo crear el instructivo. Inténtalo nuevamente.",
-          );
-        } finally {
-          setActiveRequest(null);
-        }
-      })();
     });
   };
 
@@ -232,7 +163,7 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
             throw new Error(payload?.error ?? "No se pudo actualizar el instructivo.");
           }
           const updatedInstructivo = payload as StudentInstructivo;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.map((item) => (item.id === updatedInstructivo.id ? updatedInstructivo : item)),
           );
           setMessage("Instructivo actualizado.");
@@ -273,7 +204,7 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
             throw new Error(payload?.error ?? "No se pudo eliminar el instructivo.");
           }
           const deletedInstructivo = payload as StudentInstructivo | null;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.filter((item) => item.id !== (deletedInstructivo?.id ?? instructivoId)),
           );
           setMessage("Instructivo eliminado.");
@@ -315,7 +246,7 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={openAddModal}
+          onClick={handleAddRequest}
           className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
         >
           Agregar instructivo
@@ -401,80 +332,6 @@ export function InstructivosPanel({ studentId, instructivos }: Props) {
           </tbody>
         </table>
       </div>
-
-      {isAddOpen && (
-        <Modal
-          title="Agregar instructivo"
-          description="Detalla las instrucciones para que el estudiante pueda revisarlas posteriormente."
-          onClose={closeAddModal}
-        >
-          <form className="flex flex-col gap-4" onSubmit={handleCreate}>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Título
-              <input
-                type="text"
-                value={addForm.title}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, title: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Fecha límite (opcional)
-              <input
-                type="date"
-                value={addForm.dueDate}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, dueDate: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-              />
-            </label>
-            <label className="flex items-center justify-between gap-4 rounded-2xl bg-white/95 p-4 text-left text-sm font-semibold text-brand-deep shadow-inner">
-              <span>Marcar como completado</span>
-              <input
-                type="checkbox"
-                checked={addForm.completed}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, completed: event.target.checked }))
-                }
-                className="h-5 w-5 rounded border-brand-deep-soft text-brand-teal focus:ring-brand-teal"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Nota
-              <textarea
-                value={addForm.note}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, note: event.target.value }))
-                }
-                rows={4}
-                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                placeholder="Añade contexto o recordatorios"
-                required
-              />
-            </label>
-            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={closeAddModal}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={activeRequest === "create" && isPending}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {activeRequest === "create" && isPending ? "Guardando…" : "Guardar"}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
 
       {editingItem && (
         <Modal

@@ -10,6 +10,7 @@ export type LessonOption = {
   lesson: string;
   level: string;
   sequence: number | null;
+  globalSequence: number | null;
 };
 
 export type LevelLessons = {
@@ -23,6 +24,7 @@ export type ActiveAttendance = {
   lesson: string | null;
   level: string | null;
   lessonSequence: number | null;
+  lessonGlobalSequence: number | null;
   checkInTime: string;
 };
 
@@ -31,6 +33,7 @@ export type StudentLastLesson = {
   lessonName: string;
   level: string;
   sequence: number | null;
+  globalSequence: number | null;
   attendedAt: string;
 };
 
@@ -52,6 +55,23 @@ export type StudentStatusCheck = {
   isActive: boolean;
   statusLabel: string | null;
 };
+
+const CEFR_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+
+function resolveLevelRank(level: string | null | undefined): number | null {
+  if (!level) {
+    return null;
+  }
+
+  const normalized = level.trim().toUpperCase();
+  for (let index = 0; index < CEFR_LEVEL_ORDER.length; index += 1) {
+    if (normalized.startsWith(CEFR_LEVEL_ORDER[index])) {
+      return index;
+    }
+  }
+
+  return null;
+}
 
 export async function getStudentDirectory(): Promise<StudentName[]> {
   const sql = getSqlClient();
@@ -112,32 +132,133 @@ export async function searchStudents(
     .filter((entry) => entry.fullName.length);
 }
 
-export async function getLevelsWithLessons(): Promise<LevelLessons[]> {
+export async function getLevelsWithLessons(
+  studentId?: number,
+): Promise<LevelLessons[]> {
   const sql = getSqlClient();
 
+  let minRank = 0;
+  let maxRank = CEFR_LEVEL_ORDER.length - 1;
+
+  if (Number.isFinite(studentId)) {
+    const planRows = normalizeRows<SqlRow>(await sql`
+      SELECT planned_level_min, planned_level_max
+      FROM public.students
+      WHERE id = ${Number(studentId)}
+      LIMIT 1
+    `);
+
+    if (planRows.length) {
+      const row = planRows[0];
+      const rawMin = (row.planned_level_min as string | null) ?? null;
+      const rawMax = (row.planned_level_max as string | null) ?? null;
+
+      const resolvedMin = resolveLevelRank(rawMin);
+      const resolvedMax = resolveLevelRank(rawMax);
+
+      if (resolvedMin != null) {
+        minRank = resolvedMin;
+      }
+      if (resolvedMax != null) {
+        maxRank = resolvedMax;
+      }
+      if (minRank > maxRank) {
+        const temp = minRank;
+        minRank = maxRank;
+        maxRank = temp;
+      }
+    }
+  }
+
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, lesson, level, seq
-    FROM lessons
-    WHERE TRIM(COALESCE(lesson, '')) <> ''
-    ORDER BY level ASC, seq ASC NULLS LAST, lesson ASC
+    SELECT
+      l.id AS lesson_id,
+      TRIM(l.level::text) AS level_code,
+      l.seq AS global_seq,
+      ROW_NUMBER() OVER (
+        PARTITION BY TRIM(l.level::text)
+        ORDER BY l.seq, l.id
+      ) - 1 AS level_seq,
+      l.lesson AS lesson_name
+    FROM public.lessons l
+    WHERE TRIM(COALESCE(l.lesson, '')) <> ''
+    ORDER BY l.seq ASC, l.id ASC
   `);
 
   const grouped = new Map<string, LessonOption[]>();
 
   for (const row of rows) {
-    const level = ((row.level as string) ?? "").trim();
+    const rawLevel = row.level_code as string | null;
+    const level = (rawLevel ?? "").trim();
     if (!level) continue;
+    const rank = resolveLevelRank(level);
+    if (rank != null && (rank < minRank || rank > maxRank)) {
+      continue;
+    }
+
+    const lessonId = Number(row.lesson_id);
+    if (!Number.isFinite(lessonId)) {
+      continue;
+    }
+
+    const sequence =
+      row.level_seq == null || Number.isNaN(Number(row.level_seq))
+        ? null
+        : Number(row.level_seq);
+    const globalSequence =
+      row.global_seq == null || Number.isNaN(Number(row.global_seq))
+        ? null
+        : Number(row.global_seq);
+    const lessonName = ((row.lesson_name as string) ?? "").trim();
+
     if (!grouped.has(level)) grouped.set(level, []);
     grouped.get(level)!.push({
-      id: Number(row.id),
-      lesson: row.lesson as string,
+      id: lessonId,
+      lesson: lessonName,
       level,
-      sequence: row.seq === null ? null : Number(row.seq),
+      sequence,
+      globalSequence,
     });
   }
 
+  const sortLevels = (a: string, b: string) => {
+    const rankA = resolveLevelRank(a);
+    const rankB = resolveLevelRank(b);
+    if (rankA != null && rankB != null) {
+      if (rankA === rankB) return 0;
+      return rankA < rankB ? -1 : 1;
+    }
+    if (rankA != null) {
+      return -1;
+    }
+    if (rankB != null) {
+      return 1;
+    }
+    return a.localeCompare(b, "es", { sensitivity: "base" });
+  };
+
+  const sortLessons = (a: LessonOption, b: LessonOption) => {
+    const seqA =
+      a.sequence != null && Number.isFinite(a.sequence)
+        ? a.sequence
+        : a.globalSequence != null && Number.isFinite(a.globalSequence)
+          ? a.globalSequence
+          : Number.MAX_SAFE_INTEGER;
+    const seqB =
+      b.sequence != null && Number.isFinite(b.sequence)
+        ? b.sequence
+        : b.globalSequence != null && Number.isFinite(b.globalSequence)
+          ? b.globalSequence
+          : Number.MAX_SAFE_INTEGER;
+    if (seqA === seqB) {
+      return a.id - b.id;
+    }
+    return seqA - seqB;
+  };
+
   return Array.from(grouped.entries())
-    .map(([level, lessons]) => ({ level, lessons }))
+    .sort(([levelA], [levelB]) => sortLevels(levelA, levelB))
+    .map(([level, lessons]) => ({ level, lessons: [...lessons].sort(sortLessons) }))
     .filter((entry) => entry.lessons.length);
 }
 
@@ -150,11 +271,13 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       COALESCE(s.full_name, '') AS full_name,
       sa.checkin_time,
       l.lesson,
-      l.level AS level,
-      l.seq AS lesson_sequence
+      lg.level AS level,
+      lg.seq AS lesson_sequence,
+      lg.lesson_global_seq AS lesson_global_sequence
     FROM public.student_attendance sa
     LEFT JOIN students s ON s.id = sa.student_id
-    LEFT JOIN lessons l ON l.id = sa.lesson_id
+    LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
+    LEFT JOIN public.lessons l ON l.id = sa.lesson_id
     WHERE sa.checkout_time IS NULL
     ORDER BY sa.checkin_time ASC
   `);
@@ -167,6 +290,10 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       level: (row.level as string | null) ?? null,
       lessonSequence:
         row.lesson_sequence == null ? null : Number(row.lesson_sequence),
+      lessonGlobalSequence:
+        row.lesson_global_sequence == null
+          ? null
+          : Number(row.lesson_global_sequence),
       checkInTime: row.checkin_time as string,
     }))
     .filter((attendance) => attendance.fullName.trim().length);
@@ -212,17 +339,23 @@ export async function validateStudentLessonSelection(
 
   const [lastLessonResult, selectedLessonResult] = await Promise.all([
     sql`
-      SELECT sa.lesson_id, l.lesson, l.seq
+      SELECT
+        sa.lesson_id,
+        l.lesson,
+        lg.seq,
+        lg.lesson_global_seq
       FROM public.student_attendance sa
-      LEFT JOIN lessons l ON l.id = sa.lesson_id
+      LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
+      LEFT JOIN public.lessons l ON l.id = sa.lesson_id
       WHERE sa.student_id = ${studentId}
       ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
       LIMIT 1
     `,
     sql`
-      SELECT lesson, seq
-      FROM lessons
-      WHERE id = ${lessonId}
+      SELECT l.lesson, lg.seq, lg.lesson_global_seq
+      FROM mart.lessons_global_v lg
+      JOIN public.lessons l ON l.id = lg.lesson_id
+      WHERE lg.lesson_id = ${lessonId}
       LIMIT 1
     `,
   ]);
@@ -287,9 +420,9 @@ export async function registerCheckIn({
   }
 
   const lessonRows = normalizeRows<SqlRow>(await sql`
-    SELECT id, level
-    FROM lessons
-    WHERE id = ${lessonId}
+    SELECT lesson_id, level
+    FROM mart.lessons_global_v
+    WHERE lesson_id = ${lessonId}
     LIMIT 1
   `);
 
@@ -338,7 +471,9 @@ export async function registerCheckIn({
   return attendanceId;
 }
 
-export async function registerCheckOut(attendanceId: number): Promise<void> {
+export async function registerCheckOut(
+  attendanceId: number,
+): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
 
   const existingRows = normalizeRows<SqlRow>(
@@ -386,6 +521,7 @@ export async function registerCheckOut(attendanceId: number): Promise<void> {
   if (!verificationRows.length || verificationRows[0].checkout_time == null) {
     throw new Error("No se pudo cerrar la asistencia seleccionada.");
   }
+  return getActiveAttendances();
 }
 
 export async function getStudentLastLesson(
@@ -399,10 +535,12 @@ export async function getStudentLastLesson(
       sa.checkin_time,
       COALESCE(sa.checkout_time, sa.checkin_time) AS attended_at,
       l.lesson,
-      l.level,
-      l.seq
+      lg.level,
+      lg.seq,
+      lg.lesson_global_seq
     FROM public.student_attendance sa
-    LEFT JOIN lessons l ON l.id = sa.lesson_id
+    LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
+    LEFT JOIN public.lessons l ON l.id = sa.lesson_id
     WHERE sa.student_id = ${studentId}
       AND sa.lesson_id IS NOT NULL
     ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
@@ -431,6 +569,8 @@ export async function getStudentLastLesson(
     lessonName,
     level,
     sequence: record.seq == null ? null : Number(record.seq),
+    globalSequence:
+      record.lesson_global_seq == null ? null : Number(record.lesson_global_seq),
     attendedAt: String(record.attended_at ?? record.checkin_time ?? new Date().toISOString()),
   };
 }

@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server.js";
 import { deleteStaffMember, updateStaffMember } from "@/features/staff/data/queries";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export async function PATCH(request: Request, context: any) {
-  const params = await context.params;
-  const parsedId = Number(params.id);
+  const params = await resolveRouteParams(context);
+  const idParam = readRouteParam(params, "id");
+  const parsedId = Number(idParam);
 
   if (!Number.isFinite(parsedId)) {
     return NextResponse.json(
@@ -40,8 +46,9 @@ export async function PATCH(request: Request, context: any) {
 }
 
 export async function DELETE(_request: Request, context: any) {
-  const params = await context.params;
-  const parsedId = Number(params.id);
+  const params = await resolveRouteParams(context);
+  const idParam = readRouteParam(params, "id");
+  const parsedId = Number(idParam);
 
   if (!Number.isFinite(parsedId)) {
     return NextResponse.json(

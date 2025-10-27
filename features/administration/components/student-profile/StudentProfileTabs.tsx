@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import {
   BasicDetailsPanel,
@@ -19,6 +19,10 @@ import {
 import {
   PaymentSchedulePanel,
 } from "@/features/administration/components/student-profile/payment-schedule-panel";
+import { AddExamModal } from "@/features/administration/components/student-profile/modals/add-exam-modal";
+import { AddInstructivoModal } from "@/features/administration/components/student-profile/modals/add-instructivo-modal";
+import { AddNoteModal } from "@/features/administration/components/student-profile/modals/add-note-modal";
+import { AddPaymentModal } from "@/features/administration/components/student-profile/modals/add-payment-modal";
 import type {
   StudentBasicDetails,
   StudentCoachPanelSummary,
@@ -84,6 +88,31 @@ export function StudentProfileTabs({
   lessonCatalog,
 }: StudentProfileTabsProps) {
   const baseId = useId();
+  const [paymentEntries, setPaymentEntries] = useState(paymentSchedule);
+  const [examEntries, setExamEntries] = useState(exams);
+  const [instructivoEntries, setInstructivoEntries] = useState(instructivos);
+  const [noteEntries, setNoteEntries] = useState(notes);
+
+  useEffect(() => {
+    setPaymentEntries(paymentSchedule);
+  }, [paymentSchedule]);
+
+  useEffect(() => {
+    setExamEntries(exams);
+  }, [exams]);
+
+  useEffect(() => {
+    setInstructivoEntries(instructivos);
+  }, [instructivos]);
+
+  useEffect(() => {
+    setNoteEntries(notes);
+  }, [notes]);
+
+  const [activeModal, setActiveModal] = useState<
+    "payment" | "exam" | "instructivo" | "note" | null
+  >(null);
+
   const tabConfigs = useMemo<TabContentConfig[]>(
     () => [
       {
@@ -119,14 +148,23 @@ export function StudentProfileTabs({
         content: (
           <PaymentSchedulePanel
             studentId={studentId}
-            entries={paymentSchedule}
+            entries={paymentEntries}
+            onEntriesChange={setPaymentEntries}
+            onRequestAdd={() => setActiveModal("payment")}
           />
         ),
       },
       {
         value: "examenes",
         label: TAB_LABELS.examenes,
-        content: <ExamsPanel studentId={studentId} exams={exams} />,
+        content: (
+          <ExamsPanel
+            studentId={studentId}
+            exams={examEntries}
+            onEntriesChange={setExamEntries}
+            onRequestAdd={() => setActiveModal("exam")}
+          />
+        ),
       },
       {
         value: "instructivos",
@@ -134,27 +172,36 @@ export function StudentProfileTabs({
         content: (
           <InstructivosPanel
             studentId={studentId}
-            instructivos={instructivos}
+            instructivos={instructivoEntries}
+            onEntriesChange={setInstructivoEntries}
+            onRequestAdd={() => setActiveModal("instructivo")}
           />
         ),
       },
       {
         value: "notas",
         label: TAB_LABELS.notas,
-        content: <NotesPanel studentId={studentId} notes={notes} />,
+        content: (
+          <NotesPanel
+            studentId={studentId}
+            notes={noteEntries}
+            onEntriesChange={setNoteEntries}
+            onRequestAdd={() => setActiveModal("note")}
+          />
+        ),
       },
     ],
     [
+      paymentEntries,
+      examEntries,
+      instructivoEntries,
+      noteEntries,
       basicDetails,
       coachError,
       coachSummary,
       attendanceError,
       attendanceHistory,
       lessonCatalog,
-      exams,
-      instructivos,
-      notes,
-      paymentSchedule,
       studentId,
     ],
   );
@@ -231,6 +278,39 @@ export function StudentProfileTabs({
           </div>
         );
       })}
+
+      <AddPaymentModal
+        open={activeModal === "payment"}
+        studentId={studentId}
+        onClose={() => setActiveModal(null)}
+        onCreated={(entry) =>
+          setPaymentEntries((previous) => [...previous, entry])
+        }
+      />
+      <AddExamModal
+        open={activeModal === "exam"}
+        studentId={studentId}
+        onClose={() => setActiveModal(null)}
+        onCreated={(entry) =>
+          setExamEntries((previous) => [entry, ...previous])
+        }
+      />
+      <AddInstructivoModal
+        open={activeModal === "instructivo"}
+        studentId={studentId}
+        onClose={() => setActiveModal(null)}
+        onCreated={(entry) =>
+          setInstructivoEntries((previous) => [entry, ...previous])
+        }
+      />
+      <AddNoteModal
+        open={activeModal === "note"}
+        studentId={studentId}
+        onClose={() => setActiveModal(null)}
+        onCreated={(entry) =>
+          setNoteEntries((previous) => [entry, ...previous])
+        }
+      />
     </div>
   );
 }

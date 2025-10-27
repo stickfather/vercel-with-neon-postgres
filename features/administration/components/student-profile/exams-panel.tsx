@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useState,
   useTransition,
+  type Dispatch,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -13,16 +13,11 @@ import type { StudentExam } from "@/features/administration/data/student-profile
 type Props = {
   studentId: number;
   exams: StudentExam[];
+  onEntriesChange: Dispatch<React.SetStateAction<StudentExam[]>>;
+  onRequestAdd: () => void;
 };
 
-type ActiveRequest = "create" | "edit" | "delete" | null;
-
-type AddFormState = {
-  scheduledAt: string;
-  examType: string;
-  grade: string;
-  note: string;
-};
+type ActiveRequest = "edit" | "delete" | null;
 
 type EditFormState = {
   grade: string;
@@ -35,13 +30,6 @@ type ModalProps = {
   description?: string;
   onClose: () => void;
   children: ReactNode;
-};
-
-const INITIAL_ADD_FORM: AddFormState = {
-  scheduledAt: "",
-  examType: "",
-  grade: "",
-  note: "",
 };
 
 const INITIAL_EDIT_FORM: EditFormState = {
@@ -103,35 +91,27 @@ function Modal({ title, description, onClose, children }: ModalProps) {
   );
 }
 
-export function ExamsPanel({ studentId, exams }: Props) {
+export function ExamsPanel({
+  studentId,
+  exams,
+  onEntriesChange,
+  onRequestAdd,
+}: Props) {
   const router = useRouter();
-  const [items, setItems] = useState<StudentExam[]>(exams);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState<AddFormState>(INITIAL_ADD_FORM);
   const [editingExam, setEditingExam] = useState<StudentExam | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>(INITIAL_EDIT_FORM);
 
-  useEffect(() => {
-    setItems(exams);
-  }, [exams]);
-
   const sortedExams = useMemo(() => {
-    return [...items].sort((a, b) => {
+    return [...exams].sort((a, b) => {
       const aDate = a.timeScheduled ?? "";
       const bDate = b.timeScheduled ?? "";
       return bDate.localeCompare(aDate);
     });
-  }, [items]);
-
-  const closeAddModal = () => {
-    if (isPending && activeRequest === "create") return;
-    setIsAddOpen(false);
-    setAddForm(INITIAL_ADD_FORM);
-  };
+  }, [exams]);
 
   const closeEditModal = () => {
     if (isPending && activeRequest === "edit") return;
@@ -139,11 +119,10 @@ export function ExamsPanel({ studentId, exams }: Props) {
     setEditForm(INITIAL_EDIT_FORM);
   };
 
-  const openAddModal = () => {
+  const handleAddRequest = () => {
     setError(null);
     setMessage(null);
-    setAddForm(INITIAL_ADD_FORM);
-    setIsAddOpen(true);
+    onRequestAdd();
   };
 
   const openEditModal = (exam: StudentExam) => {
@@ -154,66 +133,6 @@ export function ExamsPanel({ studentId, exams }: Props) {
       grade: exam.score == null ? "" : String(exam.score),
       isCompleted: exam.passed,
       note: exam.notes ?? "",
-    });
-  };
-
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (activeRequest) return;
-
-    if (!addForm.scheduledAt.trim()) {
-      setError("Debes indicar la fecha y hora programada.");
-      return;
-    }
-
-    if (!addForm.examType.trim()) {
-      setError("Selecciona el tipo de examen.");
-      return;
-    }
-
-    const scoreNumber = parseScore(addForm.grade);
-    if (addForm.grade.trim() && scoreNumber == null) {
-      setError("La calificación debe ser numérica.");
-      return;
-    }
-
-    setError(null);
-    setMessage(null);
-    setActiveRequest("create");
-
-    startTransition(() => {
-      void (async () => {
-        try {
-          const response = await fetch(`/api/students/${studentId}/exams`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              timeScheduled: addForm.scheduledAt.trim(),
-              status: addForm.examType.trim(),
-              score: scoreNumber,
-              passed: false,
-              notes: addForm.note.trim() || null,
-            }),
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(payload?.error ?? "No se pudo crear el examen.");
-          }
-          setItems((previous) => [payload as StudentExam, ...previous]);
-          setMessage("Examen creado.");
-          closeAddModal();
-          router.refresh();
-        } catch (err) {
-          console.error(err);
-          setError(
-            err instanceof Error
-              ? err.message
-              : "No se pudo crear el examen. Inténtalo nuevamente.",
-          );
-        } finally {
-          setActiveRequest(null);
-        }
-      })();
     });
   };
 
@@ -253,7 +172,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
             throw new Error(payload?.error ?? "No se pudo actualizar el examen.");
           }
           const updatedExam = payload as StudentExam;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.map((item) => (item.id === updatedExam.id ? updatedExam : item)),
           );
           setMessage("Examen actualizado.");
@@ -293,7 +212,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
             throw new Error(payload?.error ?? "No se pudo eliminar el examen.");
           }
           const deletedExam = payload as StudentExam | null;
-          setItems((previous) =>
+          onEntriesChange((previous) =>
             previous.filter((item) => item.id !== (deletedExam?.id ?? examId)),
           );
           setMessage("Examen eliminado.");
@@ -335,7 +254,7 @@ export function ExamsPanel({ studentId, exams }: Props) {
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={openAddModal}
+          onClick={handleAddRequest}
           className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
         >
           Agregar examen
@@ -412,82 +331,6 @@ export function ExamsPanel({ studentId, exams }: Props) {
           </tbody>
         </table>
       </div>
-
-      {isAddOpen && (
-        <Modal
-          title="Agregar examen"
-          description="Programa un nuevo examen indicando fecha, hora y tipo de evaluación."
-          onClose={closeAddModal}
-        >
-          <form className="flex flex-col gap-4" onSubmit={handleCreate}>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Fecha y hora del examen
-              <input
-                type="datetime-local"
-                value={addForm.scheduledAt}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, scheduledAt: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Tipo de examen
-              <input
-                type="text"
-                value={addForm.examType}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, examType: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                placeholder="Ej. Placement, Final, Nivel"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Calificación (opcional)
-              <input
-                type="number"
-                step="0.01"
-                value={addForm.grade}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, grade: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Nota (opcional)
-              <textarea
-                value={addForm.note}
-                onChange={(event) =>
-                  setAddForm((previous) => ({ ...previous, note: event.target.value }))
-                }
-                rows={3}
-                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                placeholder="Añade detalles o requisitos"
-              />
-            </label>
-            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={closeAddModal}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={activeRequest === "create" && isPending}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#04a890] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {activeRequest === "create" && isPending ? "Guardando…" : "Guardar"}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
 
       {editingExam && (
         <Modal

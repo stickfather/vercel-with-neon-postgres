@@ -71,11 +71,13 @@ export function formatLessonWithSequence(
   sequence: number | null,
 ): string {
   const trimmedName = name?.trim();
-  if (!trimmedName) {
-    return "la lección seleccionada";
+  if (trimmedName) {
+    return trimmedName;
   }
 
-  const sequenceLabel =
-    sequence == null ? "sin número" : sequence.toString();
-  return `${trimmedName} (Lección ${sequenceLabel})`;
+  if (sequence != null && Number.isFinite(sequence)) {
+    return `Lección ${sequence}`;
+  }
+
+  return "la lección seleccionada";
 }

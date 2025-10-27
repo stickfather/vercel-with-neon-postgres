@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server.js";
 
 import { listStudentLessonSessions } from "@/features/administration/data/student-profile";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +28,12 @@ function normalizeLimit(value: string | null, fallback = 3): number {
   return Math.max(1, Math.min(20, Math.trunc(parsed)));
 }
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ studentId: string; lessonId: string }> },
-) {
-  const resolvedParams = await params;
-  const studentId = normalizeId(resolvedParams.studentId);
-  const lessonId = normalizeId(resolvedParams.lessonId);
+export async function GET(request: Request, context: any) {
+  const params = await resolveRouteParams(context);
+  const studentParam = readRouteParam(params, "studentId");
+  const lessonParam = readRouteParam(params, "lessonId");
+  const studentId = normalizeId(studentParam ?? "");
+  const lessonId = normalizeId(lessonParam ?? "");
 
   const { searchParams } = new URL(request.url);
   const limit = normalizeLimit(searchParams.get("limit"));

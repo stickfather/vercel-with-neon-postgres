@@ -1,16 +1,15 @@
-import { NextResponse } from "next/server.js";
+import { NextRequest, NextResponse } from "next/server";
 
 import { getStudentLastLesson } from "@/features/student-checkin/data/queries";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
-type RouteContext = {
-  params: Promise<{
-    studentId: string;
-  }>;
-};
-
-export async function GET(_request: Request, context: RouteContext) {
-  const params = await context.params;
-  const rawStudentId = params?.studentId;
+export async function GET(_request: NextRequest, context: any) {
+  const params = await resolveRouteParams(context);
+  const rawStudentId = readRouteParam(params, "studentId");
 
   const parsedId = Number(rawStudentId);
   if (!Number.isFinite(parsedId) || parsedId <= 0) {

@@ -2,6 +2,11 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server.js";
 
 import { deleteStudentExam, updateStudentExam } from "@/features/administration/data/student-profile";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +17,14 @@ function normalizeId(value: string): number | null {
 
 export async function PUT(
   request: Request,
-  { params }: { params: Promise<{ studentId: string; examId: string }> },
+  context: any,
 ) {
   try {
-    const resolvedParams = await params;
-    const examId = normalizeId(resolvedParams.examId);
-    const studentId = normalizeId(resolvedParams.studentId);
+    const params = await resolveRouteParams(context);
+    const examParam = readRouteParam(params, "examId");
+    const studentParam = readRouteParam(params, "studentId");
+    const examId = normalizeId(examParam ?? "");
+    const studentId = normalizeId(studentParam ?? "");
     if (examId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
@@ -74,12 +81,14 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: Promise<{ studentId: string; examId: string }> },
+  context: any,
 ) {
   try {
-    const resolvedParams = await params;
-    const examId = normalizeId(resolvedParams.examId);
-    const studentId = normalizeId(resolvedParams.studentId);
+    const params = await resolveRouteParams(context);
+    const examParam = readRouteParam(params, "examId");
+    const studentParam = readRouteParam(params, "studentId");
+    const examId = normalizeId(examParam ?? "");
+    const studentId = normalizeId(studentParam ?? "");
     if (examId == null || studentId == null) {
       return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
     }
