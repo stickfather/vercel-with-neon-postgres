@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type {
+  LessonCatalogItem,
   LevelLessons,
   LessonOption,
   StudentLastLesson,
@@ -25,6 +26,80 @@ import { queueableFetch } from "@/lib/offline/fetch";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
+const EXAM_LESSON_NAME_LOWER = "preparación para el examen";
+
+function isExamLessonLabel(label: string) {
+  return label.trim().toLocaleLowerCase("es") === EXAM_LESSON_NAME_LOWER;
+}
+
+function buildLessonCatalog(entries: LessonCatalogItem[]): LevelLessons[] {
+  const grouped = new Map<string, LessonOption[]>();
+  const order: string[] = [];
+
+  for (const entry of entries) {
+    const lessonName = (entry.lesson ?? "").trim();
+    const levelName = (entry.level ?? "").trim();
+
+    if (!lessonName || !levelName || !Number.isFinite(entry.id)) {
+      continue;
+    }
+
+    if (!grouped.has(levelName)) {
+      grouped.set(levelName, []);
+      order.push(levelName);
+    }
+
+    const seqValue =
+      entry.seq == null || Number.isNaN(Number(entry.seq))
+        ? null
+        : Number(entry.seq);
+
+    grouped.get(levelName)!.push({
+      id: entry.id,
+      lesson: lessonName,
+      level: levelName,
+      sequence: seqValue,
+      globalSequence: seqValue,
+    });
+  }
+
+  return order.map((levelName) => {
+    const lessons = grouped.get(levelName) ?? [];
+    const sorted = [...lessons].sort((a, b) => {
+      const seqA =
+        a.sequence != null && Number.isFinite(a.sequence)
+          ? a.sequence
+          : Number.MAX_SAFE_INTEGER;
+      const seqB =
+        b.sequence != null && Number.isFinite(b.sequence)
+          ? b.sequence
+          : Number.MAX_SAFE_INTEGER;
+
+      if (seqA === seqB) {
+        return a.id - b.id;
+      }
+
+      return seqA - seqB;
+    });
+
+    const examIndex = sorted.findIndex((lesson) => isExamLessonLabel(lesson.lesson));
+    if (examIndex >= 0 && examIndex !== sorted.length - 1) {
+      const [examLesson] = sorted.splice(examIndex, 1);
+      sorted.push(examLesson);
+    }
+
+    return {
+      level: levelName,
+      lessons: sorted.map((lesson, index) => ({
+        ...lesson,
+        sequence:
+          lesson.sequence != null && Number.isFinite(lesson.sequence)
+            ? lesson.sequence
+            : index,
+      })),
+    } satisfies LevelLessons;
+  });
+}
 
 type Props = {
   levels: LevelLessons[];
@@ -63,6 +138,8 @@ export function CheckInForm({
   const router = useRouter();
   const [studentQuery, setStudentQuery] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentName | null>(null);
+  const [defaultLessonCatalog, setDefaultLessonCatalog] =
+    useState<LevelLessons[]>(initialLevels);
   const [lessonCatalog, setLessonCatalog] = useState<LevelLessons[]>(initialLevels);
   const [suggestions, setSuggestions] = useState<StudentName[]>([]);
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
@@ -91,6 +168,57 @@ export function CheckInForm({
   const [blockedAccountMessage, setBlockedAccountMessage] = useState<string | null>(null);
 
   const isFormDisabled = disabled || Boolean(initialError);
+
+  useEffect(() => {
+    setDefaultLessonCatalog(initialLevels);
+  }, [initialLevels]);
+
+  useEffect(() => {
+    if (!selectedStudent) {
+      setLessonCatalog(defaultLessonCatalog);
+    }
+  }, [defaultLessonCatalog, selectedStudent]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const response = await fetch("/api/lessons", {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("No se pudo obtener el catálogo de lecciones.");
+        }
+
+        const payload = (await response.json().catch(() => [])) as unknown;
+        if (!isMounted || controller.signal.aborted) {
+          return;
+        }
+
+        const catalog = Array.isArray(payload)
+          ? (payload as LessonCatalogItem[])
+          : [];
+
+        const normalized = buildLessonCatalog(catalog);
+        setDefaultLessonCatalog(normalized);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("No se pudo obtener el catálogo global de lecciones", error);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (!blockedAccountMessage) {
@@ -180,12 +308,8 @@ export function CheckInForm({
   );
 
   useEffect(() => {
-    setLessonCatalog(initialLevels);
-  }, [initialLevels]);
-
-  useEffect(() => {
     if (!selectedStudent) {
-      setLessonCatalog(initialLevels);
+      setLessonCatalog(defaultLessonCatalog);
       return;
     }
 
@@ -284,14 +408,14 @@ export function CheckInForm({
         if (normalized.length) {
           setLessonCatalog(normalized);
         } else {
-          setLessonCatalog(initialLevels);
+          setLessonCatalog(defaultLessonCatalog);
         }
       } catch (error) {
         if (controller.signal.aborted || !isMounted) {
           return;
         }
         console.error("No se pudo cargar el catálogo de lecciones", error);
-        setLessonCatalog(initialLevels);
+        setLessonCatalog(defaultLessonCatalog);
       }
     })();
 
@@ -299,7 +423,7 @@ export function CheckInForm({
       isMounted = false;
       controller.abort();
     };
-  }, [initialLevels, selectedStudent]);
+  }, [defaultLessonCatalog, selectedStudent]);
 
   useEffect(() => {
     return () => {
@@ -1017,6 +1141,7 @@ export function CheckInForm({
                 const isActive = selectedLesson === lesson.id.toString();
                 const lessonLabel = lesson.lesson;
                 const isWideLabel = lessonLabel.length >= 22;
+                const isExamLesson = isExamLessonLabel(lessonLabel);
                 const lessonScale = getLessonColorScale(
                   selectedLevel,
                   index,
@@ -1057,6 +1182,11 @@ export function CheckInForm({
                     ) : null}
                     <span className="text-sm font-semibold leading-snug sm:text-base">
                       {lessonLabel}
+                      {isExamLesson ? (
+                        <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-brand-orange">
+                          (Examen)
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                 );

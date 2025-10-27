@@ -13,6 +13,13 @@ export type LessonOption = {
   globalSequence: number | null;
 };
 
+export type LessonCatalogItem = {
+  id: number;
+  lesson: string;
+  level: string;
+  seq: number | null;
+};
+
 export type LevelLessons = {
   level: string;
   lessons: LessonOption[];
@@ -57,6 +64,7 @@ export type StudentStatusCheck = {
 };
 
 const CEFR_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+const EXAM_LESSON_LABEL = "Preparación para el examen";
 
 function resolveLevelRank(level: string | null | undefined): number | null {
   if (!level) {
@@ -71,6 +79,90 @@ function resolveLevelRank(level: string | null | undefined): number | null {
   }
 
   return null;
+}
+
+function sortLevels(levelA: string, levelB: string) {
+  const rankA = resolveLevelRank(levelA);
+  const rankB = resolveLevelRank(levelB);
+
+  if (rankA != null && rankB != null) {
+    if (rankA === rankB) {
+      return 0;
+    }
+    return rankA < rankB ? -1 : 1;
+  }
+
+  if (rankA != null) {
+    return -1;
+  }
+
+  if (rankB != null) {
+    return 1;
+  }
+
+  return levelA.localeCompare(levelB, "es", { sensitivity: "base" });
+}
+
+function sortLessonOptions(a: LessonOption, b: LessonOption) {
+  const seqA =
+    a.sequence != null && Number.isFinite(a.sequence)
+      ? a.sequence
+      : a.globalSequence != null && Number.isFinite(a.globalSequence)
+        ? a.globalSequence
+        : Number.MAX_SAFE_INTEGER;
+  const seqB =
+    b.sequence != null && Number.isFinite(b.sequence)
+      ? b.sequence
+      : b.globalSequence != null && Number.isFinite(b.globalSequence)
+        ? b.globalSequence
+        : Number.MAX_SAFE_INTEGER;
+
+  if (seqA === seqB) {
+    return a.id - b.id;
+  }
+
+  return seqA - seqB;
+}
+
+function sortLessonCatalogItems(a: LessonCatalogItem, b: LessonCatalogItem) {
+  const seqA =
+    a.seq != null && Number.isFinite(a.seq) ? Number(a.seq) : Number.MAX_SAFE_INTEGER;
+  const seqB =
+    b.seq != null && Number.isFinite(b.seq) ? Number(b.seq) : Number.MAX_SAFE_INTEGER;
+
+  if (seqA === seqB) {
+    return a.id - b.id;
+  }
+
+  return seqA - seqB;
+}
+
+function isExamLesson(label: string | null | undefined) {
+  if (!label) {
+    return false;
+  }
+
+  return (
+    label
+      .trim()
+      .toLocaleLowerCase("es") === EXAM_LESSON_LABEL.toLocaleLowerCase("es")
+  );
+}
+
+function moveExamLessonToEnd<T extends { lesson: string }>(lessons: T[]) {
+  if (!lessons.length) {
+    return lessons;
+  }
+
+  const examIndex = lessons.findIndex((lesson) => isExamLesson(lesson.lesson));
+  if (examIndex < 0 || examIndex === lessons.length - 1) {
+    return lessons;
+  }
+
+  const copy = [...lessons];
+  const [examLesson] = copy.splice(examIndex, 1);
+  copy.push(examLesson);
+  return copy;
 }
 
 export async function getStudentDirectory(): Promise<StudentName[]> {
@@ -182,7 +274,7 @@ export async function getLevelsWithLessons(
       l.lesson AS lesson_name
     FROM public.lessons l
     WHERE TRIM(COALESCE(l.lesson, '')) <> ''
-    ORDER BY l.seq ASC, l.id ASC
+    ORDER BY TRIM(l.level::text) ASC, l.seq ASC, l.id ASC
   `);
 
   const grouped = new Map<string, LessonOption[]>();
@@ -221,45 +313,63 @@ export async function getLevelsWithLessons(
     });
   }
 
-  const sortLevels = (a: string, b: string) => {
-    const rankA = resolveLevelRank(a);
-    const rankB = resolveLevelRank(b);
-    if (rankA != null && rankB != null) {
-      if (rankA === rankB) return 0;
-      return rankA < rankB ? -1 : 1;
-    }
-    if (rankA != null) {
-      return -1;
-    }
-    if (rankB != null) {
-      return 1;
-    }
-    return a.localeCompare(b, "es", { sensitivity: "base" });
-  };
+  return Array.from(grouped.entries())
+    .sort(([levelA], [levelB]) => sortLevels(levelA, levelB))
+    .map(([level, lessons]) => ({
+      level,
+      lessons: moveExamLessonToEnd([...lessons].sort(sortLessonOptions)),
+    }))
+    .filter((entry) => entry.lessons.length);
+}
 
-  const sortLessons = (a: LessonOption, b: LessonOption) => {
-    const seqA =
-      a.sequence != null && Number.isFinite(a.sequence)
-        ? a.sequence
-        : a.globalSequence != null && Number.isFinite(a.globalSequence)
-          ? a.globalSequence
-          : Number.MAX_SAFE_INTEGER;
-    const seqB =
-      b.sequence != null && Number.isFinite(b.sequence)
-        ? b.sequence
-        : b.globalSequence != null && Number.isFinite(b.globalSequence)
-          ? b.globalSequence
-          : Number.MAX_SAFE_INTEGER;
-    if (seqA === seqB) {
-      return a.id - b.id;
+export async function getLessonCatalogEntries(): Promise<LessonCatalogItem[]> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      l.id AS lesson_id,
+      TRIM(l.lesson) AS lesson_name,
+      l.seq AS lesson_seq,
+      TRIM(l.level::text) AS level_code
+    FROM public.lessons l
+    WHERE TRIM(COALESCE(l.lesson, '')) <> ''
+    ORDER BY TRIM(l.level::text) ASC, l.seq ASC, l.id ASC
+  `);
+
+  const grouped = new Map<string, LessonCatalogItem[]>();
+
+  for (const row of rows) {
+    const level = ((row.level_code as string) ?? "").trim();
+    const lessonName = ((row.lesson_name as string) ?? "").trim();
+    const id = Number(row.lesson_id);
+
+    if (!level || !lessonName || !Number.isFinite(id)) {
+      continue;
     }
-    return seqA - seqB;
-  };
+
+    const seqRaw = row.lesson_seq;
+    const seq =
+      seqRaw == null || Number.isNaN(Number(seqRaw))
+        ? null
+        : Number(seqRaw);
+
+    if (!grouped.has(level)) {
+      grouped.set(level, []);
+    }
+
+    grouped.get(level)!.push({
+      id,
+      lesson: lessonName,
+      level,
+      seq,
+    });
+  }
 
   return Array.from(grouped.entries())
     .sort(([levelA], [levelB]) => sortLevels(levelA, levelB))
-    .map(([level, lessons]) => ({ level, lessons: [...lessons].sort(sortLessons) }))
-    .filter((entry) => entry.lessons.length);
+    .flatMap(([_, lessons]) =>
+      moveExamLessonToEnd([...lessons].sort(sortLessonCatalogItems)),
+    );
 }
 
 export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
