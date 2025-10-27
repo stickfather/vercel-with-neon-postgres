@@ -9,6 +9,7 @@ import {
   isAfterBubbleHideTime,
 } from "@/lib/time/check-in-window";
 import { queueableFetch } from "@/lib/offline/fetch";
+import { FullScreenModal } from "@/components/ui/full-screen-modal";
 
 type Props = {
   attendances: ActiveStaffAttendance[];
@@ -37,6 +38,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [activeAttendances, setActiveAttendances] = useState(attendances);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(
     null,
   );
@@ -45,6 +47,11 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   const [shouldHideBubbles, setShouldHideBubbles] = useState(() =>
     isAfterBubbleHideTime(),
   );
+  const [checkoutPreview, setCheckoutPreview] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setActiveAttendances(attendances);
+  }, [attendances]);
 
   const formatter = useMemo(
     () =>
@@ -52,6 +59,59 @@ export function StaffAttendanceBoard({ attendances }: Props) {
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
+        timeZone: "America/Guayaquil",
+      }),
+    [],
+  );
+
+  const checkoutSummary = useMemo(() => {
+    if (!pendingCheckout) {
+      return null;
+    }
+
+    const checkInDate = pendingCheckout.checkInTime
+      ? new Date(pendingCheckout.checkInTime)
+      : null;
+    const checkOutDate = checkoutPreview;
+
+    const validCheckIn =
+      checkInDate && Number.isFinite(checkInDate.getTime()) ? checkInDate : null;
+    const validCheckOut =
+      checkOutDate && Number.isFinite(checkOutDate.getTime()) ? checkOutDate : null;
+
+    const totalMinutes =
+      validCheckIn && validCheckOut
+        ? Math.max(
+            0,
+            Math.round(
+              (validCheckOut.getTime() - validCheckIn.getTime()) / 60000,
+            ),
+          )
+        : null;
+
+    const totalLabel =
+      totalMinutes != null
+        ? `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(
+            totalMinutes % 60,
+          ).padStart(2, "0")}`
+        : "—";
+
+    return {
+      checkInLabel: validCheckIn
+        ? fullDateTimeFormatter.format(validCheckIn)
+        : "—",
+      checkOutLabel: validCheckOut
+        ? fullDateTimeFormatter.format(validCheckOut)
+        : "—",
+      totalLabel,
+    };
+  }, [pendingCheckout, checkoutPreview, fullDateTimeFormatter]);
+
+  const fullDateTimeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("es-EC", {
+        dateStyle: "medium",
+        timeStyle: "short",
         timeZone: "America/Guayaquil",
       }),
     [],
@@ -72,6 +132,20 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!pendingCheckout) {
+      setCheckoutPreview(null);
+      return undefined;
+    }
+    setCheckoutPreview(new Date());
+    const interval = setInterval(() => {
+      setCheckoutPreview(new Date());
+    }, 30_000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [pendingCheckout]);
 
   const resolveExpiredAttendances = async () => {
     setError(null);
@@ -130,6 +204,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
   const closeConfirmation = () => {
     setPendingCheckout(null);
     setError(null);
+    setCheckoutPreview(null);
   };
 
   const confirmCheckout = async () => {
@@ -151,13 +226,23 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
         queued?: boolean;
+        attendances?: ActiveStaffAttendance[];
       };
 
       if (!response.ok) {
         throw new Error(payload?.error ?? "No se pudo registrar la salida.");
       }
 
+      if (Array.isArray(payload.attendances)) {
+        setActiveAttendances(payload.attendances);
+      } else {
+        setActiveAttendances((previous) =>
+          previous.filter((item) => item.id !== attendance.id),
+        );
+      }
+
       setPendingCheckout(null);
+      setCheckoutPreview(null);
       setToast({
         tone: "success",
         message: payload?.queued
@@ -170,7 +255,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       }
 
       refreshTimeoutRef.current = setTimeout(() => {
-        router.push("/");
+        router.refresh();
       }, 320);
     } catch (error) {
       console.error(error);
@@ -193,7 +278,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
     );
   }
 
-  if (!attendances.length) {
+  if (!activeAttendances.length) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#dde1ff] bg-white px-8 py-16 text-center text-lg text-brand-ink-muted shadow-inner">
         <span>Por ahora no hay personal marcado como presente.</span>
@@ -219,7 +304,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {attendances.map((attendance, index) => {
+        {activeAttendances.map((attendance, index) => {
           const accent = accentPalette[index % accentPalette.length];
           const formattedTime = formatTime(attendance.checkInTime, formatter);
           const wiggle = [
@@ -253,51 +338,87 @@ export function StaffAttendanceBoard({ attendances }: Props) {
           );
         })}
       </div>
-      {pendingCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.4)] px-4 py-6 backdrop-blur-sm">
-          <div className="max-w-md rounded-[32px] border border-white/80 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
-                  Confirmar salida
-                </span>
-                <p className="text-base font-semibold text-brand-deep">
-                  ¿Registrar la salida de {pendingCheckout.fullName.trim()}?
-                </p>
-                <p className="text-sm text-brand-ink-muted">
-                  Una vez confirmada, la asistencia se cerrará y deberás registrar un nuevo ingreso la próxima vez que visites la sede.
-                </p>
+      <FullScreenModal
+        open={Boolean(pendingCheckout)}
+        onClose={closeConfirmation}
+        title="Confirmar salida"
+        description="Revisa los detalles antes de registrar la salida."
+        footer={
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={closeConfirmation}
+              className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={confirmCheckout}
+              disabled={
+                !pendingCheckout ||
+                resolvingExpired ||
+                loadingId === pendingCheckout.id
+              }
+              className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {loadingId === pendingCheckout?.id ? "Confirmando…" : "Confirmar salida"}
+            </button>
+          </div>
+        }
+      >
+        {pendingCheckout ? (
+          <div className="flex flex-col gap-5">
+            <p className="text-sm font-medium text-brand-ink-muted">
+              ¿Confirmar salida?
+            </p>
+            {error ? (
+              <div className="rounded-2xl border border-brand-orange bg-white/80 px-4 py-3 text-sm font-medium text-brand-ink">
+                {error}
               </div>
-              {error && (
-                <div className="rounded-2xl border border-brand-orange bg-white/80 px-4 py-3 text-sm font-medium text-brand-ink">
-                  {error}
+            ) : null}
+            <div className="rounded-[28px] border border-brand-ink-muted/10 bg-white/95 p-5 shadow-inner">
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Personal
+                  </dt>
+                  <dd className="text-base font-semibold text-brand-deep">
+                    {pendingCheckout.fullName.trim()}
+                  </dd>
                 </div>
-              )}
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={closeConfirmation}
-                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCheckout}
-                  disabled={
-                    resolvingExpired || loadingId === pendingCheckout.id
-                  }
-                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70 hover:text-white"
-                >
-                  {loadingId === pendingCheckout.id
-                    ? "Registrando…"
-                    : "Sí, registrar salida"}
-                </button>
-              </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Ingreso
+                  </dt>
+                  <dd className="text-sm font-semibold text-brand-deep">
+                    {checkoutSummary?.checkInLabel ?? "—"}
+                  </dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Salida estimada
+                  </dt>
+                  <dd className="text-sm font-semibold text-brand-deep">
+                    {checkoutSummary?.checkOutLabel ?? "—"}
+                  </dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Tiempo total
+                  </dt>
+                  <dd className="flex flex-col text-sm font-semibold text-brand-deep">
+                    <span>{checkoutSummary?.totalLabel ?? "—"}</span>
+                    <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-brand-ink-muted">
+                      Horas:minutos
+                    </span>
+                  </dd>
+                </div>
+              </dl>
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </FullScreenModal>
     </div>
   );
 }

@@ -338,7 +338,9 @@ export async function registerCheckIn({
   return attendanceId;
 }
 
-export async function registerCheckOut(attendanceId: number): Promise<void> {
+export async function registerCheckOut(
+  attendanceId: number,
+): Promise<ActiveAttendance[]> {
   const sql = getSqlClient();
 
   const existingRows = normalizeRows<SqlRow>(
@@ -386,6 +388,7 @@ export async function registerCheckOut(attendanceId: number): Promise<void> {
   if (!verificationRows.length || verificationRows[0].checkout_time == null) {
     throw new Error("No se pudo cerrar la asistencia seleccionada.");
   }
+  return getActiveAttendances();
 }
 
 export async function getStudentLastLesson(

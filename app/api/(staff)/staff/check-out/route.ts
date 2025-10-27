@@ -12,9 +12,9 @@ export async function POST(request: Request) {
       );
     }
 
-    await registerStaffCheckOut(String(attendanceId));
+    const attendances = await registerStaffCheckOut(String(attendanceId));
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, attendances });
   } catch (error) {
     console.error("Error en check-out del personal", error);
     const message =

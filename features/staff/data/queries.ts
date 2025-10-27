@@ -121,7 +121,9 @@ export async function registerStaffCheckIn({
   return { attendanceId: String(insertedId), staffName };
 }
 
-export async function registerStaffCheckOut(attendanceId: string): Promise<void> {
+export async function registerStaffCheckOut(
+  attendanceId: string,
+): Promise<ActiveStaffAttendance[]> {
   const sql = getSqlClient();
 
   const parsedId = Number(attendanceId);
@@ -172,6 +174,7 @@ export async function registerStaffCheckOut(attendanceId: string): Promise<void>
   if (!verificationRows.length || verificationRows[0].checkout_time == null) {
     throw new Error("No se pudo cerrar la asistencia seleccionada.");
   }
+  return getActiveStaffAttendances();
 }
 
 export async function listStaffMembers(): Promise<StaffMemberRecord[]> {

@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type {
   CoachPanelEngagementHeatmapEntry,
   CoachPanelLessonJourneyEntry,
+  CoachPanelLessonJourneyLevel,
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
 
@@ -28,6 +29,13 @@ const PLAN_LEVEL_RANK: Record<PlanLevel, number> = {
   B2: 3,
   C1: 4,
   C2: 5,
+};
+
+type RenderedLesson = CoachPanelLessonJourneyEntry & {
+  isCurrent: boolean;
+  isCompletedVisual: boolean;
+  minutesValue: number;
+  daysValue: number;
 };
 
 function normalizePlanLevel(level: string | null | undefined): PlanLevel | null {
@@ -213,42 +221,101 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   const { profileHeader, lessonJourney, paceForecast } = data;
 
-  const journeyLessons = lessonJourney.lessons;
+  const lessonLevels = Array.isArray(lessonJourney?.levels)
+    ? lessonJourney.levels
+    : [];
 
   const lessonRows = useMemo(() => {
-    const grouped = new Map<string, CoachPanelLessonJourneyEntry[]>();
+    const grouped = new Map<string, CoachPanelLessonJourneyLevel>();
 
-    journeyLessons.forEach((lesson) => {
-      const normalized = normalizePlanLevel(lesson.level);
-      const fallback = lesson.level?.trim().toUpperCase() || "OTROS";
-      const key = normalized ?? fallback;
-      const bucket = grouped.get(key) ?? [];
-      bucket.push(lesson);
-      grouped.set(key, bucket);
+    lessonLevels.forEach((level) => {
+      const key = level.levelCode?.trim().toUpperCase() || "OTROS";
+      grouped.set(key, {
+        ...level,
+        levelCode: key,
+        lessons: level.lessons.map((lesson) => ({
+          ...lesson,
+          levelCode: lesson.levelCode?.trim().toUpperCase() || key,
+        })),
+      });
     });
 
-    const sortLessons = (entries: CoachPanelLessonJourneyEntry[]) =>
-      entries.sort((a, b) => {
+    const decorateLessons = (
+      level: CoachPanelLessonJourneyLevel,
+    ): RenderedLesson[] => {
+      const sorted = [...level.lessons].sort((a, b) => {
         const aSeq =
-          (a.seq != null && Number.isFinite(a.seq) ? a.seq : null) ??
-          (a.lessonGlobalSeq != null && Number.isFinite(a.lessonGlobalSeq)
+          a.lessonGlobalSeq != null && Number.isFinite(a.lessonGlobalSeq)
             ? a.lessonGlobalSeq
-            : Number.POSITIVE_INFINITY);
+            : a.seqNumber != null && Number.isFinite(a.seqNumber)
+              ? a.seqNumber
+              : Number.POSITIVE_INFINITY;
         const bSeq =
-          (b.seq != null && Number.isFinite(b.seq) ? b.seq : null) ??
-          (b.lessonGlobalSeq != null && Number.isFinite(b.lessonGlobalSeq)
+          b.lessonGlobalSeq != null && Number.isFinite(b.lessonGlobalSeq)
             ? b.lessonGlobalSeq
-            : Number.POSITIVE_INFINITY);
-        if (aSeq === bSeq) {
-          return 0;
-        }
+            : b.seqNumber != null && Number.isFinite(b.seqNumber)
+              ? b.seqNumber
+              : Number.POSITIVE_INFINITY;
+        if (aSeq === bSeq) return 0;
         return aSeq < bSeq ? -1 : 1;
       });
 
-    grouped.forEach((entries, key) => {
-      sortLessons(entries);
-      grouped.set(key, entries);
-    });
+      const highestSeq = level.highestSeqWithActivity;
+
+      let nextSeq: number | null = null;
+      if (sorted.length) {
+        if (highestSeq == null) {
+          const firstWithSeq = sorted.find((lesson) =>
+            lesson.seqNumber != null && Number.isFinite(lesson.seqNumber),
+          );
+          nextSeq = firstWithSeq?.seqNumber ?? null;
+        } else {
+          const candidate = sorted.find(
+            (lesson) =>
+              lesson.seqNumber != null &&
+              Number.isFinite(lesson.seqNumber) &&
+              Number(lesson.seqNumber) > highestSeq,
+          );
+          nextSeq = candidate?.seqNumber ?? null;
+        }
+      }
+
+      return sorted.map((lesson, index) => {
+        const seqValue =
+          lesson.seqNumber != null && Number.isFinite(lesson.seqNumber)
+            ? Number(lesson.seqNumber)
+            : null;
+        const isCompleted =
+          highestSeq != null && seqValue != null ? seqValue <= highestSeq : false;
+        const isCurrent =
+          nextSeq != null
+            ? seqValue != null && seqValue === nextSeq
+            : highestSeq == null && index === 0;
+
+        const rawMinutes =
+          typeof lesson.minutesSpent === "number" ? lesson.minutesSpent : 0;
+        const minutesValue = Number.isFinite(rawMinutes)
+          ? Math.max(0, rawMinutes)
+          : 0;
+
+        const rawDays =
+          typeof lesson.calendarDaysSpent === "number"
+            ? lesson.calendarDaysSpent
+            : 0;
+        const daysValue = Number.isFinite(rawDays)
+          ? Math.max(0, Math.trunc(rawDays))
+          : 0;
+
+        return {
+          ...lesson,
+          levelCode: lesson.levelCode ?? level.levelCode,
+          isCurrent,
+          isCompletedVisual: isCompleted,
+          minutesValue,
+          daysValue,
+        } satisfies RenderedLesson;
+      });
+    };
 
     const planMin =
       normalizePlanLevel(lessonJourney.plannedLevelMin ?? profileHeader.planLevelMin) ??
@@ -269,15 +336,16 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const rows: Array<{
       key: string;
       label: string;
-      lessons: CoachPanelLessonJourneyEntry[];
+      level: CoachPanelLessonJourneyLevel;
+      lessons: RenderedLesson[];
     }> = [];
 
-    PLAN_LEVEL_ORDER.forEach((level) => {
-      const lessons = grouped.get(level) ?? [];
-      if (!lessons.length) {
+    PLAN_LEVEL_ORDER.forEach((levelCode) => {
+      const level = grouped.get(levelCode);
+      if (!level) {
         return;
       }
-      const rank = PLAN_LEVEL_RANK[level];
+      const rank = PLAN_LEVEL_RANK[levelCode];
       if (hasPlanRange) {
         if (rangeMin != null && rank < rangeMin) {
           return;
@@ -286,68 +354,70 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           return;
         }
       }
-      rows.push({ key: level, label: level, lessons });
-      grouped.delete(level);
+      rows.push({
+        key: levelCode,
+        label: levelCode,
+        level,
+        lessons: decorateLessons(level),
+      });
+      grouped.delete(levelCode);
     });
 
-    const remainingKeys = Array.from(grouped.keys()).sort();
-    remainingKeys.forEach((key) => {
-      const lessons = grouped.get(key) ?? [];
-      if (!lessons.length) {
-        return;
-      }
+    const remaining = Array.from(grouped.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, "es", { sensitivity: "base" }),
+    );
+
+    remaining.forEach(([key, level]) => {
       rows.push({
         key,
         label: key === "OTROS" ? "Otros" : key,
-        lessons,
+        level,
+        lessons: decorateLessons(level),
       });
     });
 
     return rows;
   }, [
-    journeyLessons,
+    lessonLevels,
     lessonJourney.plannedLevelMin,
     lessonJourney.plannedLevelMax,
     profileHeader.planLevelMin,
     profileHeader.planLevelMax,
   ]);
 
-  const renderLessonBubble = (lesson: CoachPanelLessonJourneyEntry) => {
-    const isExamBubble = lesson.isExam;
-    const isCurrent = lesson.isCurrentLesson;
-    const isCompleted = lesson.isCompleted;
+  const renderLessonBubble = (lesson: RenderedLesson) => {
+    const isExamBubble = lesson.specialType === "exam";
+    const isCurrent = lesson.isCurrent;
+    const isCompleted = lesson.isCompletedVisual;
 
-    const hoursValue =
-      lesson.hoursSpent != null && Number.isFinite(lesson.hoursSpent)
-        ? Math.max(0, lesson.hoursSpent)
-        : 0;
-    const daysValue =
-      lesson.calendarDaysSpent != null && Number.isFinite(lesson.calendarDaysSpent)
-        ? Math.max(0, Math.trunc(lesson.calendarDaysSpent))
-        : 0;
+    const hoursValue = lesson.minutesValue / 60;
+    const daysValue = lesson.daysValue;
 
-    const hasEffort = hoursValue > 0 || daysValue > 0;
+    const hasEffort = lesson.hasActivity || lesson.minutesValue > 0 || daysValue > 0;
 
     const lessonTooltipLines: string[] = [
-      `Nivel ${lesson.level ?? "—"} · ${lesson.lessonName ?? "Lección"}`,
+      `Nivel ${lesson.levelCode ?? "—"} · ${lesson.lessonTitle ?? "Lección"}`,
       `Tiempo dedicado: ${hoursValue.toFixed(1)} horas`,
       `Días activos: ${formatNumber(daysValue, { maximumFractionDigits: 0 })}`,
     ];
 
     const lessonTooltip = lessonTooltipLines.join("\n");
 
-    const bubbleLabel = lesson.isIntroBooklet
-      ? "Intro Booklet"
-      : lesson.isExam
-        ? "EXAM"
-        : lesson.lessonName ??
-          (lesson.seq != null
-            ? `Lección ${formatNumber(lesson.seq, { maximumFractionDigits: 0 })}`
-            : "—");
+    const bubbleLabel =
+      lesson.specialType === "intro"
+        ? "Cuadernillo de introducción"
+        : lesson.specialType === "exam"
+          ? "Preparación para el examen"
+          : lesson.lessonTitle ??
+            (lesson.seqNumber != null
+              ? `Lección ${formatNumber(lesson.seqNumber, { maximumFractionDigits: 0 })}`
+              : "—");
 
     return (
       <div
-        key={`lesson-${lesson.lessonGlobalSeq ?? `${lesson.level ?? "nivel"}-${lesson.seq ?? "?"}`}`}
+        key={`lesson-${
+          lesson.lessonGlobalSeq ?? `${lesson.levelCode ?? "nivel"}-${lesson.seqNumber ?? "?"}`
+        }`}
         className="flex flex-col items-center gap-1 text-center"
         title={lessonTooltip}
       >

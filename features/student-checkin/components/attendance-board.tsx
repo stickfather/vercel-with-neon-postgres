@@ -10,6 +10,7 @@ import {
   isAfterBubbleHideTime,
 } from "@/lib/time/check-in-window";
 import { queueableFetch } from "@/lib/offline/fetch";
+import { FullScreenModal } from "@/components/ui/full-screen-modal";
 
 type Props = {
   attendances: ActiveAttendance[];
@@ -37,6 +38,7 @@ export function AttendanceBoard({ attendances }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeAttendances, setActiveAttendances] = useState(attendances);
   const [pendingCheckout, setPendingCheckout] = useState<ActiveAttendance | null>(
     null,
   );
@@ -48,6 +50,11 @@ export function AttendanceBoard({ attendances }: Props) {
   const [shouldHideBubbles, setShouldHideBubbles] = useState(() =>
     isAfterBubbleHideTime(),
   );
+  const [checkoutPreview, setCheckoutPreview] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setActiveAttendances(attendances);
+  }, [attendances]);
 
   const formatter = useMemo(() => {
     return new Intl.DateTimeFormat("es-EC", {
@@ -55,6 +62,16 @@ export function AttendanceBoard({ attendances }: Props) {
       minute: "2-digit",
     });
   }, []);
+
+  const fullDateTimeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("es-EC", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "America/Guayaquil",
+      }),
+    [],
+  );
 
   useEffect(() => {
     const updateVisibility = () => {
@@ -72,9 +89,23 @@ export function AttendanceBoard({ attendances }: Props) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!pendingCheckout) {
+      setCheckoutPreview(null);
+      return undefined;
+    }
+    setCheckoutPreview(new Date());
+    const interval = setInterval(() => {
+      setCheckoutPreview(new Date());
+    }, 30_000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [pendingCheckout]);
+
   const groupedAttendances = useMemo(() => {
     const groups = new Map<string, ActiveAttendance[]>();
-    attendances.forEach((attendance) => {
+    activeAttendances.forEach((attendance) => {
       const levelKey = attendance.level?.trim() || "Sin nivel";
       if (!groups.has(levelKey)) {
         groups.set(levelKey, []);
@@ -85,7 +116,50 @@ export function AttendanceBoard({ attendances }: Props) {
     return Array.from(groups.entries()).sort(([levelA], [levelB]) =>
       levelA.localeCompare(levelB, "es", { sensitivity: "base" }),
     );
-  }, [attendances]);
+  }, [activeAttendances]);
+
+  const checkoutSummary = useMemo(() => {
+    if (!pendingCheckout) {
+      return null;
+    }
+
+    const checkInDate = pendingCheckout.checkInTime
+      ? new Date(pendingCheckout.checkInTime)
+      : null;
+    const checkOutDate = checkoutPreview;
+
+    const validCheckIn =
+      checkInDate && Number.isFinite(checkInDate.getTime()) ? checkInDate : null;
+    const validCheckOut =
+      checkOutDate && Number.isFinite(checkOutDate.getTime()) ? checkOutDate : null;
+
+    const totalMinutes =
+      validCheckIn && validCheckOut
+        ? Math.max(
+            0,
+            Math.round(
+              (validCheckOut.getTime() - validCheckIn.getTime()) / 60000,
+            ),
+          )
+        : null;
+
+    const totalLabel =
+      totalMinutes != null
+        ? `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(
+            totalMinutes % 60,
+          ).padStart(2, "0")}`
+        : "—";
+
+    return {
+      checkInLabel: validCheckIn
+        ? fullDateTimeFormatter.format(validCheckIn)
+        : "—",
+      checkOutLabel: validCheckOut
+        ? fullDateTimeFormatter.format(validCheckOut)
+        : "—",
+      totalLabel,
+    };
+  }, [pendingCheckout, checkoutPreview, fullDateTimeFormatter]);
 
   const resolveExpiredAttendances = async () => {
     setError(null);
@@ -160,13 +234,23 @@ export function AttendanceBoard({ attendances }: Props) {
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
         queued?: boolean;
+        attendances?: ActiveAttendance[];
       };
 
       if (!response.ok) {
         throw new Error(payload?.error ?? "No se pudo registrar la salida.");
       }
 
+      if (Array.isArray(payload.attendances)) {
+        setActiveAttendances(payload.attendances);
+      } else {
+        setActiveAttendances((previous) =>
+          previous.filter((item) => item.id !== attendance.id),
+        );
+      }
+
       setPendingCheckout(null);
+      setCheckoutPreview(null);
       setToast({
         tone: "success",
         message: payload?.queued
@@ -179,7 +263,7 @@ export function AttendanceBoard({ attendances }: Props) {
       }
 
       refreshTimeoutRef.current = setTimeout(() => {
-        router.push("/");
+        router.refresh();
       }, 320);
     } catch (err) {
       console.error(err);
@@ -196,6 +280,7 @@ export function AttendanceBoard({ attendances }: Props) {
   const closeConfirmation = () => {
     setPendingCheckout(null);
     setError(null);
+    setCheckoutPreview(null);
   };
 
   if (shouldHideBubbles) {
@@ -211,7 +296,7 @@ export function AttendanceBoard({ attendances }: Props) {
     );
   }
 
-  if (!attendances.length) {
+  if (!activeAttendances.length) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-[32px] border border-dashed border-white/70 bg-white/70 px-6 py-12 text-center text-brand-ink-muted shadow-inner">
         <span className="text-base font-semibold text-brand-deep-soft">
@@ -315,49 +400,87 @@ export function AttendanceBoard({ attendances }: Props) {
         })}
       </div>
 
-      {pendingCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
-          <div className="max-w-md rounded-[32px] border border-white/70 bg-white/95 p-6 text-brand-ink shadow-[0_24px_58px_rgba(15,23,42,0.18)]">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.32em] text-brand-ink-muted">
-                  Confirmar salida
-                </span>
-                <p className="text-base font-semibold text-brand-deep">
-                  ¿Estás seguro de que deseas registrar la salida de {pendingCheckout.fullName.trim()}?
-                </p>
-                <p className="text-sm text-brand-ink-muted">
-                  Una vez confirmada, la asistencia se cerrará y el estudiante deberá registrarse nuevamente para la próxima clase.
-                </p>
+      <FullScreenModal
+        open={Boolean(pendingCheckout)}
+        onClose={closeConfirmation}
+        title="Confirmar salida"
+        description="Revisa los detalles antes de registrar la salida."
+        footer={
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={closeConfirmation}
+              className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={confirmCheckout}
+              disabled={
+                !pendingCheckout ||
+                resolvingExpired ||
+                loadingId === pendingCheckout.id
+              }
+              className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {loadingId === pendingCheckout?.id ? "Confirmando…" : "Confirmar salida"}
+            </button>
+          </div>
+        }
+      >
+        {pendingCheckout ? (
+          <div className="flex flex-col gap-5">
+            <p className="text-sm font-medium text-brand-ink-muted">
+              ¿Confirmar salida?
+            </p>
+            {error ? (
+              <div className="rounded-2xl border border-brand-orange bg-white/80 px-4 py-3 text-sm font-medium text-brand-ink">
+                {error}
               </div>
-              {error && (
-                <div className="rounded-2xl border border-brand-orange bg-white/80 px-4 py-3 text-sm font-medium text-brand-ink">
-                  {error}
+            ) : null}
+            <div className="rounded-[28px] border border-brand-ink-muted/10 bg-white/95 p-5 shadow-inner">
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Estudiante
+                  </dt>
+                  <dd className="text-base font-semibold text-brand-deep">
+                    {pendingCheckout.fullName.trim()}
+                  </dd>
                 </div>
-              )}
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={closeConfirmation}
-                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmCheckout}
-                  disabled={
-                    resolvingExpired || loadingId === pendingCheckout.id
-                  }
-                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70 hover:text-white"
-                >
-                  {loadingId === pendingCheckout.id ? "Registrando…" : "Sí, registrar salida"}
-                </button>
-              </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Ingreso
+                  </dt>
+                  <dd className="text-sm font-semibold text-brand-deep">
+                    {checkoutSummary?.checkInLabel ?? "—"}
+                  </dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Salida estimada
+                  </dt>
+                  <dd className="text-sm font-semibold text-brand-deep">
+                    {checkoutSummary?.checkOutLabel ?? "—"}
+                  </dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-xs font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+                    Tiempo total
+                  </dt>
+                  <dd className="flex flex-col text-sm font-semibold text-brand-deep">
+                    <span>{checkoutSummary?.totalLabel ?? "—"}</span>
+                    <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-brand-ink-muted">
+                      Horas:minutos
+                    </span>
+                  </dd>
+                </div>
+              </dl>
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </FullScreenModal>
 
     </div>
   );
