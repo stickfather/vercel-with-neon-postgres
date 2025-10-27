@@ -173,11 +173,11 @@ export async function getLevelsWithLessons(
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       l.id AS lesson_id,
-      TRIM(l.level) AS level_code,
+      TRIM(l.level::text) AS level_code,
       l.seq AS global_seq,
       ROW_NUMBER() OVER (
-        PARTITION BY TRIM(l.level)
-        ORDER BY l.seq
+        PARTITION BY TRIM(l.level::text)
+        ORDER BY l.seq, l.id
       ) - 1 AS level_seq,
       l.lesson AS lesson_name
     FROM public.lessons l
