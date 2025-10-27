@@ -67,18 +67,12 @@ export function StaffRegistroPageShell({
       </div>
 
       <main className="relative mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-12 px-6 py-14 md:px-10 lg:px-12">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-start gap-3">
           <Link
             href="/administracion"
             className="inline-flex items-center justify-center rounded-full border border-transparent bg-white/90 px-4 py-2 text-sm font-semibold text-brand-deep shadow-sm backdrop-blur transition hover:border-brand-teal hover:text-brand-teal"
           >
             ← Volver al panel
-          </Link>
-          <Link
-            href="/registro"
-            className="inline-flex items-center justify-center rounded-full bg-brand-teal px-5 py-2 text-sm font-semibold uppercase tracking-wide text-white shadow transition hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff7a23]"
-          >
-            Registro de estudiantes
           </Link>
         </div>
 
