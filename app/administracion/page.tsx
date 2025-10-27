@@ -33,10 +33,10 @@ const tiles = [
     emoji: "🛠️",
   },
   {
-    href: "/administracion/ayuda",
-    title: "Centro de ayuda",
-    description: "Accede a guías rápidas y soporte para resolver dudas del equipo.",
-    emoji: "💡",
+    href: "/admin/reportes",
+    title: "Reportes gerenciales",
+    description: "Indicadores clave del centro para aprendizaje, engagement y finanzas.",
+    emoji: "📈",
   },
 ];
 
