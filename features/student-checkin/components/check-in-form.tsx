@@ -10,8 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type {
-  LevelLessons,
-  LessonOption,
+  LessonCatalogItem,
   StudentLastLesson,
   StudentName,
 } from "@/features/student-checkin/data/queries";
@@ -25,9 +24,14 @@ import { queueableFetch } from "@/lib/offline/fetch";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
+const EXAM_LESSON_NAME_LOWER = "preparación para el examen";
+const LEVELS = ["A1", "A2", "B1", "B2", "C1"] as const;
+
+function isExamLessonLabel(label: string) {
+  return label.trim().toLocaleLowerCase("es") === EXAM_LESSON_NAME_LOWER;
+}
 
 type Props = {
-  levels: LevelLessons[];
   disabled?: boolean;
   initialError?: string | null;
   lessonsError?: string | null;
@@ -55,7 +59,6 @@ type LessonOverridePrompt = {
 };
 
 export function CheckInForm({
-  levels: initialLevels,
   disabled = false,
   initialError = null,
   lessonsError = null,
@@ -63,13 +66,15 @@ export function CheckInForm({
   const router = useRouter();
   const [studentQuery, setStudentQuery] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentName | null>(null);
-  const [lessonCatalog, setLessonCatalog] = useState<LevelLessons[]>(initialLevels);
+  const [allLessons, setAllLessons] = useState<LessonCatalogItem[]>([]);
   const [suggestions, setSuggestions] = useState<StudentName[]>([]);
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
   const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
   const [suggestionState, setSuggestionState] = useState<FetchState>("idle");
-  const [selectedLevel, setSelectedLevel] = useState("");
-  const [selectedLesson, setSelectedLesson] = useState<string>("");
+  const [selectedLevel, setSelectedLevel] = useState<string>(LEVELS[0]);
+  const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null);
+  const [isLoadingLessons, setIsLoadingLessons] = useState(true);
+  const [lessonsFetchError, setLessonsFetchError] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusState>(
     initialError ? { message: initialError } : null,
   );
@@ -91,6 +96,89 @@ export function CheckInForm({
   const [blockedAccountMessage, setBlockedAccountMessage] = useState<string | null>(null);
 
   const isFormDisabled = disabled || Boolean(initialError);
+
+  const lessonsAbortRef = useRef<AbortController | null>(null);
+
+  const normalizeSequence = useCallback((value: unknown): number | null => {
+    if (value == null) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, []);
+
+  const loadLessons = useCallback(async () => {
+    lessonsAbortRef.current?.abort();
+    const controller = new AbortController();
+    lessonsAbortRef.current = controller;
+
+    setIsLoadingLessons(true);
+    setLessonsFetchError(null);
+
+    try {
+      const response = await fetch("/api/lessons", {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar las lecciones.");
+      }
+
+      const payload = (await response.json().catch(() => [])) as unknown;
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      if (!Array.isArray(payload)) {
+        setAllLessons([]);
+        setLessonsFetchError("No se pudieron cargar las lecciones.");
+        return;
+      }
+
+      const normalized = (payload as LessonCatalogItem[])
+        .map((entry) => {
+          const lessonName = (entry.lesson ?? "").trim();
+          const levelName = (entry.level ?? "").trim();
+          const id = Number(entry.id);
+          if (!lessonName || !levelName || !Number.isFinite(id)) {
+            return null;
+          }
+
+          return {
+            id,
+            lesson: lessonName,
+            level: levelName,
+            seq: normalizeSequence(entry.seq),
+          } satisfies LessonCatalogItem;
+        })
+        .filter(
+          (
+            value: LessonCatalogItem | null,
+          ): value is LessonCatalogItem => value !== null,
+        );
+
+      setAllLessons(normalized);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      console.error("No se pudo obtener el catálogo de lecciones", error);
+      setAllLessons([]);
+      setLessonsFetchError("No se pudieron cargar las lecciones.");
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsLoadingLessons(false);
+      }
+    }
+  }, [normalizeSequence]);
+
+  useEffect(() => {
+    loadLessons();
+
+    return () => {
+      lessonsAbortRef.current?.abort();
+    };
+  }, [loadLessons]);
 
   useEffect(() => {
     if (!blockedAccountMessage) {
@@ -147,11 +235,11 @@ export function CheckInForm({
       }
 
       const normalizedLevel = suggestion.level.trim().toLowerCase();
-      const levelEntry = lessonCatalog.find(
-        (entry) => entry.level.trim().toLowerCase() === normalizedLevel,
+      const levelMatch = allLessons.find((lesson) =>
+        lesson.level.trim().toLowerCase() === normalizedLevel,
       );
 
-      if (!levelEntry) {
+      if (!levelMatch) {
         setSuggestedLesson(null);
         setLastLessonError(
           "La lección sugerida ya no está disponible. Selecciónala manualmente.",
@@ -159,15 +247,21 @@ export function CheckInForm({
         return;
       }
 
-      const lessonEntry = levelEntry.lessons.find(
-        (lesson) => lesson.id === suggestion.lessonId,
+      const lessonEntry = allLessons.find(
+        (lesson) =>
+          lesson.id === suggestion.lessonId &&
+          lesson.level.trim().toLowerCase() === normalizedLevel,
       );
 
       setStatus(null);
-      setSelectedLevel(levelEntry.level);
+
+      const matchedLevel = LEVELS.find(
+        (levelCode) => levelCode.toLowerCase() === normalizedLevel,
+      );
+      setSelectedLevel(matchedLevel ?? levelMatch.level.toUpperCase());
 
       if (lessonEntry) {
-        setSelectedLesson(String(lessonEntry.id));
+        setSelectedLessonId(lessonEntry.id);
         setLastLessonError(null);
       } else {
         setSuggestedLesson(null);
@@ -176,130 +270,8 @@ export function CheckInForm({
         );
       }
     },
-    [isFormDisabled, lessonCatalog],
+    [allLessons, isFormDisabled],
   );
-
-  useEffect(() => {
-    setLessonCatalog(initialLevels);
-  }, [initialLevels]);
-
-  useEffect(() => {
-    if (!selectedStudent) {
-      setLessonCatalog(initialLevels);
-      return;
-    }
-
-    const controller = new AbortController();
-    let isMounted = true;
-
-    (async () => {
-      try {
-        const response = await fetch(
-          `/api/checkin/lessons/${selectedStudent.id}`,
-          {
-            method: "GET",
-            cache: "no-store",
-            signal: controller.signal,
-          },
-        );
-
-        if (!response.ok) {
-          throw new Error("No se pudo obtener el catálogo de lecciones.");
-        }
-
-        const payload = await response.json().catch(() => ({}));
-        if (controller.signal.aborted || !isMounted) {
-          return;
-        }
-
-        const levels = Array.isArray(payload?.levels) ? payload.levels : [];
-        const normalized = levels
-          .map((entry: any): LevelLessons | null => {
-            const levelLabel =
-              typeof entry?.level === "string"
-                ? entry.level.trim()
-                : typeof entry?.level_code === "string"
-                  ? entry.level_code.trim()
-                  : "";
-
-            if (!levelLabel) {
-              return null;
-            }
-
-            const lessons = Array.isArray(entry?.lessons)
-              ? entry.lessons
-                  .map((lesson: any): LessonOption | null => {
-                    const lessonId = Number(lesson?.lesson_id ?? lesson?.id);
-                    if (!Number.isFinite(lessonId)) {
-                      return null;
-                    }
-
-                    const lessonName =
-                      typeof lesson?.lesson_name === "string"
-                        ? lesson.lesson_name.trim()
-                        : typeof lesson?.display_name === "string"
-                          ? lesson.display_name.trim()
-                          : typeof lesson?.lesson === "string"
-                            ? lesson.lesson.trim()
-                            : "";
-
-                    const sequenceValue =
-                      lesson?.sequence == null
-                        ? null
-                        : Number(lesson.sequence);
-                    const globalSequenceValue =
-                      lesson?.global_sequence == null
-                        ? null
-                        : Number(lesson.global_sequence);
-
-                    const candidate: LessonOption = {
-                      id: lessonId,
-                      lesson: lessonName,
-                      level: levelLabel,
-                      sequence:
-                        sequenceValue != null && Number.isFinite(sequenceValue)
-                          ? sequenceValue
-                          : null,
-                      globalSequence:
-                        globalSequenceValue != null &&
-                        Number.isFinite(globalSequenceValue)
-                          ? globalSequenceValue
-                          : null,
-                    };
-
-                    return candidate;
-                  })
-                  .filter((value: LessonOption | null): value is LessonOption => Boolean(value))
-              : [];
-
-            const result: LevelLessons = {
-              level: levelLabel,
-              lessons,
-            };
-
-            return result;
-          })
-          .filter((value: LevelLessons | null): value is LevelLessons => Boolean(value?.level));
-
-        if (normalized.length) {
-          setLessonCatalog(normalized);
-        } else {
-          setLessonCatalog(initialLevels);
-        }
-      } catch (error) {
-        if (controller.signal.aborted || !isMounted) {
-          return;
-        }
-        console.error("No se pudo cargar el catálogo de lecciones", error);
-        setLessonCatalog(initialLevels);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [initialLevels, selectedStudent]);
 
   useEffect(() => {
     return () => {
@@ -369,12 +341,11 @@ export function CheckInForm({
 
   useEffect(() => {
     if (!selectedStudent) {
-      setSelectedLevel("");
-      setSelectedLesson("");
+      setSelectedLevel(LEVELS[0]);
+      setSelectedLessonId(null);
       return;
     }
-    setSelectedLevel("");
-    setSelectedLesson("");
+    setSelectedLessonId(null);
   }, [selectedStudent?.id]);
 
   useEffect(() => {
@@ -462,67 +433,61 @@ export function CheckInForm({
   }, [studentQuery, selectedStudent]);
 
   const lessonsForLevel = useMemo(() => {
-    return lessonCatalog.find((level) => level.level === selectedLevel)?.lessons ?? [];
-  }, [lessonCatalog, selectedLevel]);
+    const normalizedLevel = selectedLevel.trim().toLowerCase();
+    if (!normalizedLevel) {
+      return [] as LessonCatalogItem[];
+    }
+
+    return allLessons.filter(
+      (lesson) => lesson.level.trim().toLowerCase() === normalizedLevel,
+    );
+  }, [allLessons, selectedLevel]);
 
   const sortedLessons = useMemo(() => {
     return [...lessonsForLevel].sort((a, b) => {
       const aSeq =
-        a.sequence != null && Number.isFinite(a.sequence)
-          ? a.sequence
-          : a.globalSequence != null && Number.isFinite(a.globalSequence)
-            ? a.globalSequence
-            : Number.MAX_SAFE_INTEGER;
+        a.seq != null && Number.isFinite(a.seq)
+          ? a.seq
+          : Number.MAX_SAFE_INTEGER;
       const bSeq =
-        b.sequence != null && Number.isFinite(b.sequence)
-          ? b.sequence
-          : b.globalSequence != null && Number.isFinite(b.globalSequence)
-            ? b.globalSequence
-            : Number.MAX_SAFE_INTEGER;
-      return aSeq - bSeq;
+        b.seq != null && Number.isFinite(b.seq)
+          ? b.seq
+          : Number.MAX_SAFE_INTEGER;
+
+      if (aSeq !== bSeq) {
+        return aSeq - bSeq;
+      }
+
+      return a.id - b.id;
     });
   }, [lessonsForLevel]);
 
   useEffect(() => {
-    if (!selectedLevel) {
-      setSelectedLesson("");
+    if (!selectedLevel || isLoadingLessons || lessonsFetchError) {
+      setSelectedLessonId(null);
       return;
     }
+
     if (!sortedLessons.length) {
-      setSelectedLesson("");
+      setSelectedLessonId(null);
       return;
     }
-    setSelectedLesson((previous) => {
-      if (previous && sortedLessons.some((lesson) => lesson.id.toString() === previous)) {
+
+    setSelectedLessonId((previous) => {
+      if (
+        previous != null &&
+        sortedLessons.some((lesson) => lesson.id === previous)
+      ) {
         return previous;
       }
       const prioritized =
-        sortedLessons.find((lesson) => lesson.sequence !== null) ?? sortedLessons[0];
-      return prioritized.id.toString();
+        sortedLessons.find((lesson) => lesson.seq !== null) ?? sortedLessons[0];
+      return prioritized.id;
     });
-  }, [selectedLevel, sortedLessons]);
-
-  useEffect(() => {
-    if (!lessonCatalog.length) {
-      return;
-    }
-
-    if (!selectedLevel) {
-      setSelectedLevel(lessonCatalog[0]?.level ?? "");
-      return;
-    }
-
-    const exists = lessonCatalog.some(
-      (entry) => entry.level.trim().toLowerCase() === selectedLevel.trim().toLowerCase(),
-    );
-
-    if (!exists) {
-      setSelectedLevel(lessonCatalog[0]?.level ?? "");
-    }
-  }, [lessonCatalog, selectedLevel]);
+  }, [isLoadingLessons, lessonsFetchError, selectedLevel, sortedLessons]);
 
   const canChooseProgression =
-    Boolean(selectedStudent) && !disabled && !initialError && Boolean(lessonCatalog.length);
+    Boolean(selectedStudent) && !disabled && !initialError;
 
   const handleSuggestionSelection = (student: StudentName) => {
     setStudentQuery(student.fullName);
@@ -530,8 +495,8 @@ export function CheckInForm({
     setSuggestions([]);
     setIsSuggestionsOpen(false);
     setStatus(null);
-    setSelectedLevel("");
-    setSelectedLesson("");
+    setSelectedLevel(LEVELS[0]);
+    setSelectedLessonId(null);
     setSuggestedLesson(null);
     setLastLessonError(null);
     lastLessonAbortRef.current?.abort();
@@ -584,8 +549,8 @@ export function CheckInForm({
       setStatus(null);
       setStudentQuery("");
       setSelectedStudent(null);
-      setSelectedLevel("");
-      setSelectedLesson("");
+      setSelectedLevel(LEVELS[0]);
+      setSelectedLessonId(null);
       setIsSuggestionsOpen(false);
       setSuggestions([]);
       setHighlightedSuggestion(0);
@@ -640,17 +605,9 @@ export function CheckInForm({
       });
       return;
     }
-    if (!selectedLesson) {
+    if (selectedLessonId == null) {
       setStatus({
         message: "Elige la lección correspondiente a tu nivel.",
-      });
-      return;
-    }
-
-    const parsedLessonId = Number(selectedLesson);
-    if (!Number.isFinite(parsedLessonId)) {
-      setStatus({
-        message: "La lección seleccionada no es válida.",
       });
       return;
     }
@@ -661,7 +618,7 @@ export function CheckInForm({
       if (!isOnline) {
         await submitCheckIn({
           studentId: selectedStudent.id,
-          lessonId: parsedLessonId,
+          lessonId: selectedLessonId,
           level: selectedLevel,
           confirmOverride: false,
         });
@@ -675,7 +632,7 @@ export function CheckInForm({
         },
         body: JSON.stringify({
           studentId: selectedStudent.id,
-          lessonId: parsedLessonId,
+          lessonId: selectedLessonId,
         }),
       });
 
@@ -712,7 +669,7 @@ export function CheckInForm({
       if (validationPayload.needsConfirmation) {
         setLessonOverridePrompt({
           studentId: selectedStudent.id,
-          lessonId: parsedLessonId,
+          lessonId: selectedLessonId,
           level: selectedLevel,
           lastLessonName: validationPayload.lastLessonName ?? null,
           lastLessonSequence:
@@ -726,7 +683,7 @@ export function CheckInForm({
 
       await submitCheckIn({
         studentId: selectedStudent.id,
-        lessonId: parsedLessonId,
+        lessonId: selectedLessonId,
         level: selectedLevel,
         confirmOverride: false,
       });
@@ -950,44 +907,43 @@ export function CheckInForm({
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
-          {canChooseProgression ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              {lessonCatalog.map((level) => {
-                const levelAccent = getLevelAccent(level.level);
-                const isActive = selectedLevel === level.level;
-                return (
-                  <button
-                    key={level.level}
-                    type="button"
-                    onClick={() => {
-                      setSelectedLevel(level.level);
-                      setStatus(null);
-                    }}
-                    className={`flex min-h-[68px] items-center justify-center rounded-full border px-6 text-center text-base font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                      isActive
-                        ? "border-transparent text-brand-deep"
-                        : "border-[rgba(30,27,50,0.15)] text-brand-ink"
-                    }`}
-                    style={{
-                      backgroundColor: isActive
-                        ? levelAccent.base
-                        : "rgba(255,255,255,0.9)",
-                      color: isActive ? levelAccent.primary : undefined,
-                      boxShadow: isActive
-                        ? "0 14px 34px rgba(15,23,42,0.18)"
-                        : "0 4px 14px rgba(15,23,42,0.08)",
-                    }}
-                    aria-pressed={isActive}
-                    disabled={isFormDisabled || !canChooseProgression}
-                  >
-                    <span className="text-lg font-black">
-                      {level.level}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {LEVELS.map((levelName) => {
+              const levelAccent = getLevelAccent(levelName);
+              const isActive = selectedLevel === levelName;
+              return (
+                <button
+                  key={levelName}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLevel(levelName);
+                    setStatus(null);
+                  }}
+                  className={`flex min-h-[68px] items-center justify-center rounded-full border px-6 text-center text-base font-semibold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                    isActive
+                      ? "border-transparent text-brand-deep"
+                      : "border-[rgba(30,27,50,0.15)] text-brand-ink"
+                  }`}
+                  style={{
+                    backgroundColor: isActive
+                      ? levelAccent.base
+                      : "rgba(255,255,255,0.9)",
+                    color: isActive ? levelAccent.primary : undefined,
+                    boxShadow: isActive
+                      ? "0 14px 34px rgba(15,23,42,0.18)"
+                      : "0 4px 14px rgba(15,23,42,0.08)",
+                  }}
+                  aria-pressed={isActive}
+                  disabled={isFormDisabled || !canChooseProgression}
+                >
+                  <span className="text-lg font-black">
+                    {levelName}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {!canChooseProgression && (
             <div className="rounded-[24px] border border-dashed border-brand-teal bg-white/70 px-5 py-4 text-sm text-brand-ink">
               Selecciona primero tu nombre para ver los niveles disponibles.
             </div>
@@ -1011,60 +967,76 @@ export function CheckInForm({
               </span>
             ) : null}
           </div>
-          {selectedLevel && canChooseProgression ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              {sortedLessons.map((lesson, index) => {
-                const isActive = selectedLesson === lesson.id.toString();
-                const lessonLabel = lesson.lesson;
-                const isWideLabel = lessonLabel.length >= 22;
-                const lessonScale = getLessonColorScale(
-                  selectedLevel,
-                  index,
-                  sortedLessons.length,
-                );
-                return (
-                  <button
-                    key={lesson.id}
-                    type="button"
-                    onClick={() => setSelectedLesson(lesson.id.toString())}
-                    className={`group relative flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-5 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                      isActive
-                        ? "border-brand-teal bg-white text-brand-deep shadow-[0_20px_40px_rgba(15,23,42,0.2)] ring-4 ring-brand-teal/35 ring-offset-2 ring-offset-white"
-                        : "border-[rgba(30,27,50,0.12)]"
-                    } ${isWideLabel ? "sm:col-span-2 lg:col-span-2" : ""}`}
-                    style={{
-                      background: isActive
-                        ? "linear-gradient(140deg, rgba(0,191,166,0.15) 0%, rgba(255,255,255,0.95) 65%)"
-                        : lessonScale.background,
-                      borderColor: isActive ? accent.primary : lessonScale.border,
-                      boxShadow: isActive
-                        ? "0 22px 44px rgba(15,23,42,0.22)"
-                        : "0 6px 18px rgba(15,23,42,0.1)",
-                      color: isActive ? accent.primary : lessonScale.text,
-                    }}
-                    aria-pressed={isActive}
-                    disabled={
-                      isFormDisabled || !sortedLessons.length || !canChooseProgression
-                    }
-                  >
-                    {isActive ? (
-                      <span
-                        aria-hidden
-                        className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-teal text-white shadow-md"
-                      >
-                        ✓
+          {canChooseProgression ? (
+            <div className="grid min-h-[5.5rem] grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {isLoadingLessons ? (
+                <div className="col-span-full text-sm italic text-brand-ink-muted">
+                  Cargando lecciones…
+                </div>
+              ) : lessonsFetchError ? (
+                <div className="col-span-full rounded-[18px] border border-brand-orange bg-white/80 px-4 py-3 text-sm text-brand-ink">
+                  {lessonsFetchError}
+                </div>
+              ) : sortedLessons.length ? (
+                sortedLessons.map((lesson, index) => {
+                  const isActive = selectedLessonId === lesson.id;
+                  const lessonLabel = lesson.lesson;
+                  const isWideLabel = lessonLabel.length >= 22;
+                  const isExamLesson = isExamLessonLabel(lessonLabel);
+                  const lessonScale = getLessonColorScale(
+                    selectedLevel,
+                    index,
+                    sortedLessons.length,
+                  );
+                  return (
+                    <button
+                      key={lesson.id}
+                      type="button"
+                      onClick={() => setSelectedLessonId(lesson.id)}
+                      className={`group relative flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-5 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                        isActive
+                          ? "border-brand-teal bg-white text-brand-deep shadow-[0_20px_40px_rgba(15,23,42,0.2)] ring-4 ring-brand-teal/35 ring-offset-2 ring-offset-white"
+                          : "border-[rgba(30,27,50,0.12)]"
+                      } ${isWideLabel ? "sm:col-span-2 lg:col-span-2" : ""}`}
+                      style={{
+                        background: isActive
+                          ? "linear-gradient(140deg, rgba(0,191,166,0.15) 0%, rgba(255,255,255,0.95) 65%)"
+                          : lessonScale.background,
+                        borderColor: isActive ? accent.primary : lessonScale.border,
+                        boxShadow: isActive
+                          ? "0 22px 44px rgba(15,23,42,0.22)"
+                          : "0 6px 18px rgba(15,23,42,0.1)",
+                        color: isActive ? accent.primary : lessonScale.text,
+                      }}
+                      aria-pressed={isActive}
+                      disabled={
+                        isFormDisabled || !sortedLessons.length || isLoadingLessons || lessonsFetchError !== null
+                      }
+                    >
+                      {isActive ? (
+                        <span
+                          aria-hidden
+                          className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-teal text-white shadow-md"
+                        >
+                          ✓
+                        </span>
+                      ) : null}
+                      <span className="text-sm font-semibold leading-snug sm:text-base">
+                        {lessonLabel}
+                        {isExamLesson ? (
+                          <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-brand-orange">
+                            (Examen)
+                          </span>
+                        ) : null}
                       </span>
-                    ) : null}
-                    <span className="text-sm font-semibold leading-snug sm:text-base">
-                      {lessonLabel}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : canChooseProgression ? (
-            <div className="rounded-[24px] border border-dashed border-brand-orange bg-white/75 px-5 py-4 text-sm text-brand-ink">
-              Selecciona primero tu nivel para sugerirte la lección indicada.
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="col-span-full text-sm italic text-brand-ink-muted">
+                  No hay lecciones para {selectedLevel}.
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-[24px] border border-dashed border-brand-teal bg-white/70 px-5 py-4 text-sm text-brand-ink">
@@ -1074,7 +1046,10 @@ export function CheckInForm({
         </div>
       </div>
 
-      {!lessonCatalog.length && !initialError && (
+      {!isLoadingLessons &&
+        !lessonsFetchError &&
+        !allLessons.length &&
+        !initialError && (
         <div className="rounded-3xl border border-brand-orange bg-white/75 px-5 py-3 text-sm font-medium text-brand-ink">
           {lessonsError ??
             "Aún no hay lecciones disponibles para seleccionar. Nuestro equipo lo resolverá en breve."}
@@ -1102,7 +1077,7 @@ export function CheckInForm({
           isFormDisabled ||
           !canChooseProgression ||
           !selectedLevel ||
-          !selectedLesson
+          selectedLessonId == null
         }
         className="cta-ripple mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-brand-orange px-9 py-4 text-lg font-semibold uppercase tracking-wide text-white shadow-lg transition hover:bg-[#ff6a00] disabled:cursor-not-allowed disabled:opacity-70"
       >

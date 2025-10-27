@@ -13,6 +13,7 @@ import { FullScreenModal } from "@/components/ui/full-screen-modal";
 
 type Props = {
   attendances: ActiveStaffAttendance[];
+  onCheckoutComplete?: () => void;
 };
 
 const accentPalette = [
@@ -31,7 +32,7 @@ function formatTime(value: string, formatter: Intl.DateTimeFormat) {
   return formatter.format(date);
 }
 
-export function StaffAttendanceBoard({ attendances }: Props) {
+export function StaffAttendanceBoard({ attendances, onCheckoutComplete }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [pendingCheckout, setPendingCheckout] = useState<ActiveStaffAttendance | null>(
@@ -253,10 +254,7 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
       }
-
-      refreshTimeoutRef.current = setTimeout(() => {
-        router.refresh();
-      }, 320);
+      onCheckoutComplete?.();
     } catch (error) {
       console.error(error);
       setError(

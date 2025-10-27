@@ -14,6 +14,7 @@ import { FullScreenModal } from "@/components/ui/full-screen-modal";
 
 type Props = {
   attendances: ActiveAttendance[];
+  onCheckoutComplete?: () => void;
 };
 
 function splitName(fullName: string): [string, string | null] {
@@ -34,7 +35,7 @@ function splitName(fullName: string): [string, string | null] {
   return [top, bottom || null];
 }
 
-export function AttendanceBoard({ attendances }: Props) {
+export function AttendanceBoard({ attendances, onCheckoutComplete }: Props) {
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -262,9 +263,7 @@ export function AttendanceBoard({ attendances }: Props) {
         clearTimeout(refreshTimeoutRef.current);
       }
 
-      refreshTimeoutRef.current = setTimeout(() => {
-        router.refresh();
-      }, 320);
+      onCheckoutComplete?.();
     } catch (err) {
       console.error(err);
       setError(

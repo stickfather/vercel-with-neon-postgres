@@ -13,6 +13,13 @@ export type LessonOption = {
   globalSequence: number | null;
 };
 
+export type LessonCatalogItem = {
+  id: number;
+  lesson: string;
+  level: string;
+  seq: number | null;
+};
+
 export type LevelLessons = {
   level: string;
   lessons: LessonOption[];
@@ -71,6 +78,49 @@ function resolveLevelRank(level: string | null | undefined): number | null {
   }
 
   return null;
+}
+
+function sortLevels(levelA: string, levelB: string) {
+  const rankA = resolveLevelRank(levelA);
+  const rankB = resolveLevelRank(levelB);
+
+  if (rankA != null && rankB != null) {
+    if (rankA === rankB) {
+      return 0;
+    }
+    return rankA < rankB ? -1 : 1;
+  }
+
+  if (rankA != null) {
+    return -1;
+  }
+
+  if (rankB != null) {
+    return 1;
+  }
+
+  return levelA.localeCompare(levelB, "es", { sensitivity: "base" });
+}
+
+function sortLessonOptions(a: LessonOption, b: LessonOption) {
+  const seqA =
+    a.sequence != null && Number.isFinite(a.sequence)
+      ? a.sequence
+      : a.globalSequence != null && Number.isFinite(a.globalSequence)
+        ? a.globalSequence
+        : Number.MAX_SAFE_INTEGER;
+  const seqB =
+    b.sequence != null && Number.isFinite(b.sequence)
+      ? b.sequence
+      : b.globalSequence != null && Number.isFinite(b.globalSequence)
+        ? b.globalSequence
+        : Number.MAX_SAFE_INTEGER;
+
+  if (seqA === seqB) {
+    return a.id - b.id;
+  }
+
+  return seqA - seqB;
 }
 
 export async function getStudentDirectory(): Promise<StudentName[]> {
@@ -182,7 +232,7 @@ export async function getLevelsWithLessons(
       l.lesson AS lesson_name
     FROM public.lessons l
     WHERE TRIM(COALESCE(l.lesson, '')) <> ''
-    ORDER BY l.seq ASC, l.id ASC
+    ORDER BY TRIM(l.level::text) ASC, l.seq ASC, l.id ASC
   `);
 
   const grouped = new Map<string, LessonOption[]>();
@@ -221,45 +271,55 @@ export async function getLevelsWithLessons(
     });
   }
 
-  const sortLevels = (a: string, b: string) => {
-    const rankA = resolveLevelRank(a);
-    const rankB = resolveLevelRank(b);
-    if (rankA != null && rankB != null) {
-      if (rankA === rankB) return 0;
-      return rankA < rankB ? -1 : 1;
-    }
-    if (rankA != null) {
-      return -1;
-    }
-    if (rankB != null) {
-      return 1;
-    }
-    return a.localeCompare(b, "es", { sensitivity: "base" });
-  };
-
-  const sortLessons = (a: LessonOption, b: LessonOption) => {
-    const seqA =
-      a.sequence != null && Number.isFinite(a.sequence)
-        ? a.sequence
-        : a.globalSequence != null && Number.isFinite(a.globalSequence)
-          ? a.globalSequence
-          : Number.MAX_SAFE_INTEGER;
-    const seqB =
-      b.sequence != null && Number.isFinite(b.sequence)
-        ? b.sequence
-        : b.globalSequence != null && Number.isFinite(b.globalSequence)
-          ? b.globalSequence
-          : Number.MAX_SAFE_INTEGER;
-    if (seqA === seqB) {
-      return a.id - b.id;
-    }
-    return seqA - seqB;
-  };
-
   return Array.from(grouped.entries())
     .sort(([levelA], [levelB]) => sortLevels(levelA, levelB))
-    .map(([level, lessons]) => ({ level, lessons: [...lessons].sort(sortLessons) }))
+    .map(([level, lessons]) => ({
+      level,
+      lessons: [...lessons].sort(sortLessonOptions),
+    }))
     .filter((entry) => entry.lessons.length);
+}
+
+export async function getLessonCatalogEntries(): Promise<LessonCatalogItem[]> {
+  const sql = getSqlClient();
+
+  const rows = normalizeRows<SqlRow>(await sql`
+    SELECT
+      l.id AS lesson_id,
+      TRIM(l.lesson) AS lesson_name,
+      l.seq AS lesson_seq,
+      TRIM(l.level::text) AS level_code
+    FROM public.lessons l
+    WHERE TRIM(COALESCE(l.lesson, '')) <> ''
+    ORDER BY TRIM(l.level::text) ASC, l.seq ASC, l.id ASC
+  `);
+
+  const lessons: LessonCatalogItem[] = [];
+
+  for (const row of rows) {
+    const level = ((row.level_code as string) ?? "").trim();
+    const lessonName = ((row.lesson_name as string) ?? "").trim();
+    const id = Number(row.lesson_id);
+
+    if (!level || !lessonName || !Number.isFinite(id)) {
+      continue;
+    }
+
+    const seqRaw = row.lesson_seq;
+    const seq =
+      seqRaw == null || Number.isNaN(Number(seqRaw))
+        ? null
+        : Number(seqRaw);
+
+    lessons.push({
+      id,
+      lesson: lessonName,
+      level,
+      seq,
+    });
+  }
+
+  return lessons;
 }
 
 export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
