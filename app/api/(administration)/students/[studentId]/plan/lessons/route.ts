@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server.js";
+import { NextRequest, NextResponse } from "next/server";
 
 import { listStudentCoachPlanLessons } from "@/features/administration/data/student-profile";
 
@@ -9,11 +9,15 @@ function normalizeStudentId(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function GET(
-  _request: Request,
-  { params }: { params: { studentId: string } },
-) {
-  const studentId = normalizeStudentId(params.studentId);
+type RouteContext = {
+  params: Promise<{
+    studentId: string;
+  }>;
+};
+
+export async function GET(_request: NextRequest, context: RouteContext) {
+  const params = await context.params;
+  const studentId = normalizeStudentId(params?.studentId ?? "");
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });

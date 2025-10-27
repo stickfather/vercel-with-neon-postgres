@@ -343,8 +343,18 @@ export function CheckInForm({
 
   const sortedLessons = useMemo(() => {
     return [...lessonsForLevel].sort((a, b) => {
-      const aSeq = a.sequence ?? Number.MAX_SAFE_INTEGER;
-      const bSeq = b.sequence ?? Number.MAX_SAFE_INTEGER;
+      const aSeq =
+        a.sequence != null && Number.isFinite(a.sequence)
+          ? a.sequence
+          : a.globalSequence != null && Number.isFinite(a.globalSequence)
+            ? a.globalSequence
+            : Number.MAX_SAFE_INTEGER;
+      const bSeq =
+        b.sequence != null && Number.isFinite(b.sequence)
+          ? b.sequence
+          : b.globalSequence != null && Number.isFinite(b.globalSequence)
+            ? b.globalSequence
+            : Number.MAX_SAFE_INTEGER;
       return aSeq - bSeq;
     });
   }, [lessonsForLevel]);

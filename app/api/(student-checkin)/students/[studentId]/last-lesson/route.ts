@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server.js";
+import { NextRequest, NextResponse } from "next/server";
 
 import { getStudentLastLesson } from "@/features/student-checkin/data/queries";
 
@@ -8,7 +8,7 @@ type RouteContext = {
   }>;
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(_request: NextRequest, context: RouteContext) {
   const params = await context.params;
   const rawStudentId = params?.studentId;
 

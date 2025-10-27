@@ -64,6 +64,16 @@ export function StaffAttendanceBoard({ attendances }: Props) {
     [],
   );
 
+  const fullDateTimeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("es-EC", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "America/Guayaquil",
+      }),
+    [],
+  );
+
   const checkoutSummary = useMemo(() => {
     if (!pendingCheckout) {
       return null;
@@ -106,16 +116,6 @@ export function StaffAttendanceBoard({ attendances }: Props) {
       totalLabel,
     };
   }, [pendingCheckout, checkoutPreview, fullDateTimeFormatter]);
-
-  const fullDateTimeFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat("es-EC", {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: "America/Guayaquil",
-      }),
-    [],
-  );
 
   useEffect(() => {
     const updateVisibility = () => {
