@@ -73,6 +73,24 @@ function FlagIndicator({ active, label }: { active: boolean; label: string }) {
   );
 }
 
+function formatStudentPosition(level: string | null, seq: number | null): string {
+  if (!level) {
+    return "";
+  }
+
+  const normalizedLevel = level.trim().toUpperCase();
+
+  if (seq === 0 && normalizedLevel === "A1") {
+    return `NIVEL ${normalizedLevel} · Intro Booklet`;
+  }
+
+  if (typeof seq === "number" && Number.isFinite(seq)) {
+    return `NIVEL ${normalizedLevel} · Lección ${seq}`;
+  }
+
+  return `NIVEL ${normalizedLevel}`;
+}
+
 function StudentManagementTable({ students }: Props) {
   const router = useRouter();
   const { lastSyncAt } = useOfflineStatus();
@@ -390,6 +408,10 @@ function StudentManagementTable({ students }: Props) {
               const statusDate = statusDateSource
                 ? formatStatusDate(statusDateSource)
                 : null;
+              const positionLabel = formatStudentPosition(
+                student.level,
+                student.currentSeq,
+              );
               return (
                 <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
                   <td className="px-5 py-3 align-top">
@@ -402,11 +424,11 @@ function StudentManagementTable({ students }: Props) {
                           Sincronizando…
                         </span>
                       ) : null}
-                      {student.level && (
+                      {positionLabel ? (
                         <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-                          Nivel {student.level}
+                          {positionLabel}
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-3 py-3 align-top">

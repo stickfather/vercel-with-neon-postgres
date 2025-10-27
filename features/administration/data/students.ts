@@ -8,6 +8,7 @@ export type StudentManagementEntry = {
   id: number;
   fullName: string;
   level: string | null;
+  currentSeq: number | null;
   status: string | null;
   contractEnd: string | null;
   graduationDate: string | null;
@@ -53,6 +54,19 @@ function coerceBoolean(value: unknown): boolean | null {
   return null;
 }
 
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const numeric = Number.parseInt(value, 10);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  return null;
+}
+
 function pick<T = unknown>(row: SqlRow, keys: string[]): T | null {
   for (const key of keys) {
     if (key in row && row[key] != null) {
@@ -88,8 +102,15 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
     fullName,
     level:
       coerceString(
-        pick(row, ["level", "planned_level_max", "planned_level_min", "student_level"]),
+        pick(row, [
+          "current_level",
+          "level",
+          "planned_level_max",
+          "planned_level_min",
+          "student_level",
+        ]),
       ) ?? null,
+    currentSeq: coerceNumber(pick(row, ["current_seq"])) ?? null,
     status:
       coerceString(pick(row, ["status", "state", "student_state"])) ?? null,
     contractEnd:
@@ -175,7 +196,9 @@ async function runStudentManagementQuery(
         SELECT
           s.id AS student_id,
           s.full_name AS full_name,
-          COALESCE(s.planned_level_max::text, s.planned_level_min::text) AS level,
+          COALESCE(cp.level::text, s.planned_level_max::text, s.planned_level_min::text) AS level,
+          cp.level::text AS current_level,
+          cp.current_seq AS current_seq,
           s.status AS status,
           s.contract_end::text AS contract_end,
           s.graduation_date::text AS graduation_date,
@@ -188,6 +211,7 @@ async function runStudentManagementQuery(
           COALESCE(flags.instructivo_active, false) AS instructivo_active,
           COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
         FROM public.students AS s
+        LEFT JOIN mart.coach_panel_v AS cp ON cp.student_id = s.id
         LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
         WHERE TRIM(COALESCE(s.full_name, '')) <> ''
         ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}
