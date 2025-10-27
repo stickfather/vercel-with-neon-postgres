@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import type {
   LevelLessons,
+  LessonOption,
   StudentLastLesson,
   StudentName,
 } from "@/features/student-checkin/data/queries";
@@ -54,7 +55,7 @@ type LessonOverridePrompt = {
 };
 
 export function CheckInForm({
-  levels,
+  levels: initialLevels,
   disabled = false,
   initialError = null,
   lessonsError = null,
@@ -62,6 +63,7 @@ export function CheckInForm({
   const router = useRouter();
   const [studentQuery, setStudentQuery] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentName | null>(null);
+  const [lessonCatalog, setLessonCatalog] = useState<LevelLessons[]>(initialLevels);
   const [suggestions, setSuggestions] = useState<StudentName[]>([]);
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
   const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
@@ -145,7 +147,7 @@ export function CheckInForm({
       }
 
       const normalizedLevel = suggestion.level.trim().toLowerCase();
-      const levelEntry = levels.find(
+      const levelEntry = lessonCatalog.find(
         (entry) => entry.level.trim().toLowerCase() === normalizedLevel,
       );
 
@@ -174,8 +176,130 @@ export function CheckInForm({
         );
       }
     },
-    [isFormDisabled, levels],
+    [isFormDisabled, lessonCatalog],
   );
+
+  useEffect(() => {
+    setLessonCatalog(initialLevels);
+  }, [initialLevels]);
+
+  useEffect(() => {
+    if (!selectedStudent) {
+      setLessonCatalog(initialLevels);
+      return;
+    }
+
+    const controller = new AbortController();
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/checkin/lessons/${selectedStudent.id}`,
+          {
+            method: "GET",
+            cache: "no-store",
+            signal: controller.signal,
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("No se pudo obtener el catálogo de lecciones.");
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        if (controller.signal.aborted || !isMounted) {
+          return;
+        }
+
+        const levels = Array.isArray(payload?.levels) ? payload.levels : [];
+        const normalized = levels
+          .map((entry: any): LevelLessons | null => {
+            const levelLabel =
+              typeof entry?.level === "string"
+                ? entry.level.trim()
+                : typeof entry?.level_code === "string"
+                  ? entry.level_code.trim()
+                  : "";
+
+            if (!levelLabel) {
+              return null;
+            }
+
+            const lessons = Array.isArray(entry?.lessons)
+              ? entry.lessons
+                  .map((lesson: any): LessonOption | null => {
+                    const lessonId = Number(lesson?.lesson_id ?? lesson?.id);
+                    if (!Number.isFinite(lessonId)) {
+                      return null;
+                    }
+
+                    const lessonName =
+                      typeof lesson?.lesson_name === "string"
+                        ? lesson.lesson_name.trim()
+                        : typeof lesson?.display_name === "string"
+                          ? lesson.display_name.trim()
+                          : typeof lesson?.lesson === "string"
+                            ? lesson.lesson.trim()
+                            : "";
+
+                    const sequenceValue =
+                      lesson?.sequence == null
+                        ? null
+                        : Number(lesson.sequence);
+                    const globalSequenceValue =
+                      lesson?.global_sequence == null
+                        ? null
+                        : Number(lesson.global_sequence);
+
+                    const candidate: LessonOption = {
+                      id: lessonId,
+                      lesson: lessonName,
+                      level: levelLabel,
+                      sequence:
+                        sequenceValue != null && Number.isFinite(sequenceValue)
+                          ? sequenceValue
+                          : null,
+                      globalSequence:
+                        globalSequenceValue != null &&
+                        Number.isFinite(globalSequenceValue)
+                          ? globalSequenceValue
+                          : null,
+                    };
+
+                    return candidate;
+                  })
+                  .filter((value: LessonOption | null): value is LessonOption => Boolean(value))
+              : [];
+
+            const result: LevelLessons = {
+              level: levelLabel,
+              lessons,
+            };
+
+            return result;
+          })
+          .filter((value: LevelLessons | null): value is LevelLessons => Boolean(value?.level));
+
+        if (normalized.length) {
+          setLessonCatalog(normalized);
+        } else {
+          setLessonCatalog(initialLevels);
+        }
+      } catch (error) {
+        if (controller.signal.aborted || !isMounted) {
+          return;
+        }
+        console.error("No se pudo cargar el catálogo de lecciones", error);
+        setLessonCatalog(initialLevels);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [initialLevels, selectedStudent]);
 
   useEffect(() => {
     return () => {
@@ -338,8 +462,8 @@ export function CheckInForm({
   }, [studentQuery, selectedStudent]);
 
   const lessonsForLevel = useMemo(() => {
-    return levels.find((level) => level.level === selectedLevel)?.lessons ?? [];
-  }, [levels, selectedLevel]);
+    return lessonCatalog.find((level) => level.level === selectedLevel)?.lessons ?? [];
+  }, [lessonCatalog, selectedLevel]);
 
   const sortedLessons = useMemo(() => {
     return [...lessonsForLevel].sort((a, b) => {
@@ -378,8 +502,27 @@ export function CheckInForm({
     });
   }, [selectedLevel, sortedLessons]);
 
+  useEffect(() => {
+    if (!lessonCatalog.length) {
+      return;
+    }
+
+    if (!selectedLevel) {
+      setSelectedLevel(lessonCatalog[0]?.level ?? "");
+      return;
+    }
+
+    const exists = lessonCatalog.some(
+      (entry) => entry.level.trim().toLowerCase() === selectedLevel.trim().toLowerCase(),
+    );
+
+    if (!exists) {
+      setSelectedLevel(lessonCatalog[0]?.level ?? "");
+    }
+  }, [lessonCatalog, selectedLevel]);
+
   const canChooseProgression =
-    Boolean(selectedStudent) && !disabled && !initialError && Boolean(levels.length);
+    Boolean(selectedStudent) && !disabled && !initialError && Boolean(lessonCatalog.length);
 
   const handleSuggestionSelection = (student: StudentName) => {
     setStudentQuery(student.fullName);
@@ -387,6 +530,8 @@ export function CheckInForm({
     setSuggestions([]);
     setIsSuggestionsOpen(false);
     setStatus(null);
+    setSelectedLevel("");
+    setSelectedLesson("");
     setSuggestedLesson(null);
     setLastLessonError(null);
     lastLessonAbortRef.current?.abort();
@@ -807,7 +952,7 @@ export function CheckInForm({
           <span className="text-sm font-semibold uppercase tracking-wide text-brand-deep">Nivel</span>
           {canChooseProgression ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              {levels.map((level) => {
+              {lessonCatalog.map((level) => {
                 const levelAccent = getLevelAccent(level.level);
                 const isActive = selectedLevel === level.level;
                 return (
@@ -929,7 +1074,7 @@ export function CheckInForm({
         </div>
       </div>
 
-      {!levels.length && !initialError && (
+      {!lessonCatalog.length && !initialError && (
         <div className="rounded-3xl border border-brand-orange bg-white/75 px-5 py-3 text-sm font-medium text-brand-ink">
           {lessonsError ??
             "Aún no hay lecciones disponibles para seleccionar. Nuestro equipo lo resolverá en breve."}

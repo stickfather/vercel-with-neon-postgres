@@ -1,43 +1,100 @@
 CREATE OR REPLACE VIEW mart.v_student_recorrido AS
-WITH plan_lessons AS (
+WITH level_order AS (
+    SELECT 'A1'::text AS level_code, 1 AS level_rank UNION ALL
+    SELECT 'A2'::text, 2 UNION ALL
+    SELECT 'B1'::text, 3 UNION ALL
+    SELECT 'B2'::text, 4 UNION ALL
+    SELECT 'C1'::text, 5 UNION ALL
+    SELECT 'C2'::text, 6
+),
+lesson_catalog_base AS (
     SELECT
-        spl.student_id,
         lg.lesson_id,
-        lg.level AS level_code,
-        lg.seq AS seq_number,
-        lg.lesson_global_seq,
+        UPPER(TRIM(lg.level)) AS level_code,
+        COALESCE(lo.level_rank, 999) AS level_rank,
+        lg.seq AS lesson_global_seq,
+        ROW_NUMBER() OVER (PARTITION BY UPPER(TRIM(lg.level)) ORDER BY lg.seq) AS level_position,
+        COUNT(*) OVER (PARTITION BY UPPER(TRIM(lg.level))) AS level_count,
         l.lesson AS lesson_title
-    FROM mart.student_plan_lessons_v spl
-    JOIN mart.lessons_global_v lg
-      ON lg.lesson_id = spl.lesson_id
+    FROM mart.lessons_global_v lg
     JOIN public.lessons l
       ON l.id = lg.lesson_id
+    LEFT JOIN level_order lo
+      ON lo.level_code = UPPER(TRIM(lg.level))
 ),
-level_boundaries AS (
+lesson_catalog AS (
     SELECT
-        student_id,
+        lesson_id,
         level_code,
-        MAX(seq_number) AS max_seq_in_level
-    FROM plan_lessons
-    GROUP BY student_id, level_code
-),
-lesson_plan AS (
-    SELECT
-        pl.student_id,
-        pl.lesson_id,
-        pl.level_code,
-        pl.seq_number,
-        pl.lesson_global_seq,
-        pl.lesson_title,
+        level_rank,
+        lesson_global_seq,
+        (level_position - 1) AS seq_number,
+        lesson_title,
         CASE
-            WHEN pl.level_code = 'A1' AND pl.seq_number = 0 THEN 'intro'
-            WHEN lb.max_seq_in_level IS NOT NULL AND pl.seq_number = lb.max_seq_in_level THEN 'exam'
+            WHEN level_code = 'A1' AND level_position = 1 THEN 'intro'
+            WHEN level_position = level_count THEN 'exam'
             ELSE NULL
         END AS special_type
-    FROM plan_lessons pl
-    LEFT JOIN level_boundaries lb
-      ON lb.student_id = pl.student_id
-     AND lb.level_code = pl.level_code
+    FROM lesson_catalog_base
+),
+student_ranges AS (
+    SELECT
+        s.id AS student_id,
+        COALESCE(lo_min.level_rank, 1) AS min_rank,
+        COALESCE(lo_max.level_rank, (SELECT MAX(level_rank) FROM level_order)) AS max_rank
+    FROM public.students s
+    LEFT JOIN level_order lo_min
+      ON lo_min.level_code = UPPER(TRIM(s.planned_level_min))
+    LEFT JOIN level_order lo_max
+      ON lo_max.level_code = UPPER(TRIM(s.planned_level_max))
+),
+normalized_ranges AS (
+    SELECT
+        student_id,
+        LEAST(min_rank, max_rank) AS min_rank,
+        GREATEST(min_rank, max_rank) AS max_rank
+    FROM student_ranges
+),
+plan_lessons AS (
+    SELECT DISTINCT
+        spl.student_id,
+        lc.lesson_id,
+        lc.level_code,
+        lc.seq_number,
+        lc.lesson_global_seq,
+        lc.lesson_title,
+        lc.special_type
+    FROM mart.student_plan_lessons_v spl
+    JOIN lesson_catalog lc
+      ON lc.lesson_id = spl.lesson_id
+),
+range_lessons AS (
+    SELECT
+        nr.student_id,
+        lc.lesson_id,
+        lc.level_code,
+        lc.seq_number,
+        lc.lesson_global_seq,
+        lc.lesson_title,
+        lc.special_type
+    FROM normalized_ranges nr
+    JOIN lesson_catalog lc
+      ON lc.level_rank BETWEEN nr.min_rank AND nr.max_rank
+),
+lesson_plan AS (
+    SELECT DISTINCT
+        combined.student_id,
+        combined.lesson_id,
+        combined.level_code,
+        combined.seq_number,
+        combined.lesson_global_seq,
+        combined.lesson_title,
+        combined.special_type
+    FROM (
+        SELECT * FROM plan_lessons
+        UNION ALL
+        SELECT * FROM range_lessons
+    ) AS combined
 ),
 attendance_totals AS (
     SELECT

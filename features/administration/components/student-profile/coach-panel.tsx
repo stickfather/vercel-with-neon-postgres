@@ -20,36 +20,12 @@ const HEATMAP_DAYS = 30;
 
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 
-type PlanLevel = (typeof PLAN_LEVEL_ORDER)[number];
-
-const PLAN_LEVEL_RANK: Record<PlanLevel, number> = {
-  A1: 0,
-  A2: 1,
-  B1: 2,
-  B2: 3,
-  C1: 4,
-  C2: 5,
-};
-
 type RenderedLesson = CoachPanelLessonJourneyEntry & {
   isCurrent: boolean;
   isCompletedVisual: boolean;
   minutesValue: number;
   daysValue: number;
 };
-
-function normalizePlanLevel(level: string | null | undefined): PlanLevel | null {
-  if (!level) {
-    return null;
-  }
-  const normalized = level.trim().toUpperCase();
-  for (const value of PLAN_LEVEL_ORDER) {
-    if (normalized.startsWith(value)) {
-      return value;
-    }
-  }
-  return null;
-}
 
 function cx(...classes: Array<string | null | undefined | false>): string {
   return classes.filter(Boolean).join(" ");
@@ -317,22 +293,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       });
     };
 
-    const planMin =
-      normalizePlanLevel(lessonJourney.plannedLevelMin ?? profileHeader.planLevelMin) ??
-      null;
-    const planMax =
-      normalizePlanLevel(lessonJourney.plannedLevelMax ?? profileHeader.planLevelMax) ??
-      null;
-
-    let rangeMin = planMin != null ? PLAN_LEVEL_RANK[planMin] : null;
-    let rangeMax = planMax != null ? PLAN_LEVEL_RANK[planMax] : null;
-    if (rangeMin != null && rangeMax != null && rangeMin > rangeMax) {
-      const temp = rangeMin;
-      rangeMin = rangeMax;
-      rangeMax = temp;
-    }
-    const hasPlanRange = rangeMin != null || rangeMax != null;
-
     const rows: Array<{
       key: string;
       label: string;
@@ -344,15 +304,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       const level = grouped.get(levelCode);
       if (!level) {
         return;
-      }
-      const rank = PLAN_LEVEL_RANK[levelCode];
-      if (hasPlanRange) {
-        if (rangeMin != null && rank < rangeMin) {
-          return;
-        }
-        if (rangeMax != null && rank > rangeMax) {
-          return;
-        }
       }
       rows.push({
         key: levelCode,
@@ -377,13 +328,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     });
 
     return rows;
-  }, [
-    lessonLevels,
-    lessonJourney.plannedLevelMin,
-    lessonJourney.plannedLevelMax,
-    profileHeader.planLevelMin,
-    profileHeader.planLevelMax,
-  ]);
+  }, [lessonLevels]);
 
   const renderLessonBubble = (lesson: RenderedLesson) => {
     const isExamBubble = lesson.specialType === "exam";
