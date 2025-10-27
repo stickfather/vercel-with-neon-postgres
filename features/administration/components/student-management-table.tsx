@@ -253,6 +253,7 @@ function StudentManagementTable({ students }: Props) {
             id: -Date.now(),
             fullName: name,
             level: null,
+            currentSeq: null,
             status: null,
             contractEnd: null,
             graduationDate: null,
