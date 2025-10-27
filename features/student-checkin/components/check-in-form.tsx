@@ -82,12 +82,6 @@ function buildLessonCatalog(entries: LessonCatalogItem[]): LevelLessons[] {
       return seqA - seqB;
     });
 
-    const examIndex = sorted.findIndex((lesson) => isExamLessonLabel(lesson.lesson));
-    if (examIndex >= 0 && examIndex !== sorted.length - 1) {
-      const [examLesson] = sorted.splice(examIndex, 1);
-      sorted.push(examLesson);
-    }
-
     return {
       level: levelName,
       lessons: sorted.map((lesson, index) => ({

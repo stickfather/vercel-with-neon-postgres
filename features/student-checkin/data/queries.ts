@@ -64,7 +64,6 @@ export type StudentStatusCheck = {
 };
 
 const CEFR_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
-const EXAM_LESSON_LABEL = "Preparación para el examen";
 
 function resolveLevelRank(level: string | null | undefined): number | null {
   if (!level) {
@@ -122,47 +121,6 @@ function sortLessonOptions(a: LessonOption, b: LessonOption) {
   }
 
   return seqA - seqB;
-}
-
-function sortLessonCatalogItems(a: LessonCatalogItem, b: LessonCatalogItem) {
-  const seqA =
-    a.seq != null && Number.isFinite(a.seq) ? Number(a.seq) : Number.MAX_SAFE_INTEGER;
-  const seqB =
-    b.seq != null && Number.isFinite(b.seq) ? Number(b.seq) : Number.MAX_SAFE_INTEGER;
-
-  if (seqA === seqB) {
-    return a.id - b.id;
-  }
-
-  return seqA - seqB;
-}
-
-function isExamLesson(label: string | null | undefined) {
-  if (!label) {
-    return false;
-  }
-
-  return (
-    label
-      .trim()
-      .toLocaleLowerCase("es") === EXAM_LESSON_LABEL.toLocaleLowerCase("es")
-  );
-}
-
-function moveExamLessonToEnd<T extends { lesson: string }>(lessons: T[]) {
-  if (!lessons.length) {
-    return lessons;
-  }
-
-  const examIndex = lessons.findIndex((lesson) => isExamLesson(lesson.lesson));
-  if (examIndex < 0 || examIndex === lessons.length - 1) {
-    return lessons;
-  }
-
-  const copy = [...lessons];
-  const [examLesson] = copy.splice(examIndex, 1);
-  copy.push(examLesson);
-  return copy;
 }
 
 export async function getStudentDirectory(): Promise<StudentName[]> {
@@ -317,7 +275,7 @@ export async function getLevelsWithLessons(
     .sort(([levelA], [levelB]) => sortLevels(levelA, levelB))
     .map(([level, lessons]) => ({
       level,
-      lessons: moveExamLessonToEnd([...lessons].sort(sortLessonOptions)),
+      lessons: [...lessons].sort(sortLessonOptions),
     }))
     .filter((entry) => entry.lessons.length);
 }
@@ -336,7 +294,7 @@ export async function getLessonCatalogEntries(): Promise<LessonCatalogItem[]> {
     ORDER BY TRIM(l.level::text) ASC, l.seq ASC, l.id ASC
   `);
 
-  const grouped = new Map<string, LessonCatalogItem[]>();
+  const lessons: LessonCatalogItem[] = [];
 
   for (const row of rows) {
     const level = ((row.level_code as string) ?? "").trim();
@@ -353,11 +311,7 @@ export async function getLessonCatalogEntries(): Promise<LessonCatalogItem[]> {
         ? null
         : Number(seqRaw);
 
-    if (!grouped.has(level)) {
-      grouped.set(level, []);
-    }
-
-    grouped.get(level)!.push({
+    lessons.push({
       id,
       lesson: lessonName,
       level,
@@ -365,11 +319,7 @@ export async function getLessonCatalogEntries(): Promise<LessonCatalogItem[]> {
     });
   }
 
-  return Array.from(grouped.entries())
-    .sort(([levelA], [levelB]) => sortLevels(levelA, levelB))
-    .flatMap(([_, lessons]) =>
-      moveExamLessonToEnd([...lessons].sort(sortLessonCatalogItems)),
-    );
+  return lessons;
 }
 
 export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
