@@ -81,14 +81,14 @@ function formatStudentPosition(level: string | null, seq: number | null): string
   const normalizedLevel = level.trim().toUpperCase();
 
   if (seq === 0 && normalizedLevel === "A1") {
-    return `NIVEL ${normalizedLevel} · Intro Booklet`;
+    return `${normalizedLevel} · Intro Booklet`;
   }
 
   if (typeof seq === "number" && Number.isFinite(seq)) {
-    return `NIVEL ${normalizedLevel} · Lección ${seq}`;
+    return `${normalizedLevel} · Lección ${seq}`;
   }
 
-  return `NIVEL ${normalizedLevel}`;
+  return normalizedLevel;
 }
 
 function StudentManagementTable({ students }: Props) {
