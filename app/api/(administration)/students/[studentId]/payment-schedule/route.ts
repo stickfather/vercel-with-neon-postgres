@@ -2,6 +2,11 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server.js";
 
 import { createPaymentScheduleEntry } from "@/features/administration/data/student-profile";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +15,11 @@ function normalizeStudentId(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ studentId: string }> },
-) {
+export async function POST(request: Request, context: any) {
   try {
-    const resolvedParams = await params;
-    const studentId = normalizeStudentId(resolvedParams.studentId);
+    const params = await resolveRouteParams(context);
+    const studentParam = readRouteParam(params, "studentId");
+    const studentId = normalizeStudentId(studentParam ?? "");
 
     if (studentId == null) {
       return NextResponse.json(

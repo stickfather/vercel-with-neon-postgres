@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { listStudentCoachPlanLessons } from "@/features/administration/data/student-profile";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -9,15 +14,10 @@ function normalizeStudentId(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-type RouteContext = {
-  params: Promise<{
-    studentId: string;
-  }>;
-};
-
-export async function GET(_request: NextRequest, context: RouteContext) {
-  const params = await context.params;
-  const studentId = normalizeStudentId(params?.studentId ?? "");
+export async function GET(_request: NextRequest, context: any) {
+  const params = await resolveRouteParams(context);
+  const studentParam = readRouteParam(params, "studentId");
+  const studentId = normalizeStudentId(studentParam ?? "");
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });

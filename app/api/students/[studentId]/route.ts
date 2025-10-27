@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 
 import { getStudentBasicDetails } from "@/features/administration/data/student-profile";
 import { getSqlClient } from "@/lib/db/client";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -37,12 +42,10 @@ function normalizeDateInput(value: unknown): string | null {
   throw new Error("Formato de fecha inválido. Usa AAAA-MM-DD.");
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ studentId: string }> },
-) {
-  const resolvedParams = await params;
-  const studentId = normalizeStudentId(resolvedParams.studentId);
+export async function PATCH(request: Request, context: any) {
+  const params = await resolveRouteParams(context);
+  const studentParam = readRouteParam(params, "studentId");
+  const studentId = normalizeStudentId(studentParam ?? "");
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });

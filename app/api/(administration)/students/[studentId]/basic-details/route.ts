@@ -7,6 +7,11 @@ import {
   updateStudentBasicDetails,
   type StudentBasicDetailsEditablePayload,
 } from "@/features/administration/data/student-profile";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +22,11 @@ function normalizeStudentId(value: string): number | null {
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ studentId: string }> },
+  context: any,
 ) {
-  const resolvedParams = await params;
-  const studentId = normalizeStudentId(resolvedParams.studentId);
+  const params = await resolveRouteParams(context);
+  const studentParam = readRouteParam(params, "studentId");
+  const studentId = normalizeStudentId(studentParam ?? "");
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });
@@ -43,12 +49,10 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ studentId: string }> },
-) {
-  const resolvedParams = await params;
-  const studentId = normalizeStudentId(resolvedParams.studentId);
+export async function PATCH(request: Request, context: any) {
+  const params = await resolveRouteParams(context);
+  const studentParam = readRouteParam(params, "studentId");
+  const studentId = normalizeStudentId(studentParam ?? "");
 
   if (studentId == null) {
     return NextResponse.json({ error: "Identificador inválido." }, { status: 400 });

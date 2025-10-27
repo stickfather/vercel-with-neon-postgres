@@ -1569,7 +1569,7 @@ export async function getStudentLessonRecorrido(
           lesson_global_seq
         FROM mart.v_student_recorrido
         WHERE student_id = ${studentId}::bigint
-        ORDER BY level_code, seq_number
+        ORDER BY level_code, lesson_global_seq, seq_number
       `,
       "mart.v_student_recorrido",
     ),

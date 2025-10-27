@@ -4,17 +4,21 @@ import {
   deleteStaffDaySession,
   updateStaffDaySession,
 } from "@/features/administration/data/payroll-reports";
+import {
+  readRouteParam,
+  resolveRouteParams,
+  type RouteParamsContext,
+} from "@/lib/api/route-params";
 import { hasValidPinSession } from "@/lib/security/pin-session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-type RouteContext = {
-  params: Promise<{ sessionId: string }>;
-};
-
-export async function PATCH(request: Request, context: RouteContext) {
+export async function PATCH(
+  request: Request,
+  context: any,
+) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
@@ -23,8 +27,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const params = await context.params;
-  const parsedId = Number(params?.sessionId);
+  const params = await resolveRouteParams(context);
+  const sessionParam = readRouteParam(params, "sessionId");
+  const parsedId = Number(sessionParam);
   if (!Number.isFinite(parsedId) || parsedId <= 0) {
     return NextResponse.json(
       { error: "El identificador de la sesión no es válido." },
@@ -104,7 +109,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(request: Request, context: RouteContext) {
+export async function DELETE(
+  request: Request,
+  context: any,
+) {
   const allowed = await hasValidPinSession("manager");
   if (!allowed) {
     return NextResponse.json(
@@ -113,8 +121,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     );
   }
 
-  const params = await context.params;
-  const parsedId = Number(params?.sessionId);
+  const params = await resolveRouteParams(context);
+  const sessionParam = readRouteParam(params, "sessionId");
+  const parsedId = Number(sessionParam);
   if (!Number.isFinite(parsedId) || parsedId <= 0) {
     return NextResponse.json(
       { error: "El identificador de la sesión no es válido." },
