@@ -250,17 +250,38 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         : LEVEL_ORDER_INDEX.get(normalizedCode) ?? Number.POSITIVE_INFINITY;
 
       const normalizedLessons = level.lessons
-        .map((lesson) => ({
-          ...lesson,
-          levelCode: lesson.levelCode?.trim().toUpperCase() || normalizedCode,
-          hoursInLesson: Number.isFinite(lesson.hoursInLesson)
-            ? Math.max(0, lesson.hoursInLesson)
-            : 0,
-          daysInLesson: Number.isFinite(lesson.daysInLesson)
-            ? Math.max(0, Math.trunc(lesson.daysInLesson))
-            : 0,
-        }))
-        .sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq);
+        .map((lesson) => {
+          const normalizedLevelSeq =
+            typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
+              ? Math.max(0, Math.trunc(lesson.lessonLevelSeq))
+              : null;
+
+          return {
+            ...lesson,
+            levelCode: lesson.levelCode?.trim().toUpperCase() || normalizedCode,
+            lessonLevelSeq: normalizedLevelSeq,
+            hoursInLesson: Number.isFinite(lesson.hoursInLesson)
+              ? Math.max(0, lesson.hoursInLesson)
+              : 0,
+            daysInLesson: Number.isFinite(lesson.daysInLesson)
+              ? Math.max(0, Math.trunc(lesson.daysInLesson))
+              : 0,
+          } satisfies CoachPanelLessonJourneyEntry;
+        })
+        .sort((a, b) => {
+          const aSeq =
+            typeof a.lessonLevelSeq === "number" && Number.isFinite(a.lessonLevelSeq)
+              ? a.lessonLevelSeq
+              : a.lessonGlobalSeq;
+          const bSeq =
+            typeof b.lessonLevelSeq === "number" && Number.isFinite(b.lessonLevelSeq)
+              ? b.lessonLevelSeq
+              : b.lessonGlobalSeq;
+          if (aSeq !== bSeq) {
+            return aSeq - bSeq;
+          }
+          return a.lessonGlobalSeq - b.lessonGlobalSeq;
+        });
 
       return {
         ...level,
@@ -284,6 +305,19 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           return a.order - b.order;
         }
         if (a.lessons.length && b.lessons.length) {
+          const aSeq =
+            typeof a.lessons[0].lessonLevelSeq === "number" &&
+            Number.isFinite(a.lessons[0].lessonLevelSeq)
+              ? a.lessons[0].lessonLevelSeq
+              : a.lessons[0].lessonGlobalSeq;
+          const bSeq =
+            typeof b.lessons[0].lessonLevelSeq === "number" &&
+            Number.isFinite(b.lessons[0].lessonLevelSeq)
+              ? b.lessons[0].lessonLevelSeq
+              : b.lessons[0].lessonGlobalSeq;
+          if (aSeq !== bSeq) {
+            return aSeq - bSeq;
+          }
           return a.lessons[0].lessonGlobalSeq - b.lessons[0].lessonGlobalSeq;
         }
         return a.levelCode.localeCompare(b.levelCode, "es", { sensitivity: "base" });
@@ -294,7 +328,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const style = resolveLessonStatusStyle(lesson.status);
     const displayTitle = lesson.lessonTitle?.trim().length
       ? lesson.lessonTitle
-      : `Lección ${formatNumber(lesson.lessonGlobalSeq, { maximumFractionDigits: 0 })}`;
+      : `Lección ${formatNumber(
+          typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
+            ? lesson.lessonLevelSeq
+            : lesson.lessonGlobalSeq,
+          { maximumFractionDigits: 0 },
+        )}`;
     const hoursLabel = `${formatHoursValue(lesson.hoursInLesson)}h`;
     const daysLabel = `${formatNumber(lesson.daysInLesson, { maximumFractionDigits: 0 })} días`;
     const tooltipLines = [

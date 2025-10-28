@@ -24,7 +24,8 @@ export async function GET(_request: NextRequest, context: any) {
     const lessons = journey.lessons.map((lesson) => ({
       lesson_id: lesson.lessonId,
       lesson: lesson.lessonTitle,
-      seq: lesson.lessonGlobalSeq,
+      seq: lesson.lessonLevelSeq ?? lesson.lessonGlobalSeq,
+      lesson_global_seq: lesson.lessonGlobalSeq,
       level: lesson.levelCode,
       status: lesson.status,
       hours_in_lesson: lesson.hoursInLesson,

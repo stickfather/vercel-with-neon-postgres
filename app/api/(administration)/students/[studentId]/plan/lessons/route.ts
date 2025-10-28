@@ -38,6 +38,7 @@ export async function GET(_request: NextRequest, context: any) {
         total_lessons_in_level: level.lessons.length,
         lessons: level.lessons.map((lesson) => ({
           lesson_id: lesson.lessonId,
+          lesson_level_seq: lesson.lessonLevelSeq,
           lesson_global_seq: lesson.lessonGlobalSeq,
           lesson_title: lesson.lessonTitle,
           level_code: lesson.levelCode,
