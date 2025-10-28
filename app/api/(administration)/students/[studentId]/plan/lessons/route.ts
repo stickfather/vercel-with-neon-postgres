@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { listStudentCoachPlanLessons } from "@/features/administration/data/student-profile";
-import {
-  readRouteParam,
-  resolveRouteParams,
-  type RouteParamsContext,
-} from "@/lib/api/route-params";
+import { getStudentLessonJourney } from "@/features/administration/data/student-profile";
+import { readRouteParam, resolveRouteParams } from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -24,25 +20,50 @@ export async function GET(_request: NextRequest, context: any) {
   }
 
   try {
-    const levels = await listStudentCoachPlanLessons(studentId);
+    const journey = await getStudentLessonJourney(studentId);
+    const levels = journey.levels.map((level) => {
+      const highestCompletedSeq = level.lessons
+        .filter((lesson) => lesson.status !== "upcoming")
+        .reduce<number | null>((acc, lesson) => {
+          if (acc == null || lesson.lessonGlobalSeq > acc) {
+            return lesson.lessonGlobalSeq;
+          }
+          return acc;
+        }, null);
+
+      return {
+        level_code: level.levelCode,
+        order: Number.isFinite(level.order) ? level.order : null,
+        highest_seq_with_activity: highestCompletedSeq,
+        total_lessons_in_level: level.lessons.length,
+        lessons: level.lessons.map((lesson) => ({
+          lesson_id: lesson.lessonId,
+          lesson_level_seq: lesson.lessonLevelSeq,
+          lesson_global_seq: lesson.lessonGlobalSeq,
+          lesson_title: lesson.lessonTitle,
+          lesson_name: lesson.lessonTitle,
+          display_label: lesson.displayLabel,
+          is_intro: lesson.isIntro,
+          is_exam: lesson.isExam,
+          level_code: lesson.levelCode,
+          status: lesson.status,
+          hours_in_lesson: lesson.hoursInLesson,
+          days_in_lesson: lesson.daysInLesson,
+          minutes_spent: Math.round(lesson.hoursInLesson * 60),
+          calendar_days_spent: lesson.daysInLesson,
+          has_activity:
+            lesson.status !== "upcoming" ||
+            lesson.hoursInLesson > 0 ||
+            lesson.daysInLesson > 0,
+        })),
+      };
+    });
+
     return NextResponse.json(
       {
-        levels: levels.map((level) => ({
-          level_code: level.levelCode,
-          highest_seq_with_activity: level.highestSeqWithActivity,
-          total_lessons_in_level: level.totalLessonsInLevel,
-          lessons: level.lessons.map((lesson) => ({
-            lesson_id: lesson.lessonId,
-            level_code: lesson.levelCode,
-            seq_number: lesson.seqNumber,
-            lesson_title: lesson.lessonTitle,
-            special_type: lesson.specialType,
-            minutes_spent: lesson.minutesSpent,
-            calendar_days_spent: lesson.calendarDaysSpent,
-            has_activity: lesson.hasActivity,
-            lesson_global_seq: lesson.lessonGlobalSeq,
-          })),
-        })),
+        planned_level_min: journey.plannedLevelMin,
+        planned_level_max: journey.plannedLevelMax,
+        levels,
       },
       {
         headers: {
