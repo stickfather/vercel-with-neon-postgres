@@ -74,8 +74,10 @@ export async function GET(_request: NextRequest, context: any) {
         summary,
         journey: normalizedLessons,
       },
-      headers: {
-        "Cache-Control": "private, max-age=60",
+      {
+        headers: {
+          "Cache-Control": "private, max-age=60",
+        },
       },
     );
   } catch (error) {
