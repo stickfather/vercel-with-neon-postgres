@@ -1118,11 +1118,20 @@ export type CoachPanelLessonJourneyLevel = {
   lessons: CoachPanelLessonJourneyEntry[];
 };
 
+export type CoachPanelJourneyPlanSummary = {
+  levelMin: string | null;
+  levelMax: string | null;
+  progressPctPlan: number | null;
+  completedLessonsInPlan: number | null;
+  totalLessonsInPlan: number | null;
+};
+
 export type CoachPanelLessonJourney = {
   lessons: CoachPanelLessonJourneyEntry[];
   levels: CoachPanelLessonJourneyLevel[];
   plannedLevelMin: string | null;
   plannedLevelMax: string | null;
+  planSummary: CoachPanelJourneyPlanSummary | null;
 };
 
 export type LessonEffortRow = {
@@ -1719,14 +1728,19 @@ export async function listStudentLessonJourneyLessons(
       `,
       sql`
         SELECT
-          lg.lesson_id,
-          lg.level,
-          lg.seq,
-          lg.lesson
-        FROM mart.lessons_global_v lg
+          lc.lesson_id,
+          lc.level,
+          lc.seq,
+          lc.lesson_name
+        FROM mart.lesson_catalog_v lc
       `,
       sql`
-        SELECT level_min, level_max
+        SELECT
+          level_min,
+          level_max,
+          progress_pct_plan,
+          completed_lessons_in_plan,
+          total_lessons_in_plan
         FROM mart.coach_panel_v
         WHERE student_id = ${studentId}::bigint
         LIMIT 1
@@ -1762,6 +1776,18 @@ export async function listStudentLessonJourneyLessons(
       "nivel_planificado_max",
     ]),
   );
+  const fallbackPlanProgressPct = toPercentValue(
+    extractNumber(coachPanelRecord, ["progress_pct_plan", "plan_progress_pct"]),
+  );
+  const fallbackCompletedLessons = extractNumber(coachPanelRecord, [
+    "completed_lessons_in_plan",
+    "lessons_completed_in_plan",
+  ]);
+  const fallbackTotalLessons = extractNumber(coachPanelRecord, [
+    "total_lessons_in_plan",
+    "lessons_in_plan",
+    "plan_total_lessons",
+  ]);
 
   type PlanEntry = {
     lessonId: number;
@@ -1871,11 +1897,33 @@ export async function listStudentLessonJourneyLessons(
   });
 
   if (!planEntries.length) {
+    const summary: CoachPanelJourneyPlanSummary | null =
+      fallbackPlannedLevelMin != null ||
+      fallbackPlannedLevelMax != null ||
+      (fallbackPlanProgressPct != null && Number.isFinite(fallbackPlanProgressPct)) ||
+      (fallbackCompletedLessons != null && Number.isFinite(fallbackCompletedLessons)) ||
+      (fallbackTotalLessons != null && Number.isFinite(fallbackTotalLessons))
+        ? {
+            levelMin: fallbackPlannedLevelMin ?? null,
+            levelMax: fallbackPlannedLevelMax ?? null,
+            progressPctPlan: fallbackPlanProgressPct ?? null,
+            completedLessonsInPlan:
+              fallbackCompletedLessons != null && Number.isFinite(fallbackCompletedLessons)
+                ? Math.max(0, Math.trunc(fallbackCompletedLessons))
+                : null,
+            totalLessonsInPlan:
+              fallbackTotalLessons != null && Number.isFinite(fallbackTotalLessons)
+                ? Math.max(0, Math.trunc(fallbackTotalLessons))
+                : null,
+          }
+        : null;
+
     return {
       plannedLevelMin: fallbackPlannedLevelMin ?? null,
       plannedLevelMax: fallbackPlannedLevelMax ?? null,
       lessons: [],
       levels: [],
+      planSummary: summary,
     };
   }
 
@@ -1890,11 +1938,33 @@ export async function listStudentLessonJourneyLessons(
     .filter((value): value is { entry: PlanEntry; catalog: CatalogEntry } => value != null);
 
   if (!visiblePlan.length) {
+    const summary: CoachPanelJourneyPlanSummary | null =
+      fallbackPlannedLevelMin != null ||
+      fallbackPlannedLevelMax != null ||
+      (fallbackPlanProgressPct != null && Number.isFinite(fallbackPlanProgressPct)) ||
+      (fallbackCompletedLessons != null && Number.isFinite(fallbackCompletedLessons)) ||
+      (fallbackTotalLessons != null && Number.isFinite(fallbackTotalLessons))
+        ? {
+            levelMin: fallbackPlannedLevelMin ?? null,
+            levelMax: fallbackPlannedLevelMax ?? null,
+            progressPctPlan: fallbackPlanProgressPct ?? null,
+            completedLessonsInPlan:
+              fallbackCompletedLessons != null && Number.isFinite(fallbackCompletedLessons)
+                ? Math.max(0, Math.trunc(fallbackCompletedLessons))
+                : null,
+            totalLessonsInPlan:
+              fallbackTotalLessons != null && Number.isFinite(fallbackTotalLessons)
+                ? Math.max(0, Math.trunc(fallbackTotalLessons))
+                : null,
+          }
+        : null;
+
     return {
       plannedLevelMin: fallbackPlannedLevelMin ?? null,
       plannedLevelMax: fallbackPlannedLevelMax ?? null,
       lessons: [],
       levels: [],
+      planSummary: summary,
     };
   }
 
@@ -1979,9 +2049,49 @@ export async function listStudentLessonJourneyLessons(
         ? lessons[lessons.length - 1].levelCode
         : fallbackPlannedLevelMax ?? null;
 
+  const resolvedPlannedLevelMin = plannedLevelMin ?? fallbackPlannedLevelMin ?? null;
+  const resolvedPlannedLevelMax = plannedLevelMax ?? fallbackPlannedLevelMax ?? null;
+
+  const computedTotalLessons = lessons.length;
+  const computedCompletedLessons = lessons.filter((lesson) => lesson.status === "completed").length;
+  const computedProgressPct =
+    computedTotalLessons > 0
+      ? Number(((computedCompletedLessons / computedTotalLessons) * 100).toFixed(1))
+      : null;
+
+  const planSummary: CoachPanelJourneyPlanSummary | null =
+    resolvedPlannedLevelMin != null ||
+    resolvedPlannedLevelMax != null ||
+    computedTotalLessons > 0 ||
+    (fallbackPlanProgressPct != null && Number.isFinite(fallbackPlanProgressPct)) ||
+    (fallbackCompletedLessons != null && Number.isFinite(fallbackCompletedLessons)) ||
+    (fallbackTotalLessons != null && Number.isFinite(fallbackTotalLessons))
+      ? {
+          levelMin: resolvedPlannedLevelMin,
+          levelMax: resolvedPlannedLevelMax,
+          progressPctPlan:
+            fallbackPlanProgressPct != null && Number.isFinite(fallbackPlanProgressPct)
+              ? fallbackPlanProgressPct
+              : computedProgressPct,
+          completedLessonsInPlan:
+            fallbackCompletedLessons != null && Number.isFinite(fallbackCompletedLessons)
+              ? Math.max(0, Math.trunc(fallbackCompletedLessons))
+              : computedTotalLessons > 0
+                ? computedCompletedLessons
+                : null,
+          totalLessonsInPlan:
+            fallbackTotalLessons != null && Number.isFinite(fallbackTotalLessons)
+              ? Math.max(0, Math.trunc(fallbackTotalLessons))
+              : computedTotalLessons > 0
+                ? computedTotalLessons
+                : null,
+        }
+      : null;
+
   return {
-    plannedLevelMin: plannedLevelMin ?? fallbackPlannedLevelMin ?? null,
-    plannedLevelMax: plannedLevelMax ?? fallbackPlannedLevelMax ?? null,
+    plannedLevelMin: resolvedPlannedLevelMin,
+    plannedLevelMax: resolvedPlannedLevelMax,
+    planSummary,
     lessons,
     levels,
   };
@@ -1996,6 +2106,7 @@ export async function getStudentLessonJourney(
     plannedLevelMin: journey.plannedLevelMin,
     plannedLevelMax: journey.plannedLevelMax,
     levels: journey.levels,
+    planSummary: journey.planSummary,
   };
 }
 
@@ -2900,6 +3011,14 @@ export async function getStudentCoachPanelSummary(
     levels: journey.levels,
     plannedLevelMin: journey.plannedLevelMin ?? overview.header.planLevelMin ?? null,
     plannedLevelMax: journey.plannedLevelMax ?? overview.header.planLevelMax ?? null,
+    planSummary:
+      journey.planSummary ?? {
+        levelMin: journey.plannedLevelMin ?? overview.header.planLevelMin ?? null,
+        levelMax: journey.plannedLevelMax ?? overview.header.planLevelMax ?? null,
+        progressPctPlan: overview.header.planProgressPct,
+        completedLessonsInPlan: overview.header.completedLessonsInPlan,
+        totalLessonsInPlan: overview.header.totalLessonsInPlan,
+      },
   };
 
   const engagement: CoachPanelEngagement = {

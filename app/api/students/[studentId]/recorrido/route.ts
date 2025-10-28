@@ -75,11 +75,44 @@ export async function GET(_request: NextRequest, context: any) {
       display_label: lesson.displayLabel,
     }));
 
+    const summarySource = journey.planSummary;
+    const fallbackTotal = lessons.length;
+    const fallbackCompleted = lessons.filter((lesson) => lesson.status === "completed").length;
+    const fallbackProgress =
+      fallbackTotal > 0 ? Number(((fallbackCompleted / fallbackTotal) * 100).toFixed(1)) : null;
+
+    const summary = summarySource
+      ? {
+          level_min: summarySource.levelMin,
+          level_max: summarySource.levelMax,
+          progress_pct_plan:
+            summarySource.progressPctPlan != null && Number.isFinite(summarySource.progressPctPlan)
+              ? summarySource.progressPctPlan
+              : fallbackProgress,
+          completed_lessons_in_plan:
+            summarySource.completedLessonsInPlan != null &&
+            Number.isFinite(summarySource.completedLessonsInPlan)
+              ? summarySource.completedLessonsInPlan
+              : fallbackCompleted,
+          total_lessons_in_plan:
+            summarySource.totalLessonsInPlan != null && Number.isFinite(summarySource.totalLessonsInPlan)
+              ? summarySource.totalLessonsInPlan
+              : fallbackTotal,
+        }
+      : {
+          level_min: journey.plannedLevelMin,
+          level_max: journey.plannedLevelMax,
+          progress_pct_plan: fallbackProgress,
+          completed_lessons_in_plan: fallbackCompleted,
+          total_lessons_in_plan: fallbackTotal,
+        };
+
     return NextResponse.json(
       {
         student_id: studentId,
         planned_level_min: journey.plannedLevelMin,
         planned_level_max: journey.plannedLevelMax,
+        summary,
         levels,
         lessons,
       },
