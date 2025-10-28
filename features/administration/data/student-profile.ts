@@ -1661,25 +1661,23 @@ export async function listStudentLessonJourneyLessons(
   noStore();
   const sql = getSqlClient();
 
-  const [planRows, engagementRows, coachPanelRows] = await Promise.all([
-    safeQuery(
+  let planRows: SqlRow[] = [];
+  let engagementRows: SqlRow[] = [];
+  let coachPanelRows: SqlRow[] = [];
+
+  try {
+    const [planResult, engagementResult, coachPanelResult] = await Promise.all([
       sql`
         SELECT
           spls.level AS level_code,
           spls.seq AS level_seq,
           spls.lesson_id,
           spls.lesson_global_seq,
-          spls.completed,
-          lg.lesson AS lesson_title
+          spls.completed
         FROM mart.student_plan_lessons_with_status_v spls
-        LEFT JOIN mart.lessons_global_v lg
-          ON lg.lesson_id = spls.lesson_id
         WHERE spls.student_id = ${studentId}::bigint
         ORDER BY spls.lesson_global_seq
       `,
-      "mart.student_plan_lessons_with_status_v",
-    ),
-    safeQuery(
       sql`
         SELECT
           sle.lesson_id,
@@ -1689,18 +1687,24 @@ export async function listStudentLessonJourneyLessons(
         FROM mart.student_lesson_engagement_v sle
         WHERE sle.student_id = ${studentId}::bigint
       `,
-      "mart.student_lesson_engagement_v",
-    ),
-    safeQuery(
       sql`
         SELECT level_min, level_max
         FROM mart.coach_panel_v
         WHERE student_id = ${studentId}::bigint
         LIMIT 1
       `,
-      "mart.coach_panel_v",
-    ),
-  ]);
+    ]);
+
+    planRows = normalizeRows<SqlRow>(planResult);
+    engagementRows = normalizeRows<SqlRow>(engagementResult);
+    coachPanelRows = normalizeRows<SqlRow>(coachPanelResult);
+  } catch (error) {
+    console.error(
+      `Error loading lesson journey data for student ${studentId}`,
+      error,
+    );
+    throw error;
+  }
 
   const coachPanelRecord = coachPanelRows.length ? toJsonRecord(coachPanelRows[0]) : null;
   const fallbackPlannedLevelMin = normalizeLessonLevel(
