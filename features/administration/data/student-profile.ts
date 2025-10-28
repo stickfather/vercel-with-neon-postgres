@@ -1116,6 +1116,7 @@ export type CoachPanelLessonJourneyLevel = {
 };
 
 export type CoachPanelLessonJourney = {
+  lessons: CoachPanelLessonJourneyEntry[];
   levels: CoachPanelLessonJourneyLevel[];
   plannedLevelMin: string | null;
   plannedLevelMax: string | null;
@@ -1660,17 +1661,19 @@ export async function listStudentLessonJourneyLessons(
   noStore();
   const sql = getSqlClient();
 
-  const [planRows, engagementRows, studentPlanRows] = await Promise.all([
+  const [planRows, engagementRows, coachPanelRows] = await Promise.all([
     safeQuery(
       sql`
         SELECT
           spls.level AS level_code,
           spls.seq AS level_seq,
-          spls.lesson AS lesson_title,
           spls.lesson_id,
           spls.lesson_global_seq,
-          spls.completed
+          spls.completed,
+          lg.lesson AS lesson_title
         FROM mart.student_plan_lessons_with_status_v spls
+        LEFT JOIN mart.lessons_global_v lg
+          ON lg.lesson_id = spls.lesson_id
         WHERE spls.student_id = ${studentId}::bigint
         ORDER BY spls.lesson_global_seq
       `,
@@ -1690,25 +1693,27 @@ export async function listStudentLessonJourneyLessons(
     ),
     safeQuery(
       sql`
-        SELECT planned_level_min, planned_level_max
-        FROM public.students
-        WHERE id = ${studentId}::bigint
+        SELECT level_min, level_max
+        FROM mart.coach_panel_v
+        WHERE student_id = ${studentId}::bigint
         LIMIT 1
       `,
-      "public.students",
+      "mart.coach_panel_v",
     ),
   ]);
 
-  const studentPlanRecord = studentPlanRows.length ? toJsonRecord(studentPlanRows[0]) : null;
+  const coachPanelRecord = coachPanelRows.length ? toJsonRecord(coachPanelRows[0]) : null;
   const fallbackPlannedLevelMin = normalizeLessonLevel(
-    extractString(studentPlanRecord, [
+    extractString(coachPanelRecord, [
+      "level_min",
       "planned_level_min",
       "plan_level_min",
       "nivel_planificado_min",
     ]),
   );
   const fallbackPlannedLevelMax = normalizeLessonLevel(
-    extractString(studentPlanRecord, [
+    extractString(coachPanelRecord, [
+      "level_max",
       "planned_level_max",
       "plan_level_max",
       "nivel_planificado_max",
@@ -1824,6 +1829,14 @@ export async function listStudentLessonJourneyLessons(
 
   lessons.sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq);
 
+  if (!foundCurrent && lessons.length) {
+    const lastIndex = lessons.length - 1;
+    lessons[lastIndex] = {
+      ...lessons[lastIndex],
+      status: "current",
+    };
+  }
+
   const plannedLevelMin = firstNonOtherLevel ?? firstLevel ?? fallbackPlannedLevelMin ?? null;
   const plannedLevelMax = lastNonOtherLevel ?? lastLevel ?? fallbackPlannedLevelMax ?? null;
 
@@ -1840,6 +1853,7 @@ export async function getStudentLessonJourney(
 ): Promise<CoachPanelLessonJourney> {
   const journey = await listStudentLessonJourneyLessons(studentId);
   return {
+    lessons: journey.lessons,
     plannedLevelMin: journey.plannedLevelMin,
     plannedLevelMax: journey.plannedLevelMax,
     levels: journey.levels,
@@ -2743,6 +2757,7 @@ export async function getStudentCoachPanelSummary(
   }
 
   const lessonJourney: CoachPanelLessonJourney = {
+    lessons: journey.lessons,
     levels: journey.levels,
     plannedLevelMin: journey.plannedLevelMin ?? overview.header.planLevelMin ?? null,
     plannedLevelMax: journey.plannedLevelMax ?? overview.header.planLevelMax ?? null,

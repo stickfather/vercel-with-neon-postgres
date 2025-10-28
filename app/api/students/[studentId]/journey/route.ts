@@ -23,28 +23,20 @@ export async function GET(_request: NextRequest, context: any) {
     const journey = await listStudentLessonJourneyLessons(studentId);
     const lessons = journey.lessons.map((lesson) => ({
       lesson_id: lesson.lessonId,
-      lesson: lesson.lessonTitle,
+      level: lesson.levelCode,
       seq: lesson.lessonLevelSeq ?? lesson.lessonGlobalSeq,
       lesson_global_seq: lesson.lessonGlobalSeq,
-      level: lesson.levelCode,
       status: lesson.status,
       hours_in_lesson: lesson.hoursInLesson,
       days_in_lesson: lesson.daysInLesson,
+      lesson: lesson.lessonTitle,
     }));
 
-    return NextResponse.json(
-      {
-        student_id: studentId,
-        planned_level_min: journey.plannedLevelMin,
-        planned_level_max: journey.plannedLevelMax,
-        lessons,
+    return NextResponse.json(lessons, {
+      headers: {
+        "Cache-Control": "private, max-age=60",
       },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=60",
-        },
-      },
-    );
+    });
   } catch (error) {
     console.error("Error fetching student lesson journey", error);
     return NextResponse.json(

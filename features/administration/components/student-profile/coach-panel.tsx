@@ -238,36 +238,117 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   const { profileHeader, lessonJourney, paceForecast } = data;
 
+  const journeyLessons = useMemo(() => {
+    const lessons: CoachPanelLessonJourneyEntry[] = [];
+
+    if (Array.isArray(lessonJourney?.lessons)) {
+      lessons.push(...lessonJourney.lessons);
+    } else if (Array.isArray(lessonJourney?.levels)) {
+      lessonJourney.levels.forEach((level) => {
+        if (Array.isArray(level.lessons)) {
+          lessons.push(...level.lessons);
+        }
+      });
+    }
+
+    return lessons
+      .map((lesson) => {
+        const rawGlobalSeq =
+          typeof lesson.lessonGlobalSeq === "number"
+            ? lesson.lessonGlobalSeq
+            : lesson.lessonGlobalSeq == null
+            ? null
+            : Number(lesson.lessonGlobalSeq);
+        if (rawGlobalSeq == null || !Number.isFinite(rawGlobalSeq)) {
+          return null;
+        }
+
+        const normalizedGlobalSeq = Math.trunc(rawGlobalSeq);
+        const rawLevelSeq =
+          lesson.lessonLevelSeq == null
+            ? null
+            : typeof lesson.lessonLevelSeq === "number"
+            ? lesson.lessonLevelSeq
+            : Number(lesson.lessonLevelSeq);
+        const normalizedLevelSeq =
+          rawLevelSeq != null && Number.isFinite(rawLevelSeq)
+            ? Math.trunc(rawLevelSeq)
+            : null;
+
+        const normalizedLevelCode = lesson.levelCode?.trim().toUpperCase() || "OTROS";
+
+        const rawLessonId =
+          lesson.lessonId == null
+            ? null
+            : typeof lesson.lessonId === "number"
+            ? lesson.lessonId
+            : Number(lesson.lessonId);
+        const normalizedLessonId =
+          rawLessonId == null || !Number.isFinite(rawLessonId)
+            ? null
+            : Math.trunc(rawLessonId);
+
+        const rawHours =
+          typeof lesson.hoursInLesson === "number"
+            ? lesson.hoursInLesson
+            : Number(lesson.hoursInLesson);
+        const normalizedHours =
+          Number.isFinite(rawHours) && rawHours != null
+            ? Number(Math.max(0, rawHours).toFixed(1))
+            : 0;
+
+        const rawDays =
+          typeof lesson.daysInLesson === "number"
+            ? lesson.daysInLesson
+            : Number(lesson.daysInLesson);
+        const normalizedDays =
+          Number.isFinite(rawDays) && rawDays != null
+            ? Math.max(0, Math.trunc(rawDays))
+            : 0;
+
+        const normalizedStatus: CoachPanelLessonJourneyEntry["status"] =
+          lesson.status === "completed" || lesson.status === "current" || lesson.status === "upcoming"
+            ? lesson.status
+            : "upcoming";
+
+        const normalizedTitle =
+          typeof lesson.lessonTitle === "string" && lesson.lessonTitle.trim().length
+            ? lesson.lessonTitle
+            : null;
+
+        return {
+          lessonId: normalizedLessonId,
+          lessonGlobalSeq: normalizedGlobalSeq,
+          lessonLevelSeq: normalizedLevelSeq,
+          levelCode: normalizedLevelCode,
+          lessonTitle: normalizedTitle,
+          status: normalizedStatus,
+          hoursInLesson: normalizedHours,
+          daysInLesson: normalizedDays,
+        } satisfies CoachPanelLessonJourneyEntry;
+      })
+      .filter((lesson): lesson is CoachPanelLessonJourneyEntry => lesson != null);
+  }, [lessonJourney]);
+
   const journeyLevels = useMemo(() => {
-    if (!Array.isArray(lessonJourney?.levels)) {
+    if (!journeyLessons.length) {
       return [] as CoachPanelLessonJourneyLevel[];
     }
 
-    return lessonJourney.levels.map((level) => {
-      const normalizedCode = level.levelCode?.trim().toUpperCase() || "OTROS";
-      const normalizedOrder = Number.isFinite(level.order)
-        ? Number(level.order)
-        : LEVEL_ORDER_INDEX.get(normalizedCode) ?? Number.POSITIVE_INFINITY;
+    const grouped = new Map<string, CoachPanelLessonJourneyEntry[]>();
+    journeyLessons.forEach((lesson) => {
+      const bucket = grouped.get(lesson.levelCode);
+      if (bucket) {
+        bucket.push(lesson);
+      } else {
+        grouped.set(lesson.levelCode, [lesson]);
+      }
+    });
 
-      const normalizedLessons = level.lessons
-        .map((lesson) => {
-          const normalizedLevelSeq =
-            typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
-              ? Math.max(0, Math.trunc(lesson.lessonLevelSeq))
-              : null;
-
-          return {
-            ...lesson,
-            levelCode: lesson.levelCode?.trim().toUpperCase() || normalizedCode,
-            lessonLevelSeq: normalizedLevelSeq,
-            hoursInLesson: Number.isFinite(lesson.hoursInLesson)
-              ? Math.max(0, lesson.hoursInLesson)
-              : 0,
-            daysInLesson: Number.isFinite(lesson.daysInLesson)
-              ? Math.max(0, Math.trunc(lesson.daysInLesson))
-              : 0,
-          } satisfies CoachPanelLessonJourneyEntry;
-        })
+    return Array.from(grouped.entries()).map(([levelCode, lessons]) => {
+      const normalizedOrder = LEVEL_ORDER_INDEX.get(levelCode) ?? Number.POSITIVE_INFINITY;
+      const sortedLessons = lessons
+        .slice()
         .sort((a, b) => {
           const aSeq =
             typeof a.lessonLevelSeq === "number" && Number.isFinite(a.lessonLevelSeq)
@@ -284,13 +365,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         });
 
       return {
-        ...level,
-        levelCode: normalizedCode,
+        levelCode,
         order: normalizedOrder,
-        lessons: normalizedLessons,
+        lessons: sortedLessons,
       } satisfies CoachPanelLessonJourneyLevel;
     });
-  }, [lessonJourney?.levels]);
+  }, [journeyLessons]);
 
   const sortedLevels = useMemo(() => {
     return journeyLevels
