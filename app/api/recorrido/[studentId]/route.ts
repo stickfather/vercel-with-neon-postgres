@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getStudentLessonRecorrido } from "@/features/administration/data/student-profile";
-import {
-  readRouteParam,
-  resolveRouteParams,
-  type RouteParamsContext,
-} from "@/lib/api/route-params";
+import { listStudentLessonJourneyLessons } from "@/features/administration/data/student-profile";
+import { readRouteParam, resolveRouteParams } from "@/lib/api/route-params";
 
 export const dynamic = "force-dynamic";
 
@@ -24,28 +20,68 @@ export async function GET(_request: NextRequest, context: any) {
   }
 
   try {
-    const recorrido = await getStudentLessonRecorrido(studentId);
+    const journey = await listStudentLessonJourneyLessons(studentId);
+    const levels = journey.levels.map((level) => {
+      const highestCompletedSeq = level.lessons
+        .filter((lesson) => lesson.status !== "upcoming")
+        .reduce<number | null>((acc, lesson) => {
+          if (acc == null || lesson.lessonGlobalSeq > acc) {
+            return lesson.lessonGlobalSeq;
+          }
+          return acc;
+        }, null);
+
+      return {
+        level_code: level.levelCode,
+        order: Number.isFinite(level.order) ? level.order : null,
+        highest_seq_with_activity: highestCompletedSeq,
+        total_lessons_in_level: level.lessons.length,
+        lessons: level.lessons.map((lesson) => ({
+          lesson_id: lesson.lessonId,
+          lesson_level_seq: lesson.lessonLevelSeq,
+          lesson_global_seq: lesson.lessonGlobalSeq,
+          lesson_title: lesson.lessonTitle,
+          lesson_name: lesson.lessonTitle,
+          display_label: lesson.displayLabel,
+          is_intro: lesson.isIntro,
+          is_exam: lesson.isExam,
+          level_code: lesson.levelCode,
+          status: lesson.status,
+          hours_in_lesson: lesson.hoursInLesson,
+          days_in_lesson: lesson.daysInLesson,
+          minutes_spent: Math.round(lesson.hoursInLesson * 60),
+          calendar_days_spent: lesson.daysInLesson,
+          has_activity:
+            lesson.status !== "upcoming" ||
+            lesson.hoursInLesson > 0 ||
+            lesson.daysInLesson > 0,
+        })),
+      };
+    });
+
+    const lessons = journey.lessons.map((lesson) => ({
+      lesson_id: lesson.lessonId,
+      lesson: lesson.displayLabel,
+      seq: lesson.lessonLevelSeq ?? lesson.lessonGlobalSeq,
+      lesson_level_seq: lesson.lessonLevelSeq,
+      lesson_global_seq: lesson.lessonGlobalSeq,
+      level: lesson.levelCode,
+      status: lesson.status,
+      hours_in_lesson: lesson.hoursInLesson,
+      days_in_lesson: lesson.daysInLesson,
+      is_intro: lesson.isIntro,
+      is_exam: lesson.isExam,
+      lesson_name: lesson.lessonTitle,
+      display_label: lesson.displayLabel,
+    }));
+
     return NextResponse.json(
       {
         student_id: studentId,
-        planned_level_min: recorrido.plannedLevelMin,
-        planned_level_max: recorrido.plannedLevelMax,
-        levels: recorrido.levels.map((level) => ({
-          level_code: level.levelCode,
-          highest_seq_with_activity: level.highestSeqWithActivity,
-          total_lessons_in_level: level.totalLessonsInLevel,
-          lessons: level.lessons.map((lesson) => ({
-            lesson_id: lesson.lessonId,
-            level_code: lesson.levelCode,
-            seq_number: lesson.seqNumber,
-            lesson_title: lesson.lessonTitle,
-            special_type: lesson.specialType,
-            minutes_spent: lesson.minutesSpent,
-            calendar_days_spent: lesson.calendarDaysSpent,
-            has_activity: lesson.hasActivity,
-            lesson_global_seq: lesson.lessonGlobalSeq,
-          })),
-        })),
+        planned_level_min: journey.plannedLevelMin,
+        planned_level_max: journey.plannedLevelMax,
+        levels,
+        lessons,
       },
       {
         headers: {
