@@ -29,6 +29,9 @@ export async function GET(_request: NextRequest, context: any) {
       status: lesson.status,
       hours_in_lesson: lesson.hoursInLesson,
       days_in_lesson: lesson.daysInLesson,
+      is_intro: lesson.isIntro,
+      is_exam: lesson.isExam,
+      display_label: lesson.displayLabel,
     }));
 
     return NextResponse.json(lessons, {

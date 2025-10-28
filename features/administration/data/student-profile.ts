@@ -1104,6 +1104,9 @@ export type CoachPanelLessonJourneyEntry = {
   lessonLevelSeq: number | null;
   levelCode: string;
   lessonTitle: string | null;
+  displayLabel: string;
+  isIntro: boolean;
+  isExam: boolean;
   status: JourneyLessonStatus;
   hoursInLesson: number;
   daysInLesson: number;
@@ -1547,6 +1550,15 @@ const JOURNEY_LEVEL_RANK = new Map<string, number>(
   JOURNEY_LEVEL_ORDER.map((level, index) => [level, index]),
 );
 
+const LESSON_NUMBER_BASE_BY_LEVEL: Record<string, number> = {
+  A1: 1,
+  A2: 13,
+  B1: 27,
+  B2: 41,
+  C1: 57,
+  C2: 69,
+};
+
 function normalizeJourneyLevel(value: string | null | undefined): string {
   if (!value) {
     return "OTROS";
@@ -1576,6 +1588,38 @@ function computeJourneyDays(startValue: unknown, endValue: unknown): number {
   const normalized = Math.max(0, diffMs);
   const days = Math.floor(normalized / 86400000);
   return Math.max(1, days);
+}
+
+function computeJourneyDisplayLabel(lesson: CoachPanelLessonJourneyEntry): string {
+  const normalizedTitle = lesson.lessonTitle?.trim() ?? "";
+  if (lesson.isExam) {
+    return "Examen";
+  }
+
+  if (lesson.isIntro) {
+    return normalizedTitle.length ? normalizedTitle : "Intro booklet";
+  }
+
+  const levelSeq =
+    typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
+      ? lesson.lessonLevelSeq
+      : null;
+  if (levelSeq != null && levelSeq > 0) {
+    const base = LESSON_NUMBER_BASE_BY_LEVEL[lesson.levelCode];
+    if (typeof base === "number" && Number.isFinite(base)) {
+      const lessonNumber = base + (levelSeq - 1);
+      if (lessonNumber > 0) {
+        return `Lección ${lessonNumber}`;
+      }
+    }
+    return `Lección ${levelSeq}`;
+  }
+
+  if (normalizedTitle.length) {
+    return normalizedTitle;
+  }
+
+  return "Lección";
 }
 
 function buildJourneyLevels(
@@ -1755,6 +1799,7 @@ export async function listStudentLessonJourneyLessons(
   });
 
   const lessons: CoachPanelLessonJourneyEntry[] = [];
+  const levelGroups = new Map<string, CoachPanelLessonJourneyEntry[]>();
   let foundCurrent = false;
   let firstLevel: string | null = null;
   let lastLevel: string | null = null;
@@ -1800,6 +1845,8 @@ export async function listStudentLessonJourneyLessons(
     }
 
     const lessonTitle = extractString(payload, ["lesson_title", "lesson", "lesson_name"]);
+    const normalizedTitle = typeof lessonTitle === "string" ? lessonTitle.trim() : "";
+    const lessonTitleValue = normalizedTitle.length ? normalizedTitle : null;
     const completedFlag =
       extractBoolean(payload, ["completed", "is_completed", "completed_flag"]) ?? false;
 
@@ -1808,6 +1855,10 @@ export async function listStudentLessonJourneyLessons(
     const daysInLesson = engagement
       ? computeJourneyDays(engagement.startAt, engagement.endAt)
       : 0;
+
+    const isIntro =
+      (typeof normalizedLevelSeq === "number" && normalizedLevelSeq <= 0) ||
+      (normalizedTitle ? /intro/i.test(normalizedTitle) : false);
 
     let status: JourneyLessonStatus;
     if (completedFlag) {
@@ -1819,27 +1870,70 @@ export async function listStudentLessonJourneyLessons(
       status = "upcoming";
     }
 
-    lessons.push({
+    const entry: CoachPanelLessonJourneyEntry = {
       lessonId: lessonId ?? null,
       lessonGlobalSeq: normalizedGlobalSeq,
       lessonLevelSeq: normalizedLevelSeq,
       levelCode,
-      lessonTitle,
+      lessonTitle: lessonTitleValue,
+      displayLabel: lessonTitleValue ?? "",
+      isIntro,
+      isExam: false,
       status,
       hoursInLesson,
       daysInLesson,
-    });
+    };
+
+    lessons.push(entry);
+
+    const levelList = levelGroups.get(levelCode);
+    if (levelList) {
+      levelList.push(entry);
+    } else {
+      levelGroups.set(levelCode, [entry]);
+    }
   });
 
   lessons.sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq);
 
   if (!foundCurrent && lessons.length) {
     const lastIndex = lessons.length - 1;
-    lessons[lastIndex] = {
-      ...lessons[lastIndex],
-      status: "current",
-    };
+    lessons[lastIndex].status = "current";
   }
+
+  levelGroups.forEach((group) => {
+    if (!group.length) {
+      return;
+    }
+
+    let candidate = group[0];
+    for (let index = 1; index < group.length; index += 1) {
+      const entry = group[index];
+      const candidateSeq =
+        typeof candidate.lessonLevelSeq === "number" && Number.isFinite(candidate.lessonLevelSeq)
+          ? candidate.lessonLevelSeq
+          : candidate.lessonGlobalSeq;
+      const entrySeq =
+        typeof entry.lessonLevelSeq === "number" && Number.isFinite(entry.lessonLevelSeq)
+          ? entry.lessonLevelSeq
+          : entry.lessonGlobalSeq;
+
+      if (entrySeq > candidateSeq) {
+        candidate = entry;
+        continue;
+      }
+
+      if (entrySeq === candidateSeq && entry.lessonGlobalSeq > candidate.lessonGlobalSeq) {
+        candidate = entry;
+      }
+    }
+
+    candidate.isExam = true;
+  });
+
+  lessons.forEach((lesson) => {
+    lesson.displayLabel = computeJourneyDisplayLabel(lesson);
+  });
 
   const plannedLevelMin = firstNonOtherLevel ?? firstLevel ?? fallbackPlannedLevelMin ?? null;
   const plannedLevelMax = lastNonOtherLevel ?? lastLevel ?? fallbackPlannedLevelMax ?? null;

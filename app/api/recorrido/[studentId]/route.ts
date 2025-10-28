@@ -40,7 +40,10 @@ export async function GET(_request: NextRequest, context: any) {
           lesson_id: lesson.lessonId,
           lesson_level_seq: lesson.lessonLevelSeq,
           lesson_global_seq: lesson.lessonGlobalSeq,
-          lesson_title: lesson.lessonTitle,
+          lesson_title: lesson.displayLabel,
+          display_label: lesson.displayLabel,
+          is_intro: lesson.isIntro,
+          is_exam: lesson.isExam,
           level_code: lesson.levelCode,
           status: lesson.status,
           hours_in_lesson: lesson.hoursInLesson,
@@ -57,13 +60,16 @@ export async function GET(_request: NextRequest, context: any) {
 
     const lessons = journey.lessons.map((lesson) => ({
       lesson_id: lesson.lessonId,
-      lesson: lesson.lessonTitle,
+      lesson: lesson.displayLabel,
       seq: lesson.lessonLevelSeq ?? lesson.lessonGlobalSeq,
       lesson_global_seq: lesson.lessonGlobalSeq,
       level: lesson.levelCode,
       status: lesson.status,
       hours_in_lesson: lesson.hoursInLesson,
       days_in_lesson: lesson.daysInLesson,
+      is_intro: lesson.isIntro,
+      is_exam: lesson.isExam,
+      display_label: lesson.displayLabel,
     }));
 
     return NextResponse.json(

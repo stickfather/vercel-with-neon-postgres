@@ -21,39 +21,49 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LEVEL_BADGE_STYLES: Record<string, { badgeBg: string; badgeText: string }> = {
-  A1: { badgeBg: "bg-[#e6fbf7]", badgeText: "text-brand-teal" },
-  A2: { badgeBg: "bg-[#fff2df]", badgeText: "text-[#c25e00]" },
-  B1: { badgeBg: "bg-[#e7f0ff]", badgeText: "text-[#1d4ed8]" },
-  B2: { badgeBg: "bg-[#f3e8ff]", badgeText: "text-[#7c3aed]" },
-  C1: { badgeBg: "bg-[#ffe8f2]", badgeText: "text-[#be185d]" },
-  C2: { badgeBg: "bg-[#fef3c7]", badgeText: "text-[#b45309]" },
-};
+const LEVEL_BADGE_CLASS =
+  "inline-flex h-10 min-w-[80px] shrink-0 items-center justify-center rounded-full bg-teal-500 px-5 text-sm font-semibold uppercase tracking-[0.28em] text-white shadow-[0_12px_28px_rgba(20,184,166,0.35)]";
 
-const DEFAULT_LEVEL_BADGE_STYLE = { badgeBg: "bg-[#eef2ff]", badgeText: "text-brand-deep" };
+const LESSON_NODE_BASE =
+  "flex w-24 h-24 shrink-0 flex-col items-center justify-center rounded-full text-center p-2 gap-0.5 transition";
+
+type LessonStatusStyle = {
+  container: string;
+  title: string;
+  meta: string;
+  footerClass?: string;
+  footerContent?: string | null;
+};
 
 const LESSON_STATUS_STYLES: Record<
   CoachPanelLessonJourneyEntry["status"],
-  { container: string; accent: string }
+  LessonStatusStyle
 > = {
   completed: {
-    container: "border border-emerald-200/70 bg-emerald-50/80 text-emerald-700 shadow-sm shadow-emerald-100/60",
-    accent: "text-emerald-600",
+    container:
+      `${LESSON_NODE_BASE} border border-teal-600 bg-teal-500 text-white shadow-[0_12px_28px_rgba(20,184,166,0.35)]`,
+    title: "text-[12px] font-semibold leading-tight text-white",
+    meta: "text-[10px] font-medium leading-tight text-teal-50/90",
+    footerClass: "mt-1 text-lg leading-none",
+    footerContent: "✅",
   },
   current: {
     container:
-      "border-2 border-fuchsia-400/80 bg-white text-brand-deep shadow-[0_20px_35px_rgba(192,132,252,0.28)]",
-    accent: "text-fuchsia-500",
+      `${LESSON_NODE_BASE} border-2 border-teal-500 bg-white text-slate-900 shadow-[0_0_0_4px_rgba(45,212,191,0.18)] shadow-teal-200/60`,
+    title: "text-[12px] font-semibold leading-tight text-teal-600",
+    meta: "text-[10px] font-medium leading-tight text-slate-600",
+    footerClass: "mt-1 text-[10px] font-semibold text-teal-600",
+    footerContent: "Aquí estás",
   },
   upcoming: {
-    container: "border border-sky-200/80 bg-sky-50/70 text-sky-700 shadow-sm shadow-sky-100/70",
-    accent: "text-sky-600",
+    container:
+      `${LESSON_NODE_BASE} border border-slate-200 bg-slate-50 text-slate-700 shadow-[0_8px_18px_rgba(148,163,184,0.18)]`,
+    title: "text-[12px] font-semibold leading-tight text-orange-500",
+    meta: "text-[10px] font-medium leading-tight text-slate-500",
+    footerClass: undefined,
+    footerContent: null,
   },
 };
-
-function cx(...classes: Array<string | null | undefined | false>): string {
-  return classes.filter(Boolean).join(" ");
-}
 
 function formatNumber(
   value: number | null | undefined,
@@ -119,10 +129,8 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
-function resolveLevelBadgeClasses(levelCode: string | null | undefined): string {
-  const normalized = levelCode ? levelCode.trim().toUpperCase() : "";
-  const style = LEVEL_BADGE_STYLES[normalized] ?? DEFAULT_LEVEL_BADGE_STYLE;
-  return `${style.badgeBg} ${style.badgeText}`;
+function resolveLevelBadgeClasses(_levelCode: string | null | undefined): string {
+  return LEVEL_BADGE_CLASS;
 }
 
 function formatHoursValue(value: number | null | undefined): string {
@@ -315,6 +323,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           typeof lesson.lessonTitle === "string" && lesson.lessonTitle.trim().length
             ? lesson.lessonTitle
             : null;
+        const normalizedDisplayLabel =
+          typeof lesson.displayLabel === "string" && lesson.displayLabel.trim().length
+            ? lesson.displayLabel.trim()
+            : normalizedTitle ?? "Lección";
+        const normalizedIsIntro = Boolean(lesson.isIntro);
+        const normalizedIsExam = Boolean(lesson.isExam);
 
         return {
           lessonId: normalizedLessonId,
@@ -322,6 +336,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           lessonLevelSeq: normalizedLevelSeq,
           levelCode: normalizedLevelCode,
           lessonTitle: normalizedTitle,
+          displayLabel: normalizedDisplayLabel,
+          isIntro: normalizedIsIntro,
+          isExam: normalizedIsExam,
           status: normalizedStatus,
           hoursInLesson: normalizedHours,
           daysInLesson: normalizedDays,
@@ -404,56 +421,37 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       });
   }, [journeyLevels]);
 
-  const renderLessonChip = (
-    lesson: CoachPanelLessonJourneyEntry,
-    options: { isFinalInLevel?: boolean } = {},
-  ) => {
+  const renderLessonChip = (lesson: CoachPanelLessonJourneyEntry) => {
     const style = resolveLessonStatusStyle(lesson.status);
-    const isFinal = Boolean(options.isFinalInLevel);
-    const fallbackLabel = isFinal
-      ? "Examen"
-      : `Lección ${formatNumber(
-          typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
-            ? lesson.lessonLevelSeq
-            : lesson.lessonGlobalSeq,
-          { maximumFractionDigits: 0 },
-        )}`;
-    const displayTitle = lesson.lessonTitle?.trim().length ? lesson.lessonTitle : fallbackLabel;
-    const hoursLabel = `${formatHoursValue(lesson.hoursInLesson)}h`;
-    const daysLabel = `${formatNumber(lesson.daysInLesson, { maximumFractionDigits: 0 })} días`;
+    const displayTitle = (lesson.displayLabel ?? "").trim().length
+      ? lesson.displayLabel
+      : lesson.lessonTitle?.trim().length
+        ? lesson.lessonTitle.trim()
+        : "Lección";
+    const hoursLabel = formatHoursValue(lesson.hoursInLesson);
+    const safeDays =
+      typeof lesson.daysInLesson === "number" && Number.isFinite(lesson.daysInLesson)
+        ? Math.max(0, Math.trunc(lesson.daysInLesson))
+        : 0;
     const tooltipLines = [
       `Nivel ${lesson.levelCode}`,
-      displayTitle ?? "Lección",
-      `${hoursLabel} • ${daysLabel}`,
+      displayTitle,
+      `⌛ ${hoursLabel}h • 📅 ${safeDays}d`,
     ];
+    const footerClass = style.footerClass ?? style.meta;
 
     return (
       <div
         key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
-        className={cx(
-          "flex min-w-[148px] flex-col gap-1.5 rounded-2xl border px-4 py-3 text-left transition",
-          style.container,
-        )}
+        className={style.container}
         title={tooltipLines.join("\n")}
       >
-        <div className="flex items-start gap-2">
-          {lesson.status === "completed" ? (
-            <span aria-hidden="true" className="mt-[2px] text-lg leading-none">
-              ✅
-            </span>
-          ) : null}
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-semibold leading-tight text-current">
-              {displayTitle ?? "Lección"}
-            </span>
-            <span className={cx("text-xs font-semibold", style.accent)}>
-              ⏳ {hoursLabel} • 📅 {daysLabel}
-            </span>
-            {lesson.status === "current" ? (
-              <span className="text-xs font-semibold text-fuchsia-600">Aquí estás</span>
-            ) : null}
-          </div>
-        </div>
+        <span className={style.title}>{displayTitle}</span>
+        <span className={style.meta}>⌛ {hoursLabel}h</span>
+        <span className={style.meta}>📅 {safeDays}d</span>
+        {style.footerContent ? (
+          <span className={footerClass}>{style.footerContent}</span>
+        ) : null}
       </div>
     );
   };
@@ -531,29 +529,25 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
         <div className="flex flex-col gap-4">
           {sortedLevels.length ? (
-            sortedLevels.map((level) => (
+            sortedLevels.map((level, levelIndex) => (
               <div key={`journey-level-${level.levelCode}`} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:gap-4">
-                  <span
-                    className={cx(
-                      "inline-flex w-fit min-w-[64px] items-center justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em]",
-                      resolveLevelBadgeClasses(level.levelCode),
-                    )}
-                  >
+                <div className="flex flex-wrap items-start gap-4">
+                  <span className={resolveLevelBadgeClasses(level.levelCode)}>
                     {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
                   </span>
                   {level.lessons.length ? (
-                    <div className="flex flex-1 items-stretch gap-3 overflow-x-auto pb-1 pr-1 md:pb-0">
-                      {level.lessons.map((lesson, lessonIndex) =>
-                        renderLessonChip(lesson, { isFinalInLevel: lessonIndex === level.lessons.length - 1 }),
-                      )}
+                    <div className="flex min-w-0 flex-1 flex-wrap gap-3">
+                      {level.lessons.map((lesson) => renderLessonChip(lesson))}
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
+                    <div className="flex min-h-[96px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-500">
                       Sin lecciones registradas.
                     </div>
                   )}
                 </div>
+                {levelIndex < sortedLevels.length - 1 ? (
+                  <div className="h-px w-full bg-slate-200/60" />
+                ) : null}
               </div>
             ))
           ) : (
