@@ -1771,38 +1771,38 @@ export async function listStudentLessonJourneyLessons(
     completed: boolean;
   };
 
-  const planEntries: PlanEntry[] = planRows
-    .map((row) => {
-      const payload = toJsonRecord(row);
-      if (!payload) {
-        return null;
-      }
+  const planEntries: PlanEntry[] = planRows.reduce<PlanEntry[]>((acc, row) => {
+    const payload = toJsonRecord(row);
+    if (!payload) {
+      return acc;
+    }
 
-      const lessonId = normalizeInteger(payload.lesson_id);
-      const globalSeq = extractNumber(payload, ["lesson_global_seq", "global_seq", "seq"]);
-      if (lessonId == null || globalSeq == null || !Number.isFinite(globalSeq)) {
-        return null;
-      }
+    const lessonId = normalizeInteger(payload.lesson_id);
+    const globalSeq = extractNumber(payload, ["lesson_global_seq", "global_seq", "seq"]);
+    if (lessonId == null || globalSeq == null || !Number.isFinite(globalSeq)) {
+      return acc;
+    }
 
-      const planLevelCode = normalizeJourneyLevel(
-        extractString(payload, ["level", "level_code", "lesson_level"]),
-      );
-      const planLevelSeq = extractNumber(payload, ["seq", "level_seq", "lesson_level_seq"]);
-      const completed =
-        extractBoolean(payload, ["completed", "is_completed", "completed_flag"]) ?? false;
+    const planLevelCode = normalizeJourneyLevel(
+      extractString(payload, ["level", "level_code", "lesson_level"]),
+    );
+    const planLevelSeq = extractNumber(payload, ["seq", "level_seq", "lesson_level_seq"]);
+    const completed =
+      extractBoolean(payload, ["completed", "is_completed", "completed_flag"]) ?? false;
 
-      return {
-        lessonId,
-        lessonGlobalSeq: Math.trunc(globalSeq),
-        planLevelCode,
-        planLevelSeq:
-          typeof planLevelSeq === "number" && Number.isFinite(planLevelSeq)
-            ? Math.trunc(planLevelSeq)
-            : null,
-        completed,
-      } satisfies PlanEntry;
-    })
-    .filter((entry): entry is PlanEntry => entry != null);
+    acc.push({
+      lessonId,
+      lessonGlobalSeq: Math.trunc(globalSeq),
+      planLevelCode,
+      planLevelSeq:
+        typeof planLevelSeq === "number" && Number.isFinite(planLevelSeq)
+          ? Math.trunc(planLevelSeq)
+          : null,
+      completed,
+    });
+
+    return acc;
+  }, []);
 
   const engagementMap = new Map<
     number,
