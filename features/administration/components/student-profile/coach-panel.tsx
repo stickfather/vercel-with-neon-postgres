@@ -22,51 +22,7 @@ const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
 const LEVEL_BADGE_CLASS =
-  "inline-flex h-10 min-w-[80px] shrink-0 items-center justify-center rounded-full bg-teal-500 px-5 text-sm font-semibold uppercase tracking-[0.28em] text-white shadow-[0_12px_28px_rgba(20,184,166,0.35)]";
-
-const LESSON_NODE_BASE =
-  "flex w-24 h-24 shrink-0 flex-col items-center justify-center rounded-full text-center p-2 gap-0.5 transition";
-
-const LESSON_LEGEND_NODE_BASE =
-  "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-center text-[10px] font-semibold";
-
-type LessonStatusStyle = {
-  container: string;
-  title: string;
-  meta: string;
-  footerClass?: string;
-  footerContent?: string | null;
-};
-
-const LESSON_STATUS_STYLES: Record<
-  CoachPanelLessonJourneyEntry["status"],
-  LessonStatusStyle
-> = {
-  completed: {
-    container:
-      `${LESSON_NODE_BASE} border border-teal-600 bg-teal-500 text-white shadow-[0_12px_28px_rgba(20,184,166,0.35)]`,
-    title: "text-[12px] font-semibold leading-tight text-white",
-    meta: "text-[10px] font-medium leading-tight text-teal-50/90",
-    footerClass: "mt-1 text-lg leading-none",
-    footerContent: "✅",
-  },
-  current: {
-    container:
-      `${LESSON_NODE_BASE} border-2 border-teal-500 bg-white text-slate-900 shadow-[0_0_0_4px_rgba(45,212,191,0.18)] shadow-teal-200/60`,
-    title: "text-[12px] font-semibold leading-tight text-teal-600",
-    meta: "text-[10px] font-medium leading-tight text-slate-600",
-    footerClass: "mt-1 text-[10px] font-semibold text-teal-600",
-    footerContent: "Aquí estás",
-  },
-  upcoming: {
-    container:
-      `${LESSON_NODE_BASE} border border-slate-200 bg-slate-50 text-slate-700 shadow-[0_8px_18px_rgba(148,163,184,0.18)]`,
-    title: "text-[12px] font-semibold leading-tight text-orange-500",
-    meta: "text-[10px] font-medium leading-tight text-slate-500",
-    footerClass: undefined,
-    footerContent: null,
-  },
-};
+  "inline-flex h-10 min-w-[72px] shrink-0 items-center justify-center rounded-full bg-teal-500 px-4 text-sm font-semibold uppercase tracking-[0.24em] text-white shadow-[0_12px_28px_rgba(20,184,166,0.3)]";
 
 function formatNumber(
   value: number | null | undefined,
@@ -143,27 +99,13 @@ function formatHoursValue(value: number | null | undefined): string {
   return value.toFixed(1);
 }
 
-function resolveLessonStatusStyle(status: CoachPanelLessonJourneyEntry["status"]) {
-  return LESSON_STATUS_STYLES[status] ?? LESSON_STATUS_STYLES.upcoming;
-}
-
-const LESSON_LEGEND_STYLES = {
-  completed:
-    `${LESSON_LEGEND_NODE_BASE} border border-teal-600 bg-teal-500 text-white shadow-[0_8px_20px_rgba(20,184,166,0.28)]`,
-  current:
-    `${LESSON_LEGEND_NODE_BASE} border-2 border-teal-500 bg-white text-teal-600 shadow-[0_0_0_3px_rgba(45,212,191,0.18)]`,
-  upcoming:
-    `${LESSON_LEGEND_NODE_BASE} border border-slate-200 bg-slate-50 text-orange-500 shadow-[0_6px_16px_rgba(148,163,184,0.18)]`,
-};
-
 function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string {
   if (lesson.isIntro) {
-    const introLabel = lesson.lessonTitle?.trim();
-    return introLabel && introLabel.length ? introLabel : "Intro Booklet";
+    return "Intro";
   }
 
   if (lesson.isExam) {
-    return "Examen";
+    return "Exam";
   }
 
   const preferred = lesson.displayLabel?.trim() ?? "";
@@ -183,7 +125,15 @@ function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string 
 
   if (/^lección\s+/i.test(base)) {
     const stripped = base.replace(/^lección\s+/i, "").trim();
-    return stripped.length ? stripped : base;
+    if (!stripped.length) {
+      return "—";
+    }
+
+    const numericMatch = stripped.match(/^\d+/);
+    if (numericMatch) {
+      return numericMatch[0];
+    }
+    return stripped;
   }
 
   return base;
@@ -199,6 +149,32 @@ function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string
     return display;
   }
   return resolveLessonBubbleTitle(lesson);
+}
+
+function resolveLessonNodeCircleClass(lesson: CoachPanelLessonJourneyEntry): string {
+  const base =
+    "relative flex items-center justify-center rounded-full font-semibold transition-colors duration-150";
+
+  if (lesson.status === "current") {
+    return `${base} h-14 w-14 border-2 border-teal-500 bg-white text-teal-600 shadow-[0_0_0_4px_rgba(45,212,191,0.18)]`;
+  }
+
+  if (lesson.status === "completed") {
+    return `${base} h-12 w-12 border border-teal-700 bg-teal-600 text-white shadow-[0_12px_28px_rgba(20,184,166,0.32)]`;
+  }
+
+  if (lesson.isExam) {
+    return `${base} h-12 w-12 border-2 border-dashed border-teal-400 bg-white text-teal-600 shadow-sm`;
+  }
+
+  return `${base} h-12 w-12 border border-slate-300 bg-white text-orange-500 shadow-[0_6px_18px_rgba(148,163,184,0.18)]`;
+}
+
+function resolveLessonNodeLabelClass(lesson: CoachPanelLessonJourneyEntry): string {
+  if (lesson.status === "current") {
+    return "text-sm font-semibold";
+  }
+  return "text-xs font-semibold";
 }
 
 const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
@@ -478,8 +454,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       });
   }, [journeyLevels]);
 
-  const renderLessonChip = (lesson: CoachPanelLessonJourneyEntry) => {
-    const style = resolveLessonStatusStyle(lesson.status);
+  const renderLessonNode = (lesson: CoachPanelLessonJourneyEntry) => {
     const displayTitle = resolveLessonBubbleTitle(lesson);
     const tooltipTitle = resolveLessonTooltipTitle(lesson);
     const hoursLabel = formatHoursValue(lesson.hoursInLesson);
@@ -492,20 +467,32 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       tooltipTitle,
       `⌛ ${hoursLabel}h • 📅 ${safeDays}d`,
     ];
-    const footerClass = style.footerClass ?? style.meta;
+    const circleClass = resolveLessonNodeCircleClass(lesson);
+    const labelClass = resolveLessonNodeLabelClass(lesson);
+    const statsLabel = `⌛ ${hoursLabel}h · 📅 ${safeDays}d`;
+    const showAqui = lesson.status === "current";
+    const showCheck = lesson.status === "completed";
 
     return (
       <div
         key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
-        className={style.container}
+        className="relative flex min-w-[72px] max-w-[96px] flex-col items-center text-center"
         title={tooltipLines.join("\n")}
       >
-        <span className={style.title}>{displayTitle}</span>
-        <span className={style.meta}>⌛ {hoursLabel}h</span>
-        <span className={style.meta}>📅 {safeDays}d</span>
-        {style.footerContent ? (
-          <span className={footerClass}>{style.footerContent}</span>
-        ) : null}
+        <div className={`${circleClass} z-10`}>
+          <span className={labelClass}>{displayTitle}</span>
+          {showCheck ? (
+            <span className="absolute -bottom-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[11px] shadow-sm">
+              ✅
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-2 flex flex-col items-center gap-1 leading-tight">
+          {showAqui ? (
+            <span className="text-[10px] font-semibold text-teal-600">Aquí estás</span>
+          ) : null}
+          <span className="text-[10px] font-medium text-slate-500 whitespace-nowrap">{statsLabel}</span>
+        </div>
       </div>
     );
   };
@@ -583,43 +570,39 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
         <div className="flex flex-col gap-4">
           {sortedLevels.length ? (
-            <>
-              {sortedLevels.map((level, levelIndex) => (
-                <div key={`journey-level-${level.levelCode}`} className="flex flex-col gap-3">
-                  <div className="flex flex-wrap items-start gap-4">
+            sortedLevels.map((level, levelIndex) => {
+              const levelWrapperClasses =
+                levelIndex === 0
+                  ? "flex flex-col gap-4"
+                  : "flex flex-col gap-4 border-t border-slate-200/70 pt-6";
+
+              const nodeAlignment =
+                level.lessons.length <= 1 ? "justify-center" : "justify-between";
+
+              return (
+                <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
+                  <div className="flex items-start gap-4">
                     <span className={resolveLevelBadgeClasses(level.levelCode)}>
                       {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
                     </span>
                     {level.lessons.length ? (
-                      <div className="flex min-w-0 flex-1 flex-wrap gap-3">
-                        {level.lessons.map((lesson) => renderLessonChip(lesson))}
+                      <div className="relative min-w-0 flex-1">
+                        <div className="relative w-full px-6 pb-10 pt-2">
+                          <div className="pointer-events-none absolute left-6 right-6 top-6 h-[2px] bg-slate-200" />
+                          <div className={`relative flex w-full items-start ${nodeAlignment}`}>
+                            {level.lessons.map((lesson) => renderLessonNode(lesson))}
+                          </div>
+                        </div>
                       </div>
                     ) : (
-                      <div className="flex min-h-[96px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-500">
+                      <div className="flex min-h-[88px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-500">
                         Sin lecciones registradas.
                       </div>
                     )}
                   </div>
-                  {levelIndex < sortedLevels.length - 1 ? (
-                    <div className="h-px w-full bg-slate-200/60" />
-                  ) : null}
                 </div>
-              ))}
-              <div className="flex flex-wrap items-center gap-6 pt-2">
-                <div className="flex items-center gap-2">
-                  <div className={LESSON_LEGEND_STYLES.completed}>✅</div>
-                  <span className="text-sm font-medium text-brand-ink-muted">Completado</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className={LESSON_LEGEND_STYLES.current}>Aquí</div>
-                  <span className="text-sm font-medium text-brand-ink-muted">Lección actual</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className={LESSON_LEGEND_STYLES.upcoming}>→</div>
-                  <span className="text-sm font-medium text-brand-ink-muted">Próximo</span>
-                </div>
-              </div>
-            </>
+              );
+            })
           ) : (
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
               Sin lecciones planificadas.
