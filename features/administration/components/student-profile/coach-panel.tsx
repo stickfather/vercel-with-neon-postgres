@@ -19,7 +19,7 @@ type CoachPanelProps = {
 const HEATMAP_DAYS = 30;
 
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
-const LEVEL_ORDER_INDEX = new Map(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
+const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
 const LEVEL_BADGE_STYLES: Record<string, { badgeBg: string; badgeText: string }> = {
   A1: { badgeBg: "bg-[#e6fbf7]", badgeText: "text-brand-teal" },

@@ -1541,7 +1541,7 @@ export async function getStudentCoachPanelProfileHeader(
 
 const JOURNEY_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 
-const JOURNEY_LEVEL_RANK = new Map(
+const JOURNEY_LEVEL_RANK = new Map<string, number>(
   JOURNEY_LEVEL_ORDER.map((level, index) => [level, index]),
 );
 
