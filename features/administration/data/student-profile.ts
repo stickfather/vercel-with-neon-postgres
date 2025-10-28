@@ -1689,6 +1689,7 @@ function buildJourneyLevels(
 export type StudentLessonJourney = {
   plannedLevelMin: string | null;
   plannedLevelMax: string | null;
+  planSummary: CoachPanelJourneyPlanSummary | null;
   lessons: CoachPanelLessonJourneyEntry[];
   levels: CoachPanelLessonJourneyLevel[];
 };
