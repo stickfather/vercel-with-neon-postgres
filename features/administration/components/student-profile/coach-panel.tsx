@@ -34,20 +34,20 @@ const DEFAULT_LEVEL_BADGE_STYLE = { badgeBg: "bg-[#eef2ff]", badgeText: "text-br
 
 const LESSON_STATUS_STYLES: Record<
   CoachPanelLessonJourneyEntry["status"],
-  { container: string; hours: string }
+  { container: string; accent: string }
 > = {
   completed: {
-    container: "border border-transparent bg-brand-ink-muted/10 text-brand-ink-muted shadow-sm",
-    hours: "text-brand-ink-muted/70",
+    container: "border border-emerald-200/70 bg-emerald-50/80 text-emerald-700 shadow-sm shadow-emerald-100/60",
+    accent: "text-emerald-600",
   },
   current: {
     container:
-      "border-2 border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(11,158,143,0.12)]",
-    hours: "text-brand-ink-muted",
+      "border-2 border-fuchsia-400/80 bg-white text-brand-deep shadow-[0_20px_35px_rgba(192,132,252,0.28)]",
+    accent: "text-fuchsia-500",
   },
   upcoming: {
-    container: "border border-brand-ink-muted/20 bg-white text-brand-deep shadow-sm",
-    hours: "text-brand-ink-muted",
+    container: "border border-sky-200/80 bg-sky-50/70 text-sky-700 shadow-sm shadow-sky-100/70",
+    accent: "text-sky-600",
   },
 };
 
@@ -404,29 +404,34 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       });
   }, [journeyLevels]);
 
-  const renderLessonChip = (lesson: CoachPanelLessonJourneyEntry) => {
+  const renderLessonChip = (
+    lesson: CoachPanelLessonJourneyEntry,
+    options: { isFinalInLevel?: boolean } = {},
+  ) => {
     const style = resolveLessonStatusStyle(lesson.status);
-    const displayTitle = lesson.lessonTitle?.trim().length
-      ? lesson.lessonTitle
+    const isFinal = Boolean(options.isFinalInLevel);
+    const fallbackLabel = isFinal
+      ? "Examen"
       : `Lección ${formatNumber(
           typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
             ? lesson.lessonLevelSeq
             : lesson.lessonGlobalSeq,
           { maximumFractionDigits: 0 },
         )}`;
+    const displayTitle = lesson.lessonTitle?.trim().length ? lesson.lessonTitle : fallbackLabel;
     const hoursLabel = `${formatHoursValue(lesson.hoursInLesson)}h`;
     const daysLabel = `${formatNumber(lesson.daysInLesson, { maximumFractionDigits: 0 })} días`;
     const tooltipLines = [
       `Nivel ${lesson.levelCode}`,
       displayTitle ?? "Lección",
-      `${hoursLabel} / ${daysLabel}`,
+      `${hoursLabel} • ${daysLabel}`,
     ];
 
     return (
       <div
         key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
         className={cx(
-          "flex min-w-[180px] flex-col gap-2 rounded-2xl border px-4 py-3 text-left transition",
+          "flex min-w-[148px] flex-col gap-1.5 rounded-2xl border px-4 py-3 text-left transition",
           style.container,
         )}
         title={tooltipLines.join("\n")}
@@ -441,42 +446,13 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <span className="text-sm font-semibold leading-tight text-current">
               {displayTitle ?? "Lección"}
             </span>
-            <span className={cx("text-xs font-medium", style.hours)}>
-              {hoursLabel} / {daysLabel}
+            <span className={cx("text-xs font-semibold", style.accent)}>
+              ⏳ {hoursLabel} • 📅 {daysLabel}
             </span>
             {lesson.status === "current" ? (
-              <span className="text-xs font-semibold text-brand-teal">Aquí estás</span>
+              <span className="text-xs font-semibold text-fuchsia-600">Aquí estás</span>
             ) : null}
           </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderLegendSample = (
-    status: CoachPanelLessonJourneyEntry["status"],
-    label: string,
-  ) => {
-    const style = resolveLessonStatusStyle(status);
-
-    return (
-      <div
-        key={`journey-legend-${status}`}
-        className={cx(
-          "flex min-w-[140px] items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold",
-          style.container,
-        )}
-      >
-        {status === "completed" ? (
-          <span aria-hidden="true" className="text-base leading-none">
-            ✅
-          </span>
-        ) : null}
-        <div className="flex flex-col leading-tight text-current">
-          <span>{label}</span>
-          {status === "current" ? (
-            <span className="text-[11px] font-semibold text-brand-teal">Aquí estás</span>
-          ) : null}
         </div>
       </div>
     );
@@ -567,8 +543,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
                   </span>
                   {level.lessons.length ? (
-                    <div className="flex flex-1 flex-wrap gap-3">
-                      {level.lessons.map((lesson) => renderLessonChip(lesson))}
+                    <div className="flex flex-1 items-stretch gap-3 overflow-x-auto pb-1 pr-1 md:pb-0">
+                      {level.lessons.map((lesson, lessonIndex) =>
+                        renderLessonChip(lesson, { isFinalInLevel: lessonIndex === level.lessons.length - 1 }),
+                      )}
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
@@ -585,11 +563,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {renderLegendSample("completed", "Completado")}
-          {renderLegendSample("current", "Lección actual")}
-          {renderLegendSample("upcoming", "Próximo")}
-        </div>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
