@@ -27,6 +27,9 @@ const LEVEL_BADGE_CLASS =
 const LESSON_NODE_BASE =
   "flex w-24 h-24 shrink-0 flex-col items-center justify-center rounded-full text-center p-2 gap-0.5 transition";
 
+const LESSON_LEGEND_NODE_BASE =
+  "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-center text-[10px] font-semibold";
+
 type LessonStatusStyle = {
   container: string;
   title: string;
@@ -142,6 +145,60 @@ function formatHoursValue(value: number | null | undefined): string {
 
 function resolveLessonStatusStyle(status: CoachPanelLessonJourneyEntry["status"]) {
   return LESSON_STATUS_STYLES[status] ?? LESSON_STATUS_STYLES.upcoming;
+}
+
+const LESSON_LEGEND_STYLES = {
+  completed:
+    `${LESSON_LEGEND_NODE_BASE} border border-teal-600 bg-teal-500 text-white shadow-[0_8px_20px_rgba(20,184,166,0.28)]`,
+  current:
+    `${LESSON_LEGEND_NODE_BASE} border-2 border-teal-500 bg-white text-teal-600 shadow-[0_0_0_3px_rgba(45,212,191,0.18)]`,
+  upcoming:
+    `${LESSON_LEGEND_NODE_BASE} border border-slate-200 bg-slate-50 text-orange-500 shadow-[0_6px_16px_rgba(148,163,184,0.18)]`,
+};
+
+function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string {
+  if (lesson.isIntro) {
+    const introLabel = lesson.lessonTitle?.trim();
+    return introLabel && introLabel.length ? introLabel : "Intro Booklet";
+  }
+
+  if (lesson.isExam) {
+    return "Examen";
+  }
+
+  const preferred = lesson.displayLabel?.trim() ?? "";
+  const fallback = lesson.lessonTitle?.trim() ?? "";
+  const base = preferred.length ? preferred : fallback;
+
+  if (!base.length) {
+    const seq =
+      typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
+        ? lesson.lessonLevelSeq
+        : null;
+    if (seq != null) {
+      return String(seq);
+    }
+    return "—";
+  }
+
+  if (/^lección\s+/i.test(base)) {
+    const stripped = base.replace(/^lección\s+/i, "").trim();
+    return stripped.length ? stripped : base;
+  }
+
+  return base;
+}
+
+function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string {
+  const title = lesson.lessonTitle?.trim();
+  if (title && title.length) {
+    return title;
+  }
+  const display = lesson.displayLabel?.trim();
+  if (display && display.length) {
+    return display;
+  }
+  return resolveLessonBubbleTitle(lesson);
 }
 
 const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
@@ -423,11 +480,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   const renderLessonChip = (lesson: CoachPanelLessonJourneyEntry) => {
     const style = resolveLessonStatusStyle(lesson.status);
-    const displayTitle = (lesson.displayLabel ?? "").trim().length
-      ? lesson.displayLabel
-      : lesson.lessonTitle?.trim().length
-        ? lesson.lessonTitle.trim()
-        : "Lección";
+    const displayTitle = resolveLessonBubbleTitle(lesson);
+    const tooltipTitle = resolveLessonTooltipTitle(lesson);
     const hoursLabel = formatHoursValue(lesson.hoursInLesson);
     const safeDays =
       typeof lesson.daysInLesson === "number" && Number.isFinite(lesson.daysInLesson)
@@ -435,7 +489,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         : 0;
     const tooltipLines = [
       `Nivel ${lesson.levelCode}`,
-      displayTitle,
+      tooltipTitle,
       `⌛ ${hoursLabel}h • 📅 ${safeDays}d`,
     ];
     const footerClass = style.footerClass ?? style.meta;
@@ -529,27 +583,43 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
         <div className="flex flex-col gap-4">
           {sortedLevels.length ? (
-            sortedLevels.map((level, levelIndex) => (
-              <div key={`journey-level-${level.levelCode}`} className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-start gap-4">
-                  <span className={resolveLevelBadgeClasses(level.levelCode)}>
-                    {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
-                  </span>
-                  {level.lessons.length ? (
-                    <div className="flex min-w-0 flex-1 flex-wrap gap-3">
-                      {level.lessons.map((lesson) => renderLessonChip(lesson))}
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[96px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-500">
-                      Sin lecciones registradas.
-                    </div>
-                  )}
+            <>
+              {sortedLevels.map((level, levelIndex) => (
+                <div key={`journey-level-${level.levelCode}`} className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-start gap-4">
+                    <span className={resolveLevelBadgeClasses(level.levelCode)}>
+                      {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
+                    </span>
+                    {level.lessons.length ? (
+                      <div className="flex min-w-0 flex-1 flex-wrap gap-3">
+                        {level.lessons.map((lesson) => renderLessonChip(lesson))}
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[96px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-500">
+                        Sin lecciones registradas.
+                      </div>
+                    )}
+                  </div>
+                  {levelIndex < sortedLevels.length - 1 ? (
+                    <div className="h-px w-full bg-slate-200/60" />
+                  ) : null}
                 </div>
-                {levelIndex < sortedLevels.length - 1 ? (
-                  <div className="h-px w-full bg-slate-200/60" />
-                ) : null}
+              ))}
+              <div className="flex flex-wrap items-center gap-6 pt-2">
+                <div className="flex items-center gap-2">
+                  <div className={LESSON_LEGEND_STYLES.completed}>✅</div>
+                  <span className="text-sm font-medium text-brand-ink-muted">Completado</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={LESSON_LEGEND_STYLES.current}>Aquí</div>
+                  <span className="text-sm font-medium text-brand-ink-muted">Lección actual</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={LESSON_LEGEND_STYLES.upcoming}>→</div>
+                  <span className="text-sm font-medium text-brand-ink-muted">Próximo</span>
+                </div>
               </div>
-            ))
+            </>
           ) : (
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
               Sin lecciones planificadas.

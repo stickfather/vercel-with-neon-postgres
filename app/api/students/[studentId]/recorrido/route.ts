@@ -40,7 +40,8 @@ export async function GET(_request: NextRequest, context: any) {
           lesson_id: lesson.lessonId,
           lesson_level_seq: lesson.lessonLevelSeq,
           lesson_global_seq: lesson.lessonGlobalSeq,
-          lesson_title: lesson.displayLabel,
+          lesson_title: lesson.lessonTitle,
+          lesson_name: lesson.lessonTitle,
           display_label: lesson.displayLabel,
           is_intro: lesson.isIntro,
           is_exam: lesson.isExam,
@@ -62,6 +63,7 @@ export async function GET(_request: NextRequest, context: any) {
       lesson_id: lesson.lessonId,
       lesson: lesson.displayLabel,
       seq: lesson.lessonLevelSeq ?? lesson.lessonGlobalSeq,
+      lesson_level_seq: lesson.lessonLevelSeq,
       lesson_global_seq: lesson.lessonGlobalSeq,
       level: lesson.levelCode,
       status: lesson.status,
@@ -69,6 +71,7 @@ export async function GET(_request: NextRequest, context: any) {
       days_in_lesson: lesson.daysInLesson,
       is_intro: lesson.isIntro,
       is_exam: lesson.isExam,
+      lesson_name: lesson.lessonTitle,
       display_label: lesson.displayLabel,
     }));
 

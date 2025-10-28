@@ -1550,15 +1550,6 @@ const JOURNEY_LEVEL_RANK = new Map<string, number>(
   JOURNEY_LEVEL_ORDER.map((level, index) => [level, index]),
 );
 
-const LESSON_NUMBER_BASE_BY_LEVEL: Record<string, number> = {
-  A1: 1,
-  A2: 13,
-  B1: 27,
-  B2: 41,
-  C1: 57,
-  C2: 69,
-};
-
 function normalizeJourneyLevel(value: string | null | undefined): string {
   if (!value) {
     return "OTROS";
@@ -1592,6 +1583,7 @@ function computeJourneyDays(startValue: unknown, endValue: unknown): number {
 
 function computeJourneyDisplayLabel(lesson: CoachPanelLessonJourneyEntry): string {
   const normalizedTitle = lesson.lessonTitle?.trim() ?? "";
+
   if (lesson.isExam) {
     return "Examen";
   }
@@ -1600,23 +1592,16 @@ function computeJourneyDisplayLabel(lesson: CoachPanelLessonJourneyEntry): strin
     return normalizedTitle.length ? normalizedTitle : "Intro booklet";
   }
 
+  if (normalizedTitle.length) {
+    return normalizedTitle;
+  }
+
   const levelSeq =
     typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
       ? lesson.lessonLevelSeq
       : null;
-  if (levelSeq != null && levelSeq > 0) {
-    const base = LESSON_NUMBER_BASE_BY_LEVEL[lesson.levelCode];
-    if (typeof base === "number" && Number.isFinite(base)) {
-      const lessonNumber = base + (levelSeq - 1);
-      if (lessonNumber > 0) {
-        return `Lección ${lessonNumber}`;
-      }
-    }
+  if (levelSeq != null) {
     return `Lección ${levelSeq}`;
-  }
-
-  if (normalizedTitle.length) {
-    return normalizedTitle;
   }
 
   return "Lección";
@@ -1707,15 +1692,16 @@ export async function listStudentLessonJourneyLessons(
 
   let planRows: SqlRow[] = [];
   let engagementRows: SqlRow[] = [];
+  let catalogRows: SqlRow[] = [];
   let coachPanelRows: SqlRow[] = [];
 
   try {
-    const [planResult, engagementResult, coachPanelResult] = await Promise.all([
+    const [planResult, engagementResult, catalogResult, coachPanelResult] = await Promise.all([
       sql`
         SELECT
-          spls.level AS level_code,
-          spls.seq AS level_seq,
           spls.lesson_id,
+          spls.level,
+          spls.seq,
           spls.lesson_global_seq,
           spls.completed
         FROM mart.student_plan_lessons_with_status_v spls
@@ -1732,6 +1718,14 @@ export async function listStudentLessonJourneyLessons(
         WHERE sle.student_id = ${studentId}::bigint
       `,
       sql`
+        SELECT
+          lg.lesson_id,
+          lg.level,
+          lg.seq,
+          lg.lesson
+        FROM mart.lessons_global_v lg
+      `,
+      sql`
         SELECT level_min, level_max
         FROM mart.coach_panel_v
         WHERE student_id = ${studentId}::bigint
@@ -1741,6 +1735,7 @@ export async function listStudentLessonJourneyLessons(
 
     planRows = normalizeRows<SqlRow>(planResult);
     engagementRows = normalizeRows<SqlRow>(engagementResult);
+    catalogRows = normalizeRows<SqlRow>(catalogResult);
     coachPanelRows = normalizeRows<SqlRow>(coachPanelResult);
   } catch (error) {
     console.error(
@@ -1767,6 +1762,47 @@ export async function listStudentLessonJourneyLessons(
       "nivel_planificado_max",
     ]),
   );
+
+  type PlanEntry = {
+    lessonId: number;
+    lessonGlobalSeq: number;
+    planLevelCode: string | null;
+    planLevelSeq: number | null;
+    completed: boolean;
+  };
+
+  const planEntries: PlanEntry[] = planRows
+    .map((row) => {
+      const payload = toJsonRecord(row);
+      if (!payload) {
+        return null;
+      }
+
+      const lessonId = normalizeInteger(payload.lesson_id);
+      const globalSeq = extractNumber(payload, ["lesson_global_seq", "global_seq", "seq"]);
+      if (lessonId == null || globalSeq == null || !Number.isFinite(globalSeq)) {
+        return null;
+      }
+
+      const planLevelCode = normalizeJourneyLevel(
+        extractString(payload, ["level", "level_code", "lesson_level"]),
+      );
+      const planLevelSeq = extractNumber(payload, ["seq", "level_seq", "lesson_level_seq"]);
+      const completed =
+        extractBoolean(payload, ["completed", "is_completed", "completed_flag"]) ?? false;
+
+      return {
+        lessonId,
+        lessonGlobalSeq: Math.trunc(globalSeq),
+        planLevelCode,
+        planLevelSeq:
+          typeof planLevelSeq === "number" && Number.isFinite(planLevelSeq)
+            ? Math.trunc(planLevelSeq)
+            : null,
+        completed,
+      } satisfies PlanEntry;
+    })
+    .filter((entry): entry is PlanEntry => entry != null);
 
   const engagementMap = new Map<
     number,
@@ -1798,151 +1834,156 @@ export async function listStudentLessonJourneyLessons(
     });
   });
 
-  const lessons: CoachPanelLessonJourneyEntry[] = [];
-  const levelGroups = new Map<string, CoachPanelLessonJourneyEntry[]>();
-  let foundCurrent = false;
-  let firstLevel: string | null = null;
-  let lastLevel: string | null = null;
-  let firstNonOtherLevel: string | null = null;
-  let lastNonOtherLevel: string | null = null;
+  type CatalogEntry = {
+    lessonId: number;
+    levelCode: string;
+    seq: number | null;
+    title: string | null;
+  };
 
-  planRows.forEach((row) => {
+  const catalogMap = new Map<number, CatalogEntry>();
+  catalogRows.forEach((row) => {
     const payload = toJsonRecord(row);
     if (!payload) {
       return;
     }
 
     const lessonId = normalizeInteger(payload.lesson_id);
-    const globalSeq = extractNumber(payload, [
-      "lesson_global_seq",
-      "global_seq",
-      "seq",
-    ]);
-    if (globalSeq == null || !Number.isFinite(globalSeq)) {
+    if (lessonId == null) {
       return;
     }
-    const normalizedGlobalSeq = Math.trunc(globalSeq);
 
-    const levelSeq = extractNumber(payload, ["level_seq", "seq", "lesson_level_seq"]);
-    const normalizedLevelSeq =
-      typeof levelSeq === "number" && Number.isFinite(levelSeq) ? Math.trunc(levelSeq) : null;
-
-    const levelCode = normalizeJourneyLevel(
-      extractString(payload, ["level_code", "level", "lesson_level"]),
+    const catalogLevel = normalizeJourneyLevel(
+      extractString(payload, ["level", "level_code", "lesson_level"]),
     );
+    const catalogSeq = extractNumber(payload, ["seq", "lesson_seq", "lesson_level_seq"]);
+    const title = extractString(payload, ["lesson", "lesson_name", "title"]);
 
-    if (!firstLevel && levelCode) {
-      firstLevel = levelCode;
-    }
-    if (levelCode) {
-      lastLevel = levelCode;
-    }
-    if (levelCode && levelCode !== "OTROS") {
-      if (!firstNonOtherLevel) {
-        firstNonOtherLevel = levelCode;
+    catalogMap.set(lessonId, {
+      lessonId,
+      levelCode: catalogLevel,
+      seq:
+        typeof catalogSeq === "number" && Number.isFinite(catalogSeq)
+          ? Math.trunc(catalogSeq)
+          : null,
+      title: title?.trim()?.length ? title.trim() : null,
+    });
+  });
+
+  if (!planEntries.length) {
+    return {
+      plannedLevelMin: fallbackPlannedLevelMin ?? null,
+      plannedLevelMax: fallbackPlannedLevelMax ?? null,
+      lessons: [],
+      levels: [],
+    };
+  }
+
+  const visiblePlan = planEntries
+    .map((entry) => {
+      const catalog = catalogMap.get(entry.lessonId);
+      if (!catalog) {
+        return null;
       }
-      lastNonOtherLevel = levelCode;
-    }
+      return { entry, catalog };
+    })
+    .filter((value): value is { entry: PlanEntry; catalog: CatalogEntry } => value != null);
 
-    const lessonTitle = extractString(payload, ["lesson_title", "lesson", "lesson_name"]);
-    const normalizedTitle = typeof lessonTitle === "string" ? lessonTitle.trim() : "";
-    const lessonTitleValue = normalizedTitle.length ? normalizedTitle : null;
-    const completedFlag =
-      extractBoolean(payload, ["completed", "is_completed", "completed_flag"]) ?? false;
+  if (!visiblePlan.length) {
+    return {
+      plannedLevelMin: fallbackPlannedLevelMin ?? null,
+      plannedLevelMax: fallbackPlannedLevelMax ?? null,
+      lessons: [],
+      levels: [],
+    };
+  }
 
-    const engagement = lessonId != null ? engagementMap.get(lessonId) : undefined;
+  let firstNotCompletedIndex = visiblePlan.findIndex(({ entry }) => !entry.completed);
+  if (firstNotCompletedIndex === -1) {
+    firstNotCompletedIndex = visiblePlan.length - 1;
+  }
+
+  const lessons = visiblePlan.map(({ entry, catalog }, index) => {
+    const engagement = engagementMap.get(entry.lessonId);
     const hoursInLesson = computeJourneyHours(engagement?.minutes ?? 0);
     const daysInLesson = engagement
       ? computeJourneyDays(engagement.startAt, engagement.endAt)
       : 0;
 
-    const isIntro =
-      (typeof normalizedLevelSeq === "number" && normalizedLevelSeq <= 0) ||
-      (normalizedTitle ? /intro/i.test(normalizedTitle) : false);
+    const normalizedLevel = catalog.levelCode || entry.planLevelCode || "OTROS";
+    const normalizedSeq = catalog.seq ?? entry.planLevelSeq;
+    const title = catalog.title ?? null;
+    const normalizedTitle = title?.trim() ?? "";
+    const lowerTitle = normalizedTitle.toLowerCase();
+
+    const isExam = lowerTitle.includes("preparación para el examen");
+    const introBySeq = normalizedLevel === "A1" && normalizedSeq === 0;
+    const introByTitle = lowerTitle.includes("intro");
+    const isIntro = introBySeq || introByTitle;
 
     let status: JourneyLessonStatus;
-    if (completedFlag) {
+    if (index < firstNotCompletedIndex) {
       status = "completed";
-    } else if (!foundCurrent) {
+    } else if (index === firstNotCompletedIndex) {
       status = "current";
-      foundCurrent = true;
     } else {
       status = "upcoming";
     }
 
-    const entry: CoachPanelLessonJourneyEntry = {
-      lessonId: lessonId ?? null,
-      lessonGlobalSeq: normalizedGlobalSeq,
-      lessonLevelSeq: normalizedLevelSeq,
-      levelCode,
-      lessonTitle: lessonTitleValue,
-      displayLabel: lessonTitleValue ?? "",
+    const lesson: CoachPanelLessonJourneyEntry = {
+      lessonId: entry.lessonId,
+      lessonGlobalSeq: entry.lessonGlobalSeq,
+      lessonLevelSeq:
+        typeof normalizedSeq === "number" && Number.isFinite(normalizedSeq)
+          ? Math.trunc(normalizedSeq)
+          : null,
+      levelCode: normalizedLevel,
+      lessonTitle: normalizedTitle.length ? normalizedTitle : null,
+      displayLabel: "",
       isIntro,
-      isExam: false,
+      isExam,
       status,
       hoursInLesson,
       daysInLesson,
     };
 
-    lessons.push(entry);
-
-    const levelList = levelGroups.get(levelCode);
-    if (levelList) {
-      levelList.push(entry);
-    } else {
-      levelGroups.set(levelCode, [entry]);
-    }
+    return lesson;
   });
 
-  lessons.sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq);
-
-  if (!foundCurrent && lessons.length) {
-    const lastIndex = lessons.length - 1;
-    lessons[lastIndex].status = "current";
+  if (!lessons.some((lesson) => lesson.status === "current") && lessons.length) {
+    lessons[lessons.length - 1].status = "current";
   }
-
-  levelGroups.forEach((group) => {
-    if (!group.length) {
-      return;
-    }
-
-    let candidate = group[0];
-    for (let index = 1; index < group.length; index += 1) {
-      const entry = group[index];
-      const candidateSeq =
-        typeof candidate.lessonLevelSeq === "number" && Number.isFinite(candidate.lessonLevelSeq)
-          ? candidate.lessonLevelSeq
-          : candidate.lessonGlobalSeq;
-      const entrySeq =
-        typeof entry.lessonLevelSeq === "number" && Number.isFinite(entry.lessonLevelSeq)
-          ? entry.lessonLevelSeq
-          : entry.lessonGlobalSeq;
-
-      if (entrySeq > candidateSeq) {
-        candidate = entry;
-        continue;
-      }
-
-      if (entrySeq === candidateSeq && entry.lessonGlobalSeq > candidate.lessonGlobalSeq) {
-        candidate = entry;
-      }
-    }
-
-    candidate.isExam = true;
-  });
 
   lessons.forEach((lesson) => {
     lesson.displayLabel = computeJourneyDisplayLabel(lesson);
   });
 
-  const plannedLevelMin = firstNonOtherLevel ?? firstLevel ?? fallbackPlannedLevelMin ?? null;
-  const plannedLevelMax = lastNonOtherLevel ?? lastLevel ?? fallbackPlannedLevelMax ?? null;
+  lessons.sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq);
+
+  const levels = buildJourneyLevels(lessons);
+
+  const orderedLevels = lessons
+    .map((lesson) => lesson.levelCode)
+    .filter((level) => Boolean(level) && level !== "OTROS");
+
+  const plannedLevelMin =
+    orderedLevels.length
+      ? orderedLevels[0]
+      : lessons.length
+        ? lessons[0].levelCode
+        : fallbackPlannedLevelMin ?? null;
+  const plannedLevelMax =
+    orderedLevels.length
+      ? orderedLevels[orderedLevels.length - 1]
+      : lessons.length
+        ? lessons[lessons.length - 1].levelCode
+        : fallbackPlannedLevelMax ?? null;
 
   return {
-    plannedLevelMin,
-    plannedLevelMax,
+    plannedLevelMin: plannedLevelMin ?? fallbackPlannedLevelMin ?? null,
+    plannedLevelMax: plannedLevelMax ?? fallbackPlannedLevelMax ?? null,
     lessons,
-    levels: buildJourneyLevels(lessons),
+    levels,
   };
 }
 
