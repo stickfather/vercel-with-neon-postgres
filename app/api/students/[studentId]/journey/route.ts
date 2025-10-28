@@ -21,39 +21,6 @@ export async function GET(_request: NextRequest, context: any) {
 
   try {
     const journey = await listStudentLessonJourneyLessons(studentId);
-    const levels = journey.levels.map((level) => {
-      const highestCompletedSeq = level.lessons
-        .filter((lesson) => lesson.status !== "upcoming")
-        .reduce<number | null>((acc, lesson) => {
-          if (acc == null || lesson.lessonGlobalSeq > acc) {
-            return lesson.lessonGlobalSeq;
-          }
-          return acc;
-        }, null);
-
-      return {
-        level_code: level.levelCode,
-        order: Number.isFinite(level.order) ? level.order : null,
-        highest_seq_with_activity: highestCompletedSeq,
-        total_lessons_in_level: level.lessons.length,
-        lessons: level.lessons.map((lesson) => ({
-          lesson_id: lesson.lessonId,
-          lesson_global_seq: lesson.lessonGlobalSeq,
-          lesson_title: lesson.lessonTitle,
-          level_code: lesson.levelCode,
-          status: lesson.status,
-          hours_in_lesson: lesson.hoursInLesson,
-          days_in_lesson: lesson.daysInLesson,
-          minutes_spent: Math.round(lesson.hoursInLesson * 60),
-          calendar_days_spent: lesson.daysInLesson,
-          has_activity:
-            lesson.status !== "upcoming" ||
-            lesson.hoursInLesson > 0 ||
-            lesson.daysInLesson > 0,
-        })),
-      };
-    });
-
     const lessons = journey.lessons.map((lesson) => ({
       lesson_id: lesson.lessonId,
       lesson: lesson.lessonTitle,
@@ -69,7 +36,6 @@ export async function GET(_request: NextRequest, context: any) {
         student_id: studentId,
         planned_level_min: journey.plannedLevelMin,
         planned_level_max: journey.plannedLevelMax,
-        levels,
         lessons,
       },
       {
@@ -79,7 +45,7 @@ export async function GET(_request: NextRequest, context: any) {
       },
     );
   } catch (error) {
-    console.error("Error fetching student lesson recorrido", error);
+    console.error("Error fetching student lesson journey", error);
     return NextResponse.json(
       { error: "No se pudo obtener el recorrido de lecciones." },
       { status: 500 },

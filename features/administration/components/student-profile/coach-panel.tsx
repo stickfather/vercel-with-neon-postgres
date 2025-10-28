@@ -19,12 +19,36 @@ type CoachPanelProps = {
 const HEATMAP_DAYS = 30;
 
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+const LEVEL_ORDER_INDEX = new Map(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-type RenderedLesson = CoachPanelLessonJourneyEntry & {
-  isCurrent: boolean;
-  isCompletedVisual: boolean;
-  minutesValue: number;
-  daysValue: number;
+const LEVEL_BADGE_STYLES: Record<string, { badgeBg: string; badgeText: string }> = {
+  A1: { badgeBg: "bg-[#e6fbf7]", badgeText: "text-brand-teal" },
+  A2: { badgeBg: "bg-[#fff2df]", badgeText: "text-[#c25e00]" },
+  B1: { badgeBg: "bg-[#e7f0ff]", badgeText: "text-[#1d4ed8]" },
+  B2: { badgeBg: "bg-[#f3e8ff]", badgeText: "text-[#7c3aed]" },
+  C1: { badgeBg: "bg-[#ffe8f2]", badgeText: "text-[#be185d]" },
+  C2: { badgeBg: "bg-[#fef3c7]", badgeText: "text-[#b45309]" },
+};
+
+const DEFAULT_LEVEL_BADGE_STYLE = { badgeBg: "bg-[#eef2ff]", badgeText: "text-brand-deep" };
+
+const LESSON_STATUS_STYLES: Record<
+  CoachPanelLessonJourneyEntry["status"],
+  { container: string; hours: string }
+> = {
+  completed: {
+    container: "border border-transparent bg-brand-ink-muted/10 text-brand-ink-muted shadow-sm",
+    hours: "text-brand-ink-muted/70",
+  },
+  current: {
+    container:
+      "border-2 border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(11,158,143,0.12)]",
+    hours: "text-brand-ink-muted",
+  },
+  upcoming: {
+    container: "border border-brand-ink-muted/20 bg-white text-brand-deep shadow-sm",
+    hours: "text-brand-ink-muted",
+  },
 };
 
 function cx(...classes: Array<string | null | undefined | false>): string {
@@ -93,6 +117,23 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   const intensity = Math.min(1, minutes / maxMinutes);
   const alpha = 0.18 + intensity * 0.55;
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
+}
+
+function resolveLevelBadgeClasses(levelCode: string | null | undefined): string {
+  const normalized = levelCode ? levelCode.trim().toUpperCase() : "";
+  const style = LEVEL_BADGE_STYLES[normalized] ?? DEFAULT_LEVEL_BADGE_STYLE;
+  return `${style.badgeBg} ${style.badgeText}`;
+}
+
+function formatHoursValue(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) {
+    return "0.0";
+  }
+  return value.toFixed(1);
+}
+
+function resolveLessonStatusStyle(status: CoachPanelLessonJourneyEntry["status"]) {
+  return LESSON_STATUS_STYLES[status] ?? LESSON_STATUS_STYLES.upcoming;
 }
 
 const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
@@ -197,208 +238,138 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
   const { profileHeader, lessonJourney, paceForecast } = data;
 
-  const lessonLevels = Array.isArray(lessonJourney?.levels)
-    ? lessonJourney.levels
-    : [];
+  const journeyLevels = useMemo(() => {
+    if (!Array.isArray(lessonJourney?.levels)) {
+      return [] as CoachPanelLessonJourneyLevel[];
+    }
 
-  const lessonRows = useMemo(() => {
-    const grouped = new Map<string, CoachPanelLessonJourneyLevel>();
+    return lessonJourney.levels.map((level) => {
+      const normalizedCode = level.levelCode?.trim().toUpperCase() || "OTROS";
+      const normalizedOrder = Number.isFinite(level.order)
+        ? Number(level.order)
+        : LEVEL_ORDER_INDEX.get(normalizedCode) ?? Number.POSITIVE_INFINITY;
 
-    lessonLevels.forEach((level) => {
-      const key = level.levelCode?.trim().toUpperCase() || "OTROS";
-      grouped.set(key, {
+      const normalizedLessons = level.lessons
+        .map((lesson) => ({
+          ...lesson,
+          levelCode: lesson.levelCode?.trim().toUpperCase() || normalizedCode,
+          hoursInLesson: Number.isFinite(lesson.hoursInLesson)
+            ? Math.max(0, lesson.hoursInLesson)
+            : 0,
+          daysInLesson: Number.isFinite(lesson.daysInLesson)
+            ? Math.max(0, Math.trunc(lesson.daysInLesson))
+            : 0,
+        }))
+        .sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq);
+
+      return {
         ...level,
-        levelCode: key,
-        lessons: level.lessons.map((lesson) => ({
-          ...lesson,
-          levelCode: lesson.levelCode?.trim().toUpperCase() || key,
-        })),
-      });
+        levelCode: normalizedCode,
+        order: normalizedOrder,
+        lessons: normalizedLessons,
+      } satisfies CoachPanelLessonJourneyLevel;
     });
+  }, [lessonJourney?.levels]);
 
-    const decorateLessons = (
-      level: CoachPanelLessonJourneyLevel,
-    ): RenderedLesson[] => {
-      const sorted = [...level.lessons].sort((a, b) => {
-        const aSeq =
-          a.lessonGlobalSeq != null && Number.isFinite(a.lessonGlobalSeq)
-            ? a.lessonGlobalSeq
-            : a.seqNumber != null && Number.isFinite(a.seqNumber)
-              ? a.seqNumber
-              : Number.POSITIVE_INFINITY;
-        const bSeq =
-          b.lessonGlobalSeq != null && Number.isFinite(b.lessonGlobalSeq)
-            ? b.lessonGlobalSeq
-            : b.seqNumber != null && Number.isFinite(b.seqNumber)
-              ? b.seqNumber
-              : Number.POSITIVE_INFINITY;
-        if (aSeq === bSeq) return 0;
-        return aSeq < bSeq ? -1 : 1;
-      });
-
-      const highestSeq = level.highestSeqWithActivity;
-
-      let nextSeq: number | null = null;
-      if (sorted.length) {
-        if (highestSeq == null) {
-          const firstWithSeq = sorted.find((lesson) =>
-            lesson.seqNumber != null && Number.isFinite(lesson.seqNumber),
-          );
-          nextSeq = firstWithSeq?.seqNumber ?? null;
-        } else {
-          const candidate = sorted.find(
-            (lesson) =>
-              lesson.seqNumber != null &&
-              Number.isFinite(lesson.seqNumber) &&
-              Number(lesson.seqNumber) > highestSeq,
-          );
-          nextSeq = candidate?.seqNumber ?? null;
+  const sortedLevels = useMemo(() => {
+    return journeyLevels
+      .map((level) => ({
+        ...level,
+        order: Number.isFinite(level.order)
+          ? level.order
+          : LEVEL_ORDER_INDEX.get(level.levelCode) ?? Number.POSITIVE_INFINITY,
+      }))
+      .sort((a, b) => {
+        if (a.order !== b.order) {
+          return a.order - b.order;
         }
-      }
-
-      return sorted.map((lesson, index) => {
-        const seqValue =
-          lesson.seqNumber != null && Number.isFinite(lesson.seqNumber)
-            ? Number(lesson.seqNumber)
-            : null;
-        const isCompleted =
-          highestSeq != null && seqValue != null ? seqValue <= highestSeq : false;
-        const isCurrent =
-          nextSeq != null
-            ? seqValue != null && seqValue === nextSeq
-            : highestSeq == null && index === 0;
-
-        const rawMinutes =
-          typeof lesson.minutesSpent === "number" ? lesson.minutesSpent : 0;
-        const minutesValue = Number.isFinite(rawMinutes)
-          ? Math.max(0, rawMinutes)
-          : 0;
-
-        const rawDays =
-          typeof lesson.calendarDaysSpent === "number"
-            ? lesson.calendarDaysSpent
-            : 0;
-        const daysValue = Number.isFinite(rawDays)
-          ? Math.max(0, Math.trunc(rawDays))
-          : 0;
-
-        return {
-          ...lesson,
-          levelCode: lesson.levelCode ?? level.levelCode,
-          isCurrent,
-          isCompletedVisual: isCompleted,
-          minutesValue,
-          daysValue,
-        } satisfies RenderedLesson;
+        if (a.lessons.length && b.lessons.length) {
+          return a.lessons[0].lessonGlobalSeq - b.lessons[0].lessonGlobalSeq;
+        }
+        return a.levelCode.localeCompare(b.levelCode, "es", { sensitivity: "base" });
       });
-    };
+  }, [journeyLevels]);
 
-    const rows: Array<{
-      key: string;
-      label: string;
-      level: CoachPanelLessonJourneyLevel;
-      lessons: RenderedLesson[];
-    }> = [];
-
-    PLAN_LEVEL_ORDER.forEach((levelCode) => {
-      const level = grouped.get(levelCode);
-      if (!level) {
-        return;
-      }
-      rows.push({
-        key: levelCode,
-        label: levelCode,
-        level,
-        lessons: decorateLessons(level),
-      });
-      grouped.delete(levelCode);
-    });
-
-    const remaining = Array.from(grouped.entries()).sort(([a], [b]) =>
-      a.localeCompare(b, "es", { sensitivity: "base" }),
-    );
-
-    remaining.forEach(([key, level]) => {
-      rows.push({
-        key,
-        label: key === "OTROS" ? "Otros" : key,
-        level,
-        lessons: decorateLessons(level),
-      });
-    });
-
-    return rows;
-  }, [lessonLevels]);
-
-  const renderLessonBubble = (lesson: RenderedLesson) => {
-    const isExamBubble = lesson.specialType === "exam";
-    const isCurrent = lesson.isCurrent;
-    const isCompleted = lesson.isCompletedVisual;
-
-    const hoursValue = lesson.minutesValue / 60;
-    const daysValue = lesson.daysValue;
-
-    const hasEffort = lesson.hasActivity || lesson.minutesValue > 0 || daysValue > 0;
-
-    const lessonTooltipLines: string[] = [
-      `Nivel ${lesson.levelCode ?? "—"} · ${lesson.lessonTitle ?? "Lección"}`,
-      `Tiempo dedicado: ${hoursValue.toFixed(1)} horas`,
-      `Días activos: ${formatNumber(daysValue, { maximumFractionDigits: 0 })}`,
+  const renderLessonChip = (lesson: CoachPanelLessonJourneyEntry) => {
+    const style = resolveLessonStatusStyle(lesson.status);
+    const displayTitle = lesson.lessonTitle?.trim().length
+      ? lesson.lessonTitle
+      : `Lección ${formatNumber(lesson.lessonGlobalSeq, { maximumFractionDigits: 0 })}`;
+    const hoursLabel = `${formatHoursValue(lesson.hoursInLesson)}h`;
+    const daysLabel = `${formatNumber(lesson.daysInLesson, { maximumFractionDigits: 0 })} días`;
+    const tooltipLines = [
+      `Nivel ${lesson.levelCode}`,
+      displayTitle ?? "Lección",
+      `${hoursLabel} / ${daysLabel}`,
     ];
-
-    const lessonTooltip = lessonTooltipLines.join("\n");
-
-    const bubbleLabel =
-      lesson.specialType === "intro"
-        ? "Cuadernillo de introducción"
-        : lesson.specialType === "exam"
-          ? "Preparación para el examen"
-          : lesson.lessonTitle ??
-            (lesson.seqNumber != null
-              ? `Lección ${formatNumber(lesson.seqNumber, { maximumFractionDigits: 0 })}`
-              : "—");
 
     return (
       <div
-        key={`lesson-${
-          lesson.lessonGlobalSeq ?? `${lesson.levelCode ?? "nivel"}-${lesson.seqNumber ?? "?"}`
-        }`}
-        className="flex flex-col items-center gap-1 text-center"
-        title={lessonTooltip}
+        key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
+        className={cx(
+          "flex min-w-[180px] flex-col gap-2 rounded-2xl border px-4 py-3 text-left transition",
+          style.container,
+        )}
+        title={tooltipLines.join("\n")}
       >
-        <div
-          className={cx(
-            "relative flex h-12 w-12 items-center justify-center rounded-full border-2 px-1 text-[10px] font-semibold",
-            isExamBubble ? "h-12 w-12 uppercase" : "",
-            isCurrent
-              ? "border-brand-teal bg-white text-brand-deep shadow-[0_0_0_4px_rgba(255,255,255,0.7)]"
-              : isCompleted
-                ? "border-brand-teal bg-brand-teal text-white shadow-[0_12px_24px_rgba(2,132,199,0.24)]"
-                : "border-brand-teal/50 bg-white text-brand-deep",
-          )}
-        >
-          {isCurrent ? (
-            <span
-              aria-hidden="true"
-              className="absolute inset-0 -m-[6px] rounded-full border-2 border-brand-teal/50 animate-pulse"
-            />
+        <div className="flex items-start gap-2">
+          {lesson.status === "completed" ? (
+            <span aria-hidden="true" className="mt-[2px] text-lg leading-none">
+              ✅
+            </span>
           ) : null}
-          <span className="px-1 text-[10px] font-semibold leading-tight">
-            {bubbleLabel}
-          </span>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-semibold leading-tight text-current">
+              {displayTitle ?? "Lección"}
+            </span>
+            <span className={cx("text-xs font-medium", style.hours)}>
+              {hoursLabel} / {daysLabel}
+            </span>
+            {lesson.status === "current" ? (
+              <span className="text-xs font-semibold text-brand-teal">Aquí estás</span>
+            ) : null}
+          </div>
         </div>
-        <span
-          className={cx(
-            "flex items-center gap-1 text-[10px]",
-            hasEffort ? "text-brand-deep" : "text-brand-ink-muted/60",
-          )}
-        >
-          <span aria-hidden="true">🕒</span>
-          {hoursValue.toFixed(1)}h • {formatNumber(daysValue, { maximumFractionDigits: 0 })}d
-        </span>
       </div>
     );
   };
+
+  const renderLegendSample = (
+    status: CoachPanelLessonJourneyEntry["status"],
+    label: string,
+  ) => {
+    const style = resolveLessonStatusStyle(status);
+
+    return (
+      <div
+        key={`journey-legend-${status}`}
+        className={cx(
+          "flex min-w-[140px] items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold",
+          style.container,
+        )}
+      >
+        {status === "completed" ? (
+          <span aria-hidden="true" className="text-base leading-none">
+            ✅
+          </span>
+        ) : null}
+        <div className="flex flex-col leading-tight text-current">
+          <span>{label}</span>
+          {status === "current" ? (
+            <span className="text-[11px] font-semibold text-brand-teal">Aquí estás</span>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
+  const planLevelMin = lessonJourney?.plannedLevelMin ?? profileHeader.planLevelMin ?? null;
+  const planLevelMax = lessonJourney?.plannedLevelMax ?? profileHeader.planLevelMax ?? null;
+  const planStartLabel = planLevelMin ?? "—";
+  const planEndLabel = planLevelMax ?? "—";
+  const planProgressPercent = formatPercent(profileHeader.planProgressPct, 0);
+  const completedLessonsLabel = formatNumber(profileHeader.completedLessonsInPlan);
+  const totalLessonsLabel = formatNumber(profileHeader.totalLessonsInPlan);
 
 
   const paceForecastLabel = paceForecast.forecastMonthsToFinishPlan != null
@@ -445,34 +416,60 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   return (
     <div className="relative flex flex-col gap-10">
       <section className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Panel del coach</span>
             <h3 className="mt-2 text-2xl font-bold text-brand-deep">Recorrido de lecciones</h3>
+            <p className="mt-1 text-sm text-brand-ink-muted">
+              Vista general del recorrido planificado y tu posición actual en el plan.
+            </p>
           </div>
-          <p className="text-sm text-brand-ink-muted">
-            Vista general del recorrido planificado y el progreso alcanzado.
-          </p>
+          <div className="flex flex-col gap-1 text-sm text-brand-ink-muted lg:items-end">
+            <span className="font-semibold text-brand-deep">
+              Plan: {planStartLabel} → {planEndLabel}
+            </span>
+            <span>
+              Progreso del plan: {planProgressPercent} • {completedLessonsLabel}/{totalLessonsLabel} lecciones completadas
+            </span>
+          </div>
         </div>
-        <div className="flex flex-col gap-3">
-          {lessonRows.map((row) => (
-            <div key={`lesson-row-${row.key}`} className="flex flex-col gap-2">
-              <div className="flex flex-col gap-2 md:flex-row md:items-start md:gap-4">
-                <span className="inline-flex w-fit min-w-[60px] items-center justify-center rounded-full bg-brand-teal-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-teal">
-                  {row.label}
-                </span>
-                {row.lessons.length ? (
-                  <div className="flex flex-1 flex-wrap items-center gap-3">
-                    {row.lessons.map((lesson) => renderLessonBubble(lesson))}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-3 py-2 text-sm text-brand-ink-muted shadow-sm">
-                    Sin lecciones registradas.
-                  </div>
-                )}
+
+        <div className="flex flex-col gap-4">
+          {sortedLevels.length ? (
+            sortedLevels.map((level) => (
+              <div key={`journey-level-${level.levelCode}`} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:gap-4">
+                  <span
+                    className={cx(
+                      "inline-flex w-fit min-w-[64px] items-center justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em]",
+                      resolveLevelBadgeClasses(level.levelCode),
+                    )}
+                  >
+                    {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
+                  </span>
+                  {level.lessons.length ? (
+                    <div className="flex flex-1 flex-wrap gap-3">
+                      {level.lessons.map((lesson) => renderLessonChip(lesson))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
+                      Sin lecciones registradas.
+                    </div>
+                  )}
+                </div>
               </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
+              Sin lecciones planificadas.
             </div>
-          ))}
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {renderLegendSample("completed", "Completado")}
+          {renderLegendSample("current", "Lección actual")}
+          {renderLegendSample("upcoming", "Próximo")}
         </div>
       </section>
 

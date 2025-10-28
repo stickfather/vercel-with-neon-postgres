@@ -1096,22 +1096,21 @@ export type CoachPanelProfileHeader = {
   forecastMonthsToFinishPlan: number | null;
 };
 
+export type JourneyLessonStatus = "completed" | "current" | "upcoming";
+
 export type CoachPanelLessonJourneyEntry = {
   lessonId: number | null;
-  lessonGlobalSeq: number | null;
-  levelCode: string | null;
-  seqNumber: number | null;
+  lessonGlobalSeq: number;
+  levelCode: string;
   lessonTitle: string | null;
-  specialType: "intro" | "exam" | null;
-  minutesSpent: number;
-  calendarDaysSpent: number;
-  hasActivity: boolean;
+  status: JourneyLessonStatus;
+  hoursInLesson: number;
+  daysInLesson: number;
 };
 
 export type CoachPanelLessonJourneyLevel = {
   levelCode: string;
-  highestSeqWithActivity: number | null;
-  totalLessonsInLevel: number;
+  order: number;
   lessons: CoachPanelLessonJourneyEntry[];
 };
 
@@ -1540,15 +1539,108 @@ export async function getStudentCoachPanelProfileHeader(
   };
 }
 
-export type StudentLessonRecorrido = {
+const JOURNEY_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+
+const JOURNEY_LEVEL_RANK = new Map(
+  JOURNEY_LEVEL_ORDER.map((level, index) => [level, index]),
+);
+
+function normalizeJourneyLevel(value: string | null | undefined): string {
+  if (!value) {
+    return "OTROS";
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toUpperCase() : "OTROS";
+}
+
+function normalizeJourneyStatus(value: string | null | undefined): JourneyLessonStatus {
+  if (!value) {
+    return "upcoming";
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "completed" || normalized === "current") {
+    return normalized;
+  }
+  return "upcoming";
+}
+
+function computeJourneyHours(minutes: number | null | undefined): number {
+  if (minutes == null || !Number.isFinite(minutes)) {
+    return 0;
+  }
+  const normalized = Math.max(0, minutes);
+  return Number((normalized / 60).toFixed(1));
+}
+
+function computeJourneyDays(startValue: unknown, endValue: unknown): number {
+  const startAt = parseDateTime(startValue);
+  if (!startAt) {
+    return 0;
+  }
+  const endAt = parseDateTime(endValue) ?? new Date();
+  const diffMs = endAt.getTime() - startAt.getTime();
+  if (!Number.isFinite(diffMs)) {
+    return 0;
+  }
+  const normalized = Math.max(0, diffMs);
+  const days = Math.floor(normalized / 86400000);
+  return Math.max(1, days);
+}
+
+function buildJourneyLevels(
+  lessons: CoachPanelLessonJourneyEntry[],
+): CoachPanelLessonJourneyLevel[] {
+  const levelMap = new Map<
+    string,
+    { levelCode: string; lessons: CoachPanelLessonJourneyEntry[]; minSeq: number }
+  >();
+
+  lessons.forEach((lesson) => {
+    const existing = levelMap.get(lesson.levelCode);
+    if (!existing) {
+      levelMap.set(lesson.levelCode, {
+        levelCode: lesson.levelCode,
+        lessons: [lesson],
+        minSeq: lesson.lessonGlobalSeq,
+      });
+      return;
+    }
+
+    existing.lessons.push(lesson);
+    if (lesson.lessonGlobalSeq < existing.minSeq) {
+      existing.minSeq = lesson.lessonGlobalSeq;
+    }
+  });
+
+  return Array.from(levelMap.values())
+    .map((entry) => ({
+      levelCode: entry.levelCode,
+      order: JOURNEY_LEVEL_RANK.get(entry.levelCode) ?? Number.POSITIVE_INFINITY,
+      lessons: entry.lessons
+        .slice()
+        .sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq),
+    }))
+    .sort((a, b) => {
+      if (a.order !== b.order) {
+        return a.order - b.order;
+      }
+      if (a.lessons.length && b.lessons.length) {
+        return a.lessons[0].lessonGlobalSeq - b.lessons[0].lessonGlobalSeq;
+      }
+      return a.levelCode.localeCompare(b.levelCode, "es", { sensitivity: "base" });
+    });
+}
+
+export type StudentLessonJourney = {
   plannedLevelMin: string | null;
   plannedLevelMax: string | null;
+  lessons: CoachPanelLessonJourneyEntry[];
   levels: CoachPanelLessonJourneyLevel[];
 };
 
-export async function getStudentLessonRecorrido(
+export async function listStudentLessonJourneyLessons(
   studentId: number,
-): Promise<StudentLessonRecorrido> {
+): Promise<StudentLessonJourney> {
   noStore();
   const sql = getSqlClient();
 
@@ -1556,22 +1648,21 @@ export async function getStudentLessonRecorrido(
     safeQuery(
       sql`
         SELECT
-          lesson_id,
-          level_code,
-          seq_number,
-          lesson_title,
-          special_type,
-          minutes_spent,
-          calendar_days_spent,
-          has_activity,
-          highest_seq_with_activity,
-          total_lessons_in_level,
-          lesson_global_seq
-        FROM mart.v_student_recorrido
-        WHERE student_id = ${studentId}::bigint
-        ORDER BY level_code, lesson_global_seq, seq_number
+          j.lesson_id,
+          j.lesson,
+          j.seq,
+          j.level,
+          j.status,
+          COALESCE(e.total_minutes_in_lesson, 0) AS total_minutes_in_lesson,
+          e.start_at,
+          e.end_at
+        FROM mart.student_lesson_journey_v j
+        LEFT JOIN mart.student_lesson_engagement_v e
+          ON e.student_id = j.student_id AND e.lesson_id = j.lesson_id
+        WHERE j.student_id = ${studentId}::bigint
+        ORDER BY j.seq
       `,
-      "mart.v_student_recorrido",
+      "mart.student_lesson_journey_v",
     ),
     safeQuery(
       sql`
@@ -1596,7 +1687,7 @@ export async function getStudentLessonRecorrido(
     "nivel_planificado_max",
   ]);
 
-  const levelsMap = new Map<string, CoachPanelLessonJourneyLevel>();
+  const lessons: CoachPanelLessonJourneyEntry[] = [];
 
   lessonRows.forEach((row) => {
     const payload = toJsonRecord(row);
@@ -1604,123 +1695,57 @@ export async function getStudentLessonRecorrido(
       return;
     }
 
-    const rawLevel = extractString(payload, ["level_code", "level"]);
-    const levelCode = rawLevel ? rawLevel.trim().toUpperCase() : "OTROS";
+    const levelCode = normalizeJourneyLevel(extractString(payload, ["level", "level_code"]));
+    const lessonId = normalizeInteger(payload.lesson_id);
+    const seqRaw = extractNumber(payload, ["seq", "lesson_seq", "lesson_global_seq"]);
+    const lessonGlobalSeq =
+      seqRaw != null && Number.isFinite(seqRaw) ? Number(seqRaw) : lessons.length + 1;
 
-    const highestSeq = normalizeInteger(
-      extractNumber(payload, [
-        "highest_seq_with_activity",
-        "highest_seq",
-        "last_completed_seq",
-      ]),
-    );
-
-    const totalLessons = normalizeInteger(
-      extractNumber(payload, [
-        "total_lessons_in_level",
-        "lessons_in_level",
-      ]),
-    );
-
-    const specialTypeRaw = extractString(payload, ["special_type", "bubble_type"]);
-    const normalizedSpecialType = specialTypeRaw
-      ? specialTypeRaw.trim().toLowerCase()
-      : null;
-    const specialType =
-      normalizedSpecialType === "intro"
-        ? "intro"
-        : normalizedSpecialType === "exam"
-          ? "exam"
-          : null;
+    const minutesRaw = extractNumber(payload, [
+      "total_minutes_in_lesson",
+      "minutes",
+      "minutes_spent",
+    ]);
 
     const lessonEntry: CoachPanelLessonJourneyEntry = {
-      lessonId: normalizeInteger(payload.lesson_id),
-      lessonGlobalSeq: normalizeInteger(payload.lesson_global_seq),
+      lessonId: lessonId ?? null,
+      lessonGlobalSeq,
       levelCode,
-      seqNumber: extractNumber(payload, [
-        "seq_number",
-        "seq",
-        "lesson_seq",
-        "lesson_number",
-      ]),
-      lessonTitle: extractString(payload, [
-        "lesson_title",
-        "lesson_name",
-        "lesson",
-      ]),
-      specialType,
-      minutesSpent:
-        extractNumber(payload, ["minutes_spent", "total_minutes"]) ?? 0,
-      calendarDaysSpent:
-        extractNumber(payload, [
-          "calendar_days_spent",
-          "active_days_for_lesson",
-          "calendar_days",
-        ]) ?? 0,
-      hasActivity: coerceBoolean(
-        extractBoolean(payload, ["has_activity", "activity_flag"]),
-      ),
+      lessonTitle: extractString(payload, ["lesson", "lesson_title", "lesson_name"]),
+      status: normalizeJourneyStatus(extractString(payload, ["status", "lesson_status"])),
+      hoursInLesson: computeJourneyHours(minutesRaw),
+      daysInLesson: computeJourneyDays(payload.start_at, payload.end_at),
     } satisfies CoachPanelLessonJourneyEntry;
 
-    const existing = levelsMap.get(levelCode);
-    if (!existing) {
-      levelsMap.set(levelCode, {
-        levelCode,
-        highestSeqWithActivity: highestSeq ?? null,
-        totalLessonsInLevel: totalLessons ?? 0,
-        lessons: [lessonEntry],
-      });
-      return;
-    }
-
-    existing.lessons.push(lessonEntry);
-    if (highestSeq != null) {
-      existing.highestSeqWithActivity = highestSeq;
-    }
-    if (totalLessons != null && totalLessons > 0) {
-      existing.totalLessonsInLevel = totalLessons;
-    }
+    lessons.push(lessonEntry);
   });
 
-  const levels = Array.from(levelsMap.values()).map((level) => {
-    const sortedLessons = [...level.lessons].sort((a, b) => {
-      const aSeq =
-        a.lessonGlobalSeq != null && Number.isFinite(a.lessonGlobalSeq)
-          ? a.lessonGlobalSeq
-          : a.seqNumber != null && Number.isFinite(a.seqNumber)
-            ? a.seqNumber
-            : Number.POSITIVE_INFINITY;
-      const bSeq =
-        b.lessonGlobalSeq != null && Number.isFinite(b.lessonGlobalSeq)
-          ? b.lessonGlobalSeq
-          : b.seqNumber != null && Number.isFinite(b.seqNumber)
-            ? b.seqNumber
-            : Number.POSITIVE_INFINITY;
-
-      if (aSeq === bSeq) {
-        return 0;
-      }
-      return aSeq < bSeq ? -1 : 1;
-    });
-
-    return {
-      ...level,
-      lessons: sortedLessons,
-    } satisfies CoachPanelLessonJourneyLevel;
-  });
+  lessons.sort((a, b) => a.lessonGlobalSeq - b.lessonGlobalSeq);
 
   return {
     plannedLevelMin: plannedLevelMin ?? null,
     plannedLevelMax: plannedLevelMax ?? null,
-    levels,
+    lessons,
+    levels: buildJourneyLevels(lessons),
+  };
+}
+
+export async function getStudentLessonJourney(
+  studentId: number,
+): Promise<CoachPanelLessonJourney> {
+  const journey = await listStudentLessonJourneyLessons(studentId);
+  return {
+    plannedLevelMin: journey.plannedLevelMin,
+    plannedLevelMax: journey.plannedLevelMax,
+    levels: journey.levels,
   };
 }
 
 export async function listStudentCoachPlanLessons(
   studentId: number,
 ): Promise<CoachPanelLessonJourneyLevel[]> {
-  const recorrido = await getStudentLessonRecorrido(studentId);
-  return recorrido.levels;
+  const journey = await getStudentLessonJourney(studentId);
+  return journey.levels;
 }
 
 export async function listStudentPlanLessonEffort(
@@ -2588,7 +2613,7 @@ export async function getStudentCoachPanelSummary(
 
   const [
     overview,
-    recorrido,
+    journey,
     heatmap,
     leiTrend,
     recentActivity,
@@ -2598,7 +2623,7 @@ export async function getStudentCoachPanelSummary(
     activitySummary,
   ] = await Promise.all([
     getStudentCoachPanelProfileHeader(studentId),
-    getStudentLessonRecorrido(studentId),
+    getStudentLessonJourney(studentId),
     listStudentEngagementHeatmap(studentId, 30),
     listStudentLeiTrend(studentId, null),
     listStudentRecentSessions(studentId, 10),
@@ -2613,9 +2638,9 @@ export async function getStudentCoachPanelSummary(
   }
 
   const lessonJourney: CoachPanelLessonJourney = {
-    levels: recorrido.levels,
-    plannedLevelMin: recorrido.plannedLevelMin ?? overview.header.planLevelMin ?? null,
-    plannedLevelMax: recorrido.plannedLevelMax ?? overview.header.planLevelMax ?? null,
+    levels: journey.levels,
+    plannedLevelMin: journey.plannedLevelMin ?? overview.header.planLevelMin ?? null,
+    plannedLevelMax: journey.plannedLevelMax ?? overview.header.planLevelMax ?? null,
   };
 
   const engagement: CoachPanelEngagement = {
