@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AttendanceSyncIndicator } from "@/components/offline/attendance-sync-indicator";
+
 const tiles = [
   {
     href: "/administracion/registro-personal",
@@ -64,6 +66,9 @@ export default function AdministracionPage() {
         <div className="absolute bottom-0 left-1/2 h-[420px] w-[120%] -translate-x-1/2 rounded-t-[160px] bg-gradient-to-r from-[#fff3e4] via-white to-[#dcf9f1]" />
       </div>
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-14 px-6 py-16 md:px-10 lg:px-14">
+        <div className="flex justify-center sm:justify-end">
+          <AttendanceSyncIndicator />
+        </div>
         <header className="flex flex-col gap-4 text-left text-brand-deep">
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#1e1b32] px-4 py-1 text-xs font-semibold uppercase tracking-[0.38em] text-white">
             Centro operativo

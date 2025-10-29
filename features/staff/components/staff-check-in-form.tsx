@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StaffDirectoryEntry } from "@/features/staff/data/queries";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
-import { queueableFetch } from "@/lib/offline/fetch";
+import { queueStaffCheckInEvent } from "@/features/offline/attendance-actions";
 
 type StatusState = { message: string } | null;
 
@@ -76,30 +76,15 @@ export function StaffCheckInForm({
       setIsSubmitting(true);
       setStatus(null);
 
-      const response = await queueableFetch("/api/staff/check-in", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ staffId: selectedStaffId }),
-        offlineLabel: "staff-check-in",
-      });
-
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        queued?: boolean;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
-      }
+      await queueStaffCheckInEvent({ staffId: selectedStaffId });
 
       const selectedMember = staffMembers.find((member) => member.id === selectedStaffId);
+      const wasOffline = typeof navigator !== "undefined" && !navigator.onLine;
       const successMessage = selectedMember
-        ? payload?.queued
+        ? wasOffline
           ? `${selectedMember.fullName.trim()} quedará registrado al recuperar la conexión.`
           : `${selectedMember.fullName.trim()} ya está registrado.`
-        : payload?.queued
+        : wasOffline
           ? "Registro guardado sin conexión. Se sincronizará automáticamente."
           : "¡Registro del personal confirmado!";
 

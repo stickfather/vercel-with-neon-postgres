@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ActiveAttendance } from "@/features/student-checkin/data/queries";
 import { FarewellOverlay } from "@/components/ui/farewell-overlay";
+import { AttendanceSyncIndicator } from "@/components/offline/attendance-sync-indicator";
 import { AttendanceBoard } from "./attendance-board";
 import { CheckInForm } from "./check-in-form";
 
@@ -63,6 +64,9 @@ export function StudentRegistroPageShell({
       </div>
 
       <main className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-6 py-10 md:px-10 lg:px-14">
+        <div className="flex justify-center sm:justify-end">
+          <AttendanceSyncIndicator />
+        </div>
         <div className="flex flex-col gap-3 text-center sm:text-left">
           <span className="inline-flex w-fit items-center justify-center rounded-full bg-white/90 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-deep shadow">
             Registro diario

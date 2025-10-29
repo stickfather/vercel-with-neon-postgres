@@ -20,7 +20,7 @@ import {
 } from "@/features/student-checkin/lib/level-colors";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 import { formatLessonWithSequence } from "@/lib/time/check-in-window";
-import { queueableFetch } from "@/lib/offline/fetch";
+import { queueStudentCheckInEvent } from "@/features/offline/attendance-actions";
 
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_DEBOUNCE_MS = 220;
@@ -507,42 +507,23 @@ export function CheckInForm({
     async ({
       studentId,
       lessonId,
-      level,
       confirmOverride,
     }: {
       studentId: number;
       lessonId: number;
-      level: string;
       confirmOverride: boolean;
     }) => {
-      const response = await queueableFetch("/api/check-in", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          studentId,
-          level,
-          lessonId,
-          confirmOverride,
-        }),
-        offlineLabel: "student-check-in",
+      await queueStudentCheckInEvent({
+        studentId,
+        lessonId,
+        confirmOverride,
       });
 
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        queued?: boolean;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo registrar tu asistencia.");
-      }
-
-      const wasQueued = Boolean(payload?.queued);
+      const wasOffline = typeof navigator !== "undefined" && !navigator.onLine;
 
       setToast({
         type: "success",
-        message: wasQueued
+        message: wasOffline
           ? "Asistencia registrada sin conexión. Se sincronizará automáticamente."
           : "¡Asistencia confirmada, buen trabajo!",
       });
@@ -619,7 +600,6 @@ export function CheckInForm({
         await submitCheckIn({
           studentId: selectedStudent.id,
           lessonId: selectedLessonId,
-          level: selectedLevel,
           confirmOverride: false,
         });
         return;
@@ -684,7 +664,6 @@ export function CheckInForm({
       await submitCheckIn({
         studentId: selectedStudent.id,
         lessonId: selectedLessonId,
-        level: selectedLevel,
         confirmOverride: false,
       });
     } catch (error) {
@@ -725,7 +704,6 @@ export function CheckInForm({
       await submitCheckIn({
         studentId: lessonOverridePrompt.studentId,
         lessonId: lessonOverridePrompt.lessonId,
-        level: lessonOverridePrompt.level,
         confirmOverride: true,
       });
     } catch (error) {

@@ -27,6 +27,7 @@ export type LevelLessons = {
 
 export type ActiveAttendance = {
   id: number;
+  studentId: number;
   fullName: string;
   lesson: string | null;
   level: string | null;
@@ -328,6 +329,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
       sa.id,
+      sa.student_id,
       COALESCE(s.full_name, '') AS full_name,
       sa.checkin_time,
       l.lesson,
@@ -345,6 +347,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
   return rows
     .map((row) => ({
       id: Number(row.id),
+      studentId: Number(row.student_id ?? 0),
       fullName: (row.full_name as string | null) ?? "",
       lesson: (row.lesson as string | null) ?? null,
       level: (row.level as string | null) ?? null,

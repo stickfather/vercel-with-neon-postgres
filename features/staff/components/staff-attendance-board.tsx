@@ -8,7 +8,7 @@ import {
   exceedsSessionDurationLimit,
   isAfterBubbleHideTime,
 } from "@/lib/time/check-in-window";
-import { queueableFetch } from "@/lib/offline/fetch";
+import { queueStaffCheckoutEvent } from "@/features/offline/attendance-actions";
 import { FullScreenModal } from "@/components/ui/full-screen-modal";
 
 type Props = {
@@ -215,38 +215,20 @@ export function StaffAttendanceBoard({ attendances, onCheckoutComplete }: Props)
     setError(null);
     setLoadingId(attendance.id);
     try {
-      const response = await queueableFetch("/api/staff/check-out", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ attendanceId: attendance.id }),
-        offlineLabel: "staff-check-out",
+      await queueStaffCheckoutEvent({
+        staffId: attendance.staffId,
       });
 
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        queued?: boolean;
-        attendances?: ActiveStaffAttendance[];
-      };
-
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo registrar la salida.");
-      }
-
-      if (Array.isArray(payload.attendances)) {
-        setActiveAttendances(payload.attendances);
-      } else {
-        setActiveAttendances((previous) =>
-          previous.filter((item) => item.id !== attendance.id),
-        );
-      }
+      setActiveAttendances((previous) =>
+        previous.filter((item) => item.id !== attendance.id),
+      );
 
       setPendingCheckout(null);
       setCheckoutPreview(null);
+      const wasOffline = typeof navigator !== "undefined" && !navigator.onLine;
       setToast({
         tone: "success",
-        message: payload?.queued
+        message: wasOffline
           ? `${attendance.fullName.trim()} cerrará su jornada al volver la conexión.`
           : `${attendance.fullName.trim()} finalizó su jornada.`,
       });
@@ -254,6 +236,9 @@ export function StaffAttendanceBoard({ attendances, onCheckoutComplete }: Props)
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
       }
+      refreshTimeoutRef.current = setTimeout(() => {
+        router.refresh();
+      }, 320);
       onCheckoutComplete?.();
     } catch (error) {
       console.error(error);

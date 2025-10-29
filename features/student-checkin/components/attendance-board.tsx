@@ -9,7 +9,7 @@ import {
   exceedsSessionDurationLimit,
   isAfterBubbleHideTime,
 } from "@/lib/time/check-in-window";
-import { queueableFetch } from "@/lib/offline/fetch";
+import { queueStudentCheckoutEvent } from "@/features/offline/attendance-actions";
 import { FullScreenModal } from "@/components/ui/full-screen-modal";
 
 type Props = {
@@ -223,38 +223,21 @@ export function AttendanceBoard({ attendances, onCheckoutComplete }: Props) {
     setError(null);
     setLoadingId(attendance.id);
     try {
-      const response = await queueableFetch("/api/check-out", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ attendanceId: attendance.id }),
-        offlineLabel: "student-check-out",
+      await queueStudentCheckoutEvent({
+        studentId: attendance.studentId,
+        attendanceId: attendance.id,
       });
 
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        queued?: boolean;
-        attendances?: ActiveAttendance[];
-      };
-
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "No se pudo registrar la salida.");
-      }
-
-      if (Array.isArray(payload.attendances)) {
-        setActiveAttendances(payload.attendances);
-      } else {
-        setActiveAttendances((previous) =>
-          previous.filter((item) => item.id !== attendance.id),
-        );
-      }
+      setActiveAttendances((previous) =>
+        previous.filter((item) => item.id !== attendance.id),
+      );
 
       setPendingCheckout(null);
       setCheckoutPreview(null);
+      const wasOffline = typeof navigator !== "undefined" && !navigator.onLine;
       setToast({
         tone: "success",
-        message: payload?.queued
+        message: wasOffline
           ? `${attendance.fullName.trim()} saldrá registrado cuando vuelva la conexión.`
           : `${attendance.fullName.trim()} salió de clase. ¡Gracias!`,
       });

@@ -1838,6 +1838,23 @@ export function AdminCalendarDashboard() {
                   {activeStatusBadge.label}
                 </span>
               )}
+
+              <div className="flex flex-wrap items-center gap-2 border-t border-brand-ink-muted/10 pt-3 text-xs font-semibold text-brand-ink-muted">
+                <span className="text-[10px] uppercase tracking-[0.28em] text-brand-ink-muted">Leyenda</span>
+                {(["scheduled", "completed", "cancelled"] as const).map((statusKey) => {
+                  const badge = STATUS_BADGES[statusKey];
+                  return (
+                    <span
+                      key={`legend-${statusKey}`}
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 ${badge.className}`}
+                    >
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-current">
+                        {badge.label}
+                      </span>
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
