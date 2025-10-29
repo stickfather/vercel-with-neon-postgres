@@ -317,10 +317,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    await sql.begin(async (transaction) => {
-      await processEvent(transaction, kind, payload);
-      await logEventResult(transaction, id, kind, true, null);
-    });
+    if (typeof sql.begin === "function") {
+      await sql.begin(async (transaction) => {
+        await processEvent(transaction, kind, payload);
+        await logEventResult(transaction, id, kind, true, null);
+      });
+    } else {
+      await processEvent(sql, kind, payload);
+      await logEventResult(sql, id, kind, true, null);
+    }
     return NextResponse.json({ status: "ok" });
   } catch (error) {
     const message =

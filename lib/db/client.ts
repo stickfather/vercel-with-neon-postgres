@@ -5,7 +5,11 @@ import { requireEnv } from "@/src/config/env";
 
 export type SqlRow = Record<string, unknown>;
 
-type SqlClient = ReturnType<typeof neon>;
+type NeonClient = ReturnType<typeof neon>;
+
+type SqlClient = NeonClient & {
+  begin?: <T>(callback: (sql: NeonClient) => Promise<T>) => Promise<T>;
+};
 
 let sqlInstance: SqlClient | null = null;
 
@@ -14,7 +18,7 @@ export const TIMEZONE = PAYROLL_TIMEZONE;
 export function getSqlClient(): SqlClient {
   const connectionString = requireEnv("databaseUrl");
   if (!sqlInstance) {
-    sqlInstance = neon(connectionString);
+    sqlInstance = neon(connectionString) as SqlClient;
   }
   return sqlInstance;
 }
