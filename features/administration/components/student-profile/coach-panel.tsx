@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
@@ -21,8 +22,13 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LEVEL_BADGE_CLASS =
-  "inline-flex h-9 min-w-[64px] shrink-0 items-center justify-center rounded-full bg-teal-500 px-3 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-[0_12px_24px_rgba(20,184,166,0.28)]";
+const LESSON_NODE_GAP_PX = 8;
+const LESSON_NODE_MIN_SIZE = 36;
+const LESSON_NODE_MAX_SIZE = 44;
+
+const LEVEL_PILL_BASE =
+  "relative inline-flex h-10 w-[132px] shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold uppercase";
+const LEVEL_PILL_SPLIT = "pointer-events-none absolute top-0 bottom-0";
 
 function formatNumber(
   value: number | null | undefined,
@@ -88,10 +94,6 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
-function resolveLevelBadgeClasses(_levelCode: string | null | undefined): string {
-  return LEVEL_BADGE_CLASS;
-}
-
 function formatHoursValue(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) {
     return "0.0";
@@ -151,30 +153,71 @@ function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string
   return resolveLessonBubbleTitle(lesson);
 }
 
-function resolveLessonNodeCircleClass(lesson: CoachPanelLessonJourneyEntry): string {
-  const base =
-    "relative flex items-center justify-center rounded-full font-semibold transition-colors duration-150";
+type LessonNodeAppearance = {
+  borderColor: string;
+  borderWidth: number;
+  borderStyle?: "solid" | "dashed";
+  topBackground: string;
+  bottomBackground: string;
+  textClass: string;
+  labelPrefix?: string;
+  containerShadow?: string;
+  bottomTextClass?: string;
+  accentHalo?: string;
+  showCompletionCheck: boolean;
+};
 
-  if (lesson.status === "current") {
-    return `${base} h-14 w-14 border-2 border-[#10bfa9] bg-white text-[#0f9d8a] shadow-[0_0_0_5px_rgba(15,157,138,0.22)]`;
+function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): LessonNodeAppearance {
+  if (lesson.status === "completed") {
+    return {
+      borderColor: "#22C55E",
+      borderWidth: 2,
+      topBackground: "#86EFAC",
+      bottomBackground: "#16A34A",
+      textClass: "text-white",
+      containerShadow: "shadow-[0_0_0_2px_rgba(34,197,94,0.25)]",
+      showCompletionCheck: true,
+    };
   }
 
-  if (lesson.status === "completed") {
-    return `${base} h-12 w-12 border border-[#0aa493] bg-[#10bfa9] text-white shadow-[0_10px_28px_rgba(15,157,138,0.28)]`;
+  if (lesson.status === "current") {
+    return {
+      borderColor: "#F36C3D",
+      borderWidth: 3,
+      topBackground: "#43B2A1",
+      bottomBackground: "#2E867A",
+      textClass: "text-white",
+      containerShadow: "shadow-[0_0_0_6px_rgba(243,108,61,0.18)]",
+      accentHalo: "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(243,108,61,0.15)] after:content-['']",
+      labelPrefix: "📍 ",
+      showCompletionCheck: false,
+    };
   }
 
   if (lesson.isExam) {
-    return `${base} h-12 w-12 border-2 border-dashed border-orange-400 bg-white text-[#f97316] shadow-sm`;
+    return {
+      borderColor: "#43B2A1",
+      borderWidth: 2,
+      borderStyle: "dashed",
+      topBackground: "#E7F7F4",
+      bottomBackground: "#CFF1EA",
+      textClass: "text-[#2E867A]",
+      containerShadow: "shadow-[inset_0_0_0_1px_rgba(67,178,161,0.18)]",
+      accentHalo: "after:absolute after:inset-[6%] after:-z-10 after:rounded-full after:bg-[rgba(67,178,161,0.12)] after:content-['']",
+      labelPrefix: "📖 ",
+      showCompletionCheck: false,
+    };
   }
 
-  return `${base} h-12 w-12 border-2 border-orange-300 bg-white text-[#f97316] shadow-[0_8px_20px_rgba(249,115,22,0.18)]`;
-}
-
-function resolveLessonNodeLabelClass(lesson: CoachPanelLessonJourneyEntry): string {
-  if (lesson.status === "current") {
-    return "text-sm font-semibold";
-  }
-  return "text-xs font-semibold";
+  return {
+    borderColor: "#E5E7EB",
+    borderWidth: 1,
+    topBackground: "#FFFFFF",
+    bottomBackground: "#F1F5F9",
+    textClass: "text-slate-600",
+    bottomTextClass: "text-slate-600",
+    showCompletionCheck: false,
+  };
 }
 
 const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
@@ -465,34 +508,79 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const tooltipLines = [
       `Nivel ${lesson.levelCode}`,
       tooltipTitle,
-      `⌛ ${hoursLabel}h • 📅 ${safeDays}d`,
+      `⏳ ${hoursLabel} • 📅 ${safeDays}`,
     ];
-    const circleClass = resolveLessonNodeCircleClass(lesson);
-    const labelClass = resolveLessonNodeLabelClass(lesson);
-    const showAqui = lesson.status === "current";
-    const showCheck = lesson.status === "completed";
+    const appearance = resolveLessonNodeAppearance(lesson);
+    const labelPrefix = appearance.labelPrefix ?? "";
+    const bottomTextClass = appearance.bottomTextClass ?? appearance.textClass;
+
+    const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
+    const nodeWrapperStyle: CSSProperties = {
+      flexBasis: "var(--lesson-node-size)",
+      width: "var(--lesson-node-size)",
+      height: "var(--lesson-node-size)",
+      minWidth: `${LESSON_NODE_MIN_SIZE}px`,
+      minHeight: `${LESSON_NODE_MIN_SIZE}px`,
+      maxWidth: `${LESSON_NODE_MAX_SIZE}px`,
+      maxHeight: `${LESSON_NODE_MAX_SIZE}px`,
+    };
+    if (appearance.showCompletionCheck) {
+      nodeWrapperStyle.paddingBottom = "10px";
+    }
+
+    const circleClass = `relative flex h-full w-full flex-col overflow-hidden rounded-full border bg-transparent ${appearance.textClass} ${appearance.containerShadow ?? ""}`;
+    const circleStyle: CSSProperties = {
+      borderColor: appearance.borderColor,
+      borderWidth: appearance.borderWidth,
+      borderStyle: appearance.borderStyle ?? "solid",
+    };
+
+    const labelStyle: CSSProperties = {
+      fontSize: "calc(var(--lesson-node-size) * 0.32)",
+      lineHeight: 1.1,
+    };
+
+    const metricStyle: CSSProperties = {
+      fontSize: "calc(var(--lesson-node-size) * 0.26)",
+      lineHeight: 1.1,
+    };
 
     return (
       <div
         key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
-        className="relative flex min-w-[60px] max-w-[72px] flex-col items-center pb-7 text-center"
+        className={nodeWrapperClass}
+        style={nodeWrapperStyle}
         title={tooltipLines.join("\n")}
       >
-        <div className={`${circleClass} z-20`}>
-          <span className={labelClass}>{displayTitle}</span>
-          {showCheck ? (
-            <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-[10px] shadow-sm">
-              ✅
-            </span>
-          ) : null}
+        <div className={circleClass} style={circleStyle}>
+          <div
+            className="flex flex-shrink-0 items-center justify-center font-bold"
+            style={{
+              backgroundColor: appearance.topBackground,
+              flexBasis: "30%",
+              ...labelStyle,
+            }}
+          >
+            <span style={labelStyle}>{`${labelPrefix}${displayTitle}`}</span>
+          </div>
+          <div
+            className={`flex flex-1 flex-col items-center justify-center gap-[2px] font-medium ${bottomTextClass}`}
+            style={{
+              backgroundColor: appearance.bottomBackground,
+              paddingBottom: "6px",
+              paddingTop: "4px",
+              ...metricStyle,
+            }}
+          >
+            <span style={metricStyle}>⏳ {hoursLabel}</span>
+            <span style={metricStyle}>📅 {safeDays}</span>
+          </div>
         </div>
-        <div className="pointer-events-none absolute left-1/2 top-[74%] z-10 -translate-x-1/2 flex flex-col items-center gap-[2px] rounded-md bg-white/95 px-2 py-1 text-[9px] font-medium leading-tight text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)] ring-1 ring-slate-200/80">
-          {showAqui ? (
-            <span className="text-[9px] font-semibold text-[#0f9d8a]">Aquí estás</span>
-          ) : null}
-          <span>⌛ {hoursLabel}h</span>
-          <span>📅 {safeDays}d</span>
-        </div>
+        {appearance.showCompletionCheck ? (
+          <span className="absolute -bottom-2 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white text-base shadow-sm">
+            ✅
+          </span>
+        ) : null}
       </div>
     );
   };
@@ -547,9 +635,11 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const rankBadgeTitle =
     "Calculado usando todos los estudiantes activos (≥120 min/últimos 30 días).";
 
+  const sharedContainerClass = "mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8";
+
   return (
     <div className="relative flex flex-col gap-10">
-      <section className="space-y-6">
+      <section className={`${sharedContainerClass} space-y-6`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Panel del coach</span>
@@ -573,29 +663,51 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             sortedLevels.map((level, levelIndex) => {
               const levelWrapperClasses =
                 levelIndex === 0
-                  ? "flex flex-col gap-3"
-                  : "flex flex-col gap-3 border-t border-slate-200/70 pt-4";
+                  ? "flex flex-col gap-4"
+                  : "flex flex-col gap-4 border-t border-slate-200/70 pt-4";
 
-              const nodeAlignment =
-                level.lessons.length <= 1 ? "justify-center" : "justify-between";
+              const lessonCount = level.lessons.length;
+              const clampDenominator = Math.max(lessonCount, 1);
+              const clampGap = Math.max(lessonCount - 1, 0) * LESSON_NODE_GAP_PX;
+              const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${clampDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
+
+              const nodeLayoutStyle: CSSProperties = {
+                width: "100%",
+                maxWidth:
+                  lessonCount > 0
+                    ? `calc(${lessonCount} * ${LESSON_NODE_MAX_SIZE}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
+                    : undefined,
+                gap: `${LESSON_NODE_GAP_PX}px`,
+              };
+              (nodeLayoutStyle as CSSProperties & Record<string, string>)["--lesson-node-size"] = nodeSizeValue;
 
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
-                  <div className="flex items-start gap-4">
-                    <span className={resolveLevelBadgeClasses(level.levelCode)}>
-                      {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
+                  <div className="flex w-full items-start gap-6">
+                    <span className="flex h-10 w-[132px] shrink-0 items-center">
+                      <span className={LEVEL_PILL_BASE}>
+                        <span className={`${LEVEL_PILL_SPLIT} left-0 right-0 bg-[#E7F7F4]`} aria-hidden="true" />
+                        <span className={`${LEVEL_PILL_SPLIT} left-0 w-1/2 bg-[#43B2A1]`} aria-hidden="true" />
+                        <span
+                          className="relative z-10 flex h-full w-full items-center justify-center tracking-[0.24em]"
+                          style={{
+                            background: "linear-gradient(90deg, #FFFFFF 0%, #FFFFFF 50%, #2E867A 50%, #2E867A 100%)",
+                            WebkitBackgroundClip: "text",
+                            color: "transparent",
+                          }}
+                        >
+                          {level.levelCode === "OTROS" ? "OT" : level.levelCode}
+                        </span>
+                      </span>
                     </span>
-                    {level.lessons.length ? (
-                      <div className="relative min-w-0 flex-1">
-                        <div className="relative w-full px-4 pb-7 pt-1">
-                          <div className="pointer-events-none absolute inset-x-4 top-1/2 h-[2px] -translate-y-1/2 bg-slate-200" />
-                          <div className={`relative flex w-full items-start ${nodeAlignment} gap-2`}>
-                            {level.lessons.map((lesson) => renderLessonNode(lesson))}
-                          </div>
+                    {lessonCount ? (
+                      <div className="flex min-w-0 flex-1 justify-end">
+                        <div className="flex w-full flex-wrap md:flex-nowrap" style={nodeLayoutStyle}>
+                          {level.lessons.map((lesson) => renderLessonNode(lesson))}
                         </div>
                       </div>
                     ) : (
-                      <div className="flex min-h-[88px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-500">
+                      <div className="flex min-h-[88px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200/80 bg-white/60 px-4 text-sm text-slate-500">
                         Sin lecciones registradas.
                       </div>
                     )}
@@ -612,10 +724,11 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
+      <section className={sharedContainerClass}>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
             <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
             <p className="mt-1 text-sm text-brand-ink-muted">
               Muestra la frecuencia y duración de las sesiones recientes.
