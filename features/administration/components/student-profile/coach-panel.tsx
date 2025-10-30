@@ -25,10 +25,10 @@ const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, i
 const LESSON_NODE_GAP_PX = 8;
 const LESSON_NODE_MIN_SIZE = 36;
 const LESSON_NODE_MAX_SIZE = 44;
+const LESSON_NODE_WIDTH_RATIO = 2;
 
 const LEVEL_PILL_BASE =
-  "relative inline-flex h-10 w-[132px] shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold uppercase";
-const LEVEL_PILL_SPLIT = "pointer-events-none absolute top-0 bottom-0";
+  "inline-flex h-8 w-[96px] shrink-0 items-center justify-center rounded-full bg-[#F97316] text-[11px] font-semibold uppercase tracking-[0.28em] text-white";
 
 function formatNumber(
   value: number | null | undefined,
@@ -184,11 +184,12 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
     return {
       borderColor: "#F36C3D",
       borderWidth: 3,
-      topBackground: "#43B2A1",
-      bottomBackground: "#2E867A",
+      topBackground: "#B7F2EC",
+      bottomBackground: "#7DDDD0",
       textClass: "text-white",
       containerShadow: "shadow-[0_0_0_6px_rgba(243,108,61,0.18)]",
-      accentHalo: "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(243,108,61,0.15)] after:content-['']",
+      accentHalo:
+        "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(125,221,208,0.22)] after:content-['']",
       labelPrefix: "📍 ",
       showCompletionCheck: false,
     };
@@ -516,12 +517,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
     const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
     const nodeWrapperStyle: CSSProperties = {
-      flexBasis: "var(--lesson-node-size)",
-      width: "var(--lesson-node-size)",
+      flexBasis: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_RATIO})`,
+      width: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_RATIO})`,
       height: "var(--lesson-node-size)",
-      minWidth: `${LESSON_NODE_MIN_SIZE}px`,
+      minWidth: `${LESSON_NODE_MIN_SIZE * LESSON_NODE_WIDTH_RATIO}px`,
       minHeight: `${LESSON_NODE_MIN_SIZE}px`,
-      maxWidth: `${LESSON_NODE_MAX_SIZE}px`,
+      maxWidth: `${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_RATIO}px`,
       maxHeight: `${LESSON_NODE_MAX_SIZE}px`,
     };
     if (appearance.showCompletionCheck) {
@@ -667,15 +668,15 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   : "flex flex-col gap-4 border-t border-slate-200/70 pt-4";
 
               const lessonCount = level.lessons.length;
-              const clampDenominator = Math.max(lessonCount, 1);
+              const widthDenominator = Math.max(lessonCount * LESSON_NODE_WIDTH_RATIO, 1);
               const clampGap = Math.max(lessonCount - 1, 0) * LESSON_NODE_GAP_PX;
-              const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${clampDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
+              const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${widthDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
 
               const nodeLayoutStyle: CSSProperties = {
                 width: "100%",
                 maxWidth:
                   lessonCount > 0
-                    ? `calc(${lessonCount} * ${LESSON_NODE_MAX_SIZE}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
+                    ? `calc(${lessonCount} * ${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_RATIO}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
                     : undefined,
                 gap: `${LESSON_NODE_GAP_PX}px`,
               };
@@ -684,20 +685,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
                   <div className="flex w-full items-start gap-6">
-                    <span className="flex h-10 w-[132px] shrink-0 items-center">
+                    <span className="flex h-8 w-[96px] shrink-0 items-center">
                       <span className={LEVEL_PILL_BASE}>
-                        <span className={`${LEVEL_PILL_SPLIT} left-0 right-0 bg-[#E7F7F4]`} aria-hidden="true" />
-                        <span className={`${LEVEL_PILL_SPLIT} left-0 w-1/2 bg-[#43B2A1]`} aria-hidden="true" />
-                        <span
-                          className="relative z-10 flex h-full w-full items-center justify-center tracking-[0.24em]"
-                          style={{
-                            background: "linear-gradient(90deg, #FFFFFF 0%, #FFFFFF 50%, #2E867A 50%, #2E867A 100%)",
-                            WebkitBackgroundClip: "text",
-                            color: "transparent",
-                          }}
-                        >
-                          {level.levelCode === "OTROS" ? "OT" : level.levelCode}
-                        </span>
+                        {level.levelCode === "OTROS" ? "OT" : level.levelCode}
                       </span>
                     </span>
                     {lessonCount ? (
