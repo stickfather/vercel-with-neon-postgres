@@ -26,9 +26,14 @@ const LESSON_NODE_GAP_PX = 8;
 const LESSON_NODE_MIN_SIZE = 36;
 const LESSON_NODE_MAX_SIZE = 44;
 const LESSON_NODE_WIDTH_RATIO = 1.3;
+const LESSON_NODE_LENGTH_SCALE = 1.5;
+const LESSON_NODE_HEIGHT_SCALE = 0.95;
+const LESSON_NODE_WIDTH_MULTIPLIER = LESSON_NODE_WIDTH_RATIO * LESSON_NODE_LENGTH_SCALE;
+const LESSON_NODE_LABEL_FONT_RATIO = 0.32 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_METRIC_FONT_RATIO = 0.26 * LESSON_NODE_HEIGHT_SCALE;
 
 const LEVEL_BADGE_BASE =
-  "inline-flex h-7 w-[48px] shrink-0 items-center justify-center rounded-full border border-[#FDBA74] bg-gradient-to-r from-[#FFF7ED] via-[#FFE4C7] to-[#FFD5AA] text-[10px] font-semibold uppercase tracking-[0.2em] text-[#C2410C] shadow-[0_4px_14px_rgba(249,115,22,0.22)]";
+  "inline-flex h-6 w-full shrink-0 items-center justify-center rounded-lg border border-[#FB923C]/70 bg-[radial-gradient(circle_at_top_left,#FFE7C7,#FDBA74)] px-1 text-[9px] font-black uppercase tracking-[0.3em] text-[#7C2D12] shadow-[0_4px_12px_rgba(251,146,60,0.35)]";
 
 function formatNumber(
   value: number | null | undefined,
@@ -521,13 +526,13 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
     const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
     const nodeWrapperStyle: CSSProperties = {
-      flexBasis: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_RATIO})`,
-      width: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_RATIO})`,
-      height: "var(--lesson-node-size)",
-      minWidth: `${LESSON_NODE_MIN_SIZE * LESSON_NODE_WIDTH_RATIO}px`,
-      minHeight: `${LESSON_NODE_MIN_SIZE}px`,
-      maxWidth: `${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_RATIO}px`,
-      maxHeight: `${LESSON_NODE_MAX_SIZE}px`,
+      flexBasis: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_MULTIPLIER})`,
+      width: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_MULTIPLIER})`,
+      height: `calc(var(--lesson-node-size) * ${LESSON_NODE_HEIGHT_SCALE})`,
+      minWidth: `${LESSON_NODE_MIN_SIZE * LESSON_NODE_WIDTH_MULTIPLIER}px`,
+      minHeight: `${LESSON_NODE_MIN_SIZE * LESSON_NODE_HEIGHT_SCALE}px`,
+      maxWidth: `${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER}px`,
+      maxHeight: `${LESSON_NODE_MAX_SIZE * LESSON_NODE_HEIGHT_SCALE}px`,
     };
     if (appearance.showCompletionCheck) {
       nodeWrapperStyle.paddingBottom = "10px";
@@ -541,12 +546,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     };
 
     const labelStyle: CSSProperties = {
-      fontSize: "calc(var(--lesson-node-size) * 0.32)",
+      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_LABEL_FONT_RATIO})`,
       lineHeight: 1.1,
     };
 
     const metricStyle: CSSProperties = {
-      fontSize: "calc(var(--lesson-node-size) * 0.26)",
+      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_METRIC_FONT_RATIO})`,
       lineHeight: 1.1,
     };
 
@@ -663,6 +668,17 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-brand-ink-muted">
+          <span className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/10 bg-white/70 px-3 py-1 shadow-sm">
+            <span className="text-sm">⏳</span>
+            <span>Horas en la lección</span>
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/10 bg-white/70 px-3 py-1 shadow-sm">
+            <span className="text-sm">📅</span>
+            <span>Días en la lección</span>
+          </span>
+        </div>
+
         <div className="flex flex-col gap-4">
           {sortedLevels.length > 0 &&
             sortedLevels.map((level, levelIndex) => {
@@ -680,7 +696,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 width: "100%",
                 maxWidth:
                   lessonCount > 0
-                    ? `calc(${lessonCount} * ${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_RATIO}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
+                    ? `calc(${lessonCount} * ${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
                     : undefined,
                 gap: `${LESSON_NODE_GAP_PX}px`,
               };
@@ -689,7 +705,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
                   <div className="flex w-full items-start gap-6">
-                    <span className="flex h-7 w-[56px] shrink-0 items-center justify-center">
+                    <span className="flex h-6 w-[32px] shrink-0 items-center justify-center">
                       <span className={LEVEL_BADGE_BASE}>
                         {level.levelCode === "OTROS" ? "OT" : level.levelCode}
                       </span>
