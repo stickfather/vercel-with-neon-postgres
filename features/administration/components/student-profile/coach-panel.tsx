@@ -25,10 +25,10 @@ const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, i
 const LESSON_NODE_GAP_PX = 8;
 const LESSON_NODE_MIN_SIZE = 36;
 const LESSON_NODE_MAX_SIZE = 44;
-const LESSON_NODE_WIDTH_RATIO = 2;
+const LESSON_NODE_WIDTH_RATIO = 1.3;
 
-const LEVEL_PILL_BASE =
-  "inline-flex h-8 w-[96px] shrink-0 items-center justify-center rounded-full bg-[#F97316] text-[11px] font-semibold uppercase tracking-[0.28em] text-white";
+const LEVEL_BADGE_BASE =
+  "inline-flex h-7 w-[48px] shrink-0 items-center justify-center rounded-full border border-[#FDBA74] bg-gradient-to-r from-[#FFF7ED] via-[#FFE4C7] to-[#FFD5AA] text-[10px] font-semibold uppercase tracking-[0.2em] text-[#C2410C] shadow-[0_4px_14px_rgba(249,115,22,0.22)]";
 
 function formatNumber(
   value: number | null | undefined,
@@ -160,6 +160,7 @@ type LessonNodeAppearance = {
   topBackground: string;
   bottomBackground: string;
   textClass: string;
+  topTextClass?: string;
   labelPrefix?: string;
   containerShadow?: string;
   bottomTextClass?: string;
@@ -187,6 +188,7 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
       topBackground: "#B7F2EC",
       bottomBackground: "#7DDDD0",
       textClass: "text-white",
+      topTextClass: "text-[#0F172A]",
       containerShadow: "shadow-[0_0_0_6px_rgba(243,108,61,0.18)]",
       accentHalo:
         "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(125,221,208,0.22)] after:content-['']",
@@ -216,6 +218,7 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
     topBackground: "#FFFFFF",
     bottomBackground: "#F1F5F9",
     textClass: "text-slate-600",
+    topTextClass: "text-slate-700",
     bottomTextClass: "text-slate-600",
     showCompletionCheck: false,
   };
@@ -514,6 +517,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const appearance = resolveLessonNodeAppearance(lesson);
     const labelPrefix = appearance.labelPrefix ?? "";
     const bottomTextClass = appearance.bottomTextClass ?? appearance.textClass;
+    const topTextClass = appearance.topTextClass ?? appearance.textClass;
 
     const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
     const nodeWrapperStyle: CSSProperties = {
@@ -555,7 +559,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       >
         <div className={circleClass} style={circleStyle}>
           <div
-            className="flex flex-shrink-0 items-center justify-center font-bold"
+            className={`flex flex-shrink-0 items-center justify-center font-bold ${topTextClass}`}
             style={{
               backgroundColor: appearance.topBackground,
               flexBasis: "30%",
@@ -685,8 +689,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
                   <div className="flex w-full items-start gap-6">
-                    <span className="flex h-8 w-[96px] shrink-0 items-center">
-                      <span className={LEVEL_PILL_BASE}>
+                    <span className="flex h-7 w-[56px] shrink-0 items-center justify-center">
+                      <span className={LEVEL_BADGE_BASE}>
                         {level.levelCode === "OTROS" ? "OT" : level.levelCode}
                       </span>
                     </span>
