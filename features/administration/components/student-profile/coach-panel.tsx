@@ -36,7 +36,7 @@ const LESSON_NODE_BADGE_PADDING_Y_RATIO = 0.085;
 const LESSON_NODE_BADGE_OFFSET_RATIO = 0.22;
 
 const LEVEL_BADGE_BASE =
-  "inline-flex h-6 min-w-[46px] shrink-0 items-center justify-center rounded-lg border border-[#FB923C]/70 bg-[radial-gradient(circle_at_top_left,#FFE7C7,#FDBA74)] px-2 text-[9px] font-black uppercase tracking-[0.3em] text-[#7C2D12] shadow-[0_4px_12px_rgba(251,146,60,0.35)]";
+  "inline-flex h-8 min-w-[60px] shrink-0 items-center justify-center rounded-full border border-[#2E867A]/70 bg-[linear-gradient(135deg,#6FE0CF,#2E867A)] px-3 text-[11px] font-extrabold uppercase tracking-[0.22em] text-white shadow-[0_8px_20px_rgba(24,116,107,0.35)]";
 
 function formatNumber(
   value: number | null | undefined,
@@ -753,7 +753,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
                   <div className="flex flex-col gap-3">
-                    <span className="flex h-6 items-center justify-start self-start">
+                    <span className="flex h-8 items-center justify-start self-start">
                       <span className={LEVEL_BADGE_BASE}>
                         {level.levelCode === "OTROS" ? "OT" : level.levelCode}
                       </span>
