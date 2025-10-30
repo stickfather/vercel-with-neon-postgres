@@ -153,7 +153,7 @@ function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string
 
 function resolveLessonNodeCircleClass(lesson: CoachPanelLessonJourneyEntry): string {
   const base =
-    "relative flex h-24 w-24 flex-col overflow-hidden rounded-full border text-center shadow-sm transition-colors duration-150";
+    "relative flex h-20 w-20 flex-col overflow-hidden rounded-full border text-center shadow-sm transition-colors duration-150";
 
   if (lesson.status === "current") {
     return `${base} border-2 border-[#43B2A1]`;
@@ -167,7 +167,7 @@ function resolveLessonNodeCircleClass(lesson: CoachPanelLessonJourneyEntry): str
     return `${base} border-2 border-dashed border-[#F36C3D]`;
   }
 
-  return `${base} border border-slate-200`;
+  return `${base} border border-[rgba(67,178,161,0.45)]`;
 }
 
 function resolveLessonNodeLabelClass(_lesson: CoachPanelLessonJourneyEntry): string {
@@ -183,7 +183,7 @@ type LessonNodeBandClasses = {
 function resolveLessonNodeBandClasses(lesson: CoachPanelLessonJourneyEntry): LessonNodeBandClasses {
   if (lesson.status === "current") {
     return {
-      top: "flex-[3] flex items-center justify-center bg-[#43B2A1] text-white",
+      top: "flex-[3] flex flex-col items-center justify-center gap-0.5 bg-[#43B2A1] text-white",
       bottom: "flex-[7] flex flex-col items-center justify-center gap-0.5 bg-[#2E867A] text-white",
       stat: "text-xs font-semibold leading-tight",
     };
@@ -191,7 +191,7 @@ function resolveLessonNodeBandClasses(lesson: CoachPanelLessonJourneyEntry): Les
 
   if (lesson.status === "completed") {
     return {
-      top: "flex-[3] flex items-center justify-center bg-[#F8B03A] text-white",
+      top: "flex-[3] flex items-center justify-center gap-1 bg-[#F8B03A] text-white",
       bottom: "flex-[7] flex flex-col items-center justify-center gap-0.5 bg-[#F36C3D] text-white",
       stat: "text-xs font-semibold leading-tight",
     };
@@ -206,8 +206,8 @@ function resolveLessonNodeBandClasses(lesson: CoachPanelLessonJourneyEntry): Les
   }
 
   return {
-    top: "flex-[3] flex items-center justify-center bg-white text-slate-600",
-    bottom: "flex-[7] flex flex-col items-center justify-center gap-0.5 bg-slate-100 text-slate-600",
+    top: "flex-[3] flex items-center justify-center bg-[rgba(67,178,161,0.16)] text-[#2E867A]",
+    bottom: "flex-[7] flex flex-col items-center justify-center gap-0.5 bg-[rgba(67,178,161,0.28)] text-[#2E867A]",
     stat: "text-xs font-semibold leading-tight",
   };
 }
@@ -511,12 +511,28 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     return (
       <div
         key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
-        className="relative flex min-w-[96px] max-w-[96px] flex-col items-center text-center"
+        className="relative flex min-w-[80px] max-w-[80px] flex-col items-center text-center"
         title={tooltipLines.join("\n")}
       >
         <div className={`${circleClass} z-20`}>
           <div className={bandClasses.top}>
-            <span className={labelClass}>{displayTitle}</span>
+            {lesson.status === "current" ? (
+              <>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/80">
+                  Aquí estás
+                </span>
+                <span className={labelClass}>{displayTitle}</span>
+              </>
+            ) : lesson.status === "completed" ? (
+              <span className="flex items-center gap-1">
+                <span aria-hidden="true" className="text-sm leading-none">
+                  ✅
+                </span>
+                <span className={labelClass}>{displayTitle}</span>
+              </span>
+            ) : (
+              <span className={labelClass}>{displayTitle}</span>
+            )}
           </div>
           <div className={bandClasses.bottom}>
             <span className={bandClasses.stat}>{hoursDisplay}</span>
@@ -622,8 +638,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     </span>
                     {level.lessons.length ? (
                       <div className="relative min-w-0 flex-1">
-                        <div className="relative w-full px-4 py-4">
-                          <div className="pointer-events-none absolute inset-x-4 top-1/2 h-[2px] -translate-y-1/2 bg-slate-200" />
+                        <div className="relative w-full px-2 py-4">
+                          <div className="pointer-events-none absolute inset-x-2 top-1/2 h-[2px] -translate-y-1/2 bg-slate-200" />
                           <div className={`relative flex w-full items-start ${nodeAlignment} gap-2`}>
                             {level.lessons.map((lesson) => renderLessonNode(lesson))}
                           </div>
