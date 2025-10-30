@@ -27,6 +27,17 @@ const SUGGESTION_DEBOUNCE_MS = 220;
 const EXAM_LESSON_NAME_LOWER = "preparación para el examen";
 const LEVELS = ["A1", "A2", "B1", "B2", "C1"] as const;
 
+function resolveSequenceValue(
+  ...values: Array<number | null | undefined>
+): number | null {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function isExamLessonLabel(label: string) {
   return label.trim().toLocaleLowerCase("es") === EXAM_LESSON_NAME_LOWER;
 }
@@ -49,6 +60,7 @@ type ToastState = {
 type FetchState = "idle" | "loading" | "error";
 
 type LessonOverridePrompt = {
+  intent: "selection" | "submission";
   studentId: number;
   lessonId: number;
   level: string;
@@ -90,6 +102,8 @@ export function CheckInForm({
   const [suggestedLesson, setSuggestedLesson] = useState<StudentLastLesson | null>(null);
   const [lessonOverridePrompt, setLessonOverridePrompt] =
     useState<LessonOverridePrompt | null>(null);
+  const [confirmedOverrideLessonId, setConfirmedOverrideLessonId] =
+    useState<number | null>(null);
   const lastLessonCache = useRef<Map<number, StudentLastLesson | null>>(new Map());
   const lastLessonAbortRef = useRef<AbortController | null>(null);
   const studentInputRef = useRef<HTMLInputElement | null>(null);
@@ -192,26 +206,7 @@ export function CheckInForm({
     return () => clearTimeout(timeout);
   }, [blockedAccountMessage, router]);
 
-  const overrideQuestion = useMemo(() => {
-    if (!lessonOverridePrompt) {
-      return null;
-    }
-
-    const { lastLessonSequence, selectedLessonSequence } =
-      lessonOverridePrompt;
-
-    if (
-      lastLessonSequence != null &&
-      selectedLessonSequence != null &&
-      selectedLessonSequence < lastLessonSequence
-    ) {
-      return "¿Seguro que quieres regresar?";
-    }
-
-    return "¿Seguro que quieres saltarte lecciones?";
-  }, [lessonOverridePrompt]);
-
-  const overrideMessage = useMemo(() => {
+  const overrideDetails = useMemo(() => {
     if (!lessonOverridePrompt) {
       return null;
     }
@@ -225,7 +220,10 @@ export function CheckInForm({
       lessonOverridePrompt.selectedLessonSequence,
     );
 
-    return `Nuestros registros indican que tu última lección fue ${lastLessonLabel}. ¿Seguro que quieres cambiar a ${selectedLessonLabel}?`;
+    return {
+      lastLessonLabel,
+      selectedLessonLabel,
+    };
   }, [lessonOverridePrompt]);
 
   const applySuggestedLesson = useCallback(
@@ -486,8 +484,62 @@ export function CheckInForm({
     });
   }, [isLoadingLessons, lessonsFetchError, selectedLevel, sortedLessons]);
 
+  useEffect(() => {
+    if (
+      confirmedOverrideLessonId != null &&
+      confirmedOverrideLessonId !== selectedLessonId
+    ) {
+      setConfirmedOverrideLessonId(null);
+    }
+  }, [confirmedOverrideLessonId, selectedLessonId]);
+
   const canChooseProgression =
     Boolean(selectedStudent) && !disabled && !initialError;
+
+  const handleLessonSelection = useCallback(
+    (lesson: LessonCatalogItem) => {
+      if (isFormDisabled) {
+        return;
+      }
+
+      const studentId = selectedStudent?.id;
+      if (!studentId) {
+        setSelectedLessonId(lesson.id);
+        return;
+      }
+
+      const currentSequence = resolveSequenceValue(
+        suggestedLesson?.sequence,
+        suggestedLesson?.globalSequence,
+      );
+      const selectedSequence = resolveSequenceValue(lesson.seq);
+
+      if (
+        currentSequence != null &&
+        selectedSequence != null &&
+        selectedSequence !== currentSequence &&
+        selectedSequence !== currentSequence + 1
+      ) {
+        setLessonOverridePrompt({
+          intent: "selection",
+          studentId,
+          lessonId: lesson.id,
+          level: selectedLevel,
+          lastLessonName: suggestedLesson?.lessonName ?? null,
+          lastLessonSequence: resolveSequenceValue(
+            suggestedLesson?.sequence,
+            suggestedLesson?.globalSequence,
+          ),
+          selectedLessonName: lesson.lesson,
+          selectedLessonSequence: selectedSequence,
+        });
+        return;
+      }
+
+      setSelectedLessonId(lesson.id);
+    },
+    [isFormDisabled, selectedStudent, selectedLevel, suggestedLesson],
+  );
 
   const handleSuggestionSelection = (student: StudentName) => {
     setStudentQuery(student.fullName);
@@ -615,12 +667,16 @@ export function CheckInForm({
     const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
     setIsSubmitting(true);
     try {
+      const hasConfirmedOverride =
+        confirmedOverrideLessonId != null &&
+        selectedLessonId === confirmedOverrideLessonId;
+
       if (!isOnline) {
         await submitCheckIn({
           studentId: selectedStudent.id,
           lessonId: selectedLessonId,
           level: selectedLevel,
-          confirmOverride: false,
+          confirmOverride: hasConfirmedOverride,
         });
         return;
       }
@@ -667,7 +723,18 @@ export function CheckInForm({
       }
 
       if (validationPayload.needsConfirmation) {
+        if (hasConfirmedOverride) {
+          await submitCheckIn({
+            studentId: selectedStudent.id,
+            lessonId: selectedLessonId,
+            level: selectedLevel,
+            confirmOverride: true,
+          });
+          return;
+        }
+
         setLessonOverridePrompt({
+          intent: "submission",
           studentId: selectedStudent.id,
           lessonId: selectedLessonId,
           level: selectedLevel,
@@ -685,7 +752,7 @@ export function CheckInForm({
         studentId: selectedStudent.id,
         lessonId: selectedLessonId,
         level: selectedLevel,
-        confirmOverride: false,
+        confirmOverride: hasConfirmedOverride,
       });
     } catch (error) {
       console.error(error);
@@ -717,6 +784,13 @@ export function CheckInForm({
 
   const confirmLessonOverride = async () => {
     if (!lessonOverridePrompt) {
+      return;
+    }
+
+    if (lessonOverridePrompt.intent === "selection") {
+      setSelectedLessonId(lessonOverridePrompt.lessonId);
+      setConfirmedOverrideLessonId(lessonOverridePrompt.lessonId);
+      setLessonOverridePrompt(null);
       return;
     }
 
@@ -992,7 +1066,7 @@ export function CheckInForm({
                     <button
                       key={lesson.id}
                       type="button"
-                      onClick={() => setSelectedLessonId(lesson.id)}
+                      onClick={() => handleLessonSelection(lesson)}
                       className={`group relative flex min-h-[84px] flex-col items-center justify-center gap-1 rounded-[24px] border px-5 py-5 text-center text-base transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
                         isActive
                           ? "border-brand-teal bg-white text-brand-deep shadow-[0_20px_40px_rgba(15,23,42,0.2)] ring-4 ring-brand-teal/35 ring-offset-2 ring-offset-white"
@@ -1092,10 +1166,26 @@ export function CheckInForm({
                   Confirmar cambio de lección
                 </span>
                 <p className="text-base font-semibold text-brand-deep">
-                  {overrideQuestion ?? "¿Seguro que quieres continuar?"}
+                  ¿Estás seguro de cambiar tu lección?
                 </p>
-                {overrideMessage ? (
-                  <p className="text-sm text-brand-ink-muted">{overrideMessage}</p>
+                {overrideDetails ? (
+                  <div className="flex flex-col gap-1 text-sm text-brand-ink-muted">
+                    <p>
+                      La última vez registraste la lección{" "}
+                      <strong className="text-brand-ink">
+                        {overrideDetails.lastLessonLabel}
+                      </strong>
+                      .
+                    </p>
+                    <p>
+                      Ahora estás eligiendo la lección{" "}
+                      <strong className="text-brand-ink">
+                        {overrideDetails.selectedLessonLabel}
+                      </strong>
+                      .
+                    </p>
+                    <p>Esto puede afectar tu progreso.</p>
+                  </div>
                 ) : null}
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -1109,10 +1199,16 @@ export function CheckInForm({
                 <button
                   type="button"
                   onClick={confirmLessonOverride}
-                  disabled={isSubmitting}
+                  disabled={
+                    lessonOverridePrompt.intent === "submission"
+                      ? isSubmitting
+                      : false
+                  }
                   className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#04a890] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-wait disabled:opacity-70"
                 >
-                  {isSubmitting ? "Registrando…" : "Sí, registrar asistencia"}
+                  {lessonOverridePrompt.intent === "submission" && isSubmitting
+                    ? "Registrando…"
+                    : "Sí, continuar"}
                 </button>
               </div>
             </div>

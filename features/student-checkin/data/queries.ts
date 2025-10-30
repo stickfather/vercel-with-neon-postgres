@@ -426,12 +426,25 @@ export async function validateStudentLessonSelection(
   const lastLesson = lastLessonRows[0] ?? null;
   const selectedLesson = selectedLessonRows[0] ?? null;
 
+  const lastSequence =
+    toNullableSequence(lastLesson?.seq) ??
+    toNullableSequence(lastLesson?.lesson_global_seq);
+  const selectedSequence =
+    toNullableSequence(selectedLesson?.seq) ??
+    toNullableSequence(selectedLesson?.lesson_global_seq);
+
+  const needsConfirmation =
+    lastSequence != null &&
+    selectedSequence != null &&
+    selectedSequence !== lastSequence &&
+    selectedSequence !== lastSequence + 1;
+
   return {
-    needsConfirmation: false,
+    needsConfirmation,
     lastLessonName: (lastLesson?.lesson as string | null) ?? null,
-    lastLessonSequence: toNullableSequence(lastLesson?.seq),
+    lastLessonSequence: lastSequence,
     selectedLessonName: (selectedLesson?.lesson as string | null) ?? null,
-    selectedLessonSequence: toNullableSequence(selectedLesson?.seq),
+    selectedLessonSequence: selectedSequence,
   };
 }
 
