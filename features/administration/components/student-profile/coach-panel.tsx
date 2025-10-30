@@ -29,8 +29,11 @@ const LESSON_NODE_WIDTH_RATIO = 1.3;
 const LESSON_NODE_LENGTH_SCALE = 1.05;
 const LESSON_NODE_HEIGHT_SCALE = 1.425;
 const LESSON_NODE_WIDTH_MULTIPLIER = LESSON_NODE_WIDTH_RATIO * LESSON_NODE_LENGTH_SCALE;
-const LESSON_NODE_LABEL_FONT_RATIO = 0.2133333333 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_LABEL_FONT_RATIO = 0.245 * LESSON_NODE_HEIGHT_SCALE;
 const LESSON_NODE_METRIC_FONT_RATIO = 0.1733333333 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_BADGE_PADDING_X_RATIO = 0.18;
+const LESSON_NODE_BADGE_PADDING_Y_RATIO = 0.085;
+const LESSON_NODE_BADGE_OFFSET_RATIO = 0.22;
 
 const LEVEL_BADGE_BASE =
   "inline-flex h-6 min-w-[46px] shrink-0 items-center justify-center rounded-lg border border-[#FB923C]/70 bg-[radial-gradient(circle_at_top_left,#FFE7C7,#FDBA74)] px-2 text-[9px] font-black uppercase tracking-[0.3em] text-[#7C2D12] shadow-[0_4px_12px_rgba(251,146,60,0.35)]";
@@ -171,6 +174,8 @@ type LessonNodeAppearance = {
   bottomTextClass?: string;
   accentHalo?: string;
   showCompletionCheck: boolean;
+  labelBadgeBackground?: string;
+  labelBadgeTextClass?: string;
 };
 
 function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): LessonNodeAppearance {
@@ -184,6 +189,8 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
       topTextClass: "text-[#065F46]",
       containerShadow: "shadow-[0_0_0_2px_rgba(34,197,94,0.25)]",
       showCompletionCheck: true,
+      labelBadgeBackground: "rgba(34,197,94,0.95)",
+      labelBadgeTextClass: "text-white",
     };
   }
 
@@ -200,6 +207,8 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
         "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(125,221,208,0.22)] after:content-['']",
       labelPrefix: "📍 ",
       showCompletionCheck: false,
+      labelBadgeBackground: "rgba(255,255,255,0.92)",
+      labelBadgeTextClass: "text-[#0F172A]",
     };
   }
 
@@ -213,20 +222,23 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
       textClass: "text-[#2E867A]",
       containerShadow: "shadow-[inset_0_0_0_1px_rgba(67,178,161,0.18)]",
       accentHalo: "after:absolute after:inset-[6%] after:-z-10 after:rounded-full after:bg-[rgba(67,178,161,0.12)] after:content-['']",
-      labelPrefix: "📖 ",
       showCompletionCheck: false,
+      labelBadgeBackground: "rgba(67,178,161,0.22)",
+      labelBadgeTextClass: "text-[#0F172A]",
     };
   }
 
   return {
-    borderColor: "#E5E7EB",
-    borderWidth: 1,
+    borderColor: "#94A3B8",
+    borderWidth: 2,
     topBackground: "#FFFFFF",
     bottomBackground: "#F1F5F9",
     textClass: "text-slate-600",
     topTextClass: "text-slate-700",
     bottomTextClass: "text-slate-600",
     showCompletionCheck: false,
+    labelBadgeBackground: "rgba(15,23,42,0.08)",
+    labelBadgeTextClass: "text-slate-700",
   };
 }
 
@@ -524,8 +536,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const labelPrefix = appearance.labelPrefix ?? "";
     const bottomTextClass = appearance.bottomTextClass ?? appearance.textClass;
     const topTextClass = appearance.topTextClass ?? appearance.textClass;
+    const labelBadgeTextClass = appearance.labelBadgeTextClass ?? topTextClass;
+    const labelBadgeBackground = appearance.labelBadgeBackground ?? "rgba(15,23,42,0.6)";
 
-    const examScale = lesson.isExam ? 1.2 : 1;
+    const examScale = lesson.isExam ? 1.15 : 1;
     const completedHeightScale = lesson.status === "completed" ? 1.1 : 1;
     const widthScale = LESSON_NODE_WIDTH_MULTIPLIER * examScale;
     const heightScale = LESSON_NODE_HEIGHT_SCALE * completedHeightScale * examScale;
@@ -565,6 +579,15 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       lineHeight: 1.1,
     };
 
+    const labelBadgeStyle: CSSProperties = {
+      ...labelStyle,
+      padding: `calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_Y_RATIO}) calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_X_RATIO})`,
+      borderRadius: "9999px",
+      backgroundColor: labelBadgeBackground,
+      boxShadow: "0 10px 20px rgba(15,23,42,0.25)",
+      transform: `translate(-50%, calc(var(--lesson-node-size) * -${LESSON_NODE_BADGE_OFFSET_RATIO}))`,
+    };
+
     return (
       <div
         key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
@@ -574,14 +597,15 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       >
         <div className={circleClass} style={circleStyle}>
           <div
-            className={`flex flex-shrink-0 items-center justify-center font-bold ${topTextClass}`}
+            className={`relative flex flex-shrink-0 items-center justify-center font-bold ${topTextClass}`}
             style={{
               backgroundColor: appearance.topBackground,
               flexBasis: "30%",
+              paddingBottom: `calc(var(--lesson-node-size) * 0.08)`,
               ...labelStyle,
             }}
           >
-            <span style={labelStyle}>{`${labelPrefix}${displayTitle}`}</span>
+            <span className="sr-only" style={labelStyle}>{`${labelPrefix}${displayTitle}`}</span>
           </div>
           <div
             className={`flex flex-1 flex-col items-center justify-center gap-[2px] font-medium ${bottomTextClass}`}
@@ -596,6 +620,13 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             <span style={metricStyle}>📅 {safeDays}</span>
           </div>
         </div>
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-1/2 top-0 z-10 flex items-center justify-center font-black uppercase tracking-[0.24em] ${labelBadgeTextClass}`}
+          style={labelBadgeStyle}
+        >
+          {`${labelPrefix}${displayTitle}`}
+        </span>
         {appearance.showCompletionCheck ? (
           <span className="absolute -bottom-2 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white text-base shadow-sm">
             ✅
@@ -699,7 +730,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
               const lessonCount = level.lessons.length;
               const widthWeight = level.lessons.reduce((total, entry) => {
-                const examScale = entry.isExam ? 1.2 : 1;
+                const examScale = entry.isExam ? 1.15 : 1;
                 return total + LESSON_NODE_WIDTH_RATIO * examScale;
               }, 0);
               const widthDenominator = Math.max(widthWeight, 1);
@@ -707,7 +738,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${widthDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
 
               const maxWidthPixels = level.lessons.reduce((total, entry) => {
-                const examScale = entry.isExam ? 1.2 : 1;
+                const examScale = entry.isExam ? 1.15 : 1;
                 return total + LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER * examScale;
               }, 0);
               const nodeLayoutStyle: CSSProperties = {
