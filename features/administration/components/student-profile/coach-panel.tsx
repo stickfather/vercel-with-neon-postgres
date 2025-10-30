@@ -26,11 +26,11 @@ const LESSON_NODE_GAP_PX = 8;
 const LESSON_NODE_MIN_SIZE = 36;
 const LESSON_NODE_MAX_SIZE = 44;
 const LESSON_NODE_WIDTH_RATIO = 1.3;
-const LESSON_NODE_LENGTH_SCALE = 1.5;
-const LESSON_NODE_HEIGHT_SCALE = 0.95;
+const LESSON_NODE_LENGTH_SCALE = 1.05;
+const LESSON_NODE_HEIGHT_SCALE = 1.425;
 const LESSON_NODE_WIDTH_MULTIPLIER = LESSON_NODE_WIDTH_RATIO * LESSON_NODE_LENGTH_SCALE;
-const LESSON_NODE_LABEL_FONT_RATIO = 0.32 * LESSON_NODE_HEIGHT_SCALE;
-const LESSON_NODE_METRIC_FONT_RATIO = 0.26 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_LABEL_FONT_RATIO = 0.2133333333 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_METRIC_FONT_RATIO = 0.1733333333 * LESSON_NODE_HEIGHT_SCALE;
 
 const LEVEL_BADGE_BASE =
   "inline-flex h-6 w-full shrink-0 items-center justify-center rounded-lg border border-[#FB923C]/70 bg-[radial-gradient(circle_at_top_left,#FFE7C7,#FDBA74)] px-1 text-[9px] font-black uppercase tracking-[0.3em] text-[#7C2D12] shadow-[0_4px_12px_rgba(251,146,60,0.35)]";
@@ -717,7 +717,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex min-h-[88px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200/80 bg-white/60 px-4 text-sm text-slate-500">
+                      <div className="flex min-h-[132px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200/80 bg-white/60 px-4 text-sm text-slate-500">
                         Sin lecciones registradas.
                       </div>
                     )}
