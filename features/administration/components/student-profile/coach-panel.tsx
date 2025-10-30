@@ -33,7 +33,7 @@ const LESSON_NODE_LABEL_FONT_RATIO = 0.2133333333 * LESSON_NODE_HEIGHT_SCALE;
 const LESSON_NODE_METRIC_FONT_RATIO = 0.1733333333 * LESSON_NODE_HEIGHT_SCALE;
 
 const LEVEL_BADGE_BASE =
-  "inline-flex h-6 w-full shrink-0 items-center justify-center rounded-lg border border-[#FB923C]/70 bg-[radial-gradient(circle_at_top_left,#FFE7C7,#FDBA74)] px-1 text-[9px] font-black uppercase tracking-[0.3em] text-[#7C2D12] shadow-[0_4px_12px_rgba(251,146,60,0.35)]";
+  "inline-flex h-6 min-w-[46px] shrink-0 items-center justify-center rounded-lg border border-[#FB923C]/70 bg-[radial-gradient(circle_at_top_left,#FFE7C7,#FDBA74)] px-2 text-[9px] font-black uppercase tracking-[0.3em] text-[#7C2D12] shadow-[0_4px_12px_rgba(251,146,60,0.35)]";
 
 function formatNumber(
   value: number | null | undefined,
@@ -181,6 +181,7 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
       topBackground: "#86EFAC",
       bottomBackground: "#16A34A",
       textClass: "text-white",
+      topTextClass: "text-[#065F46]",
       containerShadow: "shadow-[0_0_0_2px_rgba(34,197,94,0.25)]",
       showCompletionCheck: true,
     };
@@ -524,15 +525,24 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const bottomTextClass = appearance.bottomTextClass ?? appearance.textClass;
     const topTextClass = appearance.topTextClass ?? appearance.textClass;
 
+    const examScale = lesson.isExam ? 1.2 : 1;
+    const completedHeightScale = lesson.status === "completed" ? 1.1 : 1;
+    const widthScale = LESSON_NODE_WIDTH_MULTIPLIER * examScale;
+    const heightScale = LESSON_NODE_HEIGHT_SCALE * completedHeightScale * examScale;
+    const minWidthPx = LESSON_NODE_MIN_SIZE * widthScale;
+    const maxWidthPx = LESSON_NODE_MAX_SIZE * widthScale;
+    const minHeightPx = LESSON_NODE_MIN_SIZE * heightScale;
+    const maxHeightPx = LESSON_NODE_MAX_SIZE * heightScale;
+
     const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
     const nodeWrapperStyle: CSSProperties = {
-      flexBasis: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_MULTIPLIER})`,
-      width: `calc(var(--lesson-node-size) * ${LESSON_NODE_WIDTH_MULTIPLIER})`,
-      height: `calc(var(--lesson-node-size) * ${LESSON_NODE_HEIGHT_SCALE})`,
-      minWidth: `${LESSON_NODE_MIN_SIZE * LESSON_NODE_WIDTH_MULTIPLIER}px`,
-      minHeight: `${LESSON_NODE_MIN_SIZE * LESSON_NODE_HEIGHT_SCALE}px`,
-      maxWidth: `${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER}px`,
-      maxHeight: `${LESSON_NODE_MAX_SIZE * LESSON_NODE_HEIGHT_SCALE}px`,
+      flexBasis: `calc(var(--lesson-node-size) * ${widthScale})`,
+      width: `calc(var(--lesson-node-size) * ${widthScale})`,
+      height: `calc(var(--lesson-node-size) * ${heightScale})`,
+      minWidth: `${minWidthPx}px`,
+      minHeight: `${minHeightPx}px`,
+      maxWidth: `${maxWidthPx}px`,
+      maxHeight: `${maxHeightPx}px`,
     };
     if (appearance.showCompletionCheck) {
       nodeWrapperStyle.paddingBottom = "10px";
@@ -688,15 +698,23 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   : "flex flex-col gap-4 border-t border-slate-200/70 pt-4";
 
               const lessonCount = level.lessons.length;
-              const widthDenominator = Math.max(lessonCount * LESSON_NODE_WIDTH_RATIO, 1);
+              const widthWeight = level.lessons.reduce((total, entry) => {
+                const examScale = entry.isExam ? 1.2 : 1;
+                return total + LESSON_NODE_WIDTH_RATIO * examScale;
+              }, 0);
+              const widthDenominator = Math.max(widthWeight, 1);
               const clampGap = Math.max(lessonCount - 1, 0) * LESSON_NODE_GAP_PX;
               const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${widthDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
 
+              const maxWidthPixels = level.lessons.reduce((total, entry) => {
+                const examScale = entry.isExam ? 1.2 : 1;
+                return total + LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER * examScale;
+              }, 0);
               const nodeLayoutStyle: CSSProperties = {
                 width: "100%",
                 maxWidth:
                   lessonCount > 0
-                    ? `calc(${lessonCount} * ${LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
+                    ? `calc(${maxWidthPixels}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
                     : undefined,
                 gap: `${LESSON_NODE_GAP_PX}px`,
               };
@@ -704,20 +722,20 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
-                  <div className="flex w-full items-start gap-6">
-                    <span className="flex h-6 w-[32px] shrink-0 items-center justify-center">
+                  <div className="flex flex-col gap-3">
+                    <span className="flex h-6 items-center justify-start self-start">
                       <span className={LEVEL_BADGE_BASE}>
                         {level.levelCode === "OTROS" ? "OT" : level.levelCode}
                       </span>
                     </span>
                     {lessonCount ? (
-                      <div className="flex min-w-0 flex-1 justify-end">
+                      <div className="flex min-w-0 justify-end">
                         <div className="flex w-full flex-wrap md:flex-nowrap" style={nodeLayoutStyle}>
                           {level.lessons.map((lesson) => renderLessonNode(lesson))}
                         </div>
                       </div>
                     ) : (
-                      <div className="flex min-h-[132px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200/80 bg-white/60 px-4 text-sm text-slate-500">
+                      <div className="flex min-h-[132px] min-w-0 items-center justify-center rounded-3xl border border-dashed border-slate-200/80 bg-white/60 px-4 text-sm text-slate-500">
                         Sin lecciones registradas.
                       </div>
                     )}
