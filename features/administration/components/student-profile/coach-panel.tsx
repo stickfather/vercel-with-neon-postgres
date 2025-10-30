@@ -659,7 +659,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
 
         <div className="flex flex-col gap-4">
-          {sortedLevels.length ? (
+          {sortedLevels.length > 0 &&
             sortedLevels.map((level, levelIndex) => {
               const levelWrapperClasses =
                 levelIndex === 0
@@ -714,8 +714,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   </div>
                 </div>
               );
-            })
-          ) : (
+            })}
+          {sortedLevels.length === 0 && (
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
               Sin lecciones planificadas.
             </div>
@@ -729,87 +729,88 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
             <div>
               <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
-            <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
-            <p className="mt-1 text-sm text-brand-ink-muted">
-              Muestra la frecuencia y duración de las sesiones recientes.
-            </p>
-          </div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
-              <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagementStats.daysActive30d)}
+              <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
+              <p className="mt-1 text-sm text-brand-ink-muted">
+                Muestra la frecuencia y duración de las sesiones recientes.
               </p>
             </div>
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
-              <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(
-                  engagementStats.totalHours30d ??
-                    (engagementStats.totalMinutes30d != null
-                      ? engagementStats.totalMinutes30d / 60
-                      : null),
-                  { maximumFractionDigits: 1 },
-                )}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
-              <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagementStats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
-              </p>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
-            <div className="mt-3 grid grid-cols-10 gap-2">
-              {heatmapCells.map((cell) => (
-                <div
-                  key={cell.date}
-                  className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
-                  style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
-                  title={`${formatDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
-                />
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-brand-ink-muted">
-              Intensidad de minutos estudiados cada día durante los últimos 30 días.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Eficiencia 30 días</span>
-            <h4 className="mt-2 text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
-            <p className="mt-1 text-sm text-brand-ink-muted">
-              Mide la velocidad (LEI) y el ritmo comparado con el resto del centro.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
-              <p className="mt-2 text-4xl font-black text-brand-deep">
-                {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
-              </p>
-            </div>
-            <div className="h-px w-full bg-brand-ink-muted/10" />
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <div
-                  className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${learnerSpeedTone}`}
-                >
-                  Ritmo de aprendizaje: {learnerSpeedText}
-                </div>
-                <div
-                  className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-4 py-1.5 text-sm font-semibold text-brand-deep"
-                  title={rankBadgeTitle}
-                >
-                  {rankBadgeText}
-                </div>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
+                <p className="mt-2 text-xl font-bold text-brand-deep">
+                  {formatNumber(engagementStats.daysActive30d)}
+                </p>
               </div>
-              <p className="text-xs text-brand-ink-muted">
-                Comparado con todos los estudiantes activos del centro en los últimos 30 días.
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
+                <p className="mt-2 text-xl font-bold text-brand-deep">
+                  {formatNumber(
+                    engagementStats.totalHours30d ??
+                      (engagementStats.totalMinutes30d != null
+                        ? engagementStats.totalMinutes30d / 60
+                        : null),
+                    { maximumFractionDigits: 1 },
+                  )}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
+                <p className="mt-2 text-xl font-bold text-brand-deep">
+                  {formatNumber(engagementStats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
+                </p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
+              <div className="mt-3 grid grid-cols-10 gap-2">
+                {heatmapCells.map((cell) => (
+                  <div
+                    key={cell.date}
+                    className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
+                    style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
+                    title={`${formatDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
+                  />
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-brand-ink-muted">
+                Intensidad de minutos estudiados cada día durante los últimos 30 días.
               </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Eficiencia 30 días</span>
+              <h4 className="mt-2 text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
+              <p className="mt-1 text-sm text-brand-ink-muted">
+                Mide la velocidad (LEI) y el ritmo comparado con el resto del centro.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
+                <p className="mt-2 text-4xl font-black text-brand-deep">
+                  {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="h-px w-full bg-brand-ink-muted/10" />
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${learnerSpeedTone}`}
+                  >
+                    Ritmo de aprendizaje: {learnerSpeedText}
+                  </div>
+                  <div
+                    className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-4 py-1.5 text-sm font-semibold text-brand-deep"
+                    title={rankBadgeTitle}
+                  >
+                    {rankBadgeText}
+                  </div>
+                </div>
+                <p className="text-xs text-brand-ink-muted">
+                  Comparado con todos los estudiantes activos del centro en los últimos 30 días.
+                </p>
+              </div>
             </div>
           </div>
         </div>
