@@ -30,7 +30,7 @@ const LESSON_NODE_LENGTH_SCALE = 1.05;
 const LESSON_NODE_HEIGHT_SCALE = 1.425;
 const LESSON_NODE_WIDTH_MULTIPLIER = LESSON_NODE_WIDTH_RATIO * LESSON_NODE_LENGTH_SCALE;
 const LESSON_NODE_LABEL_FONT_RATIO = 0.245 * LESSON_NODE_HEIGHT_SCALE;
-const LESSON_NODE_METRIC_FONT_RATIO = 0.1733333333 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_METRIC_FONT_RATIO = 0.208 * LESSON_NODE_HEIGHT_SCALE;
 const LESSON_NODE_BADGE_PADDING_X_RATIO = 0.18;
 const LESSON_NODE_BADGE_PADDING_Y_RATIO = 0.085;
 const LESSON_NODE_BADGE_OFFSET_RATIO = 0.22;
@@ -205,9 +205,8 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
       containerShadow: "shadow-[0_0_0_6px_rgba(243,108,61,0.18)]",
       accentHalo:
         "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(125,221,208,0.22)] after:content-['']",
-      labelPrefix: "📍 ",
       showCompletionCheck: false,
-      labelBadgeBackground: "rgba(255,255,255,0.92)",
+      labelBadgeBackground: "#FFFFFF",
       labelBadgeTextClass: "text-[#0F172A]",
     };
   }
@@ -223,13 +222,13 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
       containerShadow: "shadow-[inset_0_0_0_1px_rgba(67,178,161,0.18)]",
       accentHalo: "after:absolute after:inset-[6%] after:-z-10 after:rounded-full after:bg-[rgba(67,178,161,0.12)] after:content-['']",
       showCompletionCheck: false,
-      labelBadgeBackground: "rgba(67,178,161,0.22)",
+      labelBadgeBackground: "#CFF1EA",
       labelBadgeTextClass: "text-[#0F172A]",
     };
   }
 
   return {
-    borderColor: "#94A3B8",
+    borderColor: "#22C55E",
     borderWidth: 2,
     topBackground: "#FFFFFF",
     bottomBackground: "#F1F5F9",
@@ -237,7 +236,7 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
     topTextClass: "text-slate-700",
     bottomTextClass: "text-slate-600",
     showCompletionCheck: false,
-    labelBadgeBackground: "rgba(15,23,42,0.08)",
+    labelBadgeBackground: "#E2E8F0",
     labelBadgeTextClass: "text-slate-700",
   };
 }
