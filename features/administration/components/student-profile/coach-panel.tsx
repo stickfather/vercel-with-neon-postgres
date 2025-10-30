@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 
 import type {
   CoachPanelEngagementHeatmapEntry,
@@ -21,8 +22,21 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LEVEL_BADGE_CLASS =
-  "inline-flex h-9 min-w-[64px] shrink-0 items-center justify-center rounded-full bg-teal-500 px-3 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-[0_12px_24px_rgba(20,184,166,0.28)]";
+const LESSON_NODE_GAP_PX = 8;
+const LESSON_NODE_MIN_SIZE = 36;
+const LESSON_NODE_MAX_SIZE = 44;
+const LESSON_NODE_WIDTH_RATIO = 1.3;
+const LESSON_NODE_LENGTH_SCALE = 1.05;
+const LESSON_NODE_HEIGHT_SCALE = 1.425;
+const LESSON_NODE_WIDTH_MULTIPLIER = LESSON_NODE_WIDTH_RATIO * LESSON_NODE_LENGTH_SCALE;
+const LESSON_NODE_LABEL_FONT_RATIO = 0.245 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_METRIC_FONT_RATIO = 0.208 * LESSON_NODE_HEIGHT_SCALE;
+const LESSON_NODE_BADGE_PADDING_X_RATIO = 0.18;
+const LESSON_NODE_BADGE_PADDING_Y_RATIO = 0.085;
+const LESSON_NODE_BADGE_OFFSET_RATIO = 0.22;
+
+const LEVEL_BADGE_BASE =
+  "inline-flex h-8 min-w-[60px] shrink-0 items-center justify-center rounded-full border border-[#2E867A]/70 bg-[linear-gradient(135deg,#6FE0CF,#2E867A)] px-3 text-[11px] font-extrabold uppercase tracking-[0.22em] text-white shadow-[0_8px_20px_rgba(24,116,107,0.35)]";
 
 function formatNumber(
   value: number | null | undefined,
@@ -88,10 +102,6 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
   return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
-function resolveLevelBadgeClasses(_levelCode: string | null | undefined): string {
-  return LEVEL_BADGE_CLASS;
-}
-
 function formatHoursValue(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) {
     return "0.0";
@@ -151,30 +161,84 @@ function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string
   return resolveLessonBubbleTitle(lesson);
 }
 
-function resolveLessonNodeCircleClass(lesson: CoachPanelLessonJourneyEntry): string {
-  const base =
-    "relative flex items-center justify-center rounded-full font-semibold transition-colors duration-150";
+type LessonNodeAppearance = {
+  borderColor: string;
+  borderWidth: number;
+  borderStyle?: "solid" | "dashed";
+  topBackground: string;
+  bottomBackground: string;
+  textClass: string;
+  topTextClass?: string;
+  labelPrefix?: string;
+  containerShadow?: string;
+  bottomTextClass?: string;
+  accentHalo?: string;
+  showCompletionCheck: boolean;
+  labelBadgeBackground?: string;
+  labelBadgeTextClass?: string;
+};
 
-  if (lesson.status === "current") {
-    return `${base} h-14 w-14 border-2 border-[#10bfa9] bg-white text-[#0f9d8a] shadow-[0_0_0_5px_rgba(15,157,138,0.22)]`;
+function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): LessonNodeAppearance {
+  if (lesson.status === "completed") {
+    return {
+      borderColor: "#22C55E",
+      borderWidth: 2,
+      topBackground: "#86EFAC",
+      bottomBackground: "#16A34A",
+      textClass: "text-white",
+      topTextClass: "text-[#065F46]",
+      containerShadow: "shadow-[0_0_0_2px_rgba(34,197,94,0.25)]",
+      showCompletionCheck: true,
+      labelBadgeBackground: "rgba(34,197,94,0.95)",
+      labelBadgeTextClass: "text-white",
+    };
   }
 
-  if (lesson.status === "completed") {
-    return `${base} h-12 w-12 border border-[#0aa493] bg-[#10bfa9] text-white shadow-[0_10px_28px_rgba(15,157,138,0.28)]`;
+  if (lesson.status === "current") {
+    return {
+      borderColor: "#F36C3D",
+      borderWidth: 3,
+      topBackground: "#B7F2EC",
+      bottomBackground: "#7DDDD0",
+      textClass: "text-white",
+      topTextClass: "text-[#0F172A]",
+      containerShadow: "shadow-[0_0_0_6px_rgba(243,108,61,0.18)]",
+      accentHalo:
+        "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(125,221,208,0.22)] after:content-['']",
+      showCompletionCheck: false,
+      labelBadgeBackground: "#FFFFFF",
+      labelBadgeTextClass: "text-[#0F172A]",
+    };
   }
 
   if (lesson.isExam) {
-    return `${base} h-12 w-12 border-2 border-dashed border-orange-400 bg-white text-[#f97316] shadow-sm`;
+    return {
+      borderColor: "#43B2A1",
+      borderWidth: 2,
+      borderStyle: "dashed",
+      topBackground: "#E7F7F4",
+      bottomBackground: "#CFF1EA",
+      textClass: "text-[#2E867A]",
+      containerShadow: "shadow-[inset_0_0_0_1px_rgba(67,178,161,0.18)]",
+      accentHalo: "after:absolute after:inset-[6%] after:-z-10 after:rounded-full after:bg-[rgba(67,178,161,0.12)] after:content-['']",
+      showCompletionCheck: false,
+      labelBadgeBackground: "#CFF1EA",
+      labelBadgeTextClass: "text-[#0F172A]",
+    };
   }
 
-  return `${base} h-12 w-12 border-2 border-orange-300 bg-white text-[#f97316] shadow-[0_8px_20px_rgba(249,115,22,0.18)]`;
-}
-
-function resolveLessonNodeLabelClass(lesson: CoachPanelLessonJourneyEntry): string {
-  if (lesson.status === "current") {
-    return "text-sm font-semibold";
-  }
-  return "text-xs font-semibold";
+  return {
+    borderColor: "#22C55E",
+    borderWidth: 2,
+    topBackground: "#FFFFFF",
+    bottomBackground: "#F1F5F9",
+    textClass: "text-slate-600",
+    topTextClass: "text-slate-700",
+    bottomTextClass: "text-slate-600",
+    showCompletionCheck: false,
+    labelBadgeBackground: "#E2E8F0",
+    labelBadgeTextClass: "text-slate-700",
+  };
 }
 
 const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
@@ -465,34 +529,108 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const tooltipLines = [
       `Nivel ${lesson.levelCode}`,
       tooltipTitle,
-      `⌛ ${hoursLabel}h • 📅 ${safeDays}d`,
+      `⏳ ${hoursLabel} • 📅 ${safeDays}`,
     ];
-    const circleClass = resolveLessonNodeCircleClass(lesson);
-    const labelClass = resolveLessonNodeLabelClass(lesson);
-    const showAqui = lesson.status === "current";
-    const showCheck = lesson.status === "completed";
+    const appearance = resolveLessonNodeAppearance(lesson);
+    const labelPrefix = appearance.labelPrefix ?? "";
+    const bottomTextClass = appearance.bottomTextClass ?? appearance.textClass;
+    const topTextClass = appearance.topTextClass ?? appearance.textClass;
+    const labelBadgeTextClass = appearance.labelBadgeTextClass ?? topTextClass;
+    const labelBadgeBackground = appearance.labelBadgeBackground ?? "rgba(15,23,42,0.6)";
+
+    const examScale = lesson.isExam ? 1.15 : 1;
+    const completedHeightScale = lesson.status === "completed" ? 1.1 : 1;
+    const widthScale = LESSON_NODE_WIDTH_MULTIPLIER * examScale;
+    const heightScale = LESSON_NODE_HEIGHT_SCALE * completedHeightScale * examScale;
+    const minWidthPx = LESSON_NODE_MIN_SIZE * widthScale;
+    const maxWidthPx = LESSON_NODE_MAX_SIZE * widthScale;
+    const minHeightPx = LESSON_NODE_MIN_SIZE * heightScale;
+    const maxHeightPx = LESSON_NODE_MAX_SIZE * heightScale;
+
+    const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
+    const nodeWrapperStyle: CSSProperties = {
+      flexBasis: `calc(var(--lesson-node-size) * ${widthScale})`,
+      width: `calc(var(--lesson-node-size) * ${widthScale})`,
+      height: `calc(var(--lesson-node-size) * ${heightScale})`,
+      minWidth: `${minWidthPx}px`,
+      minHeight: `${minHeightPx}px`,
+      maxWidth: `${maxWidthPx}px`,
+      maxHeight: `${maxHeightPx}px`,
+    };
+    if (appearance.showCompletionCheck) {
+      nodeWrapperStyle.paddingBottom = "10px";
+    }
+
+    const circleClass = `relative flex h-full w-full flex-col overflow-hidden rounded-full border bg-transparent ${appearance.textClass} ${appearance.containerShadow ?? ""}`;
+    const circleStyle: CSSProperties = {
+      borderColor: appearance.borderColor,
+      borderWidth: appearance.borderWidth,
+      borderStyle: appearance.borderStyle ?? "solid",
+    };
+
+    const labelStyle: CSSProperties = {
+      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_LABEL_FONT_RATIO})`,
+      lineHeight: 1.1,
+    };
+
+    const metricStyle: CSSProperties = {
+      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_METRIC_FONT_RATIO})`,
+      lineHeight: 1.1,
+    };
+
+    const labelBadgeStyle: CSSProperties = {
+      ...labelStyle,
+      padding: `calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_Y_RATIO}) calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_X_RATIO})`,
+      borderRadius: "9999px",
+      backgroundColor: labelBadgeBackground,
+      boxShadow: "0 10px 20px rgba(15,23,42,0.25)",
+      transform: `translate(-50%, calc(var(--lesson-node-size) * -${LESSON_NODE_BADGE_OFFSET_RATIO}))`,
+    };
 
     return (
       <div
         key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
-        className="relative flex min-w-[60px] max-w-[72px] flex-col items-center pb-7 text-center"
+        className={nodeWrapperClass}
+        style={nodeWrapperStyle}
         title={tooltipLines.join("\n")}
       >
-        <div className={`${circleClass} z-20`}>
-          <span className={labelClass}>{displayTitle}</span>
-          {showCheck ? (
-            <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-[10px] shadow-sm">
-              ✅
-            </span>
-          ) : null}
+        <div className={circleClass} style={circleStyle}>
+          <div
+            className={`relative flex flex-shrink-0 items-center justify-center font-bold ${topTextClass}`}
+            style={{
+              backgroundColor: appearance.topBackground,
+              flexBasis: "30%",
+              paddingBottom: `calc(var(--lesson-node-size) * 0.08)`,
+              ...labelStyle,
+            }}
+          >
+            <span className="sr-only" style={labelStyle}>{`${labelPrefix}${displayTitle}`}</span>
+          </div>
+          <div
+            className={`flex flex-1 flex-col items-center justify-center gap-[2px] font-medium ${bottomTextClass}`}
+            style={{
+              backgroundColor: appearance.bottomBackground,
+              paddingBottom: "6px",
+              paddingTop: "4px",
+              ...metricStyle,
+            }}
+          >
+            <span style={metricStyle}>⏳ {hoursLabel}</span>
+            <span style={metricStyle}>📅 {safeDays}</span>
+          </div>
         </div>
-        <div className="pointer-events-none absolute left-1/2 top-[74%] z-10 -translate-x-1/2 flex flex-col items-center gap-[2px] rounded-md bg-white/95 px-2 py-1 text-[9px] font-medium leading-tight text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.12)] ring-1 ring-slate-200/80">
-          {showAqui ? (
-            <span className="text-[9px] font-semibold text-[#0f9d8a]">Aquí estás</span>
-          ) : null}
-          <span>⌛ {hoursLabel}h</span>
-          <span>📅 {safeDays}d</span>
-        </div>
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-1/2 top-0 z-10 flex items-center justify-center font-black uppercase tracking-[0.24em] ${labelBadgeTextClass}`}
+          style={labelBadgeStyle}
+        >
+          {`${labelPrefix}${displayTitle}`}
+        </span>
+        {appearance.showCompletionCheck ? (
+          <span className="absolute -bottom-2 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white text-base shadow-sm">
+            ✅
+          </span>
+        ) : null}
       </div>
     );
   };
@@ -547,9 +685,11 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const rankBadgeTitle =
     "Calculado usando todos los estudiantes activos (≥120 min/últimos 30 días).";
 
+  const sharedContainerClass = "mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8";
+
   return (
     <div className="relative flex flex-col gap-10">
-      <section className="space-y-6">
+      <section className={`${sharedContainerClass} space-y-6`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Panel del coach</span>
@@ -568,42 +708,72 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-brand-ink-muted">
+          <span className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/10 bg-white/70 px-3 py-1 shadow-sm">
+            <span className="text-sm">⏳</span>
+            <span>Horas en la lección</span>
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/10 bg-white/70 px-3 py-1 shadow-sm">
+            <span className="text-sm">📅</span>
+            <span>Días en la lección</span>
+          </span>
+        </div>
+
         <div className="flex flex-col gap-4">
-          {sortedLevels.length ? (
+          {sortedLevels.length > 0 &&
             sortedLevels.map((level, levelIndex) => {
               const levelWrapperClasses =
                 levelIndex === 0
-                  ? "flex flex-col gap-3"
-                  : "flex flex-col gap-3 border-t border-slate-200/70 pt-4";
+                  ? "flex flex-col gap-4"
+                  : "flex flex-col gap-4 border-t border-slate-200/70 pt-4";
 
-              const nodeAlignment =
-                level.lessons.length <= 1 ? "justify-center" : "justify-between";
+              const lessonCount = level.lessons.length;
+              const widthWeight = level.lessons.reduce((total, entry) => {
+                const examScale = entry.isExam ? 1.15 : 1;
+                return total + LESSON_NODE_WIDTH_RATIO * examScale;
+              }, 0);
+              const widthDenominator = Math.max(widthWeight, 1);
+              const clampGap = Math.max(lessonCount - 1, 0) * LESSON_NODE_GAP_PX;
+              const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${widthDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
+
+              const maxWidthPixels = level.lessons.reduce((total, entry) => {
+                const examScale = entry.isExam ? 1.15 : 1;
+                return total + LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER * examScale;
+              }, 0);
+              const nodeLayoutStyle: CSSProperties = {
+                width: "100%",
+                maxWidth:
+                  lessonCount > 0
+                    ? `calc(${maxWidthPixels}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
+                    : undefined,
+                gap: `${LESSON_NODE_GAP_PX}px`,
+              };
+              (nodeLayoutStyle as CSSProperties & Record<string, string>)["--lesson-node-size"] = nodeSizeValue;
 
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
-                  <div className="flex items-start gap-4">
-                    <span className={resolveLevelBadgeClasses(level.levelCode)}>
-                      {level.levelCode === "OTROS" ? "Otros" : level.levelCode}
+                  <div className="flex flex-col gap-3">
+                    <span className="flex h-8 items-center justify-start self-start">
+                      <span className={LEVEL_BADGE_BASE}>
+                        {level.levelCode === "OTROS" ? "OT" : level.levelCode}
+                      </span>
                     </span>
-                    {level.lessons.length ? (
-                      <div className="relative min-w-0 flex-1">
-                        <div className="relative w-full px-4 pb-7 pt-1">
-                          <div className="pointer-events-none absolute inset-x-4 top-1/2 h-[2px] -translate-y-1/2 bg-slate-200" />
-                          <div className={`relative flex w-full items-start ${nodeAlignment} gap-2`}>
-                            {level.lessons.map((lesson) => renderLessonNode(lesson))}
-                          </div>
+                    {lessonCount ? (
+                      <div className="flex min-w-0 justify-end">
+                        <div className="flex w-full flex-wrap md:flex-nowrap" style={nodeLayoutStyle}>
+                          {level.lessons.map((lesson) => renderLessonNode(lesson))}
                         </div>
                       </div>
                     ) : (
-                      <div className="flex min-h-[88px] min-w-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-500">
+                      <div className="flex min-h-[132px] min-w-0 items-center justify-center rounded-3xl border border-dashed border-slate-200/80 bg-white/60 px-4 text-sm text-slate-500">
                         Sin lecciones registradas.
                       </div>
                     )}
                   </div>
                 </div>
               );
-            })
-          ) : (
+            })}
+          {sortedLevels.length === 0 && (
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 px-4 py-3 text-sm text-brand-ink-muted shadow-sm">
               Sin lecciones planificadas.
             </div>
@@ -612,91 +782,93 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
-            <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
-            <p className="mt-1 text-sm text-brand-ink-muted">
-              Muestra la frecuencia y duración de las sesiones recientes.
-            </p>
-          </div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
-              <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagementStats.daysActive30d)}
+      <section className={sharedContainerClass}>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
+              <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
+              <p className="mt-1 text-sm text-brand-ink-muted">
+                Muestra la frecuencia y duración de las sesiones recientes.
               </p>
             </div>
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
-              <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(
-                  engagementStats.totalHours30d ??
-                    (engagementStats.totalMinutes30d != null
-                      ? engagementStats.totalMinutes30d / 60
-                      : null),
-                  { maximumFractionDigits: 1 },
-                )}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
-              <p className="mt-2 text-xl font-bold text-brand-deep">
-                {formatNumber(engagementStats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
-              </p>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
-            <div className="mt-3 grid grid-cols-10 gap-2">
-              {heatmapCells.map((cell) => (
-                <div
-                  key={cell.date}
-                  className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
-                  style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
-                  title={`${formatDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
-                />
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-brand-ink-muted">
-              Intensidad de minutos estudiados cada día durante los últimos 30 días.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Eficiencia 30 días</span>
-            <h4 className="mt-2 text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
-            <p className="mt-1 text-sm text-brand-ink-muted">
-              Mide la velocidad (LEI) y el ritmo comparado con el resto del centro.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
-              <p className="mt-2 text-4xl font-black text-brand-deep">
-                {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
-              </p>
-            </div>
-            <div className="h-px w-full bg-brand-ink-muted/10" />
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <div
-                  className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${learnerSpeedTone}`}
-                >
-                  Ritmo de aprendizaje: {learnerSpeedText}
-                </div>
-                <div
-                  className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-4 py-1.5 text-sm font-semibold text-brand-deep"
-                  title={rankBadgeTitle}
-                >
-                  {rankBadgeText}
-                </div>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
+                <p className="mt-2 text-xl font-bold text-brand-deep">
+                  {formatNumber(engagementStats.daysActive30d)}
+                </p>
               </div>
-              <p className="text-xs text-brand-ink-muted">
-                Comparado con todos los estudiantes activos del centro en los últimos 30 días.
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
+                <p className="mt-2 text-xl font-bold text-brand-deep">
+                  {formatNumber(
+                    engagementStats.totalHours30d ??
+                      (engagementStats.totalMinutes30d != null
+                        ? engagementStats.totalMinutes30d / 60
+                        : null),
+                    { maximumFractionDigits: 1 },
+                  )}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
+                <p className="mt-2 text-xl font-bold text-brand-deep">
+                  {formatNumber(engagementStats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
+                </p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
+              <div className="mt-3 grid grid-cols-10 gap-2">
+                {heatmapCells.map((cell) => (
+                  <div
+                    key={cell.date}
+                    className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
+                    style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
+                    title={`${formatDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
+                  />
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-brand-ink-muted">
+                Intensidad de minutos estudiados cada día durante los últimos 30 días.
               </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Eficiencia 30 días</span>
+              <h4 className="mt-2 text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
+              <p className="mt-1 text-sm text-brand-ink-muted">
+                Mide la velocidad (LEI) y el ritmo comparado con el resto del centro.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
+                <p className="mt-2 text-4xl font-black text-brand-deep">
+                  {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="h-px w-full bg-brand-ink-muted/10" />
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${learnerSpeedTone}`}
+                  >
+                    Ritmo de aprendizaje: {learnerSpeedText}
+                  </div>
+                  <div
+                    className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-4 py-1.5 text-sm font-semibold text-brand-deep"
+                    title={rankBadgeTitle}
+                  >
+                    {rankBadgeText}
+                  </div>
+                </div>
+                <p className="text-xs text-brand-ink-muted">
+                  Comparado con todos los estudiantes activos del centro en los últimos 30 días.
+                </p>
+              </div>
             </div>
           </div>
         </div>
