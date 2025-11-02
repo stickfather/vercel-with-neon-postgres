@@ -522,7 +522,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const labelScale =
       lesson.status === "completed" ? baseLabelScale * 0.92 : baseLabelScale;
     const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
-    const metricsFontSize = `calc(${nodeSizeValue} * 0.3)`;
+    const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
     const circleStyle: CSSProperties = {
       width: nodeSizeValue,
       height: nodeSizeValue,
@@ -547,9 +547,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
       backgroundColor: "rgba(255,255,255,0.95)",
       borderRadius: "9999px",
-      padding: "4px 10px",
-      boxShadow: "0 8px 18px rgba(15,23,42,0.16)",
-      border: "1px solid rgba(148,163,184,0.3)",
+      padding: "2px 8px",
+      boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
+      border: "1px solid rgba(148,163,184,0.28)",
       backdropFilter: "blur(4px)",
     };
 
@@ -566,24 +566,21 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           ) : null}
           {shouldShowMetrics ? (
             <div
-              className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center"
-              style={{ bottom: "10%" }}
+              className="pointer-events-none absolute inset-x-0 flex justify-center gap-2"
+              style={{ bottom: "6%" }}
             >
               <div
                 style={{
                   ...metricsStyle,
                   fontSize: metricsFontSize,
-                  padding: "3px 10px",
                 }}
               >
                 📅 {`${safeDays}d`}
               </div>
               <div
-                className="-ml-2"
                 style={{
                   ...metricsStyle,
                   fontSize: metricsFontSize,
-                  padding: "3px 10px",
                 }}
               >
                 ⏳ {`${hoursLabel}h`}
