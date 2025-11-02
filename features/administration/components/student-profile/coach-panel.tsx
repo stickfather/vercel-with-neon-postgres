@@ -558,19 +558,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     return (
       <div className="relative flex flex-col items-center text-center font-sans" title={tooltipLines.join("\n")}>
         <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
-          {shouldShowMetrics ? (
-            <div
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2"
-              style={{
-                ...metricsStyle,
-                fontSize: metricsFontSize,
-                padding: "3px 10px",
-                top: "-18%",
-              }}
-            >
-              ⏳ {`${hoursLabel}h`}
-            </div>
-          ) : null}
           <span>{displayTitle}</span>
           {appearance.showCompletionCheck ? (
             <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#BBF7D0] text-xs font-semibold text-[#166534] shadow-sm">
@@ -579,15 +566,27 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           ) : null}
           {shouldShowMetrics ? (
             <div
-              className="pointer-events-none absolute left-1/2 -translate-x-1/2 translate-y-1/2"
-              style={{
-                ...metricsStyle,
-                fontSize: metricsFontSize,
-                padding: "3px 10px",
-                bottom: "-18%",
-              }}
+              className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 translate-y-1/2 flex-col items-center gap-1"
+              style={{ bottom: "-26%" }}
             >
-              📅 {`${safeDays}d`}
+              <div
+                style={{
+                  ...metricsStyle,
+                  fontSize: metricsFontSize,
+                  padding: "3px 10px",
+                }}
+              >
+                📅 {`${safeDays}d`}
+              </div>
+              <div
+                style={{
+                  ...metricsStyle,
+                  fontSize: metricsFontSize,
+                  padding: "3px 10px",
+                }}
+              >
+                ⏳ {`${hoursLabel}h`}
+              </div>
             </div>
           ) : null}
         </div>
