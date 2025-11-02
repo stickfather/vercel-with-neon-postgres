@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import type { CSSProperties } from "react";
 
 import type {
@@ -22,21 +22,9 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LESSON_NODE_GAP_PX = 8;
-const LESSON_NODE_MIN_SIZE = 36;
-const LESSON_NODE_MAX_SIZE = 44;
-const LESSON_NODE_WIDTH_RATIO = 1.3;
-const LESSON_NODE_LENGTH_SCALE = 1.05;
-const LESSON_NODE_HEIGHT_SCALE = 1.425;
-const LESSON_NODE_WIDTH_MULTIPLIER = LESSON_NODE_WIDTH_RATIO * LESSON_NODE_LENGTH_SCALE;
-const LESSON_NODE_LABEL_FONT_RATIO = 0.245 * LESSON_NODE_HEIGHT_SCALE;
-const LESSON_NODE_METRIC_FONT_RATIO = 0.208 * LESSON_NODE_HEIGHT_SCALE;
-const LESSON_NODE_BADGE_PADDING_X_RATIO = 0.18;
-const LESSON_NODE_BADGE_PADDING_Y_RATIO = 0.085;
-const LESSON_NODE_BADGE_OFFSET_RATIO = 0.22;
-
-const LEVEL_BADGE_BASE =
-  "inline-flex h-8 min-w-[60px] shrink-0 items-center justify-center rounded-full border border-[#2E867A]/70 bg-[linear-gradient(135deg,#6FE0CF,#2E867A)] px-3 text-[11px] font-extrabold uppercase tracking-[0.22em] text-white shadow-[0_8px_20px_rgba(24,116,107,0.35)]";
+const LESSON_NODE_MIN_SIZE = 56;
+const LESSON_NODE_MAX_SIZE = 76;
+const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 7.2;
 
 function formatNumber(
   value: number | null | undefined,
@@ -104,9 +92,11 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
 
 function formatHoursValue(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) {
-    return "0.0";
+    return "0";
   }
-  return value.toFixed(1);
+  const normalized = Math.max(0, value);
+  const rounded = Number(normalized.toFixed(1));
+  return Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1);
 }
 
 function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string {
@@ -118,35 +108,31 @@ function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string 
     return "Exam";
   }
 
+  const levelSeq =
+    typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
+      ? lesson.lessonLevelSeq
+      : null;
+
+  if (levelSeq != null) {
+    return String(levelSeq);
+  }
+
+  const globalSeq =
+    typeof lesson.lessonGlobalSeq === "number" && Number.isFinite(lesson.lessonGlobalSeq)
+      ? lesson.lessonGlobalSeq
+      : null;
+
+  if (globalSeq != null) {
+    return String(globalSeq);
+  }
+
   const preferred = lesson.displayLabel?.trim() ?? "";
-  const fallback = lesson.lessonTitle?.trim() ?? "";
-  const base = preferred.length ? preferred : fallback;
-
-  if (!base.length) {
-    const seq =
-      typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
-        ? lesson.lessonLevelSeq
-        : null;
-    if (seq != null) {
-      return String(seq);
-    }
-    return "—";
+  const numericMatch = preferred.match(/\d+/);
+  if (numericMatch) {
+    return numericMatch[0];
   }
 
-  if (/^lección\s+/i.test(base)) {
-    const stripped = base.replace(/^lección\s+/i, "").trim();
-    if (!stripped.length) {
-      return "—";
-    }
-
-    const numericMatch = stripped.match(/^\d+/);
-    if (numericMatch) {
-      return numericMatch[0];
-    }
-    return stripped;
-  }
-
-  return base;
+  return "—";
 }
 
 function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string {
@@ -162,82 +148,54 @@ function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string
 }
 
 type LessonNodeAppearance = {
-  borderColor: string;
-  borderWidth: number;
-  borderStyle?: "solid" | "dashed";
-  topBackground: string;
-  bottomBackground: string;
-  textClass: string;
-  topTextClass?: string;
-  labelPrefix?: string;
-  containerShadow?: string;
-  bottomTextClass?: string;
-  accentHalo?: string;
+  fillColor: string;
+  textColor: string;
+  borderColor?: string;
+  borderWidth?: number;
+  glowShadow?: string;
   showCompletionCheck: boolean;
-  labelBadgeBackground?: string;
-  labelBadgeTextClass?: string;
 };
 
 function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): LessonNodeAppearance {
   if (lesson.status === "completed") {
     return {
-      borderColor: "#22C55E",
+      fillColor: "#28A745",
+      textColor: "#FFFFFF",
+      borderColor: "#1F7F34",
       borderWidth: 2,
-      topBackground: "#86EFAC",
-      bottomBackground: "#16A34A",
-      textClass: "text-white",
-      topTextClass: "text-[#065F46]",
-      containerShadow: "shadow-[0_0_0_2px_rgba(34,197,94,0.25)]",
+      glowShadow: "0 0 0 6px rgba(40,167,69,0.2)",
       showCompletionCheck: true,
-      labelBadgeBackground: "rgba(34,197,94,0.95)",
-      labelBadgeTextClass: "text-white",
     };
   }
 
   if (lesson.status === "current") {
     return {
-      borderColor: "#F36C3D",
+      fillColor: "#3399FF",
+      textColor: "#FFFFFF",
+      borderColor: "#1C7EDB",
       borderWidth: 3,
-      topBackground: "#B7F2EC",
-      bottomBackground: "#7DDDD0",
-      textClass: "text-white",
-      topTextClass: "text-[#0F172A]",
-      containerShadow: "shadow-[0_0_0_6px_rgba(243,108,61,0.18)]",
-      accentHalo:
-        "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(125,221,208,0.22)] after:content-['']",
+      glowShadow: "0 0 0 10px rgba(51,153,255,0.18)",
       showCompletionCheck: false,
-      labelBadgeBackground: "#FFFFFF",
-      labelBadgeTextClass: "text-[#0F172A]",
     };
   }
 
   if (lesson.isExam) {
     return {
-      borderColor: "#43B2A1",
+      fillColor: "#3399FF",
+      textColor: "#FFFFFF",
+      borderColor: "#1C7EDB",
       borderWidth: 2,
-      borderStyle: "dashed",
-      topBackground: "#E7F7F4",
-      bottomBackground: "#CFF1EA",
-      textClass: "text-[#2E867A]",
-      containerShadow: "shadow-[inset_0_0_0_1px_rgba(67,178,161,0.18)]",
-      accentHalo: "after:absolute after:inset-[6%] after:-z-10 after:rounded-full after:bg-[rgba(67,178,161,0.12)] after:content-['']",
+      glowShadow: "0 6px 18px rgba(28,126,219,0.18)",
       showCompletionCheck: false,
-      labelBadgeBackground: "#CFF1EA",
-      labelBadgeTextClass: "text-[#0F172A]",
     };
   }
 
   return {
-    borderColor: "#22C55E",
+    fillColor: "#3399FF",
+    textColor: "#FFFFFF",
+    borderColor: "#1C7EDB",
     borderWidth: 2,
-    topBackground: "#FFFFFF",
-    bottomBackground: "#F1F5F9",
-    textClass: "text-slate-600",
-    topTextClass: "text-slate-700",
-    bottomTextClass: "text-slate-600",
     showCompletionCheck: false,
-    labelBadgeBackground: "#E2E8F0",
-    labelBadgeTextClass: "text-slate-700",
   };
 }
 
@@ -529,108 +487,52 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const tooltipLines = [
       `Nivel ${lesson.levelCode}`,
       tooltipTitle,
-      `⏳ ${hoursLabel} • 📅 ${safeDays}`,
+      `⏳ ${hoursLabel}h • 📅 ${safeDays}d`,
     ];
     const appearance = resolveLessonNodeAppearance(lesson);
-    const labelPrefix = appearance.labelPrefix ?? "";
-    const bottomTextClass = appearance.bottomTextClass ?? appearance.textClass;
-    const topTextClass = appearance.topTextClass ?? appearance.textClass;
-    const labelBadgeTextClass = appearance.labelBadgeTextClass ?? topTextClass;
-    const labelBadgeBackground = appearance.labelBadgeBackground ?? "rgba(15,23,42,0.6)";
-
-    const examScale = lesson.isExam ? 1.15 : 1;
-    const completedHeightScale = lesson.status === "completed" ? 1.1 : 1;
-    const widthScale = LESSON_NODE_WIDTH_MULTIPLIER * examScale;
-    const heightScale = LESSON_NODE_HEIGHT_SCALE * completedHeightScale * examScale;
-    const minWidthPx = LESSON_NODE_MIN_SIZE * widthScale;
-    const maxWidthPx = LESSON_NODE_MAX_SIZE * widthScale;
-    const minHeightPx = LESSON_NODE_MIN_SIZE * heightScale;
-    const maxHeightPx = LESSON_NODE_MAX_SIZE * heightScale;
-
-    const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
-    const nodeWrapperStyle: CSSProperties = {
-      flexBasis: `calc(var(--lesson-node-size) * ${widthScale})`,
-      width: `calc(var(--lesson-node-size) * ${widthScale})`,
-      height: `calc(var(--lesson-node-size) * ${heightScale})`,
-      minWidth: `${minWidthPx}px`,
-      minHeight: `${minHeightPx}px`,
-      maxWidth: `${maxWidthPx}px`,
-      maxHeight: `${maxHeightPx}px`,
-    };
-    if (appearance.showCompletionCheck) {
-      nodeWrapperStyle.paddingBottom = "10px";
-    }
-
-    const circleClass = `relative flex h-full w-full flex-col overflow-hidden rounded-full border bg-transparent ${appearance.textClass} ${appearance.containerShadow ?? ""}`;
+    const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
+    const labelFontSize = `calc(${nodeSizeValue} * 0.5)`;
+    const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
     const circleStyle: CSSProperties = {
-      borderColor: appearance.borderColor,
-      borderWidth: appearance.borderWidth,
-      borderStyle: appearance.borderStyle ?? "solid",
-    };
-
-    const labelStyle: CSSProperties = {
-      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_LABEL_FONT_RATIO})`,
-      lineHeight: 1.1,
-    };
-
-    const metricStyle: CSSProperties = {
-      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_METRIC_FONT_RATIO})`,
-      lineHeight: 1.1,
-    };
-
-    const labelBadgeStyle: CSSProperties = {
-      ...labelStyle,
-      padding: `calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_Y_RATIO}) calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_X_RATIO})`,
+      width: nodeSizeValue,
+      height: nodeSizeValue,
+      backgroundColor: appearance.fillColor,
+      color: appearance.textColor,
       borderRadius: "9999px",
-      backgroundColor: labelBadgeBackground,
-      boxShadow: "0 10px 20px rgba(15,23,42,0.25)",
-      transform: `translate(-50%, calc(var(--lesson-node-size) * -${LESSON_NODE_BADGE_OFFSET_RATIO}))`,
+      border: appearance.borderWidth
+        ? `${appearance.borderWidth}px solid ${appearance.borderColor ?? appearance.fillColor}`
+        : appearance.borderColor
+        ? `2px solid ${appearance.borderColor}`
+        : "none",
+      boxShadow: appearance.glowShadow,
+      fontSize: labelFontSize,
+      lineHeight: 1,
+    };
+
+    const metricsStyle: CSSProperties = {
+      fontSize: metricsFontSize,
+      color: "#666666",
+      lineHeight: 1.1,
     };
 
     return (
       <div
-        key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
-        className={nodeWrapperClass}
-        style={nodeWrapperStyle}
+        className="relative flex flex-col items-center gap-2 text-center font-sans"
         title={tooltipLines.join("\n")}
       >
-        <div className={circleClass} style={circleStyle}>
-          <div
-            className={`relative flex flex-shrink-0 items-center justify-center font-bold ${topTextClass}`}
-            style={{
-              backgroundColor: appearance.topBackground,
-              flexBasis: "30%",
-              paddingBottom: `calc(var(--lesson-node-size) * 0.08)`,
-              ...labelStyle,
-            }}
-          >
-            <span className="sr-only" style={labelStyle}>{`${labelPrefix}${displayTitle}`}</span>
-          </div>
-          <div
-            className={`flex flex-1 flex-col items-center justify-center gap-[2px] font-medium ${bottomTextClass}`}
-            style={{
-              backgroundColor: appearance.bottomBackground,
-              paddingBottom: "6px",
-              paddingTop: "4px",
-              ...metricStyle,
-            }}
-          >
-            <span style={metricStyle}>⏳ {hoursLabel}</span>
-            <span style={metricStyle}>📅 {safeDays}</span>
-          </div>
+        <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
+          <span>{displayTitle}</span>
+          {appearance.showCompletionCheck ? (
+            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs text-[#28A745] shadow-sm">
+              ✓
+            </span>
+          ) : null}
         </div>
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-1/2 top-0 z-10 flex items-center justify-center font-black uppercase tracking-[0.24em] ${labelBadgeTextClass}`}
-          style={labelBadgeStyle}
-        >
-          {`${labelPrefix}${displayTitle}`}
-        </span>
-        {appearance.showCompletionCheck ? (
-          <span className="absolute -bottom-2 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white text-base shadow-sm">
-            ✅
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2 text-xs" style={metricsStyle}>
+          <span>⏳ {`${hoursLabel}h`}</span>
+          <span>•</span>
+          <span>📅 {`${safeDays}d`}</span>
+        </div>
       </div>
     );
   };
@@ -728,40 +630,31 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   : "flex flex-col gap-4 border-t border-slate-200/70 pt-4";
 
               const lessonCount = level.lessons.length;
-              const widthWeight = level.lessons.reduce((total, entry) => {
-                const examScale = entry.isExam ? 1.15 : 1;
-                return total + LESSON_NODE_WIDTH_RATIO * examScale;
-              }, 0);
-              const widthDenominator = Math.max(widthWeight, 1);
-              const clampGap = Math.max(lessonCount - 1, 0) * LESSON_NODE_GAP_PX;
-              const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${widthDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
-
-              const maxWidthPixels = level.lessons.reduce((total, entry) => {
-                const examScale = entry.isExam ? 1.15 : 1;
-                return total + LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER * examScale;
-              }, 0);
-              const nodeLayoutStyle: CSSProperties = {
-                width: "100%",
-                maxWidth:
-                  lessonCount > 0
-                    ? `calc(${maxWidthPixels}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
-                    : undefined,
-                gap: `${LESSON_NODE_GAP_PX}px`,
-              };
-              (nodeLayoutStyle as CSSProperties & Record<string, string>)["--lesson-node-size"] = nodeSizeValue;
 
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
-                  <div className="flex flex-col gap-3">
-                    <span className="flex h-8 items-center justify-start self-start">
-                      <span className={LEVEL_BADGE_BASE}>
-                        {level.levelCode === "OTROS" ? "OT" : level.levelCode}
-                      </span>
-                    </span>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-3">
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500">
+                        Nivel {level.levelCode === "OTROS" ? "OT" : level.levelCode}
+                      </h4>
+                      <div className="h-px flex-1 bg-[#E0E0E0]" />
+                    </div>
                     {lessonCount ? (
-                      <div className="flex min-w-0 justify-end">
-                        <div className="flex w-full flex-wrap md:flex-nowrap" style={nodeLayoutStyle}>
-                          {level.lessons.map((lesson) => renderLessonNode(lesson))}
+                      <div className="flex w-full items-center overflow-x-auto pb-2 md:pb-0">
+                        <div className="flex w-full flex-nowrap items-center gap-6">
+                          {level.lessons.map((lesson, lessonIndex) => {
+                            const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
+                            const isLast = lessonIndex === lessonCount - 1;
+                            return (
+                              <Fragment key={key}>
+                                {renderLessonNode(lesson)}
+                                {!isLast ? (
+                                  <div className="h-[2px] w-14 bg-[#E0E0E0] md:w-16 lg:w-20" />
+                                ) : null}
+                              </Fragment>
+                            );
+                          })}
                         </div>
                       </div>
                     ) : (
