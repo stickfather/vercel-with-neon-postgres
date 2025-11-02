@@ -547,7 +547,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
       backgroundColor: "rgba(255,255,255,0.95)",
       borderRadius: "9999px",
-      padding: "1px 6px",
+      padding: "1px 5px",
       boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
       border: "1px solid rgba(148,163,184,0.28)",
       backdropFilter: "blur(4px)",
@@ -567,8 +567,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
         {shouldShowMetrics ? (
           <div
-            className="pointer-events-none -mt-2 flex items-center justify-center gap-0.5"
-            style={{ transform: "translateY(-1px)" }}
+            className="pointer-events-none -mt-1.5 flex items-center justify-center -space-x-1"
+            style={{ transform: "translateY(-2px)" }}
           >
             <div
               style={{
@@ -685,7 +685,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     </div>
                     {lessonCount ? (
                       <div className="flex w-full items-center pb-0.5 md:pb-0">
-        <div className="flex w-full flex-nowrap items-center gap-1 md:gap-1.5 lg:gap-2">
+        <div className="flex w-full flex-nowrap items-center gap-0.5 md:gap-1 lg:gap-1.5">
           {level.lessons.map((lesson, lessonIndex) => {
             const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
             const isLast = lessonIndex === lessonCount - 1;
@@ -693,7 +693,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               <Fragment key={key}>
                 {renderLessonNode(lesson)}
                 {!isLast ? (
-                  <div className="h-[2px] w-3 bg-[#E0E0E0] md:w-4 lg:w-5" />
+                  <div className="h-[2px] w-[6px] bg-[#E0E0E0] md:w-[9px] lg:w-[12px]" />
                 ) : null}
               </Fragment>
             );
