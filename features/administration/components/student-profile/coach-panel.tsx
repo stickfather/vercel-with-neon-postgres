@@ -566,8 +566,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           ) : null}
           {shouldShowMetrics ? (
             <div
-              className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 translate-y-1/2 flex-col items-center gap-1"
-              style={{ bottom: "-26%" }}
+              className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center"
+              style={{ bottom: "10%" }}
             >
               <div
                 style={{
@@ -579,6 +579,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 📅 {`${safeDays}d`}
               </div>
               <div
+                className="-ml-2"
                 style={{
                   ...metricsStyle,
                   fontSize: metricsFontSize,
