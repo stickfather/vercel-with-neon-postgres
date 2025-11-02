@@ -22,9 +22,9 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LESSON_NODE_MIN_SIZE = 56;
-const LESSON_NODE_MAX_SIZE = 76;
-const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 7.2;
+const LESSON_NODE_MIN_SIZE = 44;
+const LESSON_NODE_MAX_SIZE = 64;
+const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 5.4;
 
 function formatNumber(
   value: number | null | undefined,
@@ -162,8 +162,8 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
       fillColor: "#28A745",
       textColor: "#FFFFFF",
       borderColor: "#1F7F34",
-      borderWidth: 2,
-      glowShadow: "0 0 0 6px rgba(40,167,69,0.2)",
+      borderWidth: 1.5,
+      glowShadow: "0 4px 16px rgba(40,167,69,0.25)",
       showCompletionCheck: true,
     };
   }
@@ -172,29 +172,40 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
     return {
       fillColor: "#3399FF",
       textColor: "#FFFFFF",
-      borderColor: "#1C7EDB",
+      borderColor: "#0F6BD9",
       borderWidth: 3,
-      glowShadow: "0 0 0 10px rgba(51,153,255,0.18)",
+      glowShadow: "0 0 0 6px rgba(51,153,255,0.28), 0 12px 24px rgba(28,126,219,0.22)",
       showCompletionCheck: false,
     };
   }
 
   if (lesson.isExam) {
     return {
-      fillColor: "#3399FF",
+      fillColor: "#2F8AE6",
       textColor: "#FFFFFF",
-      borderColor: "#1C7EDB",
-      borderWidth: 2,
-      glowShadow: "0 6px 18px rgba(28,126,219,0.18)",
+      borderColor: "#2F8AE6",
+      borderWidth: 1.5,
+      glowShadow: "0 8px 18px rgba(47,138,230,0.18)",
+      showCompletionCheck: false,
+    };
+  }
+
+  if (lesson.isIntro) {
+    return {
+      fillColor: "#2F8AE6",
+      textColor: "#FFFFFF",
+      borderColor: "#2F8AE6",
+      borderWidth: 1.5,
+      glowShadow: "0 6px 16px rgba(47,138,230,0.14)",
       showCompletionCheck: false,
     };
   }
 
   return {
-    fillColor: "#3399FF",
-    textColor: "#FFFFFF",
-    borderColor: "#1C7EDB",
-    borderWidth: 2,
+    fillColor: "#D6E9FF",
+    textColor: "#1C7EDB",
+    borderColor: undefined,
+    borderWidth: 0,
     showCompletionCheck: false,
   };
 }
@@ -491,8 +502,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     ];
     const appearance = resolveLessonNodeAppearance(lesson);
     const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
-    const labelFontSize = `calc(${nodeSizeValue} * 0.5)`;
-    const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
+    const labelScale = lesson.isIntro || lesson.isExam ? 0.46 : 0.56;
+    const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
+    const metricsFontSize = `calc(${nodeSizeValue} * 0.26)`;
     const circleStyle: CSSProperties = {
       width: nodeSizeValue,
       height: nodeSizeValue,
@@ -507,28 +519,31 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       boxShadow: appearance.glowShadow,
       fontSize: labelFontSize,
       lineHeight: 1,
+      fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+      letterSpacing: lesson.isIntro || lesson.isExam ? "0.02em" : "0",
     };
 
     const metricsStyle: CSSProperties = {
       fontSize: metricsFontSize,
       color: "#666666",
       lineHeight: 1.1,
+      fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
     };
 
     return (
       <div
-        className="relative flex flex-col items-center gap-2 text-center font-sans"
+        className="relative flex flex-col items-center gap-1.5 text-center font-sans"
         title={tooltipLines.join("\n")}
       >
         <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
           <span>{displayTitle}</span>
           {appearance.showCompletionCheck ? (
-            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs text-[#28A745] shadow-sm">
+            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#28A745] text-xs font-semibold text-white shadow-sm">
               ✓
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 text-xs" style={metricsStyle}>
+        <div className="flex items-center gap-1.5 text-xs" style={metricsStyle}>
           <span>⏳ {`${hoursLabel}h`}</span>
           <span>•</span>
           <span>📅 {`${safeDays}d`}</span>
@@ -641,8 +656,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                       <div className="h-px flex-1 bg-[#E0E0E0]" />
                     </div>
                     {lessonCount ? (
-                      <div className="flex w-full items-center overflow-x-auto pb-2 md:pb-0">
-                        <div className="flex w-full flex-nowrap items-center gap-6">
+                      <div className="flex w-full items-center overflow-x-auto pb-1 md:pb-0">
+                        <div className="flex w-full flex-nowrap items-center gap-3">
                           {level.lessons.map((lesson, lessonIndex) => {
                             const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
                             const isLast = lessonIndex === lessonCount - 1;
@@ -650,7 +665,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                               <Fragment key={key}>
                                 {renderLessonNode(lesson)}
                                 {!isLast ? (
-                                  <div className="h-[2px] w-14 bg-[#E0E0E0] md:w-16 lg:w-20" />
+                                  <div className="h-[2px] w-9 bg-[#E0E0E0] md:w-11 lg:w-12" />
                                 ) : null}
                               </Fragment>
                             );
