@@ -2535,22 +2535,28 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
+                                  const serverStatus =
+                                    cell.status ?? (cell as { dayStatus?: string }).dayStatus;
+
+                                  const fallbackStatus = cell.approved
+                                    ? // When the day is approved, highlight edits made
+                                      // after approval; otherwise mark as simply approved.
+                                      (cell as { editedAfterApproval?: boolean })
+                                        .editedAfterApproval
+                                        ? "edited_and_approved"
+                                        : "approved"
+                                    : // When not yet approved, mark edited days accordingly.
+                                      cell.hasEdits
+                                        ? "edited_not_approved"
+                                        : "pending";
+
+                                  const cellStatusBase = serverStatus ?? fallbackStatus;
                                   const cellStatus =
-                                    cell.status ??
-                                    (cell as { dayStatus?: string }).dayStatus ??
-                                    (
-                                      cell.approved
-                                        ? // When the day is approved, highlight edits made
-                                          // after approval; otherwise mark as simply approved.
-                                          (cell as { editedAfterApproval?: boolean })
-                                            .editedAfterApproval
-                                            ? "edited_and_approved"
-                                            : "approved"
-                                        : // When not yet approved, mark edited days accordingly.
-                                          cell.hasEdits
-                                            ? "edited_not_approved"
-                                            : "pending"
-                                    );
+                                    cellStatusBase === "approved" &&
+                                    cell.approved &&
+                                    (cell as { editedAfterApproval?: boolean }).editedAfterApproval
+                                      ? "edited_and_approved"
+                                      : cellStatusBase;
                                   const cellClass =
                                     STATUS_BUTTON_CLASSES[cellStatus] ?? STATUS_BUTTON_CLASSES.pending;
                                   return (
