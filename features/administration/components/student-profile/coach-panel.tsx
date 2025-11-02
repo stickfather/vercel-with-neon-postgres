@@ -518,7 +518,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     ];
     const appearance = resolveLessonNodeAppearance(lesson);
     const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
-    const baseLabelScale = lesson.isIntro || lesson.isExam ? 0.42 : 0.64;
+    const baseLabelScale = lesson.isIntro || lesson.isExam ? 0.38 : 0.58;
     const labelScale =
       lesson.status === "completed" ? baseLabelScale * 0.92 : baseLabelScale;
     const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
@@ -565,10 +565,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 ...metricsStyle,
                 fontSize: metricsFontSize,
                 padding: "3px 10px",
-                top: "18%",
+                top: "26%",
               }}
             >
-              📅 {`${safeDays}d`}
+              ⏳ {`${hoursLabel}h`}
             </div>
           ) : null}
           <span>{displayTitle}</span>
@@ -584,10 +584,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                 ...metricsStyle,
                 fontSize: metricsFontSize,
                 padding: "3px 10px",
-                bottom: "18%",
+                bottom: "26%",
               }}
             >
-              ⏳ {`${hoursLabel}h`}
+              📅 {`${safeDays}d`}
             </div>
           ) : null}
         </div>
