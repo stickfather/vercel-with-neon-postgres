@@ -1592,28 +1592,29 @@ function computeJourneyDays(startValue: unknown, endValue: unknown): number {
 
 function computeJourneyDisplayLabel(lesson: CoachPanelLessonJourneyEntry): string {
   const normalizedTitle = lesson.lessonTitle?.trim() ?? "";
-
-  if (lesson.isExam) {
-    return "Examen";
-  }
-
-  if (lesson.isIntro) {
-    return normalizedTitle.length ? normalizedTitle : "Intro booklet";
-  }
-
-  if (normalizedTitle.length) {
-    return normalizedTitle;
-  }
-
   const levelSeq =
     typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
       ? lesson.lessonLevelSeq
       : null;
-  if (levelSeq != null) {
-    return `Lección ${levelSeq}`;
+
+  let lessonLabel: string | null = null;
+  if (normalizedTitle.length) {
+    lessonLabel = normalizedTitle;
+  } else if (lesson.isIntro) {
+    lessonLabel = "Intro booklet";
+  } else if (levelSeq != null) {
+    lessonLabel = `Lección ${levelSeq}`;
   }
 
-  return "Lección";
+  const normalizedLevel = lesson.levelCode?.trim() ?? "";
+  const levelLabel = normalizedLevel.length ? normalizedLevel : "";
+  const fallbackLesson = lessonLabel ?? "Lección";
+
+  if (levelLabel.length && fallbackLesson.length) {
+    return `${levelLabel} · ${fallbackLesson}`;
+  }
+
+  return fallbackLesson.length ? fallbackLesson : levelLabel || "Lección";
 }
 
 function buildJourneyLevels(
@@ -1704,9 +1705,16 @@ export async function listStudentLessonJourneyLessons(
   let engagementRows: SqlRow[] = [];
   let catalogRows: SqlRow[] = [];
   let coachPanelRows: SqlRow[] = [];
+  let latestLessonRows: SqlRow[] = [];
 
   try {
-    const [planResult, engagementResult, catalogResult, coachPanelResult] = await Promise.all([
+    const [
+      planResult,
+      engagementResult,
+      catalogResult,
+      coachPanelResult,
+      latestLessonResult,
+    ] = await Promise.all([
       sql`
         SELECT
           spls.lesson_id,
@@ -1746,12 +1754,26 @@ export async function listStudentLessonJourneyLessons(
         WHERE student_id = ${studentId}::bigint
         LIMIT 1
       `,
+      sql`
+        SELECT
+          sa.lesson_id,
+          COALESCE(sa.checkout_time, sa.checkin_time) AS last_seen_at,
+          l.level AS lesson_level,
+          l.lesson AS lesson_name,
+          l.seq AS lesson_seq
+        FROM public.student_attendance sa
+        LEFT JOIN public.lessons l ON l.id = sa.lesson_id
+        WHERE sa.student_id = ${studentId}::bigint
+        ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
+        LIMIT 1
+      `,
     ]);
 
     planRows = normalizeRows<SqlRow>(planResult);
     engagementRows = normalizeRows<SqlRow>(engagementResult);
     catalogRows = normalizeRows<SqlRow>(catalogResult);
     coachPanelRows = normalizeRows<SqlRow>(coachPanelResult);
+    latestLessonRows = normalizeRows<SqlRow>(latestLessonResult);
   } catch (error) {
     console.error(
       `Error loading lesson journey data for student ${studentId}`,
@@ -1761,6 +1783,23 @@ export async function listStudentLessonJourneyLessons(
   }
 
   const coachPanelRecord = coachPanelRows.length ? toJsonRecord(coachPanelRows[0]) : null;
+  const latestLessonRecord = latestLessonRows.length ? toJsonRecord(latestLessonRows[0]) : null;
+  const latestLessonId = normalizeInteger(latestLessonRecord?.lesson_id);
+  const latestLessonLevelRaw = extractString(latestLessonRecord ?? {}, [
+    "lesson_level",
+    "level",
+  ]);
+  const latestLessonLevel = latestLessonLevelRaw
+    ? normalizeJourneyLevel(latestLessonLevelRaw)
+    : null;
+  const latestLessonSeq = extractNumber(latestLessonRecord ?? {}, [
+    "lesson_seq",
+    "seq",
+  ]);
+  const latestLessonTitle = extractString(latestLessonRecord ?? {}, [
+    "lesson_name",
+    "lesson",
+  ]);
   const fallbackPlannedLevelMin = normalizeLessonLevel(
     extractString(coachPanelRecord, [
       "level_min",
@@ -1974,6 +2013,28 @@ export async function listStudentLessonJourneyLessons(
     firstNotCompletedIndex = visiblePlan.length - 1;
   }
 
+  let currentIndex = -1;
+  if (latestLessonId != null) {
+    currentIndex = visiblePlan.findIndex(({ entry }) => entry.lessonId === latestLessonId);
+  }
+
+  if (currentIndex === -1 && latestLessonSeq != null) {
+    currentIndex = visiblePlan.findIndex(({ catalog }) => {
+      const seqMatches = catalog.seq != null && Number.isFinite(catalog.seq) && catalog.seq === latestLessonSeq;
+      if (!seqMatches) {
+        return false;
+      }
+      if (!latestLessonLevel) {
+        return true;
+      }
+      return catalog.levelCode === latestLessonLevel;
+    });
+  }
+
+  if (currentIndex === -1) {
+    currentIndex = firstNotCompletedIndex;
+  }
+
   const lessons = visiblePlan.map(({ entry, catalog }, index) => {
     const engagement = engagementMap.get(entry.lessonId);
     const hoursInLesson = computeJourneyHours(engagement?.minutes ?? 0);
@@ -1993,13 +2054,30 @@ export async function listStudentLessonJourneyLessons(
     const isIntro = introBySeq || introByTitle;
 
     let status: JourneyLessonStatus;
-    if (index < firstNotCompletedIndex) {
+    if (currentIndex !== -1) {
+      if (index < currentIndex) {
+        status = "completed";
+      } else if (index === currentIndex) {
+        status = "current";
+      } else {
+        status = "upcoming";
+      }
+    } else if (index < firstNotCompletedIndex) {
       status = "completed";
     } else if (index === firstNotCompletedIndex) {
       status = "current";
     } else {
       status = "upcoming";
     }
+
+    const isCurrentLesson = index === currentIndex;
+    const resolvedTitle = isCurrentLesson && latestLessonTitle?.trim()?.length
+      ? latestLessonTitle.trim()
+      : normalizedTitle.length
+        ? normalizedTitle
+        : null;
+
+    const resolvedLevelCode = isCurrentLesson && latestLessonLevel ? latestLessonLevel : normalizedLevel;
 
     const lesson: CoachPanelLessonJourneyEntry = {
       lessonId: entry.lessonId,
@@ -2008,8 +2086,8 @@ export async function listStudentLessonJourneyLessons(
         typeof normalizedSeq === "number" && Number.isFinite(normalizedSeq)
           ? Math.trunc(normalizedSeq)
           : null,
-      levelCode: normalizedLevel,
-      lessonTitle: normalizedTitle.length ? normalizedTitle : null,
+      levelCode: resolvedLevelCode,
+      lessonTitle: resolvedTitle,
       displayLabel: "",
       isIntro,
       isExam,
