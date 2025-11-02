@@ -564,30 +564,30 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               ✓
             </span>
           ) : null}
-          {shouldShowMetrics ? (
-            <div
-              className="pointer-events-none absolute inset-x-0 flex justify-center gap-2"
-              style={{ bottom: "6%" }}
-            >
-              <div
-                style={{
-                  ...metricsStyle,
-                  fontSize: metricsFontSize,
-                }}
-              >
-                📅 {`${safeDays}d`}
-              </div>
-              <div
-                style={{
-                  ...metricsStyle,
-                  fontSize: metricsFontSize,
-                }}
-              >
-                ⏳ {`${hoursLabel}h`}
-              </div>
-            </div>
-          ) : null}
         </div>
+        {shouldShowMetrics ? (
+          <div
+            className="pointer-events-none -mt-2 flex items-center justify-center gap-1"
+            style={{ transform: "translateY(-1px)" }}
+          >
+            <div
+              style={{
+                ...metricsStyle,
+                fontSize: metricsFontSize,
+              }}
+            >
+              📅 {`${safeDays}d`}
+            </div>
+            <div
+              style={{
+                ...metricsStyle,
+                fontSize: metricsFontSize,
+              }}
+            >
+              ⏳ {`${hoursLabel}h`}
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   };
