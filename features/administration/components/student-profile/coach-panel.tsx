@@ -22,9 +22,9 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LESSON_NODE_MIN_SIZE = 44;
-const LESSON_NODE_MAX_SIZE = 64;
-const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 5.4;
+const LESSON_NODE_MIN_SIZE = 34;
+const LESSON_NODE_MAX_SIZE = 52;
+const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 3.8;
 
 function formatNumber(
   value: number | null | undefined,
@@ -502,9 +502,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     ];
     const appearance = resolveLessonNodeAppearance(lesson);
     const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
-    const labelScale = lesson.isIntro || lesson.isExam ? 0.46 : 0.56;
+    const labelScale = lesson.isIntro || lesson.isExam ? 0.46 : 0.6;
     const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
-    const metricsFontSize = `calc(${nodeSizeValue} * 0.26)`;
+    const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
     const circleStyle: CSSProperties = {
       width: nodeSizeValue,
       height: nodeSizeValue,
@@ -657,7 +657,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     </div>
                     {lessonCount ? (
                       <div className="flex w-full items-center overflow-x-auto pb-1 md:pb-0">
-                        <div className="flex w-full flex-nowrap items-center gap-3">
+                        <div className="flex w-full flex-nowrap items-center gap-2 md:gap-2.5">
                           {level.lessons.map((lesson, lessonIndex) => {
                             const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
                             const isLast = lessonIndex === lessonCount - 1;
@@ -665,7 +665,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                               <Fragment key={key}>
                                 {renderLessonNode(lesson)}
                                 {!isLast ? (
-                                  <div className="h-[2px] w-9 bg-[#E0E0E0] md:w-11 lg:w-12" />
+                                  <div className="h-[2px] w-6 bg-[#E0E0E0] md:w-8 lg:w-9" />
                                 ) : null}
                               </Fragment>
                             );
