@@ -22,9 +22,9 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LESSON_NODE_MIN_SIZE = 34;
-const LESSON_NODE_MAX_SIZE = 52;
-const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 3.8;
+const LESSON_NODE_MIN_SIZE = 24;
+const LESSON_NODE_MAX_SIZE = 38;
+const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 2.5;
 
 function formatNumber(
   value: number | null | undefined,
@@ -310,7 +310,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     );
   }
 
-  const { profileHeader, lessonJourney, paceForecast } = data;
+  const { profileHeader, lessonJourney } = data;
 
   const journeyLessons = useMemo(() => {
     const lessons: CoachPanelLessonJourneyEntry[] = [];
@@ -502,9 +502,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     ];
     const appearance = resolveLessonNodeAppearance(lesson);
     const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
-    const labelScale = lesson.isIntro || lesson.isExam ? 0.46 : 0.6;
+    const labelScale = lesson.isIntro || lesson.isExam ? 0.42 : 0.64;
     const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
-    const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
+    const metricsFontSize = `calc(${nodeSizeValue} * 0.24)`;
     const circleStyle: CSSProperties = {
       width: nodeSizeValue,
       height: nodeSizeValue,
@@ -532,7 +532,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
     return (
       <div
-        className="relative flex flex-col items-center gap-1.5 text-center font-sans"
+        className="relative flex flex-col items-center gap-1 text-center font-sans"
         title={tooltipLines.join("\n")}
       >
         <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
@@ -543,7 +543,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-1.5 text-xs" style={metricsStyle}>
+        <div className="flex items-center gap-1 text-xs" style={metricsStyle}>
           <span>⏳ {`${hoursLabel}h`}</span>
           <span>•</span>
           <span>📅 {`${safeDays}d`}</span>
@@ -560,18 +560,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const completedLessonsLabel = formatNumber(profileHeader.completedLessonsInPlan);
   const totalLessonsLabel = formatNumber(profileHeader.totalLessonsInPlan);
 
-
-  const paceForecastLabel = paceForecast.forecastMonthsToFinishPlan != null
-    ? `${formatNumber(paceForecast.forecastMonthsToFinishPlan, { maximumFractionDigits: 1 })} meses`
-    : "Sin pronóstico";
-
-  const gaugePercent = paceForecast.forecastMonthsToFinishPlan != null && paceForecast.forecastMonthsToFinishPlan > 0
-    ? Math.min(1, paceForecast.forecastMonthsToFinishPlan / 12) * 100
-    : null;
-
-  const gaugeBackground = gaugePercent == null
-    ? "conic-gradient(#e2e8f0 0deg, #e2e8f0 360deg)"
-    : `conic-gradient(#0b9e8f ${gaugePercent * 3.6}deg, #e2e8f0 ${gaugePercent * 3.6}deg 360deg)`;
 
   const learnerSpeedLabel = data.learnerSpeed.label;
   const learnerSpeedTone = resolveSpeedTone(learnerSpeedLabel);
@@ -656,8 +644,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                       <div className="h-px flex-1 bg-[#E0E0E0]" />
                     </div>
                     {lessonCount ? (
-                      <div className="flex w-full items-center overflow-x-auto pb-1 md:pb-0">
-                        <div className="flex w-full flex-nowrap items-center gap-2 md:gap-2.5">
+                      <div className="flex w-full items-center overflow-x-auto pb-0.5 md:pb-0">
+                        <div className="flex w-full flex-nowrap items-center gap-1.5 md:gap-2">
                           {level.lessons.map((lesson, lessonIndex) => {
                             const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
                             const isLast = lessonIndex === lessonCount - 1;
@@ -665,7 +653,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                               <Fragment key={key}>
                                 {renderLessonNode(lesson)}
                                 {!isLast ? (
-                                  <div className="h-[2px] w-6 bg-[#E0E0E0] md:w-8 lg:w-9" />
+                                  <div className="h-[2px] w-4 bg-[#E0E0E0] md:w-5 lg:w-6" />
                                 ) : null}
                               </Fragment>
                             );
@@ -795,53 +783,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Pace & forecast</span>
-          <h4 className="text-xl font-bold text-brand-deep">Pronóstico del plan</h4>
-        </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="flex items-center gap-4">
-            <div
-              className="flex h-32 w-32 items-center justify-center rounded-full border border-white/70 bg-white shadow-inner"
-              style={{ background: gaugeBackground }}
-            >
-              <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white text-center shadow">
-                <span className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Forecast</span>
-                <span className="mt-1 text-xl font-bold text-brand-deep">{paceForecastLabel}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-3 text-sm text-brand-ink-muted">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Lecciones restantes</p>
-                <p className="text-lg font-semibold text-brand-deep">
-                  {formatNumber(paceForecast.lessonsRemaining)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Progreso del plan</p>
-                <p className="text-lg font-semibold text-brand-deep">
-                  {formatPercent(paceForecast.planProgressPct, 0)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Estado</p>
-                <p className="text-lg font-semibold text-brand-deep">
-                  {profileHeader.onPacePlan ? "En ritmo" : "Requiere atención"}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5">
-            <p className="text-sm text-brand-ink-muted">
-              Mantener una velocidad de finalización menor o igual a seis meses asegura que el estudiante aproveche su plan.
-              {paceForecast.forecastMonthsToFinishPlan != null
-                ? ` Con el ritmo actual terminaría en aproximadamente ${paceForecastLabel}.`
-                : ""}
-            </p>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }
