@@ -547,7 +547,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
       backgroundColor: "rgba(255,255,255,0.95)",
       borderRadius: "9999px",
-      padding: "2px 8px",
+      padding: "1px 6px",
       boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
       border: "1px solid rgba(148,163,184,0.28)",
       backdropFilter: "blur(4px)",
@@ -567,7 +567,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
         {shouldShowMetrics ? (
           <div
-            className="pointer-events-none -mt-2 flex items-center justify-center gap-1"
+            className="pointer-events-none -mt-2 flex items-center justify-center gap-0.5"
             style={{ transform: "translateY(-1px)" }}
           >
             <div
