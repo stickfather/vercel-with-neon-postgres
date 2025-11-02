@@ -504,7 +504,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
     const labelScale = lesson.isIntro || lesson.isExam ? 0.42 : 0.64;
     const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
-    const metricsFontSize = `calc(${nodeSizeValue} * 0.24)`;
+    const metricsFontSize = `calc(${nodeSizeValue} * 0.3)`;
     const circleStyle: CSSProperties = {
       width: nodeSizeValue,
       height: nodeSizeValue,
@@ -525,10 +525,17 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
 
     const metricsStyle: CSSProperties = {
       fontSize: metricsFontSize,
-      color: "#666666",
+      color: "#1F2933",
       lineHeight: 1.1,
       fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+      backgroundColor: "rgba(255,255,255,0.92)",
+      borderRadius: "9999px",
+      padding: "4px 10px",
+      boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
+      border: "1px solid rgba(148,163,184,0.35)",
     };
+
+    const shouldShowMetrics = lesson.status === "completed" || lesson.status === "current";
 
     return (
       <div
@@ -538,16 +545,24 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
           <span>{displayTitle}</span>
           {appearance.showCompletionCheck ? (
-            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#28A745] text-xs font-semibold text-white shadow-sm">
+            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#A7F3C1] text-xs font-semibold text-white shadow-sm">
               ✓
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-1 text-xs" style={metricsStyle}>
-          <span>⏳ {`${hoursLabel}h`}</span>
-          <span>•</span>
-          <span>📅 {`${safeDays}d`}</span>
-        </div>
+        {shouldShowMetrics ? (
+          <div
+            className="flex items-center gap-1"
+            style={{
+              ...metricsStyle,
+              marginTop: "-12px",
+            }}
+          >
+            <span>⏳ {`${hoursLabel}h`}</span>
+            <span>•</span>
+            <span>📅 {`${safeDays}d`}</span>
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -644,7 +659,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                       <div className="h-px flex-1 bg-[#E0E0E0]" />
                     </div>
                     {lessonCount ? (
-                      <div className="flex w-full items-center overflow-x-auto pb-0.5 md:pb-0">
+                      <div className="flex w-full items-center pb-0.5 md:pb-0">
                         <div className="flex w-full flex-nowrap items-center gap-1.5 md:gap-2">
                           {level.lessons.map((lesson, lessonIndex) => {
                             const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
