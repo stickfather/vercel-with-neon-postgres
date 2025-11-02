@@ -685,7 +685,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     </div>
                     {lessonCount ? (
                       <div className="flex w-full items-center pb-0.5 md:pb-0">
-        <div className="flex w-full flex-nowrap items-center gap-0.5 md:gap-1 lg:gap-1.5">
+        <div className="flex w-full flex-nowrap items-center gap-[1px] md:gap-[2px] lg:gap-[3px]">
           {level.lessons.map((lesson, lessonIndex) => {
             const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
             const isLast = lessonIndex === lessonCount - 1;
@@ -693,7 +693,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
               <Fragment key={key}>
                 {renderLessonNode(lesson)}
                 {!isLast ? (
-                  <div className="h-[2px] w-[6px] bg-[#E0E0E0] md:w-[9px] lg:w-[12px]" />
+                  <div className="h-[2px] w-[4px] bg-[#E0E0E0] md:w-[6px] lg:w-[8px]" />
                 ) : null}
               </Fragment>
             );
