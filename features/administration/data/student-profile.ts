@@ -1706,6 +1706,7 @@ export async function listStudentLessonJourneyLessons(
   let catalogRows: SqlRow[] = [];
   let coachPanelRows: SqlRow[] = [];
   let latestLessonRows: SqlRow[] = [];
+  let lessonTableRows: SqlRow[] = [];
 
   try {
     const [
@@ -1714,6 +1715,7 @@ export async function listStudentLessonJourneyLessons(
       catalogResult,
       coachPanelResult,
       latestLessonResult,
+      lessonTableResult,
     ] = await Promise.all([
       sql`
         SELECT
@@ -1767,6 +1769,14 @@ export async function listStudentLessonJourneyLessons(
         ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
         LIMIT 1
       `,
+      sql`
+        SELECT
+          id,
+          level,
+          lesson,
+          seq
+        FROM public.lessons
+      `,
     ]);
 
     planRows = normalizeRows<SqlRow>(planResult);
@@ -1774,6 +1784,7 @@ export async function listStudentLessonJourneyLessons(
     catalogRows = normalizeRows<SqlRow>(catalogResult);
     coachPanelRows = normalizeRows<SqlRow>(coachPanelResult);
     latestLessonRows = normalizeRows<SqlRow>(latestLessonResult);
+    lessonTableRows = normalizeRows<SqlRow>(lessonTableResult);
   } catch (error) {
     console.error(
       `Error loading lesson journey data for student ${studentId}`,
@@ -1907,6 +1918,33 @@ export async function listStudentLessonJourneyLessons(
     title: string | null;
   };
 
+  const lessonTableMap = new Map<
+    number,
+    {
+      levelCode: string | null;
+      seq: number | null;
+      title: string | null;
+    }
+  >();
+
+  lessonTableRows.forEach((row) => {
+    const payload = toJsonRecord(row);
+    if (!payload) {
+      return;
+    }
+
+    const lessonId = normalizeInteger(payload.id);
+    if (lessonId == null) {
+      return;
+    }
+
+    lessonTableMap.set(lessonId, {
+      levelCode: extractString(payload, ["level", "level_code", "lesson_level"]),
+      seq: extractNumber(payload, ["seq", "lesson_seq", "lesson_level_seq"]),
+      title: extractString(payload, ["lesson", "lesson_name", "title"]),
+    });
+  });
+
   const catalogMap = new Map<number, CatalogEntry>();
   catalogRows.forEach((row) => {
     const payload = toJsonRecord(row);
@@ -1919,11 +1957,13 @@ export async function listStudentLessonJourneyLessons(
       return;
     }
 
+    const tableRecord = lessonTableMap.get(lessonId) ?? null;
     const catalogLevel = normalizeJourneyLevel(
-      extractString(payload, ["level", "level_code", "lesson_level"]),
+      tableRecord?.levelCode ?? extractString(payload, ["level", "level_code", "lesson_level"]),
     );
-    const catalogSeq = extractNumber(payload, ["seq", "lesson_seq", "lesson_level_seq"]);
-    const title = extractString(payload, ["lesson", "lesson_name", "title"]);
+    const catalogSeq =
+      tableRecord?.seq ?? extractNumber(payload, ["seq", "lesson_seq", "lesson_level_seq"]);
+    const title = tableRecord?.title ?? extractString(payload, ["lesson", "lesson_name", "title"]);
 
     catalogMap.set(lessonId, {
       lessonId,

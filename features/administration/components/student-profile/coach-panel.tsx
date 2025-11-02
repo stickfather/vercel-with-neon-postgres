@@ -100,12 +100,28 @@ function formatHoursValue(value: number | null | undefined): string {
 }
 
 function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string {
+  const rawTitle = lesson.lessonTitle?.trim();
+  const normalizedTitle = rawTitle ? rawTitle.toLowerCase() : "";
+
+  if (normalizedTitle.includes("intro")) {
+    return "Intro";
+  }
+
+  if (normalizedTitle.includes("preparación para el examen")) {
+    return "Exam";
+  }
+
   if (lesson.isIntro) {
     return "Intro";
   }
 
   if (lesson.isExam) {
     return "Exam";
+  }
+
+  const titleMatch = rawTitle?.match(/(\d+)(?!.*\d)/);
+  if (titleMatch) {
+    return titleMatch[1] ?? titleMatch[0];
   }
 
   const levelSeq =
@@ -127,9 +143,9 @@ function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string 
   }
 
   const preferred = lesson.displayLabel?.trim() ?? "";
-  const numericMatch = preferred.match(/\d+/);
+  const numericMatch = preferred.match(/(\d+)(?!.*\d)/);
   if (numericMatch) {
-    return numericMatch[0];
+    return numericMatch[1] ?? numericMatch[0];
   }
 
   return "—";
@@ -524,45 +540,53 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     };
 
     const metricsStyle: CSSProperties = {
-      fontSize: metricsFontSize,
       color: "#1F2933",
       lineHeight: 1.1,
       fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
-      backgroundColor: "rgba(255,255,255,0.92)",
+      backgroundColor: "rgba(255,255,255,0.95)",
       borderRadius: "9999px",
       padding: "4px 10px",
-      boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
-      border: "1px solid rgba(148,163,184,0.35)",
+      boxShadow: "0 8px 18px rgba(15,23,42,0.16)",
+      border: "1px solid rgba(148,163,184,0.3)",
+      backdropFilter: "blur(4px)",
     };
 
     const shouldShowMetrics = lesson.status === "completed" || lesson.status === "current";
 
     return (
-      <div
-        className="relative flex flex-col items-center gap-1 text-center font-sans"
-        title={tooltipLines.join("\n")}
-      >
+      <div className="relative flex flex-col items-center text-center font-sans" title={tooltipLines.join("\n")}>
         <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
+          {shouldShowMetrics ? (
+            <div
+              className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2"
+              style={{
+                ...metricsStyle,
+                fontSize: metricsFontSize,
+                padding: "3px 10px",
+              }}
+            >
+              📅 {`${safeDays}d`}
+            </div>
+          ) : null}
           <span>{displayTitle}</span>
           {appearance.showCompletionCheck ? (
-            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#A7F3C1] text-xs font-semibold text-white shadow-sm">
+            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#BBF7D0] text-xs font-semibold text-[#166534] shadow-sm">
               ✓
             </span>
           ) : null}
+          {shouldShowMetrics ? (
+            <div
+              className="pointer-events-none absolute -bottom-3 left-1/2 -translate-x-1/2"
+              style={{
+                ...metricsStyle,
+                fontSize: metricsFontSize,
+                padding: "3px 10px",
+              }}
+            >
+              ⏳ {`${hoursLabel}h`}
+            </div>
+          ) : null}
         </div>
-        {shouldShowMetrics ? (
-          <div
-            className="flex items-center gap-1"
-            style={{
-              ...metricsStyle,
-              marginTop: "-12px",
-            }}
-          >
-            <span>⏳ {`${hoursLabel}h`}</span>
-            <span>•</span>
-            <span>📅 {`${safeDays}d`}</span>
-          </div>
-        ) : null}
       </div>
     );
   };
@@ -660,19 +684,19 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     </div>
                     {lessonCount ? (
                       <div className="flex w-full items-center pb-0.5 md:pb-0">
-                        <div className="flex w-full flex-nowrap items-center gap-1.5 md:gap-2">
-                          {level.lessons.map((lesson, lessonIndex) => {
-                            const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
-                            const isLast = lessonIndex === lessonCount - 1;
-                            return (
-                              <Fragment key={key}>
-                                {renderLessonNode(lesson)}
-                                {!isLast ? (
-                                  <div className="h-[2px] w-4 bg-[#E0E0E0] md:w-5 lg:w-6" />
-                                ) : null}
-                              </Fragment>
-                            );
-                          })}
+        <div className="flex w-full flex-nowrap items-center gap-1 md:gap-1.5 lg:gap-2">
+          {level.lessons.map((lesson, lessonIndex) => {
+            const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
+            const isLast = lessonIndex === lessonCount - 1;
+            return (
+              <Fragment key={key}>
+                {renderLessonNode(lesson)}
+                {!isLast ? (
+                  <div className="h-[2px] w-3 bg-[#E0E0E0] md:w-4 lg:w-5" />
+                ) : null}
+              </Fragment>
+            );
+          })}
                         </div>
                       </div>
                     ) : (
