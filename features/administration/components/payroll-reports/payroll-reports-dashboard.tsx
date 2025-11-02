@@ -2538,13 +2538,19 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   const cellStatus =
                                     cell.status ??
                                     (cell as { dayStatus?: string }).dayStatus ??
-                                    (cell.hasEdits
-                                      ? cell.approved
-                                        ? "edited_and_approved"
-                                        : "edited_not_approved"
-                                      : cell.approved
-                                        ? "approved"
-                                        : "pending");
+                                    (
+                                      cell.approved
+                                        ? // When the day is approved, highlight edits made
+                                          // after approval; otherwise mark as simply approved.
+                                          (cell as { editedAfterApproval?: boolean })
+                                            .editedAfterApproval
+                                            ? "edited_and_approved"
+                                            : "approved"
+                                        : // When not yet approved, mark edited days accordingly.
+                                          cell.hasEdits
+                                            ? "edited_not_approved"
+                                            : "pending"
+                                    );
                                   const cellClass =
                                     STATUS_BUTTON_CLASSES[cellStatus] ?? STATUS_BUTTON_CLASSES.pending;
                                   return (
