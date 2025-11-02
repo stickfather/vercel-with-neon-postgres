@@ -8,7 +8,8 @@ export type StudentManagementEntry = {
   id: number;
   fullName: string;
   level: string | null;
-  currentSeq: number | null;
+  lesson: string | null;
+  lastSeenAt: string | null;
   status: string | null;
   contractEnd: string | null;
   graduationDate: string | null;
@@ -97,20 +98,48 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
     return null;
   }
 
+  const latestLevel = coerceString(
+    pick(row, [
+      "latest_lesson_level",
+      "lesson_level",
+      "latest_level",
+    ]),
+  );
+
+  const fallbackLevel = coerceString(
+    pick(row, [
+      "current_level",
+      "level",
+      "planned_level_max",
+      "planned_level_min",
+      "student_level",
+    ]),
+  );
+
+  const resolvedLevel = latestLevel ?? fallbackLevel ?? null;
+
+  const lessonName = coerceString(
+    pick(row, ["latest_lesson_name", "lesson_name", "latest_lesson", "lesson"]),
+  );
+  const lessonSeq = coerceNumber(pick(row, ["latest_lesson_seq", "lesson_seq", "seq"]));
+  const resolvedLesson = lessonName
+    ? lessonName
+    : lessonSeq != null
+      ? resolvedLevel?.trim().toUpperCase() === "A1" && lessonSeq === 0
+        ? "Intro Booklet"
+        : `Lección ${lessonSeq}`
+      : null;
+
+  const lastSeenAt = coerceString(
+    pick(row, ["latest_last_seen_at", "last_seen_at", "attended_at"]),
+  );
+
   return {
     id,
     fullName,
-    level:
-      coerceString(
-        pick(row, [
-          "current_level",
-          "level",
-          "planned_level_max",
-          "planned_level_min",
-          "student_level",
-        ]),
-      ) ?? null,
-    currentSeq: coerceNumber(pick(row, ["current_seq"])) ?? null,
+    level: resolvedLevel,
+    lesson: resolvedLesson,
+    lastSeenAt: lastSeenAt,
     status:
       coerceString(pick(row, ["status", "state", "student_state"])) ?? null,
     contractEnd:
@@ -196,6 +225,10 @@ async function runStudentManagementQuery(
         SELECT
           s.id AS student_id,
           s.full_name AS full_name,
+          latest.lesson_level AS latest_lesson_level,
+          latest.lesson_name AS latest_lesson_name,
+          latest.lesson_seq AS latest_lesson_seq,
+          latest.last_seen_at::text AS latest_last_seen_at,
           COALESCE(cp.level::text, s.planned_level_max::text, s.planned_level_min::text) AS level,
           cp.level::text AS current_level,
           cp.current_seq AS current_seq,
@@ -212,6 +245,19 @@ async function runStudentManagementQuery(
           COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
         FROM public.students AS s
         LEFT JOIN mart.coach_panel_v AS cp ON cp.student_id = s.id
+        LEFT JOIN LATERAL (
+          SELECT
+            sa.lesson_id,
+            COALESCE(sa.checkout_time, sa.checkin_time) AS last_seen_at,
+            l.level AS lesson_level,
+            l.lesson AS lesson_name,
+            l.seq AS lesson_seq
+          FROM public.student_attendance sa
+          LEFT JOIN public.lessons l ON l.id = sa.lesson_id
+          WHERE sa.student_id = s.id
+          ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
+          LIMIT 1
+        ) AS latest ON TRUE
         LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
         WHERE TRIM(COALESCE(s.full_name, '')) <> ''
         ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}

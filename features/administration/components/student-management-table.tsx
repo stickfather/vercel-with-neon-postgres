@@ -73,22 +73,19 @@ function FlagIndicator({ active, label }: { active: boolean; label: string }) {
   );
 }
 
-function formatStudentPosition(level: string | null, seq: number | null): string {
-  if (!level) {
-    return "";
+function formatStudentPosition(level: string | null, lesson: string | null): string {
+  const normalizedLevel = level?.trim();
+  const normalizedLesson = lesson?.trim();
+
+  if (normalizedLevel && normalizedLesson) {
+    return `${normalizedLevel} · ${normalizedLesson}`;
   }
 
-  const normalizedLevel = level.trim().toUpperCase();
-
-  if (seq === 0 && normalizedLevel === "A1") {
-    return `${normalizedLevel} · Intro Booklet`;
+  if (normalizedLevel) {
+    return normalizedLevel;
   }
 
-  if (typeof seq === "number" && Number.isFinite(seq)) {
-    return `${normalizedLevel} · Lección ${seq}`;
-  }
-
-  return normalizedLevel;
+  return normalizedLesson ?? "";
 }
 
 function StudentManagementTable({ students }: Props) {
@@ -253,7 +250,8 @@ function StudentManagementTable({ students }: Props) {
             id: -Date.now(),
             fullName: name,
             level: null,
-            currentSeq: null,
+            lesson: null,
+            lastSeenAt: null,
             status: null,
             contractEnd: null,
             graduationDate: null,
@@ -409,10 +407,7 @@ function StudentManagementTable({ students }: Props) {
               const statusDate = statusDateSource
                 ? formatStatusDate(statusDateSource)
                 : null;
-              const positionLabel = formatStudentPosition(
-                student.level,
-                student.currentSeq,
-              );
+              const positionLabel = formatStudentPosition(student.level, student.lesson);
               return (
                 <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
                   <td className="px-5 py-3 align-top">

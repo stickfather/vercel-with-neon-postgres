@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import type { CSSProperties } from "react";
 
 import type {
@@ -22,21 +22,9 @@ const HEATMAP_DAYS = 30;
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
 
-const LESSON_NODE_GAP_PX = 8;
-const LESSON_NODE_MIN_SIZE = 36;
-const LESSON_NODE_MAX_SIZE = 44;
-const LESSON_NODE_WIDTH_RATIO = 1.3;
-const LESSON_NODE_LENGTH_SCALE = 1.05;
-const LESSON_NODE_HEIGHT_SCALE = 1.425;
-const LESSON_NODE_WIDTH_MULTIPLIER = LESSON_NODE_WIDTH_RATIO * LESSON_NODE_LENGTH_SCALE;
-const LESSON_NODE_LABEL_FONT_RATIO = 0.245 * LESSON_NODE_HEIGHT_SCALE;
-const LESSON_NODE_METRIC_FONT_RATIO = 0.208 * LESSON_NODE_HEIGHT_SCALE;
-const LESSON_NODE_BADGE_PADDING_X_RATIO = 0.18;
-const LESSON_NODE_BADGE_PADDING_Y_RATIO = 0.085;
-const LESSON_NODE_BADGE_OFFSET_RATIO = 0.22;
-
-const LEVEL_BADGE_BASE =
-  "inline-flex h-8 min-w-[60px] shrink-0 items-center justify-center rounded-full border border-[#2E867A]/70 bg-[linear-gradient(135deg,#6FE0CF,#2E867A)] px-3 text-[11px] font-extrabold uppercase tracking-[0.22em] text-white shadow-[0_8px_20px_rgba(24,116,107,0.35)]";
+const LESSON_NODE_MIN_SIZE = 24;
+const LESSON_NODE_MAX_SIZE = 38;
+const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 2.5;
 
 function formatNumber(
   value: number | null | undefined,
@@ -104,12 +92,25 @@ function heatmapColor(minutes: number, maxMinutes: number): string {
 
 function formatHoursValue(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) {
-    return "0.0";
+    return "0";
   }
-  return value.toFixed(1);
+  const normalized = Math.max(0, value);
+  const rounded = Number(normalized.toFixed(1));
+  return Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1);
 }
 
 function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string {
+  const rawTitle = lesson.lessonTitle?.trim();
+  const normalizedTitle = rawTitle ? rawTitle.toLowerCase() : "";
+
+  if (normalizedTitle.includes("intro")) {
+    return "Intro";
+  }
+
+  if (normalizedTitle.includes("preparación para el examen")) {
+    return "Exam";
+  }
+
   if (lesson.isIntro) {
     return "Intro";
   }
@@ -118,35 +119,36 @@ function resolveLessonBubbleTitle(lesson: CoachPanelLessonJourneyEntry): string 
     return "Exam";
   }
 
+  const titleMatch = rawTitle?.match(/(\d+)(?!.*\d)/);
+  if (titleMatch) {
+    return titleMatch[1] ?? titleMatch[0];
+  }
+
+  const levelSeq =
+    typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
+      ? lesson.lessonLevelSeq
+      : null;
+
+  if (levelSeq != null) {
+    return String(levelSeq);
+  }
+
+  const globalSeq =
+    typeof lesson.lessonGlobalSeq === "number" && Number.isFinite(lesson.lessonGlobalSeq)
+      ? lesson.lessonGlobalSeq
+      : null;
+
+  if (globalSeq != null) {
+    return String(globalSeq);
+  }
+
   const preferred = lesson.displayLabel?.trim() ?? "";
-  const fallback = lesson.lessonTitle?.trim() ?? "";
-  const base = preferred.length ? preferred : fallback;
-
-  if (!base.length) {
-    const seq =
-      typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
-        ? lesson.lessonLevelSeq
-        : null;
-    if (seq != null) {
-      return String(seq);
-    }
-    return "—";
+  const numericMatch = preferred.match(/(\d+)(?!.*\d)/);
+  if (numericMatch) {
+    return numericMatch[1] ?? numericMatch[0];
   }
 
-  if (/^lección\s+/i.test(base)) {
-    const stripped = base.replace(/^lección\s+/i, "").trim();
-    if (!stripped.length) {
-      return "—";
-    }
-
-    const numericMatch = stripped.match(/^\d+/);
-    if (numericMatch) {
-      return numericMatch[0];
-    }
-    return stripped;
-  }
-
-  return base;
+  return "—";
 }
 
 function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string {
@@ -162,82 +164,65 @@ function resolveLessonTooltipTitle(lesson: CoachPanelLessonJourneyEntry): string
 }
 
 type LessonNodeAppearance = {
-  borderColor: string;
-  borderWidth: number;
-  borderStyle?: "solid" | "dashed";
-  topBackground: string;
-  bottomBackground: string;
-  textClass: string;
-  topTextClass?: string;
-  labelPrefix?: string;
-  containerShadow?: string;
-  bottomTextClass?: string;
-  accentHalo?: string;
+  fillColor: string;
+  textColor: string;
+  borderColor?: string;
+  borderWidth?: number;
+  glowShadow?: string;
   showCompletionCheck: boolean;
-  labelBadgeBackground?: string;
-  labelBadgeTextClass?: string;
 };
 
 function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): LessonNodeAppearance {
   if (lesson.status === "completed") {
     return {
-      borderColor: "#22C55E",
-      borderWidth: 2,
-      topBackground: "#86EFAC",
-      bottomBackground: "#16A34A",
-      textClass: "text-white",
-      topTextClass: "text-[#065F46]",
-      containerShadow: "shadow-[0_0_0_2px_rgba(34,197,94,0.25)]",
+      fillColor: "#28A745",
+      textColor: "#FFFFFF",
+      borderColor: "#1F7F34",
+      borderWidth: 1.5,
+      glowShadow: "0 4px 16px rgba(40,167,69,0.25)",
       showCompletionCheck: true,
-      labelBadgeBackground: "rgba(34,197,94,0.95)",
-      labelBadgeTextClass: "text-white",
     };
   }
 
   if (lesson.status === "current") {
     return {
-      borderColor: "#F36C3D",
+      fillColor: "#3399FF",
+      textColor: "#FFFFFF",
+      borderColor: "#0F6BD9",
       borderWidth: 3,
-      topBackground: "#B7F2EC",
-      bottomBackground: "#7DDDD0",
-      textClass: "text-white",
-      topTextClass: "text-[#0F172A]",
-      containerShadow: "shadow-[0_0_0_6px_rgba(243,108,61,0.18)]",
-      accentHalo:
-        "after:absolute after:inset-[-6px] after:-z-10 after:rounded-full after:bg-[rgba(125,221,208,0.22)] after:content-['']",
+      glowShadow: "0 0 0 6px rgba(51,153,255,0.28), 0 12px 24px rgba(28,126,219,0.22)",
       showCompletionCheck: false,
-      labelBadgeBackground: "#FFFFFF",
-      labelBadgeTextClass: "text-[#0F172A]",
     };
   }
 
   if (lesson.isExam) {
     return {
-      borderColor: "#43B2A1",
-      borderWidth: 2,
-      borderStyle: "dashed",
-      topBackground: "#E7F7F4",
-      bottomBackground: "#CFF1EA",
-      textClass: "text-[#2E867A]",
-      containerShadow: "shadow-[inset_0_0_0_1px_rgba(67,178,161,0.18)]",
-      accentHalo: "after:absolute after:inset-[6%] after:-z-10 after:rounded-full after:bg-[rgba(67,178,161,0.12)] after:content-['']",
+      fillColor: "#2F8AE6",
+      textColor: "#FFFFFF",
+      borderColor: "#2F8AE6",
+      borderWidth: 1.5,
+      glowShadow: "0 8px 18px rgba(47,138,230,0.18)",
       showCompletionCheck: false,
-      labelBadgeBackground: "#CFF1EA",
-      labelBadgeTextClass: "text-[#0F172A]",
+    };
+  }
+
+  if (lesson.isIntro) {
+    return {
+      fillColor: "#2F8AE6",
+      textColor: "#FFFFFF",
+      borderColor: "#2F8AE6",
+      borderWidth: 1.5,
+      glowShadow: "0 6px 16px rgba(47,138,230,0.14)",
+      showCompletionCheck: false,
     };
   }
 
   return {
-    borderColor: "#22C55E",
-    borderWidth: 2,
-    topBackground: "#FFFFFF",
-    bottomBackground: "#F1F5F9",
-    textClass: "text-slate-600",
-    topTextClass: "text-slate-700",
-    bottomTextClass: "text-slate-600",
+    fillColor: "#D6E9FF",
+    textColor: "#1C7EDB",
+    borderColor: undefined,
+    borderWidth: 0,
     showCompletionCheck: false,
-    labelBadgeBackground: "#E2E8F0",
-    labelBadgeTextClass: "text-slate-700",
   };
 }
 
@@ -341,7 +326,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     );
   }
 
-  const { profileHeader, lessonJourney, paceForecast } = data;
+  const { profileHeader, lessonJourney } = data;
 
   const journeyLessons = useMemo(() => {
     const lessons: CoachPanelLessonJourneyEntry[] = [];
@@ -529,107 +514,79 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     const tooltipLines = [
       `Nivel ${lesson.levelCode}`,
       tooltipTitle,
-      `⏳ ${hoursLabel} • 📅 ${safeDays}`,
+      `⏳ ${hoursLabel}h • 📅 ${safeDays}d`,
     ];
     const appearance = resolveLessonNodeAppearance(lesson);
-    const labelPrefix = appearance.labelPrefix ?? "";
-    const bottomTextClass = appearance.bottomTextClass ?? appearance.textClass;
-    const topTextClass = appearance.topTextClass ?? appearance.textClass;
-    const labelBadgeTextClass = appearance.labelBadgeTextClass ?? topTextClass;
-    const labelBadgeBackground = appearance.labelBadgeBackground ?? "rgba(15,23,42,0.6)";
-
-    const examScale = lesson.isExam ? 1.15 : 1;
-    const completedHeightScale = lesson.status === "completed" ? 1.1 : 1;
-    const widthScale = LESSON_NODE_WIDTH_MULTIPLIER * examScale;
-    const heightScale = LESSON_NODE_HEIGHT_SCALE * completedHeightScale * examScale;
-    const minWidthPx = LESSON_NODE_MIN_SIZE * widthScale;
-    const maxWidthPx = LESSON_NODE_MAX_SIZE * widthScale;
-    const minHeightPx = LESSON_NODE_MIN_SIZE * heightScale;
-    const maxHeightPx = LESSON_NODE_MAX_SIZE * heightScale;
-
-    const nodeWrapperClass = `relative flex flex-col items-center text-center ${appearance.accentHalo ?? ""}`;
-    const nodeWrapperStyle: CSSProperties = {
-      flexBasis: `calc(var(--lesson-node-size) * ${widthScale})`,
-      width: `calc(var(--lesson-node-size) * ${widthScale})`,
-      height: `calc(var(--lesson-node-size) * ${heightScale})`,
-      minWidth: `${minWidthPx}px`,
-      minHeight: `${minHeightPx}px`,
-      maxWidth: `${maxWidthPx}px`,
-      maxHeight: `${maxHeightPx}px`,
-    };
-    if (appearance.showCompletionCheck) {
-      nodeWrapperStyle.paddingBottom = "10px";
-    }
-
-    const circleClass = `relative flex h-full w-full flex-col overflow-hidden rounded-full border bg-transparent ${appearance.textClass} ${appearance.containerShadow ?? ""}`;
+    const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
+    const baseLabelScale = lesson.isIntro || lesson.isExam ? 0.34 : 0.52;
+    const labelScale =
+      lesson.status === "completed" ? baseLabelScale * 0.92 : baseLabelScale;
+    const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
+    const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
     const circleStyle: CSSProperties = {
-      borderColor: appearance.borderColor,
-      borderWidth: appearance.borderWidth,
-      borderStyle: appearance.borderStyle ?? "solid",
-    };
-
-    const labelStyle: CSSProperties = {
-      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_LABEL_FONT_RATIO})`,
-      lineHeight: 1.1,
-    };
-
-    const metricStyle: CSSProperties = {
-      fontSize: `calc(var(--lesson-node-size) * ${LESSON_NODE_METRIC_FONT_RATIO})`,
-      lineHeight: 1.1,
-    };
-
-    const labelBadgeStyle: CSSProperties = {
-      ...labelStyle,
-      padding: `calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_Y_RATIO}) calc(var(--lesson-node-size) * ${LESSON_NODE_BADGE_PADDING_X_RATIO})`,
+      width: nodeSizeValue,
+      height: nodeSizeValue,
+      backgroundColor: appearance.fillColor,
+      color: appearance.textColor,
       borderRadius: "9999px",
-      backgroundColor: labelBadgeBackground,
-      boxShadow: "0 10px 20px rgba(15,23,42,0.25)",
-      transform: `translate(-50%, calc(var(--lesson-node-size) * -${LESSON_NODE_BADGE_OFFSET_RATIO}))`,
+      border: appearance.borderWidth
+        ? `${appearance.borderWidth}px solid ${appearance.borderColor ?? appearance.fillColor}`
+        : appearance.borderColor
+        ? `2px solid ${appearance.borderColor}`
+        : "none",
+      boxShadow: appearance.glowShadow,
+      fontSize: labelFontSize,
+      lineHeight: 1,
+      fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+      letterSpacing: lesson.isIntro || lesson.isExam ? "0.02em" : "0",
     };
+
+    const metricsStyle: CSSProperties = {
+      color: "#1F2933",
+      lineHeight: 1.1,
+      fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+      backgroundColor: "rgba(255,255,255,0.95)",
+      borderRadius: "9999px",
+      padding: "1px 5px",
+      boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
+      border: "1px solid rgba(148,163,184,0.28)",
+      backdropFilter: "blur(4px)",
+    };
+
+    const shouldShowMetrics = lesson.status === "completed" || lesson.status === "current";
 
     return (
-      <div
-        key={`journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`}
-        className={nodeWrapperClass}
-        style={nodeWrapperStyle}
-        title={tooltipLines.join("\n")}
-      >
-        <div className={circleClass} style={circleStyle}>
-          <div
-            className={`relative flex flex-shrink-0 items-center justify-center font-bold ${topTextClass}`}
-            style={{
-              backgroundColor: appearance.topBackground,
-              flexBasis: "30%",
-              paddingBottom: `calc(var(--lesson-node-size) * 0.08)`,
-              ...labelStyle,
-            }}
-          >
-            <span className="sr-only" style={labelStyle}>{`${labelPrefix}${displayTitle}`}</span>
-          </div>
-          <div
-            className={`flex flex-1 flex-col items-center justify-center gap-[2px] font-medium ${bottomTextClass}`}
-            style={{
-              backgroundColor: appearance.bottomBackground,
-              paddingBottom: "6px",
-              paddingTop: "4px",
-              ...metricStyle,
-            }}
-          >
-            <span style={metricStyle}>⏳ {hoursLabel}</span>
-            <span style={metricStyle}>📅 {safeDays}</span>
-          </div>
+      <div className="relative flex flex-col items-center text-center font-sans" title={tooltipLines.join("\n")}>
+        <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
+          <span>{displayTitle}</span>
+          {appearance.showCompletionCheck ? (
+            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#BBF7D0] text-xs font-semibold text-[#166534] shadow-sm">
+              ✓
+            </span>
+          ) : null}
         </div>
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-1/2 top-0 z-10 flex items-center justify-center font-black uppercase tracking-[0.24em] ${labelBadgeTextClass}`}
-          style={labelBadgeStyle}
-        >
-          {`${labelPrefix}${displayTitle}`}
-        </span>
-        {appearance.showCompletionCheck ? (
-          <span className="absolute -bottom-2 left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white text-base shadow-sm">
-            ✅
-          </span>
+        {shouldShowMetrics ? (
+          <div
+            className="pointer-events-none -mt-1.5 flex items-center justify-center -space-x-1"
+            style={{ transform: "translateY(-2px)" }}
+          >
+            <div
+              style={{
+                ...metricsStyle,
+                fontSize: metricsFontSize,
+              }}
+            >
+              📅 {`${safeDays}d`}
+            </div>
+            <div
+              style={{
+                ...metricsStyle,
+                fontSize: metricsFontSize,
+              }}
+            >
+              ⏳ {`${hoursLabel}h`}
+            </div>
+          </div>
         ) : null}
       </div>
     );
@@ -643,18 +600,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
   const completedLessonsLabel = formatNumber(profileHeader.completedLessonsInPlan);
   const totalLessonsLabel = formatNumber(profileHeader.totalLessonsInPlan);
 
-
-  const paceForecastLabel = paceForecast.forecastMonthsToFinishPlan != null
-    ? `${formatNumber(paceForecast.forecastMonthsToFinishPlan, { maximumFractionDigits: 1 })} meses`
-    : "Sin pronóstico";
-
-  const gaugePercent = paceForecast.forecastMonthsToFinishPlan != null && paceForecast.forecastMonthsToFinishPlan > 0
-    ? Math.min(1, paceForecast.forecastMonthsToFinishPlan / 12) * 100
-    : null;
-
-  const gaugeBackground = gaugePercent == null
-    ? "conic-gradient(#e2e8f0 0deg, #e2e8f0 360deg)"
-    : `conic-gradient(#0b9e8f ${gaugePercent * 3.6}deg, #e2e8f0 ${gaugePercent * 3.6}deg 360deg)`;
 
   const learnerSpeedLabel = data.learnerSpeed.label;
   const learnerSpeedTone = resolveSpeedTone(learnerSpeedLabel);
@@ -728,40 +673,31 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   : "flex flex-col gap-4 border-t border-slate-200/70 pt-4";
 
               const lessonCount = level.lessons.length;
-              const widthWeight = level.lessons.reduce((total, entry) => {
-                const examScale = entry.isExam ? 1.15 : 1;
-                return total + LESSON_NODE_WIDTH_RATIO * examScale;
-              }, 0);
-              const widthDenominator = Math.max(widthWeight, 1);
-              const clampGap = Math.max(lessonCount - 1, 0) * LESSON_NODE_GAP_PX;
-              const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, calc((100% - ${clampGap}px) / ${widthDenominator}), ${LESSON_NODE_MAX_SIZE}px)`;
-
-              const maxWidthPixels = level.lessons.reduce((total, entry) => {
-                const examScale = entry.isExam ? 1.15 : 1;
-                return total + LESSON_NODE_MAX_SIZE * LESSON_NODE_WIDTH_MULTIPLIER * examScale;
-              }, 0);
-              const nodeLayoutStyle: CSSProperties = {
-                width: "100%",
-                maxWidth:
-                  lessonCount > 0
-                    ? `calc(${maxWidthPixels}px + ${(lessonCount - 1) * LESSON_NODE_GAP_PX}px)`
-                    : undefined,
-                gap: `${LESSON_NODE_GAP_PX}px`,
-              };
-              (nodeLayoutStyle as CSSProperties & Record<string, string>)["--lesson-node-size"] = nodeSizeValue;
 
               return (
                 <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
-                  <div className="flex flex-col gap-3">
-                    <span className="flex h-8 items-center justify-start self-start">
-                      <span className={LEVEL_BADGE_BASE}>
-                        {level.levelCode === "OTROS" ? "OT" : level.levelCode}
-                      </span>
-                    </span>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-3">
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500">
+                        Nivel {level.levelCode === "OTROS" ? "OT" : level.levelCode}
+                      </h4>
+                      <div className="h-px flex-1 bg-[#E0E0E0]" />
+                    </div>
                     {lessonCount ? (
-                      <div className="flex min-w-0 justify-end">
-                        <div className="flex w-full flex-wrap md:flex-nowrap" style={nodeLayoutStyle}>
-                          {level.lessons.map((lesson) => renderLessonNode(lesson))}
+                      <div className="flex w-full items-center pb-0.5 md:pb-0">
+        <div className="flex w-full flex-nowrap items-center gap-[1px] md:gap-[2px] lg:gap-[3px]">
+          {level.lessons.map((lesson, lessonIndex) => {
+            const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
+            const isLast = lessonIndex === lessonCount - 1;
+            return (
+              <Fragment key={key}>
+                {renderLessonNode(lesson)}
+                {!isLast ? (
+                  <div className="h-[2px] w-[4px] bg-[#E0E0E0] md:w-[6px] lg:w-[8px]" />
+                ) : null}
+              </Fragment>
+            );
+          })}
                         </div>
                       </div>
                     ) : (
@@ -887,53 +823,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Pace & forecast</span>
-          <h4 className="text-xl font-bold text-brand-deep">Pronóstico del plan</h4>
-        </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="flex items-center gap-4">
-            <div
-              className="flex h-32 w-32 items-center justify-center rounded-full border border-white/70 bg-white shadow-inner"
-              style={{ background: gaugeBackground }}
-            >
-              <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white text-center shadow">
-                <span className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Forecast</span>
-                <span className="mt-1 text-xl font-bold text-brand-deep">{paceForecastLabel}</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-3 text-sm text-brand-ink-muted">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Lecciones restantes</p>
-                <p className="text-lg font-semibold text-brand-deep">
-                  {formatNumber(paceForecast.lessonsRemaining)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Progreso del plan</p>
-                <p className="text-lg font-semibold text-brand-deep">
-                  {formatPercent(paceForecast.planProgressPct, 0)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/80">Estado</p>
-                <p className="text-lg font-semibold text-brand-deep">
-                  {profileHeader.onPacePlan ? "En ritmo" : "Requiere atención"}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5">
-            <p className="text-sm text-brand-ink-muted">
-              Mantener una velocidad de finalización menor o igual a seis meses asegura que el estudiante aproveche su plan.
-              {paceForecast.forecastMonthsToFinishPlan != null
-                ? ` Con el ritmo actual terminaría en aproximadamente ${paceForecastLabel}.`
-                : ""}
-            </p>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }
