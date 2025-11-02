@@ -2535,8 +2535,11 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
+                                  // Prefer the newer `dayStatus` field when available; older
+                                  // responses only populate `status`.
                                   const serverStatus =
-                                    cell.status ?? (cell as { dayStatus?: string }).dayStatus;
+                                    (cell as { dayStatus?: MatrixCell["status"] }).dayStatus ??
+                                    cell.status;
 
                                   // Determine the effective "edited after approval" flag.
                                   // When the server omits the dedicated flag, fall back to
