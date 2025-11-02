@@ -9,6 +9,7 @@ import type {
   CoachPanelLessonJourneyLevel,
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
+import { GUAYAQUIL_TIME_ZONE } from "@/lib/time/format";
 
 import { StudyHoursHistogram } from "./StudyHoursHistogram";
 
@@ -18,6 +19,17 @@ type CoachPanelProps = {
 };
 
 const HEATMAP_DAYS = 30;
+const HEATMAP_DAY_KEY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: GUAYAQUIL_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const HEATMAP_LABEL_FORMATTER = new Intl.DateTimeFormat("es-EC", {
+  timeZone: GUAYAQUIL_TIME_ZONE,
+  day: "2-digit",
+  month: "2-digit",
+});
 
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
@@ -65,20 +77,67 @@ function formatDate(iso: string | null | undefined, withTime = false): string {
   return formatter.format(parsed);
 }
 
+function normalizeHeatmapDayKey(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  const base = trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00`;
+  const parsed = new Date(base);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return HEATMAP_DAY_KEY_FORMATTER.format(parsed);
+}
+
 function buildHeatmapCells(
   entries: CoachPanelEngagementHeatmapEntry[],
   days: number,
 ): CoachPanelEngagementHeatmapEntry[] {
-  const map = new Map(entries.map((entry) => [entry.date, entry.minutes]));
-  const result: CoachPanelEngagementHeatmapEntry[] = [];
-  const today = new Date();
-  for (let index = days - 1; index >= 0; index -= 1) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - index);
-    const iso = date.toISOString().slice(0, 10);
-    result.push({ date: iso, minutes: map.get(iso) ?? 0 });
+  if (!entries.length) {
+    return [];
   }
-  return result;
+  const totals = new Map<string, number>();
+  entries.forEach((entry) => {
+    const key = normalizeHeatmapDayKey(entry.date);
+    if (!key) {
+      return;
+    }
+    const minutes =
+      entry.minutes != null && Number.isFinite(entry.minutes)
+        ? Math.max(0, Math.round(entry.minutes))
+        : 0;
+    totals.set(key, (totals.get(key) ?? 0) + minutes);
+  });
+  const sortedKeys = Array.from(totals.keys()).sort((a, b) => {
+    if (a === b) {
+      return 0;
+    }
+    return a < b ? -1 : 1;
+  });
+  const startIndex = Math.max(0, sortedKeys.length - Math.max(1, days));
+  return sortedKeys.slice(startIndex).map((date) => ({
+    date,
+    minutes: totals.get(date) ?? 0,
+  }));
+}
+
+function formatHeatmapDayLabel(value: string): string {
+  if (!value) {
+    return "";
+  }
+  const iso = value.includes("T") ? value : `${value}T00:00:00-05:00`;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return HEATMAP_LABEL_FORMATTER.format(parsed);
 }
 
 function heatmapColor(minutes: number, maxMinutes: number): string {
@@ -270,26 +329,24 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     }
     const totals = new Map<string, number>();
     recentActivity.forEach((session) => {
-      const checkIn = session.checkIn;
-      if (!checkIn) {
-        return;
-      }
-      const date = checkIn.slice(0, 10);
-      if (!date) {
+      const key = normalizeHeatmapDayKey(session.checkIn);
+      if (!key) {
         return;
       }
       const minutes =
         session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)
           ? Math.max(0, session.sessionMinutes)
           : 0;
-      totals.set(date, (totals.get(date) ?? 0) + minutes);
+      totals.set(key, (totals.get(key) ?? 0) + minutes);
     });
-    return Array.from(totals.entries())
+    const aggregated = Array.from(totals.entries())
       .map(([date, minutes]) => ({
         date,
         minutes: Math.max(0, Math.trunc(minutes)),
       }))
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const startIndex = Math.max(0, aggregated.length - HEATMAP_DAYS);
+    return aggregated.slice(startIndex);
   }, [heatmapBase, recentActivity]);
 
   const heatmapCells = useMemo(() => buildHeatmapCells(heatmapSource, HEATMAP_DAYS), [heatmapSource]);
@@ -762,7 +819,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     key={cell.date}
                     className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
                     style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
-                    title={`${formatDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
+                    title={`${formatHeatmapDayLabel(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
                   />
                 ))}
               </div>

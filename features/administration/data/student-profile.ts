@@ -1,6 +1,7 @@
 import { unstable_noStore as noStore } from "next/cache";
 
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
+import { formatGuayaquilDateTime } from "@/lib/time/format";
 import {
   isMissingStudentFlagRelation,
   STUDENT_FLAG_RELATION_CANDIDATES,
@@ -239,8 +240,8 @@ function normalizeFieldValue<T extends BasicDetailFieldType>(
     if (type === "date") {
       return date.toISOString().slice(0, 10) as NormalizedFieldValue<T>;
     }
-    const iso = date.toISOString();
-    return `${iso.slice(0, 10)} ${iso.slice(11, 16)}` as NormalizedFieldValue<T>;
+    const formatted = formatGuayaquilDateTime(date);
+    return (formatted ?? null) as NormalizedFieldValue<T>;
   }
 
   if (typeof value === "number") {
@@ -267,7 +268,12 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     photoUrl: typeof row.photoUrl === "string" && row.photoUrl.length
       ? row.photoUrl
       : null,
-    photoUpdatedAt: normalizeFieldValue(row.photoUpdatedAt, "datetime"),
+    photoUpdatedAt:
+      row.photoUpdatedAt instanceof Date
+        ? row.photoUpdatedAt.toISOString()
+        : typeof row.photoUpdatedAt === "string"
+          ? row.photoUpdatedAt
+          : null,
     representativeName: normalizeFieldValue(row.representativeName, "text"),
     representativePhone: normalizeFieldValue(row.representativePhone, "text"),
     representativeEmail: normalizeFieldValue(row.representativeEmail, "text"),
@@ -538,6 +544,7 @@ export type StudentNote = {
   studentId: number;
   note: string;
   createdAt: string | null;
+  createdAtRaw: string | null;
 };
 
 export async function listStudentNotes(studentId: number): Promise<StudentNote[]> {
@@ -556,6 +563,12 @@ export async function listStudentNotes(studentId: number): Promise<StudentNote[]
     studentId: Number(row.student_id ?? studentId),
     note: ((row.note as string | null) ?? "").trim(),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
+    createdAtRaw:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : typeof row.created_at === "string"
+          ? row.created_at
+          : null,
   }));
 }
 
@@ -582,6 +595,12 @@ export async function createStudentNote(
     studentId: Number(row.student_id ?? studentId),
     note: ((row.note as string | null) ?? "").trim(),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
+    createdAtRaw:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : typeof row.created_at === "string"
+          ? row.created_at
+          : null,
   };
 }
 
@@ -608,6 +627,12 @@ export async function updateStudentNote(
     studentId: Number(row.student_id ?? 0),
     note: ((row.note as string | null) ?? "").trim(),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
+    createdAtRaw:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : typeof row.created_at === "string"
+          ? row.created_at
+          : null,
   };
 }
 
@@ -630,6 +655,12 @@ export async function deleteStudentNote(noteId: number): Promise<StudentNote | n
     studentId: Number(row.student_id ?? 0),
     note: ((row.note as string | null) ?? "").trim(),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
+    createdAtRaw:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : typeof row.created_at === "string"
+          ? row.created_at
+          : null,
   };
 }
 
@@ -637,6 +668,7 @@ export type StudentExam = {
   id: number;
   studentId: number;
   timeScheduled: string | null;
+  timeScheduledRaw: string | null;
   status: string | null;
   score: number | null;
   passed: boolean;
@@ -645,10 +677,17 @@ export type StudentExam = {
 
 function mapExamRow(row: SqlRow, fallbackStudentId: number): StudentExam {
   const passedValue = normalizeFieldValue(row.passed, "boolean");
+  const timeScheduledRaw =
+    row.time_scheduled instanceof Date
+      ? row.time_scheduled.toISOString()
+      : typeof row.time_scheduled === "string"
+        ? row.time_scheduled
+        : null;
   return {
     id: Number(row.id),
     studentId: Number(row.student_id ?? fallbackStudentId),
     timeScheduled: normalizeFieldValue(row.time_scheduled, "datetime"),
+    timeScheduledRaw,
     status: normalizeFieldValue(row.status, "text"),
     score:
       row.score == null
@@ -764,6 +803,8 @@ export type StudentInstructivo = {
   note: string | null;
   updatedAt: string | null;
   createdAt: string | null;
+  updatedAtRaw: string | null;
+  createdAtRaw: string | null;
 };
 
 function mapInstructivoRow(
@@ -779,6 +820,18 @@ function mapInstructivoRow(
     note: normalizeFieldValue(row.note, "text"),
     updatedAt: normalizeFieldValue(row.updated_at, "datetime"),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
+    updatedAtRaw:
+      row.updated_at instanceof Date
+        ? row.updated_at.toISOString()
+        : typeof row.updated_at === "string"
+          ? row.updated_at
+          : null,
+    createdAtRaw:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : typeof row.created_at === "string"
+          ? row.created_at
+          : null,
   };
 }
 
@@ -3614,6 +3667,76 @@ export async function createStudentAttendanceEntry({
   }
 
   return mapped;
+}
+
+function isMissingColumnError(error: unknown, column: string): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const payload = error as { code?: unknown; message?: unknown };
+  if (payload.code === "42703") {
+    return true;
+  }
+  if (typeof payload.message === "string") {
+    return payload.message.toLowerCase().includes(`column ${column}`.toLowerCase());
+  }
+  return false;
+}
+
+export async function deleteStudentAttendanceEntry({
+  studentId,
+  attendanceId,
+}: {
+  studentId: number;
+  attendanceId: number;
+}): Promise<{ deleted: boolean; softDeleted: boolean }> {
+  const sql = getSqlClient();
+
+  const normalizedStudentId = Math.trunc(studentId);
+  if (!Number.isFinite(normalizedStudentId) || normalizedStudentId <= 0) {
+    throw new Error("El estudiante indicado no es válido.");
+  }
+
+  const normalizedAttendanceId = Math.trunc(attendanceId);
+  if (!Number.isFinite(normalizedAttendanceId) || normalizedAttendanceId <= 0) {
+    throw new Error("El registro de asistencia indicado no es válido.");
+  }
+
+  try {
+    const updated = normalizeRows<SqlRow>(await sql`
+      UPDATE public.student_attendance
+      SET deleted_at = NOW()
+      WHERE id = ${normalizedAttendanceId}::bigint
+        AND student_id = ${normalizedStudentId}::bigint
+      RETURNING id
+    `);
+
+    if (updated.length) {
+      return { deleted: true, softDeleted: true };
+    }
+  } catch (error) {
+    if (!isMissingColumnError(error, "deleted_at")) {
+      throw error;
+    }
+
+    const removed = normalizeRows<SqlRow>(await sql`
+      DELETE FROM public.student_attendance
+      WHERE id = ${normalizedAttendanceId}::bigint
+        AND student_id = ${normalizedStudentId}::bigint
+      RETURNING id
+    `);
+
+    return { deleted: removed.length > 0, softDeleted: false };
+  }
+
+  const removed = normalizeRows<SqlRow>(await sql`
+    DELETE FROM public.student_attendance
+    WHERE id = ${normalizedAttendanceId}::bigint
+      AND student_id = ${normalizedStudentId}::bigint
+    RETURNING id
+  `);
+
+  return { deleted: removed.length > 0, softDeleted: false };
 }
 
 export async function getStudentProgressEvents(

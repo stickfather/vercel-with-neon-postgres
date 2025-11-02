@@ -94,9 +94,14 @@ export function InstructivosPanel({
       if (aDue && bDue) return aDue.localeCompare(bDue);
       if (aDue) return -1;
       if (bDue) return 1;
-      const aCreated = a.createdAt ?? "";
-      const bCreated = b.createdAt ?? "";
-      return bCreated.localeCompare(aCreated);
+      const aTimestamp = a.createdAtRaw ? Date.parse(a.createdAtRaw) : Number.NaN;
+      const bTimestamp = b.createdAtRaw ? Date.parse(b.createdAtRaw) : Number.NaN;
+      const aValue = Number.isNaN(aTimestamp) ? Number.MIN_SAFE_INTEGER : aTimestamp;
+      const bValue = Number.isNaN(bTimestamp) ? Number.MIN_SAFE_INTEGER : bTimestamp;
+      if (aValue !== bValue) {
+        return bValue - aValue;
+      }
+      return b.id - a.id;
     });
   }, [instructivos]);
 

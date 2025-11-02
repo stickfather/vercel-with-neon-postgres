@@ -16,6 +16,7 @@ import {
 } from "next/navigation";
 import type { CalendarEvent } from "@/features/administration/data/calendar";
 import type { StudentName } from "@/features/student-checkin/data/queries";
+import { formatGuayaquilDateTime } from "@/lib/time/format";
 
 const TIMEZONE = "America/Guayaquil";
 
@@ -44,6 +45,40 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "cancelled", label: "Cancelado" },
 ];
 
+const EXAM_STATUS_LEGEND: Array<{ key: string; label: string; className: string }> = [
+  {
+    key: "scheduled",
+    label: "Programado",
+    className: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
+  },
+  {
+    key: "rescheduled",
+    label: "Reprogramado",
+    className: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
+  },
+  {
+    key: "completed",
+    label: "Realizado",
+    className: "border border-[#0c2c59] bg-[#123b7a] text-white",
+  },
+  {
+    key: "passed",
+    label: "Aprobado",
+    className: "border border-transparent bg-brand-teal-soft text-brand-teal",
+  },
+  {
+    key: "failed",
+    label: "Reprobado",
+    className: "border border-transparent bg-brand-ink-muted/15 text-brand-ink",
+  },
+  {
+    key: "cancelled",
+    label: "Cancelado",
+    className:
+      "border border-[#d0d4de] bg-[repeating-linear-gradient(135deg,#f2f4f8_0px,#f2f4f8_8px,#e6e9f0_8px,#e6e9f0_16px)] text-[#4b5563]",
+  },
+];
+
 const DATE_KEY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: TIMEZONE,
 });
@@ -68,15 +103,6 @@ const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("es-EC", {
   timeZone: TIMEZONE,
   day: "numeric",
   month: "long",
-});
-
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("es-EC", {
-  timeZone: TIMEZONE,
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
 });
 
 const TIME_FORMATTER = new Intl.DateTimeFormat("es-EC", {
@@ -248,9 +274,7 @@ function formatDateLabel(date: Date): string {
 }
 
 function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return DATE_TIME_FORMATTER.format(date);
+  return formatGuayaquilDateTime(value) ?? "";
 }
 
 function formatTime(value: string): string {
@@ -1838,14 +1862,30 @@ export function AdminCalendarDashboard() {
                   {activeStatusBadge.label}
                 </span>
               )}
-            </div>
           </div>
+        </div>
 
-          {fetchState === "error" && fetchError && (
-            <div className="rounded-[32px] border border-brand-orange bg-white/85 px-6 py-4 text-sm font-medium text-brand-ink">
-              {fetchError}
-            </div>
-          )}
+        <div className="flex flex-wrap items-center gap-2 rounded-[32px] border border-white/75 bg-white/95 px-5 py-3 shadow-[0_28px_60px_rgba(15,23,42,0.12)]">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brand-ink-muted">
+            Leyenda exámenes
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {EXAM_STATUS_LEGEND.map((item) => (
+              <span
+                key={item.key}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${item.className}`}
+              >
+                {item.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {fetchState === "error" && fetchError && (
+          <div className="rounded-[32px] border border-brand-orange bg-white/85 px-6 py-4 text-sm font-medium text-brand-ink">
+            {fetchError}
+          </div>
+        )}
 
           {fetchState === "loading" && (
             <div className="rounded-[32px] border border-white/70 bg-white/90 px-6 py-12 text-center text-sm text-brand-ink-muted shadow-[0_24px_58px_rgba(15,23,42,0.12)]">

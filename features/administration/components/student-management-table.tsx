@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
 import {
   buildStudentStatusSummary,
@@ -90,11 +90,14 @@ function formatStudentPosition(level: string | null, lesson: string | null): str
 
 function StudentManagementTable({ students }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { lastSyncAt } = useOfflineStatus();
   const [studentList, setStudentList] = useState<ManagedStudent[]>(students);
   const [statusFilters, setStatusFilters] = useState<StudentStatusKey[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get("q") ?? "");
+  const [levelFilter, setLevelFilter] = useState(() => (searchParams.get("level") ?? "").toUpperCase());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newStudentName, setNewStudentName] = useState("");
   const [newStudentMinLevel, setNewStudentMinLevel] = useState("");
@@ -102,6 +105,30 @@ function StudentManagementTable({ students }: Props) {
   const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+
+  const updateQueryParams = useCallback(
+    (nextSearch: string, nextLevel: string) => {
+      const params = new URLSearchParams();
+      const trimmedSearch = nextSearch.trim();
+      if (trimmedSearch.length) {
+        params.set("q", trimmedSearch);
+      }
+      const normalizedLevel = nextLevel.trim().toUpperCase();
+      if (normalizedLevel.length) {
+        params.set("level", normalizedLevel);
+      }
+      const queryString = params.toString();
+      router.replace(`${pathname}${queryString ? `?${queryString}` : ""}`, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  useEffect(() => {
+    const queryValue = searchParams.get("q") ?? "";
+    const levelValue = (searchParams.get("level") ?? "").toUpperCase();
+    setSearchTerm((previous) => (previous === queryValue ? previous : queryValue));
+    setLevelFilter((previous) => (previous === levelValue ? previous : levelValue));
+  }, [searchParams]);
 
   useEffect(() => {
     setStudentList((previous) => {
@@ -124,6 +151,7 @@ function StudentManagementTable({ students }: Props) {
 
   const totalStudents = studentList.length;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const normalizedLevelFilter = levelFilter.trim().toUpperCase();
 
   const statusTotals = useMemo(() => {
     return buildStudentStatusSummary(studentList).map((item) => ({
@@ -161,13 +189,16 @@ function StudentManagementTable({ students }: Props) {
       const matchesSearch =
         !normalizedSearchTerm.length ||
         student.fullName.toLowerCase().includes(normalizedSearchTerm);
-      return matchesStatus && matchesFlags && matchesSearch;
+      const studentLevel = student.level?.trim().toUpperCase() ?? "";
+      const matchesLevel =
+        !normalizedLevelFilter.length || studentLevel === normalizedLevelFilter;
+      return matchesStatus && matchesFlags && matchesSearch && matchesLevel;
     });
-  }, [studentList, statusFilters, flagFilters, normalizedSearchTerm]);
+  }, [studentList, statusFilters, flagFilters, normalizedSearchTerm, normalizedLevelFilter]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilters, flagFilters, normalizedSearchTerm, studentList.length]);
+  }, [statusFilters, flagFilters, normalizedSearchTerm, normalizedLevelFilter, studentList.length]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
@@ -315,9 +346,12 @@ function StudentManagementTable({ students }: Props) {
   const clearFilters = () => {
     setStatusFilters([]);
     setFlagFilters([]);
+    updateQueryParams(searchTerm, "");
+    setLevelFilter("");
   };
 
-  const hasActiveFilters = statusFilters.length > 0 || flagFilters.length > 0;
+  const hasActiveFilters =
+    statusFilters.length > 0 || flagFilters.length > 0 || normalizedLevelFilter.length > 0;
   const hasSearch = normalizedSearchTerm.length > 0;
 
   return (
@@ -341,36 +375,68 @@ function StudentManagementTable({ students }: Props) {
       />
 
       <div className="overflow-hidden rounded-[32px] border border-white/70 bg-white/95 shadow-[0_24px_58px_rgba(15,23,42,0.12)]">
-        <div className="flex flex-col gap-3 border-b border-brand-ink-muted/10 bg-white/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex w-full flex-col gap-1 text-sm font-semibold text-brand-deep sm:max-w-sm">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
-              Buscar estudiante
-            </span>
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Escribe un nombre para filtrar"
-              className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-            />
-          </label>
-          <div className="flex flex-wrap gap-2 sm:justify-end">
-            {hasSearch && (
+        <div className="flex flex-col gap-3 border-b border-brand-ink-muted/10 bg-white/70 px-5 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+              <label className="flex w-full flex-col gap-1 text-sm font-semibold text-brand-deep sm:max-w-sm">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                  Buscar estudiante
+                </span>
+                <input
+                type="search"
+                value={searchTerm}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSearchTerm(value);
+                  updateQueryParams(value, levelFilter);
+                }}
+                placeholder="Escribe un nombre para filtrar"
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+              />
+              </label>
+              <label className="flex w-full flex-col gap-1 text-sm font-semibold text-brand-deep sm:max-w-[200px]">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+                  Nivel
+                </span>
+              <select
+                value={levelFilter}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setLevelFilter(value);
+                  updateQueryParams(searchTerm, value);
+                }}
+                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+              >
+                <option value="">Todos los niveles</option>
+                <option value="A1">A1</option>
+                <option value="A2">A2</option>
+                <option value="B1">B1</option>
+                <option value="B2">B2</option>
+                <option value="C1">C1</option>
+              </select>
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              {hasSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    updateQueryParams("", levelFilter);
+                  }}
+                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                >
+                  Limpiar búsqueda
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setSearchTerm("")}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                onClick={() => setIsAddDialogOpen(true)}
+                className="inline-flex items-center justify-center rounded-full border border-brand-deep-soft bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
               >
-                Limpiar búsqueda
+                + Agregar estudiante
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setIsAddDialogOpen(true)}
-              className="inline-flex items-center justify-center rounded-full border border-brand-deep-soft bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-deep shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-            >
-              + Agregar estudiante
-            </button>
+            </div>
           </div>
         </div>
         <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left">

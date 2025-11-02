@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type { StudentExam } from "@/features/administration/data/student-profile";
+import { formatGuayaquilDateTime } from "@/lib/time/format";
 
 type Props = {
   studentId: number;
@@ -38,18 +39,15 @@ const INITIAL_EDIT_FORM: EditFormState = {
   note: "",
 };
 
-function formatDateTime(value: string | null): string {
-  if (!value) return "Sin fecha";
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const date = new Date(normalized);
-  if (!Number.isFinite(date.getTime())) return normalized.replace("T", " ");
-  return date.toLocaleString("es-EC", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatExamDateTime(rawValue: string | null, formattedValue: string | null): string {
+  const formatted = rawValue ? formatGuayaquilDateTime(rawValue) : null;
+  if (formatted) {
+    return formatted;
+  }
+  if (formattedValue) {
+    return formattedValue;
+  }
+  return "Sin fecha";
 }
 
 function parseScore(value: string): number | null {
@@ -107,9 +105,14 @@ export function ExamsPanel({
 
   const sortedExams = useMemo(() => {
     return [...exams].sort((a, b) => {
-      const aDate = a.timeScheduled ?? "";
-      const bDate = b.timeScheduled ?? "";
-      return bDate.localeCompare(aDate);
+      const aTimestamp = a.timeScheduledRaw ? Date.parse(a.timeScheduledRaw) : Number.NaN;
+      const bTimestamp = b.timeScheduledRaw ? Date.parse(b.timeScheduledRaw) : Number.NaN;
+      const aValue = Number.isNaN(aTimestamp) ? Number.MIN_SAFE_INTEGER : aTimestamp;
+      const bValue = Number.isNaN(bTimestamp) ? Number.MIN_SAFE_INTEGER : bTimestamp;
+      if (aValue !== bValue) {
+        return bValue - aValue;
+      }
+      return b.id - a.id;
     });
   }, [exams]);
 
@@ -159,7 +162,7 @@ export function ExamsPanel({
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                timeScheduled: editingExam.timeScheduled,
+                timeScheduled: editingExam.timeScheduledRaw,
                 status: editingExam.status,
                 score: scoreNumber,
                 passed: editForm.isCompleted,
@@ -284,7 +287,7 @@ export function ExamsPanel({
               sortedExams.map((exam) => (
                 <tr key={exam.id} className="divide-x divide-brand-ink-muted/10">
                   <td className="px-4 py-3 align-top font-semibold text-brand-deep">
-                    {formatDateTime(exam.timeScheduled)}
+                    {formatExamDateTime(exam.timeScheduledRaw, exam.timeScheduled)}
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
                     {exam.status ? exam.status : "Sin tipo"}
@@ -343,7 +346,7 @@ export function ExamsPanel({
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                 Fecha programada
                 <span className="text-sm font-semibold text-brand-deep">
-                  {formatDateTime(editingExam.timeScheduled)}
+                  {formatExamDateTime(editingExam.timeScheduledRaw, editingExam.timeScheduled)}
                 </span>
               </div>
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">

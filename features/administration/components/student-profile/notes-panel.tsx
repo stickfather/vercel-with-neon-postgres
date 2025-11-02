@@ -86,9 +86,14 @@ export function NotesPanel({
 
   const sortedNotes = useMemo(() => {
     return [...notes].sort((a, b) => {
-      const aDate = a.createdAt ?? "";
-      const bDate = b.createdAt ?? "";
-      return bDate.localeCompare(aDate);
+      const aTimestamp = a.createdAtRaw ? Date.parse(a.createdAtRaw) : Number.NaN;
+      const bTimestamp = b.createdAtRaw ? Date.parse(b.createdAtRaw) : Number.NaN;
+      const aValue = Number.isNaN(aTimestamp) ? Number.MIN_SAFE_INTEGER : aTimestamp;
+      const bValue = Number.isNaN(bTimestamp) ? Number.MIN_SAFE_INTEGER : bTimestamp;
+      if (aValue !== bValue) {
+        return bValue - aValue;
+      }
+      return b.id - a.id;
     });
   }, [notes]);
 

@@ -97,6 +97,8 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
   const [checkInValue, setCheckInValue] = useState("");
   const [checkOutValue, setCheckOutValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [entryPendingDeletion, setEntryPendingDeletion] = useState<ManagedAttendance | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const lessonsByLevel = useMemo(() => {
     const map = new Map<string, LevelLessons["lessons"]>();
@@ -291,6 +293,88 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
     setCheckOutValue("");
   }, [isSubmitting]);
 
+  const handleRequestDelete = useCallback(
+    (entry: ManagedAttendance) => {
+      if (isDeleting || entry.isPending || !Number.isFinite(entry.id) || entry.id <= 0) {
+        return;
+      }
+      setToast(null);
+      setEntryPendingDeletion(entry);
+    },
+    [isDeleting],
+  );
+
+  const handleCancelDelete = useCallback(() => {
+    if (isDeleting) {
+      return;
+    }
+    setEntryPendingDeletion(null);
+  }, [isDeleting]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!entryPendingDeletion) {
+      return;
+    }
+
+    if (entryPendingDeletion.isPending || !Number.isFinite(entryPendingDeletion.id) || entryPendingDeletion.id <= 0) {
+      setHistory((previous) => previous.filter((entry) => entry.id !== entryPendingDeletion.id));
+      setToast({ tone: "success", message: "Registro de asistencia eliminado." });
+      setEntryPendingDeletion(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const response = await queueableFetch(
+        `/api/students/${studentId}/attendance/${entryPendingDeletion.id}`,
+        {
+          method: "DELETE",
+          offlineLabel: "attendance-delete",
+        },
+      );
+
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const message =
+          payload && typeof payload === "object" && payload != null && "error" in payload
+            ? String((payload as { error?: unknown }).error ?? "")
+            : "";
+        throw new Error(message || "No se pudo eliminar el registro de asistencia.");
+      }
+
+      const isQueued =
+        payload &&
+        typeof payload === "object" &&
+        payload != null &&
+        "queued" in payload &&
+        Boolean((payload as { queued?: unknown }).queued);
+
+      setHistory((previous) => previous.filter((entry) => entry.id !== entryPendingDeletion.id));
+      setToast({
+        tone: "success",
+        message: isQueued
+          ? "Registro pendiente de eliminar. Se sincronizará al reconectar."
+          : "Registro de asistencia eliminado.",
+      });
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo eliminar el registro de asistencia.";
+      setToast({ tone: "error", message });
+    } finally {
+      setIsDeleting(false);
+      setEntryPendingDeletion(null);
+    }
+  }, [entryPendingDeletion, setHistory, studentId]);
+
   const sortedEntries = useMemo(
     () =>
       history
@@ -377,6 +461,7 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
                   <th className="px-4 py-3 text-left">Ingreso</th>
                   <th className="px-4 py-3 text-left">Salida</th>
                   <th className="px-4 py-3 text-left">Duración</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-deep-soft/30">
@@ -390,6 +475,25 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
                       <td className="px-4 py-3 text-brand-ink-muted">{formatTime(entry.checkInTime)}</td>
                       <td className="px-4 py-3 text-brand-ink-muted">{checkoutLabel}</td>
                       <td className="px-4 py-3 text-brand-ink-muted">{formatDuration(entry.durationMinutes)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          title="Eliminar registro"
+                          aria-label="Eliminar registro"
+                          onClick={() => handleRequestDelete(entry)}
+                          disabled={Boolean(entry.isPending) || isDeleting}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-brand-ink-muted/20 bg-white text-brand-ink-muted shadow-sm transition hover:-translate-y-[1px] hover:border-brand-orange hover:bg-brand-orange/10 hover:text-brand-orange focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <svg
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                            aria-hidden="true"
+                            className="h-4 w-4"
+                          >
+                            <path d="M7.5 3a1 1 0 0 1 .89-.55h3.22a1 1 0 0 1 .89.55l.28.55H15a1 1 0 1 1 0 2h-.4l-.76 9.14A2 2 0 0 1 11.85 16h-3.7a2 2 0 0 1-1.99-1.81L5.4 5.55H5a1 1 0 1 1 0-2h1.32l.28-.55Zm1.62.45-.1.2H11l-.11-.2h-1.77ZM6.42 5.55l.72 8.57a.5.5 0 0 0 .5.45h3.72a.5.5 0 0 0 .5-.45l.72-8.57H6.42Z" />
+                          </svg>
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -410,6 +514,34 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
           </p>
         </div>
       )}
+      {entryPendingDeletion ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[28px] border border-white/70 bg-white px-6 py-6 text-brand-deep shadow-[0_26px_60px_rgba(15,23,42,0.2)]">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xl font-bold text-brand-deep">Eliminar registro de asistencia</h3>
+              <p className="text-sm text-brand-ink-muted">¿Estás seguro? Esta acción no se puede deshacer.</p>
+            </div>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#e06820] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#f97316] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isDeleting ? "Eliminando…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {isDialogOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6 backdrop-blur-sm">
           <form
