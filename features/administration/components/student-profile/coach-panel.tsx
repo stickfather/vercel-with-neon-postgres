@@ -518,7 +518,9 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
     ];
     const appearance = resolveLessonNodeAppearance(lesson);
     const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
-    const labelScale = lesson.isIntro || lesson.isExam ? 0.42 : 0.64;
+    const baseLabelScale = lesson.isIntro || lesson.isExam ? 0.42 : 0.64;
+    const labelScale =
+      lesson.status === "completed" ? baseLabelScale * 0.92 : baseLabelScale;
     const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
     const metricsFontSize = `calc(${nodeSizeValue} * 0.3)`;
     const circleStyle: CSSProperties = {
@@ -558,11 +560,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
           {shouldShowMetrics ? (
             <div
-              className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2"
               style={{
                 ...metricsStyle,
                 fontSize: metricsFontSize,
                 padding: "3px 10px",
+                top: "18%",
               }}
             >
               📅 {`${safeDays}d`}
@@ -576,11 +579,12 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           ) : null}
           {shouldShowMetrics ? (
             <div
-              className="pointer-events-none absolute -bottom-3 left-1/2 -translate-x-1/2"
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 translate-y-1/2"
               style={{
                 ...metricsStyle,
                 fontSize: metricsFontSize,
                 padding: "3px 10px",
+                bottom: "18%",
               }}
             >
               ⏳ {`${hoursLabel}h`}
