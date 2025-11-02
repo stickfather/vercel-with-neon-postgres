@@ -2538,23 +2538,32 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                   const serverStatus =
                                     cell.status ?? (cell as { dayStatus?: string }).dayStatus;
 
+                                  // Determine the effective "edited after approval" flag.
+                                  // When the server omits the dedicated flag, fall back to
+                                  // `hasEdits` so edited & approved days still render in yellow.
+                                  const hasPostApprovalEdits = (() => {
+                                    const editedAfterApproval = (cell as {
+                                      editedAfterApproval?: boolean;
+                                    }).editedAfterApproval;
+                                    if (editedAfterApproval != null) {
+                                      return editedAfterApproval;
+                                    }
+                                    return cell.hasEdits ?? false;
+                                  })();
+
                                   const fallbackStatus = cell.approved
-                                    ? // When the day is approved, highlight edits made
-                                      // after approval; otherwise mark as simply approved.
-                                      (cell as { editedAfterApproval?: boolean })
-                                        .editedAfterApproval
-                                        ? "edited_and_approved"
-                                        : "approved"
-                                    : // When not yet approved, mark edited days accordingly.
-                                      cell.hasEdits
-                                        ? "edited_not_approved"
-                                        : "pending";
+                                    ? hasPostApprovalEdits
+                                      ? "edited_and_approved"
+                                      : "approved"
+                                    : cell.hasEdits
+                                      ? "edited_not_approved"
+                                      : "pending";
 
                                   const cellStatusBase = serverStatus ?? fallbackStatus;
                                   const cellStatus =
-                                    cellStatusBase === "approved" &&
                                     cell.approved &&
-                                    (cell as { editedAfterApproval?: boolean }).editedAfterApproval
+                                    hasPostApprovalEdits &&
+                                    cellStatusBase !== "edited_not_approved"
                                       ? "edited_and_approved"
                                       : cellStatusBase;
                                   const cellClass =
