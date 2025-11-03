@@ -10,6 +10,8 @@ import type {
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
 
+import { formatLocalDate } from "@/lib/datetime/format";
+
 import { StudyHoursHistogram } from "./StudyHoursHistogram";
 
 type CoachPanelProps = {
@@ -18,6 +20,10 @@ type CoachPanelProps = {
 };
 
 const HEATMAP_DAYS = 30;
+const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const LOCAL_DATE_KEY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Guayaquil",
+});
 
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
@@ -48,37 +54,126 @@ function formatPercent(value: number | null | undefined, digits = 0): string {
   return `${formatNumber(safe, { maximumFractionDigits: digits })}%`;
 }
 
-function formatDate(iso: string | null | undefined, withTime = false): string {
-  if (!iso) {
-    return "—";
+function isLeapYear(year: number): boolean {
+  if (year % 400 === 0) return true;
+  if (year % 100 === 0) return false;
+  return year % 4 === 0;
+}
+
+function getDaysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    return isLeapYear(year) ? 29 : 28;
   }
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) {
-    return "—";
+  if ([4, 6, 9, 11].includes(month)) {
+    return 30;
   }
-  const formatter = new Intl.DateTimeFormat(
-    "es-EC",
-    withTime
-      ? { dateStyle: "medium", timeStyle: "short", timeZone: "America/Guayaquil" }
-      : { dateStyle: "medium", timeZone: "America/Guayaquil" },
-  );
-  return formatter.format(parsed);
+  return 31;
+}
+
+function shiftDateKey(dateKey: string, offset: number): string | null {
+  const match = DATE_KEY_PATTERN.exec(dateKey);
+  if (!match) {
+    return null;
+  }
+
+  let year = Number(match[1]);
+  let month = Number(match[2]);
+  let day = Number(match[3]);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  let remaining = offset;
+  while (remaining !== 0) {
+    if (remaining > 0) {
+      const daysInMonth = getDaysInMonth(year, month);
+      if (day < daysInMonth) {
+        day += 1;
+      } else {
+        day = 1;
+        month += 1;
+        if (month > 12) {
+          month = 1;
+          year += 1;
+        }
+      }
+      remaining -= 1;
+    } else {
+      if (day > 1) {
+        day -= 1;
+      } else {
+        month -= 1;
+        if (month < 1) {
+          month = 12;
+          year -= 1;
+        }
+        day = getDaysInMonth(year, month);
+      }
+      remaining += 1;
+    }
+  }
+
+  const normalizedMonth = String(Math.max(1, Math.min(12, month))).padStart(2, "0");
+  const normalizedDay = String(Math.max(1, Math.min(getDaysInMonth(year, month), day))).padStart(2, "0");
+  return `${year}-${normalizedMonth}-${normalizedDay}`;
+}
+
+function sanitizeMinutes(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return value < 0 ? 0 : value;
 }
 
 function buildHeatmapCells(
   entries: CoachPanelEngagementHeatmapEntry[],
   days: number,
 ): CoachPanelEngagementHeatmapEntry[] {
-  const map = new Map(entries.map((entry) => [entry.date, entry.minutes]));
-  const result: CoachPanelEngagementHeatmapEntry[] = [];
-  const today = new Date();
-  for (let index = days - 1; index >= 0; index -= 1) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - index);
-    const iso = date.toISOString().slice(0, 10);
-    result.push({ date: iso, minutes: map.get(iso) ?? 0 });
+  const totals = new Map<string, number>();
+  for (const entry of entries) {
+    if (!DATE_KEY_PATTERN.test(entry.date)) {
+      continue;
+    }
+    const minutes = sanitizeMinutes(entry.minutes);
+    totals.set(entry.date, minutes);
   }
+
+  if (days <= 0) {
+    return [];
+  }
+
+  if (totals.size === 0) {
+    const todayKey = LOCAL_DATE_KEY_FORMATTER.format(new Date());
+    const fallback: CoachPanelEngagementHeatmapEntry[] = [];
+    for (let index = days - 1; index >= 0; index -= 1) {
+      const key = shiftDateKey(todayKey, -index);
+      if (!key) {
+        continue;
+      }
+      fallback.push({ date: key, minutes: 0 });
+    }
+    return fallback;
+  }
+
+  const sortedKeys = Array.from(totals.keys()).sort((a, b) => a.localeCompare(b));
+  const latestKey = sortedKeys[sortedKeys.length - 1];
+  const result: CoachPanelEngagementHeatmapEntry[] = [];
+
+  for (let index = days - 1; index >= 0; index -= 1) {
+    const key = shiftDateKey(latestKey, -index);
+    if (!key) {
+      continue;
+    }
+    result.push({ date: key, minutes: totals.get(key) ?? 0 });
+  }
+
   return result;
+}
+
+function formatHeatmapDate(value: string): string {
+  const formatted = formatLocalDate(value, { day: "2-digit", month: "short" });
+  return formatted ? formatted : "—";
 }
 
 function heatmapColor(minutes: number, maxMinutes: number): string {
@@ -762,7 +857,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                     key={cell.date}
                     className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
                     style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
-                    title={`${formatDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
+                    title={`${formatHeatmapDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
                   />
                 ))}
               </div>

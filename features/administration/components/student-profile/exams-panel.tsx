@@ -10,6 +10,8 @@ import {
 import { useRouter } from "next/navigation";
 import type { StudentExam } from "@/features/administration/data/student-profile";
 
+import { formatLocalDateTime } from "@/lib/datetime/format";
+
 type Props = {
   studentId: number;
   exams: StudentExam[];
@@ -38,18 +40,17 @@ const INITIAL_EDIT_FORM: EditFormState = {
   note: "",
 };
 
-function formatDateTime(value: string | null): string {
+function formatExamDateTime(value: string | null): string {
   if (!value) return "Sin fecha";
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const date = new Date(normalized);
-  if (!Number.isFinite(date.getTime())) return normalized.replace("T", " ");
-  return date.toLocaleString("es-EC", {
+  const formatted = formatLocalDateTime(value, {
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
+  return formatted ? formatted.replace(/,/g, "").trim() : "Sin fecha";
 }
 
 function parseScore(value: string): number | null {
@@ -284,7 +285,7 @@ export function ExamsPanel({
               sortedExams.map((exam) => (
                 <tr key={exam.id} className="divide-x divide-brand-ink-muted/10">
                   <td className="px-4 py-3 align-top font-semibold text-brand-deep">
-                    {formatDateTime(exam.timeScheduled)}
+                    {formatExamDateTime(exam.timeScheduled)}
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
                     {exam.status ? exam.status : "Sin tipo"}
@@ -343,7 +344,7 @@ export function ExamsPanel({
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                 Fecha programada
                 <span className="text-sm font-semibold text-brand-deep">
-                  {formatDateTime(editingExam.timeScheduled)}
+                  {formatExamDateTime(editingExam.timeScheduled)}
                 </span>
               </div>
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">

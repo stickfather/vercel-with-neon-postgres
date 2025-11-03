@@ -17,6 +17,8 @@ import {
 import type { CalendarEvent } from "@/features/administration/data/calendar";
 import type { StudentName } from "@/features/student-checkin/data/queries";
 
+import { formatLocalDateTime, formatLocalTime } from "@/lib/datetime/format";
+
 const TIMEZONE = "America/Guayaquil";
 
 const VIEW_OPTIONS = [
@@ -40,7 +42,7 @@ type StatusFilter = "all" | "scheduled" | "completed" | "cancelled";
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Todos" },
   { value: "scheduled", label: "Programado" },
-  { value: "completed", label: "Completado" },
+  { value: "completed", label: "Realizado" },
   { value: "cancelled", label: "Cancelado" },
 ];
 
@@ -70,20 +72,46 @@ const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("es-EC", {
   month: "long",
 });
 
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("es-EC", {
-  timeZone: TIMEZONE,
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-const TIME_FORMATTER = new Intl.DateTimeFormat("es-EC", {
-  timeZone: TIMEZONE,
-  hour: "2-digit",
-  minute: "2-digit",
-});
+const EXAM_EVENT_STYLES: Record<
+  | "scheduled"
+  | "rescheduled"
+  | "completed"
+  | "approved"
+  | "failed"
+  | "cancelled"
+  | "activity",
+  { container: string; accent: string }
+> = {
+  scheduled: {
+    container: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
+    accent: "bg-[#0f3f86]",
+  },
+  rescheduled: {
+    container: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
+    accent: "bg-[#0f3f86]",
+  },
+  completed: {
+    container: "border border-[#0c2c59] bg-[#123b7a] text-white hover:border-[#0c2c59]",
+    accent: "bg-[#0c2c59]",
+  },
+  approved: {
+    container: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+    accent: "bg-emerald-500",
+  },
+  failed: {
+    container: "border border-rose-200 bg-rose-50 text-rose-700",
+    accent: "bg-rose-500",
+  },
+  cancelled: {
+    container:
+      "border border-[#d0d4de] text-[#4b5563] bg-[repeating-linear-gradient(135deg,#f2f4f8_0px,#f2f4f8_8px,#e6e9f0_8px,#e6e9f0_16px)]",
+    accent: "bg-[#9ca3af]",
+  },
+  activity: {
+    container: "border border-[#a8dec6] bg-[#def7ed] text-[#0d6b50]",
+    accent: "bg-[#0d6b50]",
+  },
+};
 
 const WEEKDAY_ORDER = Array.from({ length: 7 }, (_, index) => index);
 
@@ -248,15 +276,11 @@ function formatDateLabel(date: Date): string {
 }
 
 function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return DATE_TIME_FORMATTER.format(date);
+  return formatLocalDateTime(value, { hour12: false });
 }
 
 function formatTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return TIME_FORMATTER.format(date);
+  return formatLocalTime(value, { hour12: false });
 }
 
 function getEventTooltip(event: CalendarEvent): string {
@@ -297,7 +321,9 @@ function translateStatus(status: string | null): string {
   if (!status) return "Sin estado";
   const normalized = status.trim().toLowerCase();
   if (normalized === "scheduled") return "Programado";
-  if (normalized === "completed") return "Completado";
+  if (normalized === "completed") return "Realizado";
+  if (normalized === "approved" || normalized === "passed") return "Aprobado";
+  if (normalized === "failed" || normalized === "reprobado") return "Reprobado";
   if (normalized === "cancelled") return "Cancelado";
   if (normalized === "rescheduled") return "Reprogramado";
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
@@ -338,20 +364,73 @@ type DialogState =
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   scheduled: {
     label: "Programado",
-    className:
-      "bg-[#e6f0ff] text-[#103f7e] border border-[#c3d8ff]",
+    className: EXAM_EVENT_STYLES.scheduled.container,
+  },
+  rescheduled: {
+    label: "Reprogramado",
+    className: EXAM_EVENT_STYLES.rescheduled.container,
   },
   completed: {
-    label: "Completado",
-    className:
-      "bg-[#123b7a] text-white border border-[#0b2954]",
+    label: "Realizado",
+    className: EXAM_EVENT_STYLES.completed.container,
+  },
+  approved: {
+    label: "Aprobado",
+    className: EXAM_EVENT_STYLES.approved.container,
+  },
+  failed: {
+    label: "Reprobado",
+    className: EXAM_EVENT_STYLES.failed.container,
   },
   cancelled: {
     label: "Cancelado",
-    className:
-      "border border-[#d3d6de] text-[#4b5565] bg-[repeating-linear-gradient(135deg,#f0f2f5_0px,#f0f2f5_8px,#e4e7ee_8px,#e4e7ee_16px)]",
+    className: EXAM_EVENT_STYLES.cancelled.container,
   },
 };
+
+const EXAM_STATUS_LEGEND_ITEMS: Array<{
+  key: string;
+  label: string;
+  className: string;
+  accentClassName: string;
+}> = [
+  {
+    key: "scheduled",
+    label: "Programado",
+    className: EXAM_EVENT_STYLES.scheduled.container,
+    accentClassName: EXAM_EVENT_STYLES.scheduled.accent,
+  },
+  {
+    key: "rescheduled",
+    label: "Reprogramado",
+    className: EXAM_EVENT_STYLES.rescheduled.container,
+    accentClassName: EXAM_EVENT_STYLES.rescheduled.accent,
+  },
+  {
+    key: "completed",
+    label: "Realizado",
+    className: EXAM_EVENT_STYLES.completed.container,
+    accentClassName: EXAM_EVENT_STYLES.completed.accent,
+  },
+  {
+    key: "approved",
+    label: "Aprobado",
+    className: EXAM_EVENT_STYLES.approved.container,
+    accentClassName: EXAM_EVENT_STYLES.approved.accent,
+  },
+  {
+    key: "failed",
+    label: "Reprobado",
+    className: EXAM_EVENT_STYLES.failed.container,
+    accentClassName: EXAM_EVENT_STYLES.failed.accent,
+  },
+  {
+    key: "cancelled",
+    label: "Cancelado",
+    className: EXAM_EVENT_STYLES.cancelled.container,
+    accentClassName: EXAM_EVENT_STYLES.cancelled.accent,
+  },
+];
 
 type StudentSuggestion = StudentName;
 
@@ -1155,29 +1234,39 @@ function getEventStyle(event: CalendarEvent): {
   accentClassName: string;
 } {
   if (event.kind === "exam") {
-    if (event.status?.trim().toLowerCase() === "completed") {
-      return {
-        className:
-          "bg-[#123b7a] text-white border border-[#0c2c59] hover:border-[#0c2c59]",
-        accentClassName: "bg-[#0c2c59]",
-      };
+    const status = event.status?.trim().toLowerCase() ?? "scheduled";
+
+    if (status === "cancelled") {
+      const style = EXAM_EVENT_STYLES.cancelled;
+      return { className: style.container, accentClassName: style.accent };
     }
-    if (event.status?.trim().toLowerCase() === "cancelled") {
-      return {
-        className:
-          "border border-[#d0d4de] text-[#4b5563] bg-[repeating-linear-gradient(135deg,#f2f4f8_0px,#f2f4f8_8px,#e6e9f0_8px,#e6e9f0_16px)]",
-        accentClassName: "bg-[#9ca3af]",
-      };
+
+    if (status === "approved" || status === "passed" || event.passed === true) {
+      const style = EXAM_EVENT_STYLES.approved;
+      return { className: style.container, accentClassName: style.accent };
     }
-    return {
-      className: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
-      accentClassName: "bg-[#0f3f86]",
-    };
+
+    if (status === "failed" || status === "reprobado" || event.passed === false) {
+      const style = EXAM_EVENT_STYLES.failed;
+      return { className: style.container, accentClassName: style.accent };
+    }
+
+    if (status === "completed") {
+      const style = EXAM_EVENT_STYLES.completed;
+      return { className: style.container, accentClassName: style.accent };
+    }
+
+    if (status === "rescheduled") {
+      const style = EXAM_EVENT_STYLES.rescheduled;
+      return { className: style.container, accentClassName: style.accent };
+    }
+
+    const style = EXAM_EVENT_STYLES.scheduled;
+    return { className: style.container, accentClassName: style.accent };
   }
-  return {
-    className: "border border-[#a8dec6] bg-[#def7ed] text-[#0d6b50]",
-    accentClassName: "bg-[#0d6b50]",
-  };
+
+  const style = EXAM_EVENT_STYLES.activity;
+  return { className: style.container, accentClassName: style.accent };
 }
 
 type CalendarFetchState = "idle" | "loading" | "error";
@@ -1839,6 +1928,18 @@ export function AdminCalendarDashboard() {
                 </span>
               )}
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            {EXAM_STATUS_LEGEND_ITEMS.map((item) => (
+              <span
+                key={item.key}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${item.className}`}
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${item.accentClassName}`} />
+                {item.label}
+              </span>
+            ))}
           </div>
 
           {fetchState === "error" && fetchError && (

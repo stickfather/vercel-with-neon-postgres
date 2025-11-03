@@ -1,6 +1,7 @@
 import { unstable_noStore as noStore } from "next/cache";
 
 import { getSqlClient, normalizeRows, SqlRow } from "@/lib/db/client";
+import { formatLocalDateTime } from "@/lib/datetime/format";
 import {
   isMissingStudentFlagRelation,
   STUDENT_FLAG_RELATION_CANDIDATES,
@@ -229,18 +230,29 @@ function normalizeFieldValue<T extends BasicDetailFieldType>(
   }
 
   if (type === "date" || type === "datetime") {
-    const date =
-      value instanceof Date
-        ? value
-        : typeof value === "string" || typeof value === "number"
-          ? new Date(value)
-          : null;
-    if (!date || Number.isNaN(date.getTime())) return null as NormalizedFieldValue<T>;
     if (type === "date") {
+      const date =
+        value instanceof Date
+          ? value
+          : typeof value === "string" || typeof value === "number"
+            ? new Date(value)
+            : null;
+      if (!date || Number.isNaN(date.getTime())) {
+        return null as NormalizedFieldValue<T>;
+      }
       return date.toISOString().slice(0, 10) as NormalizedFieldValue<T>;
     }
-    const iso = date.toISOString();
-    return `${iso.slice(0, 10)} ${iso.slice(11, 16)}` as NormalizedFieldValue<T>;
+
+    const formatted =
+      value instanceof Date
+        ? formatLocalDateTime(value)
+        : typeof value === "string"
+          ? formatLocalDateTime(value)
+          : typeof value === "number"
+            ? formatLocalDateTime(new Date(value))
+            : "";
+
+    return (formatted || null) as NormalizedFieldValue<T>;
   }
 
   if (typeof value === "number") {
@@ -258,6 +270,40 @@ function normalizeFieldValue<T extends BasicDetailFieldType>(
   }
 
   return null as NormalizedFieldValue<T>;
+}
+
+function normalizeIsoString(value: unknown): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const direct = new Date(trimmed);
+    if (!Number.isNaN(direct.getTime())) {
+      return direct.toISOString();
+    }
+    const normalized = trimmed.replace(" ", "T");
+    const fallback = new Date(normalized);
+    return Number.isNaN(fallback.getTime()) ? null : fallback.toISOString();
+  }
+
+  return null;
 }
 
 function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBasicDetails {
@@ -648,7 +694,7 @@ function mapExamRow(row: SqlRow, fallbackStudentId: number): StudentExam {
   return {
     id: Number(row.id),
     studentId: Number(row.student_id ?? fallbackStudentId),
-    timeScheduled: normalizeFieldValue(row.time_scheduled, "datetime"),
+    timeScheduled: normalizeIsoString(row.time_scheduled),
     status: normalizeFieldValue(row.status, "text"),
     score:
       row.score == null
