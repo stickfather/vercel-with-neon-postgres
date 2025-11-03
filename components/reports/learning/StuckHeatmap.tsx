@@ -36,6 +36,7 @@ export function StuckHeatmap({ cells }: Props) {
 
   useEffect(() => {
     if (!selected) return undefined;
+    const { level, current_seq } = selected;
     let cancelled = false;
     const controller = new AbortController();
     async function load() {
@@ -43,7 +44,7 @@ export function StuckHeatmap({ cells }: Props) {
       setError(null);
       try {
         const response = await fetch(
-          `/api/reports/learning/stuck-students?level=${encodeURIComponent(selected.level)}&seq=${selected.current_seq}`,
+          `/api/reports/learning/stuck-students?level=${encodeURIComponent(level)}&seq=${current_seq}`,
           { signal: controller.signal },
         );
         if (!response.ok) {
