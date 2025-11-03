@@ -479,7 +479,7 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
                               ? "Esperando sincronización para este registro."
                               : "Eliminar registro"
                           }
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent bg-brand-orange/90 text-white shadow transition hover:-translate-y-[1px] hover:bg-[#e06820] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff9c66] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent bg-rose-600 text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <svg
                             aria-hidden="true"
