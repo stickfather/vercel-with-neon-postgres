@@ -17,6 +17,9 @@ import {
 import type { CalendarEvent } from "@/features/administration/data/calendar";
 import type { StudentName } from "@/features/student-checkin/data/queries";
 
+import { formatLocalDateTime, formatLocalTime } from "@/lib/datetime/format";
+import { StudentAvatar } from "@/components/student/StudentAvatar";
+
 const TIMEZONE = "America/Guayaquil";
 
 const VIEW_OPTIONS = [
@@ -35,12 +38,13 @@ const TYPE_OPTIONS: Array<{ value: CalendarTypeFilter; label: string }> = [
   { value: "activity", label: "Actividades" },
 ];
 
-type StatusFilter = "all" | "scheduled" | "completed" | "cancelled";
+type StatusFilter = "all" | "scheduled" | "approved" | "failed" | "cancelled";
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Todos" },
   { value: "scheduled", label: "Programado" },
-  { value: "completed", label: "Completado" },
+  { value: "approved", label: "Aprobado" },
+  { value: "failed", label: "Reprobado" },
   { value: "cancelled", label: "Cancelado" },
 ];
 
@@ -70,20 +74,36 @@ const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("es-EC", {
   month: "long",
 });
 
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("es-EC", {
-  timeZone: TIMEZONE,
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-const TIME_FORMATTER = new Intl.DateTimeFormat("es-EC", {
-  timeZone: TIMEZONE,
-  hour: "2-digit",
-  minute: "2-digit",
-});
+const EXAM_EVENT_STYLES: Record<
+  | "scheduled"
+  | "approved"
+  | "failed"
+  | "cancelled"
+  | "activity",
+  { container: string; accent: string }
+> = {
+  scheduled: {
+    container: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
+    accent: "bg-[#0f3f86]",
+  },
+  approved: {
+    container: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+    accent: "bg-emerald-500",
+  },
+  failed: {
+    container: "border border-rose-200 bg-rose-50 text-rose-700",
+    accent: "bg-rose-500",
+  },
+  cancelled: {
+    container:
+      "border border-[#d0d4de] text-[#4b5563] bg-[repeating-linear-gradient(135deg,#f2f4f8_0px,#f2f4f8_8px,#e6e9f0_8px,#e6e9f0_16px)]",
+    accent: "bg-[#9ca3af]",
+  },
+  activity: {
+    container: "border border-[#a8dec6] bg-[#def7ed] text-[#0d6b50]",
+    accent: "bg-[#0d6b50]",
+  },
+};
 
 const WEEKDAY_ORDER = Array.from({ length: 7 }, (_, index) => index);
 
@@ -108,8 +128,15 @@ function parseTypeParam(value: string | null): CalendarTypeFilter {
 function parseStatusParam(value: string | null): StatusFilter {
   const normalized = (value ?? "").trim().toLowerCase();
   if (normalized === "scheduled" || normalized === "programado") return "scheduled";
-  if (normalized === "completed" || normalized === "completado") return "completed";
-  if (normalized === "cancelled" || normalized === "cancelado") return "cancelled";
+  if (["approved", "aprobado", "aprobada", "passed"].includes(normalized)) {
+    return "approved";
+  }
+  if (["failed", "reprobado", "reprobada"].includes(normalized)) {
+    return "failed";
+  }
+  if (["cancelled", "cancelado", "cancelada"].includes(normalized)) {
+    return "cancelled";
+  }
   return "all";
 }
 
@@ -248,15 +275,11 @@ function formatDateLabel(date: Date): string {
 }
 
 function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return DATE_TIME_FORMATTER.format(date);
+  return formatLocalDateTime(value, { hour12: false });
 }
 
 function formatTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return TIME_FORMATTER.format(date);
+  return formatLocalTime(value, { hour12: false });
 }
 
 function getEventTooltip(event: CalendarEvent): string {
@@ -267,7 +290,7 @@ function getEventTooltip(event: CalendarEvent): string {
       formatDateTime(event.startTime),
     ].filter(Boolean);
     const status = event.status
-      ? `Estado: ${translateStatus(event.status)}`
+      ? `Estado: ${translateStatus(event.status, event.passed)}`
       : null;
     const score = event.score != null ? `Nota: ${event.score}%` : null;
     const passedLabel =
@@ -293,14 +316,25 @@ function getEventTooltip(event: CalendarEvent): string {
     .join(" · ");
 }
 
-function translateStatus(status: string | null): string {
-  if (!status) return "Sin estado";
+function translateStatus(status: string | null, passed?: boolean | null): string {
+  if (passed === true) {
+    return "Aprobado";
+  }
+  if (passed === false) {
+    return "Reprobado";
+  }
+  if (!status) return "Programado";
   const normalized = status.trim().toLowerCase();
-  if (normalized === "scheduled") return "Programado";
-  if (normalized === "completed") return "Completado";
-  if (normalized === "cancelled") return "Cancelado";
-  if (normalized === "rescheduled") return "Reprogramado";
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  if (["approved", "aprobado", "aprobada", "passed"].includes(normalized)) {
+    return "Aprobado";
+  }
+  if (["failed", "reprobado", "reprobada"].includes(normalized)) {
+    return "Reprobado";
+  }
+  if (["cancelled", "cancelado", "cancelada"].includes(normalized)) {
+    return "Cancelado";
+  }
+  return "Programado";
 }
 
 
@@ -335,23 +369,58 @@ type DialogState =
       event: CalendarEvent;
     };
 
-const STATUS_BADGES: Record<string, { label: string; className: string }> = {
+type ExamLegendKey = Exclude<StatusFilter, "all">;
+
+const STATUS_BADGES: Record<ExamLegendKey, { label: string; className: string }> = {
   scheduled: {
     label: "Programado",
-    className:
-      "bg-[#e6f0ff] text-[#103f7e] border border-[#c3d8ff]",
+    className: EXAM_EVENT_STYLES.scheduled.container,
   },
-  completed: {
-    label: "Completado",
-    className:
-      "bg-[#123b7a] text-white border border-[#0b2954]",
+  approved: {
+    label: "Aprobado",
+    className: EXAM_EVENT_STYLES.approved.container,
+  },
+  failed: {
+    label: "Reprobado",
+    className: EXAM_EVENT_STYLES.failed.container,
   },
   cancelled: {
     label: "Cancelado",
-    className:
-      "border border-[#d3d6de] text-[#4b5565] bg-[repeating-linear-gradient(135deg,#f0f2f5_0px,#f0f2f5_8px,#e4e7ee_8px,#e4e7ee_16px)]",
+    className: EXAM_EVENT_STYLES.cancelled.container,
   },
 };
+
+const EXAM_STATUS_LEGEND_ITEMS: Array<{
+  key: ExamLegendKey;
+  label: string;
+  className: string;
+  accentClassName: string;
+}> = [
+  {
+    key: "scheduled",
+    label: "Programado",
+    className: EXAM_EVENT_STYLES.scheduled.container,
+    accentClassName: EXAM_EVENT_STYLES.scheduled.accent,
+  },
+  {
+    key: "approved",
+    label: "Aprobado",
+    className: EXAM_EVENT_STYLES.approved.container,
+    accentClassName: EXAM_EVENT_STYLES.approved.accent,
+  },
+  {
+    key: "failed",
+    label: "Reprobado",
+    className: EXAM_EVENT_STYLES.failed.container,
+    accentClassName: EXAM_EVENT_STYLES.failed.accent,
+  },
+  {
+    key: "cancelled",
+    label: "Cancelado",
+    className: EXAM_EVENT_STYLES.cancelled.container,
+    accentClassName: EXAM_EVENT_STYLES.cancelled.accent,
+  },
+];
 
 type StudentSuggestion = StudentName;
 
@@ -575,9 +644,10 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
   const [dateTime, setDateTime] = useState(() =>
     event ? toLocalInputValue(event.startTime) : defaultDate ?? "",
   );
-  const [status, setStatus] = useState<StatusFilter>(() =>
-    event ? parseStatusParam(event.status ?? "scheduled") : "scheduled",
-  );
+  const [status, setStatus] = useState<StatusFilter>(() => {
+    const parsed = event ? parseStatusParam(event.status ?? "scheduled") : "scheduled";
+    return parsed === "all" ? "scheduled" : parsed;
+  });
   const [score, setScore] = useState(() =>
     event?.score != null ? String(event.score) : "",
   );
@@ -592,7 +662,22 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
     setStudent(initialStudent);
   }, [event?.id]);
 
-  const requiresResult = status === "completed";
+  const requiresResult = status === "approved" || status === "failed";
+
+  const handleStatusChange = (nextStatus: StatusFilter) => {
+    setStatus(nextStatus);
+    if (nextStatus === "approved") {
+      setPassed(true);
+    } else if (nextStatus === "failed") {
+      setPassed(false);
+    } else {
+      setPassed(null);
+    }
+
+    if (nextStatus === "scheduled" || nextStatus === "cancelled") {
+      setScore("");
+    }
+  };
 
   const handleSubmit = async (submissionEvent: React.FormEvent<HTMLFormElement>) => {
     submissionEvent.preventDefault();
@@ -619,19 +704,33 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
       return;
     }
 
-    if (requiresResult && normalizedScore != null && passed == null) {
-      setError("Debes indicar si aprobó el examen cuando registras una nota.");
+    if (requiresResult && passed == null) {
+      setError("Debes indicar si aprobó el examen para este estado.");
+      return;
+    }
+
+    if (status === "approved" && passed === false) {
+      setError("Un examen aprobado debe marcarse como aprobado.");
+      return;
+    }
+
+    if (status === "failed" && passed === true) {
+      setError("Un examen reprobado no puede marcarse como aprobado.");
       return;
     }
 
     setSubmitting(true);
     try {
+      const nextPassed =
+        status === "approved" ? true : status === "failed" ? false : passed;
+      const nextScore = requiresResult ? normalizedScore : null;
+
       const payload = {
         studentId: student.id,
         timeScheduled,
         status: status === "all" ? "scheduled" : status,
-        score: normalizedScore,
-        passed,
+        score: nextScore,
+        passed: nextPassed,
         notes: notes.trim() ? notes.trim() : null,
       };
 
@@ -697,7 +796,7 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
           </span>
           <select
             value={status === "all" ? "scheduled" : status}
-            onChange={(event) => setStatus(event.target.value as StatusFilter)}
+            onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
             disabled={submitting}
             className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
           >
@@ -984,7 +1083,111 @@ type EventDetailProps = {
   onClose(): void;
 };
 
+type StudentPreviewProfile = {
+  id: number;
+  fullName: string;
+  photoUrl: string | null;
+  photoUpdatedAt: string | null;
+};
+
 function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
+  const [studentPreview, setStudentPreview] = useState<StudentPreviewProfile | null>(null);
+  const [studentPreviewLoading, setStudentPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (event.kind !== "exam" || event.studentId == null) {
+      setStudentPreview(null);
+      setStudentPreviewLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    const controller = new AbortController();
+    const studentId = event.studentId;
+
+    setStudentPreviewLoading(true);
+    setStudentPreview((previous) => {
+      if (previous && previous.id === studentId) {
+        return previous;
+      }
+      return {
+        id: studentId,
+        fullName: event.title,
+        photoUrl: null,
+        photoUpdatedAt: null,
+      };
+    });
+
+    async function loadStudentPreview() {
+      try {
+        const response = await fetch(`/api/students/${studentId}/basic-details`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Estado ${response.status}`);
+        }
+
+        const payload = (await response.json().catch(() => ({}))) as Partial<{
+          fullName: unknown;
+          photoUrl: unknown;
+          photoUpdatedAt: unknown;
+        }>;
+
+        if (!isActive) {
+          return;
+        }
+
+        const resolvedName =
+          typeof payload.fullName === "string" && payload.fullName.trim().length
+            ? payload.fullName.trim()
+            : event.title;
+        const resolvedPhotoUrl =
+          typeof payload.photoUrl === "string" && payload.photoUrl.trim().length
+            ? payload.photoUrl.trim()
+            : null;
+        const resolvedUpdatedAt =
+          typeof payload.photoUpdatedAt === "string" && payload.photoUpdatedAt.trim().length
+            ? payload.photoUpdatedAt
+            : null;
+
+        setStudentPreview({
+          id: studentId,
+          fullName: resolvedName,
+          photoUrl: resolvedPhotoUrl,
+          photoUpdatedAt: resolvedUpdatedAt,
+        });
+        setStudentPreviewLoading(false);
+      } catch (error) {
+        if (controller.signal.aborted || !isActive) {
+          return;
+        }
+        console.error("No se pudo cargar el perfil del estudiante.", error);
+        setStudentPreview({
+          id: studentId,
+          fullName: event.title,
+          photoUrl: null,
+          photoUpdatedAt: null,
+        });
+        setStudentPreviewLoading(false);
+      }
+    }
+
+    void loadStudentPreview();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [event.kind, event.studentId, event.title]);
+
+  const studentProfile =
+    event.kind === "exam" && event.studentId != null ? studentPreview : null;
+  const studentName =
+    studentProfile && studentProfile.fullName.trim().length
+      ? studentProfile.fullName
+      : event.title;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
@@ -1006,12 +1209,43 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
         </button>
       </div>
       <dl className="grid gap-3 text-sm text-brand-ink">
+        {event.kind === "exam" && event.studentId != null && (
+          <div className="flex flex-col gap-1">
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+              Perfil del estudiante
+            </dt>
+            <dd>
+              <div className="flex items-center gap-3">
+                <div
+                  className={`rounded-full shadow-[0_10px_24px_rgba(15,23,42,0.18)] ring-1 ring-brand-ink-muted/15 ${studentPreviewLoading ? "animate-pulse" : ""}`.trim()}
+                >
+                  <StudentAvatar
+                    name={studentName}
+                    photoUrl={studentProfile?.photoUrl ?? null}
+                    updatedAt={studentProfile?.photoUpdatedAt ?? null}
+                    size={64}
+                    className="shadow-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-semibold text-brand-deep">{studentName}</span>
+                  <Link
+                    href={`/administracion/gestion-estudiantes/${event.studentId}`}
+                    className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    Ver perfil del estudiante
+                  </Link>
+                </div>
+              </div>
+            </dd>
+          </div>
+        )}
         {event.kind === "exam" && event.status && (
           <div className="flex flex-col gap-1">
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
               Estado
             </dt>
-            <dd>{translateStatus(event.status)}</dd>
+            <dd>{translateStatus(event.status, event.passed)}</dd>
           </div>
         )}
         {event.kind === "exam" && event.score != null && (
@@ -1155,29 +1389,40 @@ function getEventStyle(event: CalendarEvent): {
   accentClassName: string;
 } {
   if (event.kind === "exam") {
-    if (event.status?.trim().toLowerCase() === "completed") {
-      return {
-        className:
-          "bg-[#123b7a] text-white border border-[#0c2c59] hover:border-[#0c2c59]",
-        accentClassName: "bg-[#0c2c59]",
-      };
+    const status = event.status?.trim().toLowerCase() ?? "scheduled";
+
+    if (["cancelled", "cancelado", "cancelada"].includes(status)) {
+      const style = EXAM_EVENT_STYLES.cancelled;
+      return { className: style.container, accentClassName: style.accent };
     }
-    if (event.status?.trim().toLowerCase() === "cancelled") {
-      return {
-        className:
-          "border border-[#d0d4de] text-[#4b5563] bg-[repeating-linear-gradient(135deg,#f2f4f8_0px,#f2f4f8_8px,#e6e9f0_8px,#e6e9f0_16px)]",
-        accentClassName: "bg-[#9ca3af]",
-      };
+
+    if (
+      status === "approved" ||
+      status === "passed" ||
+      status === "aprobado" ||
+      status === "aprobada" ||
+      event.passed === true
+    ) {
+      const style = EXAM_EVENT_STYLES.approved;
+      return { className: style.container, accentClassName: style.accent };
     }
-    return {
-      className: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
-      accentClassName: "bg-[#0f3f86]",
-    };
+
+    if (
+      status === "failed" ||
+      status === "reprobado" ||
+      status === "reprobada" ||
+      event.passed === false
+    ) {
+      const style = EXAM_EVENT_STYLES.failed;
+      return { className: style.container, accentClassName: style.accent };
+    }
+
+    const style = EXAM_EVENT_STYLES.scheduled;
+    return { className: style.container, accentClassName: style.accent };
   }
-  return {
-    className: "border border-[#a8dec6] bg-[#def7ed] text-[#0d6b50]",
-    accentClassName: "bg-[#0d6b50]",
-  };
+
+  const style = EXAM_EVENT_STYLES.activity;
+  return { className: style.container, accentClassName: style.accent };
 }
 
 type CalendarFetchState = "idle" | "loading" | "error";
@@ -1737,28 +1982,66 @@ export function AdminCalendarDashboard() {
                   );
                 })}
               </div>
-              <div className="flex items-center gap-3 text-sm font-semibold text-brand-ink">
-                <button
-                  type="button"
-                  onClick={goToPrevious}
-                  className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  ‹ Anterior
-                </button>
-                <button
-                  type="button"
-                  onClick={goToToday}
-                  className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  Hoy
-                </button>
-                <button
-                  type="button"
-                  onClick={goToNext}
-                  className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  Siguiente ›
-                </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-3 text-sm font-semibold text-brand-ink">
+                  <button
+                    type="button"
+                    onClick={goToPrevious}
+                    className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    ‹ Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToToday}
+                    className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNext}
+                    className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    Siguiente ›
+                  </button>
+                </div>
+                {typeFilter === "exam" && (
+                  <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
+                    <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
+                    {STATUS_OPTIONS.map((option) => {
+                      if (option.value === "all") {
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => updateStatusFilter(option.value)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                              statusFilter === option.value
+                                ? "bg-brand-teal text-white"
+                                : "bg-transparent text-brand-ink"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      }
+                      const isActive = statusFilter === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => updateStatusFilter(option.value)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                            isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1785,43 +2068,6 @@ export function AdminCalendarDashboard() {
               </div>
 
               {typeFilter === "exam" && (
-                <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                  <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
-                  {STATUS_OPTIONS.map((option) => {
-                    if (option.value === "all") {
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => updateStatusFilter(option.value)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                            statusFilter === option.value
-                              ? "bg-brand-teal text-white"
-                              : "bg-transparent text-brand-ink"
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    }
-                    const isActive = statusFilter === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => updateStatusFilter(option.value)}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                          isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {typeFilter === "exam" && (
                 <div className="flex items-center gap-3 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
                   <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estudiante</span>
                   <StudentSelector
@@ -1839,6 +2085,18 @@ export function AdminCalendarDashboard() {
                 </span>
               )}
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            {EXAM_STATUS_LEGEND_ITEMS.map((item) => (
+              <span
+                key={item.key}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${item.className}`}
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${item.accentClassName}`} />
+                {item.label}
+              </span>
+            ))}
           </div>
 
           {fetchState === "error" && fetchError && (
