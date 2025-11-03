@@ -45,6 +45,27 @@ function normalizeString(value: unknown, fallback = ""): string {
   return str.length ? str : fallback;
 }
 
+function isMissingRelation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const pgError = error as { code?: string; message?: string };
+  if (pgError.code && pgError.code.toUpperCase() === "42P01") return true;
+  return typeof pgError.message === "string" && /does not exist/i.test(pgError.message);
+}
+
+async function queryWithFallback<T>(
+  primary: () => Promise<T>,
+  fallback?: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await primary();
+  } catch (error) {
+    if (fallback && isMissingRelation(error)) {
+      return await fallback();
+    }
+    throw error;
+  }
+}
+
 export async function getLearningReport(): Promise<LearningReport> {
   const sql = getSqlClient();
 
@@ -78,14 +99,26 @@ export async function getLearningReport(): Promise<LearningReport> {
   const transitionsTotal = transitionsSeries.reduce((a, x) => a + Number(x.n), 0);
 
   // Days since progress (per level)
-  const daysSinceRows = normalizeRows<Partial<DaysSinceProgressLevel>>(await sql`
-    SELECT level::text AS level,
-           student_count::int,
-           avg_days_since_last_seen::numeric AS avg_days_since_last_seen,
-           median_days_since_last_seen::numeric AS median_days_since_last_seen
-    FROM learning_days_since_progress_v
-    ORDER BY level
-  `);
+  const daysSinceRows = normalizeRows<Partial<DaysSinceProgressLevel>>(
+    await queryWithFallback(
+      () => sql`
+        SELECT level::text AS level,
+               student_count::int,
+               avg_days_since_last_seen::numeric AS avg_days_since_last_seen,
+               median_days_since_last_seen::numeric AS median_days_since_last_seen
+        FROM learning_days_since_progress_v
+        ORDER BY level
+      `,
+      () => sql`
+        SELECT level::text AS level,
+               student_count::int,
+               avg_days_since_last_seen::numeric AS avg_days_since_last_seen,
+               median_days_since_last_seen::numeric AS median_days_since_last_seen
+        FROM mgmt.learning_days_since_progress_v
+        ORDER BY level
+      `,
+    ),
+  );
   const daysSince: DaysSinceProgressLevel[] = daysSinceRows.map((row) => ({
     level: normalizeString(row.level),
     student_count: toNumber(row.student_count),
@@ -115,12 +148,20 @@ export async function getLearningReport(): Promise<LearningReport> {
 
   // At-risk list
   const atRiskRows = normalizeRows<Partial<LearningReport["at_risk"][number] & SqlRow>>(
-    await sql`
-      SELECT student_id, full_name, level::text AS level, current_seq,
-             lei_30d_plan, last_seen_date, stall, inactive_14d
-      FROM learning_at_risk_learners_v
-      ORDER BY level, full_name
-    `,
+    await queryWithFallback(
+      () => sql`
+        SELECT student_id, full_name, level::text AS level, current_seq,
+               lei_30d_plan, last_seen_date, stall, inactive_14d
+        FROM learning_at_risk_learners_v
+        ORDER BY level, full_name
+      `,
+      () => sql`
+        SELECT student_id, full_name, level::text AS level, current_seq,
+               lei_30d_plan, last_seen_date, stall, inactive_14d
+        FROM mgmt.learning_at_risk_learners_v
+        ORDER BY level, full_name
+      `,
+    ),
   );
   const atRisk = atRiskRows.map((row) => ({
     student_id: toNumber(row.student_id),
@@ -169,15 +210,28 @@ export async function getLearningReport(): Promise<LearningReport> {
   };
 
   // Velocity per level
-  const velocityRows = normalizeRows<Partial<VelocityLevel>>(await sql`
-    SELECT level::text AS level,
-           lessons_completed_30d,
-           active_students_level_30d,
-           lessons_per_week_total,
-           lessons_per_week_per_student
-    FROM learning_level_completion_velocity_v
-    ORDER BY level
-  `);
+  const velocityRows = normalizeRows<Partial<VelocityLevel>>(
+    await queryWithFallback(
+      () => sql`
+        SELECT level::text AS level,
+               lessons_completed_30d,
+               active_students_level_30d,
+               lessons_per_week_total,
+               lessons_per_week_per_student
+        FROM learning_level_completion_velocity_v
+        ORDER BY level
+      `,
+      () => sql`
+        SELECT level::text AS level,
+               lessons_completed_30d,
+               active_students_level_30d,
+               lessons_per_week_total,
+               lessons_per_week_per_student
+        FROM mgmt.learning_level_completion_velocity_v
+        ORDER BY level
+      `,
+    ),
+  );
   const velocity = velocityRows.map((row) => ({
     level: normalizeString(row.level),
     lessons_completed_30d: toNumber(row.lessons_completed_30d),
@@ -187,11 +241,20 @@ export async function getLearningReport(): Promise<LearningReport> {
   }));
 
   // Stuck heatmap
-  const heatRows = normalizeRows<Partial<StuckHeatCell>>(await sql`
-    SELECT level::text AS level, current_seq, stuck_count
-    FROM learning_stuck_heatmap_v
-    ORDER BY level, current_seq
-  `);
+  const heatRows = normalizeRows<Partial<StuckHeatCell>>(
+    await queryWithFallback(
+      () => sql`
+        SELECT level::text AS level, current_seq, stuck_count
+        FROM learning_stuck_heatmap_v
+        ORDER BY level, current_seq
+      `,
+      () => sql`
+        SELECT level::text AS level, current_seq, stuck_count
+        FROM mgmt.learning_stuck_heatmap_v
+        ORDER BY level, current_seq
+      `,
+    ),
+  );
   const heat = heatRows.map((row) => ({
     level: normalizeString(row.level),
     current_seq: toNumber(row.current_seq),
@@ -212,12 +275,22 @@ export async function getLearningReport(): Promise<LearningReport> {
   }));
 
   // Duration variance (top 100 from view)
-  const varianceRows = normalizeRows<Partial<VarianceRow>>(await sql`
-    SELECT student_id, full_name, lessons_completed_30d, avg_minutes_per_lesson, lesson_minutes_stddev
-    FROM learning_lesson_variance_v
-    ORDER BY lesson_minutes_stddev DESC
-    LIMIT 100
-  `);
+  const varianceRows = normalizeRows<Partial<VarianceRow>>(
+    await queryWithFallback(
+      () => sql`
+        SELECT student_id, full_name, lessons_completed_30d, avg_minutes_per_lesson, lesson_minutes_stddev
+        FROM learning_lesson_variance_v
+        ORDER BY lesson_minutes_stddev DESC
+        LIMIT 100
+      `,
+      () => sql`
+        SELECT student_id, full_name, lessons_completed_30d, avg_minutes_per_lesson, lesson_minutes_stddev
+        FROM mgmt.learning_lesson_variance_v
+        ORDER BY lesson_minutes_stddev DESC
+        LIMIT 100
+      `,
+    ),
+  );
   const variance = varianceRows.map((row) => ({
     student_id: toNumber(row.student_id),
     full_name: normalizeString(row.full_name, "Sin nombre"),
