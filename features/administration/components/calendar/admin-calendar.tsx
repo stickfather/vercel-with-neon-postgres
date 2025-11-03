@@ -1085,6 +1085,21 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
         </button>
       </div>
       <dl className="grid gap-3 text-sm text-brand-ink">
+        {event.kind === "exam" && event.studentId != null && (
+          <div className="flex flex-col gap-1">
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+              Perfil del estudiante
+            </dt>
+            <dd>
+              <Link
+                href={`/administracion/gestion-estudiantes/${event.studentId}`}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+              >
+                Ver perfil del estudiante
+              </Link>
+            </dd>
+          </div>
+        )}
         {event.kind === "exam" && event.status && (
           <div className="flex flex-col gap-1">
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
