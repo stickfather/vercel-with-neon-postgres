@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getLearningReport } from "src/features/management-reports/data";
+import { getLearningReport } from "@/src/features/reports/learning/data";
 import { hasAccess } from "src/features/management-reports/data/access";
 
 export const revalidate = 120;
