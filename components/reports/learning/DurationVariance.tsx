@@ -9,31 +9,48 @@ const integerFormatter = new Intl.NumberFormat("es-EC");
 
 type Props = {
   rows: VarianceRow[];
+  variant?: "light" | "dark";
 };
 
-export function DurationVariance({ rows }: Props) {
+export function DurationVariance({ rows, variant = "light" }: Props) {
   if (!rows.length) {
+    const emptyClasses =
+      variant === "dark"
+        ? "flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/60 p-6 text-center text-sm text-slate-300"
+        : "flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200/70 bg-white/95 p-6 text-center text-sm text-slate-500";
+    const emptyTitle = variant === "dark" ? "text-base font-semibold text-slate-200" : "text-base font-semibold text-slate-600";
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200/70 bg-white/95 p-6 text-center text-sm text-slate-500">
-        <h3 className="text-base font-semibold text-slate-600">Varianza en duración de lecciones (30 días)</h3>
+      <section className={emptyClasses}>
+        <h3 className={emptyTitle}>Varianza en duración de lecciones (30 días)</h3>
         <p>No hay suficientes datos de sesiones para mostrar.</p>
       </section>
     );
   }
 
+  const isDark = variant === "dark";
+  const sectionClasses = isDark
+    ? "flex h-full flex-col gap-5 rounded-2xl border border-slate-800/60 bg-slate-900/70 p-6 shadow-sm text-slate-100"
+    : "flex h-full flex-col gap-5 rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm";
+  const titleClass = isDark ? "text-lg font-semibold text-slate-100" : "text-lg font-semibold text-slate-800";
+  const descriptionClass = isDark ? "text-sm text-slate-400" : "text-sm text-slate-500";
+  const infoIconClass = "text-xs text-slate-400";
+  const tableDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100";
+  const tableBodyDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100/80";
+  const rowClass = isDark ? "text-slate-200" : "text-slate-700";
+
   return (
-    <section className="flex h-full flex-col gap-5 rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
+    <section className={sectionClasses}>
       <header className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h3 className="text-lg font-semibold text-slate-800">Varianza en duración de lecciones (30 días)</h3>
-          <p className="text-sm text-slate-500">Irregularidad en duración de sesiones.</p>
+          <h3 className={titleClass}>Varianza en duración de lecciones (30 días)</h3>
+          <p className={descriptionClass}>Irregularidad en duración de sesiones.</p>
         </div>
-        <span className="text-xs text-slate-400" title="Irregularidad en duración de sesiones.">
+        <span className={infoIconClass} title="Irregularidad en duración de sesiones.">
           ℹ
         </span>
       </header>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-100 text-sm">
+        <table className={`min-w-full ${tableDivider} text-sm`}>
           <thead>
             <tr className="text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
               <th className="py-2 pr-3">Nombre</th>
@@ -42,9 +59,9 @@ export function DurationVariance({ rows }: Props) {
               <th className="py-2">Desviación</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100/80">
+          <tbody className={tableBodyDivider}>
             {rows.map((row) => (
-              <tr key={row.student_id} className="text-slate-700">
+              <tr key={row.student_id} className={rowClass}>
                 <td className="py-2 pr-3 font-medium">{row.full_name}</td>
                 <td className="py-2 pr-3">{integerFormatter.format(row.lessons_completed_30d)}</td>
                 <td className="py-2 pr-3">{decimalFormatter.format(row.avg_minutes_per_lesson)} min</td>

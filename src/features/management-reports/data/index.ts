@@ -4,7 +4,6 @@ import {
   type SqlRow,
 } from "@/lib/db/client";
 import type {
-  AcademicRiskLevel,
   EngagementDeclinePoint,
   EngagementHourSplit,
   EngagementReport,
@@ -20,16 +19,10 @@ import type {
   FinancialDebtor,
   FinancialOutstandingSummary,
   FinancialReport,
-  LearningLevelDuration,
-  LearningReport,
-  LevelVelocity,
   PersonnelCoverage,
   PersonnelLoadPoint,
   PersonnelMix,
   PersonnelReport,
-  SlowStudent,
-  SpeedBucket,
-  StuckStudent,
 } from "@/types/management-reports";
 
 type SqlClient = ReturnType<typeof getSqlClient>;
@@ -154,149 +147,6 @@ function mapRows<T>(rows: SqlRow[], normalizer: Normalizer<T>): T[] {
   return rows
     .map((row) => normalizer(row))
     .filter((value): value is T => value !== null);
-}
-
-function ensureSortedNumber<T extends { value: number | null }>(data: T[]) {
-  return data.slice().sort((a, b) => {
-    if (a.value == null && b.value == null) return 0;
-    if (a.value == null) return 1;
-    if (b.value == null) return -1;
-    return b.value - a.value;
-  });
-}
-
-export async function getLearningReport(sql: SqlClient = getSqlClient()): Promise<LearningReport> {
-  const [
-    durationRows,
-    stuckRows,
-    riskRows,
-    velocityRows,
-    speedRows,
-    heatmapRows,
-  ] = await Promise.all([
-    safeRows(() => sql`SELECT * FROM mgmt.learning_level_duration_v`, "mgmt.learning_level_duration_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.learning_stuck_heatmap_v`, "mgmt.learning_stuck_heatmap_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.learning_days_since_progress_v`, "mgmt.learning_days_since_progress_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.learning_level_completion_velocity_v`, "mgmt.learning_level_completion_velocity_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.learning_speed_buckets_v`, "mgmt.learning_speed_buckets_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.learning_lesson_variance_v`, "mgmt.learning_lesson_variance_v"),
-  ]);
-
-  const levelDurations = mapRows(durationRows, (row) => {
-    const level = readString(row, ["level", "nivel"], [["level"], ["nivel"]]);
-    const medianDays = readNumber(row, ["median_days", "median", "median_days_in_level"], [
-      ["median", "day"],
-      ["mediana"],
-    ]);
-    return { level, medianDays } satisfies LearningLevelDuration;
-  });
-
-  const stuckStudents = mapRows(stuckRows, (row) => {
-    const student = readString(row, ["student", "student_name", "nombre"], [["student"], ["nombre"]]);
-    const level = readString(row, ["level", "nivel"], [["level"], ["nivel"]]);
-    const lesson = readString(row, ["lesson", "leccion", "module"], [["lesson"], ["leccion"], ["module"]]);
-    const daysStuck = readInteger(row, ["days_stuck", "dias_estancado"], [
-      ["day", "stuck"],
-      ["dias", "estanc"],
-    ]);
-    return { student, level, lesson, daysStuck } satisfies StuckStudent;
-  });
-
-  const academicRisk = mapRows(riskRows, (row) => {
-    const level = readString(row, ["level", "nivel"], [["level"], ["nivel"]]);
-    const medianDaysSinceProgress = readNumber(
-      row,
-      ["median_days", "median_days_since_progress"],
-      [["median", "progress"], ["dias", "progreso"]],
-    );
-    const stalledCount = readInteger(row, ["stalled", "students_stalled"], [["estanc"], ["stalled"]]);
-    const inactiveCount = readInteger(row, ["inactive_14d", "inactive"], [["inactive"], ["inactivo"]]);
-    return {
-      level,
-      medianDaysSinceProgress,
-      stalledCount,
-      inactiveCount,
-    } satisfies AcademicRiskLevel;
-  });
-
-  const completionVelocity = mapRows(velocityRows, (row) => {
-    const level = readString(row, ["level", "nivel"], [["level"], ["nivel"]]);
-    const lessonsPerWeek = readNumber(row, ["lessons_per_week", "velocity"], [["lesson"], ["velocidad"]]);
-    return { level, lessonsPerWeek } satisfies LevelVelocity;
-  });
-
-  const bucketTotals = new Map<string, SpeedBucket>();
-  const slowStudents = mapRows(speedRows, (row) => {
-    const bucketRaw = readString(row, ["bucket", "speed_bucket", "categoria"], [["bucket"], ["velocidad"]]);
-    const bucket = bucketRaw.toLowerCase();
-    const label = bucketRaw === "—" ? "Sin clasificar" : bucketRaw;
-    const percentage = readNumber(row, ["percentage", "pct", "ratio"], [["pct"], ["percent"], ["porc"]]);
-    const count = readInteger(row, ["count", "total"], [["count"], ["total"]]);
-    const student = readString(row, ["student", "student_name", "nombre"], [["student"], ["nombre"]]);
-    const level = readString(row, ["level", "nivel"], [["level"], ["nivel"]]);
-    const metric = readNumber(row, ["speed_index", "score", "days_per_lesson"], [
-      ["speed"],
-      ["lent"],
-      ["dias", "leccion"],
-    ]);
-
-    if (!bucketTotals.has(bucket)) {
-      bucketTotals.set(bucket, {
-        bucket,
-        label,
-        percentage: percentage ?? null,
-        count: count ?? null,
-      });
-    } else {
-      const existing = bucketTotals.get(bucket);
-      if (existing) {
-        if (percentage != null && (existing.percentage == null || percentage > existing.percentage)) {
-          existing.percentage = percentage;
-        }
-        if (count != null && (existing.count == null || count > existing.count)) {
-          existing.count = count;
-        }
-      }
-    }
-
-    if (bucket.includes("slow") || bucket.includes("lento")) {
-      return { student, level, metric } satisfies SlowStudent;
-    }
-
-    return null;
-  });
-
-  const speedBuckets = Array.from(bucketTotals.values());
-
-  const heatmapStudents = mapRows(heatmapRows, (row) => {
-    const student = readString(row, ["student", "nombre"], [["student"], ["nombre"]]);
-    const level = readString(row, ["level", "nivel"], [["level"], ["nivel"]]);
-    const lesson = readString(row, ["lesson", "leccion"], [["lesson"], ["leccion"]]);
-    const daysStuck = readInteger(row, ["days_stuck", "dias_estancado"], [
-      ["day", "stuck"],
-      ["dias", "estanc"],
-    ]);
-    return { student, level, lesson, daysStuck } satisfies StuckStudent;
-  });
-
-  // Combine stuck students from both sources, prioritizing longest delays
-  const combinedStuck = ensureSortedNumber(
-    [...stuckStudents, ...heatmapStudents].map((student) => ({
-      ...student,
-      value: student.daysStuck,
-    })),
-  )
-    .slice(0, 25)
-    .map(({ value, ...rest }) => ({ ...rest, daysStuck: value } satisfies StuckStudent));
-
-  return {
-    levelDurations,
-    stuckStudents: combinedStuck,
-    academicRisk,
-    completionVelocity,
-    speedBuckets,
-    slowStudents,
-  };
 }
 
 export async function getEngagementReport(sql: SqlClient = getSqlClient()): Promise<EngagementReport> {

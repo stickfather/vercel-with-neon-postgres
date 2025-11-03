@@ -11,6 +11,12 @@ import {
   type ReactNode,
 } from "react";
 
+import { DaysInLevelBars } from "@/components/reports/learning/DaysInLevelBars";
+import { DurationVariance } from "@/components/reports/learning/DurationVariance";
+import { LearningHeaderTiles } from "@/components/reports/learning/LearningHeaderTiles";
+import { SpeedBuckets } from "@/components/reports/learning/SpeedBuckets";
+import { StuckHeatmap } from "@/components/reports/learning/StuckHeatmap";
+import { VelocityByLevel } from "@/components/reports/learning/VelocityByLevel";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
 import type {
   EngagementDeclinePoint,
@@ -20,12 +26,12 @@ import type {
   ExamsReport,
   FinancialReport,
   LearningLevelDuration,
-  LearningReport,
   LevelVelocity,
   PersonnelCoverage,
   PersonnelLoadPoint,
   PersonnelMix,
 } from "@/types/management-reports";
+import type { LearningReport } from "@/types/reports.learning";
 
 type TabKey = "aprendizaje" | "engagement" | "finanzas" | "examenes" | "personal";
 
@@ -619,12 +625,23 @@ function LearningPanel({
   state: PanelState<LearningReport>;
 }) {
   const data = state.data;
-  const empty = !data ||
-    (data.levelDurations.length === 0 &&
-      data.stuckStudents.length === 0 &&
-      data.academicRisk.length === 0 &&
-      data.completionVelocity.length === 0 &&
-      data.speedBuckets.length === 0);
+  const empty =
+    !data ||
+    (data.lei_trend.length === 0 &&
+      data.transitions_30d_series.length === 0 &&
+      data.days_since_progress.by_level.length === 0 &&
+      data.at_risk.length === 0 &&
+      data.speed_buckets.fast.length === 0 &&
+      data.speed_buckets.typical.length === 0 &&
+      data.speed_buckets.slow.length === 0 &&
+      data.velocity_per_level.length === 0 &&
+      data.stuck_heatmap.length === 0 &&
+      data.days_in_level.length === 0 &&
+      data.duration_variance.length === 0);
+
+  const lastRefreshed = data?.last_refreshed_at
+    ? new Date(data.last_refreshed_at).toLocaleString("es-EC")
+    : null;
 
   return (
     <PanelWrapper
@@ -634,119 +651,33 @@ function LearningPanel({
       label="los indicadores de aprendizaje"
       onRetry={state.reload}
     >
-      <div className="grid gap-6 lg:grid-cols-[2fr_1.2fr]">
+      {data ? (
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle
-              title="Días promedio por nivel"
-              description="Tiempo mediano que los estudiantes permanecen en cada nivel."
-            />
-            <div className="mt-4">
-              <HorizontalBarList data={data?.levelDurations ?? []} unit=" d" />
+          {lastRefreshed ? (
+            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
+              Actualizado: {lastRefreshed}
             </div>
+          ) : null}
+          <LearningHeaderTiles
+            leiTrend={data.lei_trend}
+            leiTrendPctChange={data.lei_trend_pct_change_30d}
+            transitionsTotal={data.transitions_30d_total}
+            transitionsSeries={data.transitions_30d_series}
+            daysSinceMedian={data.days_since_progress.global_median}
+            atRiskCount={data.at_risk.length}
+            variant="dark"
+          />
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <SpeedBuckets buckets={data.speed_buckets} variant="dark" />
+            <VelocityByLevel rows={data.velocity_per_level} variant="dark" />
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle
-              title="Velocidad de finalización"
-              description="Lecciones completadas por estudiante cada semana."
-            />
-            <div className="mt-4">
-              <HorizontalBarList data={data?.completionVelocity ?? []} unit=" lecc." accent="bg-sky-400" />
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle
-              title="Riesgo académico por nivel"
-              description="Estancados y medianas de días sin progreso."
-            />
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {data?.academicRisk.map((risk) => (
-                <div key={risk.level} className="flex flex-col gap-2 rounded-2xl border border-slate-800/80 bg-slate-900/80 p-4">
-                  <span className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{risk.level}</span>
-                  <span className="text-sm text-slate-300">Mediana sin avance</span>
-                  <span className="text-xl font-semibold text-emerald-300">
-                    {risk.medianDaysSinceProgress == null ? "—" : `${decimalFormatter.format(risk.medianDaysSinceProgress)} d`}
-                  </span>
-                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
-                    <div className="rounded-xl bg-slate-800/70 p-3">
-                      <span className="block text-[10px] font-semibold uppercase tracking-[0.24em] text-rose-200">Estancados</span>
-                      <span className="text-lg font-semibold text-rose-200">
-                        {formatIntegerValue(risk.stalledCount ?? null)}
-                      </span>
-                    </div>
-                    <div className="rounded-xl bg-slate-800/70 p-3">
-                      <span className="block text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-200">Inactivos 14d+</span>
-                      <span className="text-lg font-semibold text-amber-200">
-                        {formatIntegerValue(risk.inactiveCount ?? null)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <StuckHeatmap cells={data.stuck_heatmap} variant="dark" />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <DaysInLevelBars rows={data.days_in_level} variant="dark" />
+            <DurationVariance rows={data.duration_variance} variant="dark" />
           </div>
         </div>
-        <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle
-              title="Distribución de velocidad"
-              description="Proporción de estudiantes en ritmo rápido, típico o lento."
-            />
-            <div className="mt-4 flex flex-col gap-6">
-              <PieDonut
-                buckets={(data?.speedBuckets ?? []).map((bucket) => ({
-                  label: bucket.label,
-                  value: bucket.percentage ?? 0,
-                }))}
-              />
-              <div>
-                <h4 className="text-sm font-semibold text-slate-100">Estudiantes más lentos</h4>
-                <div className="mt-3 max-h-[220px] overflow-y-auto pr-2">
-                  <SimpleTable
-                    headers={["Estudiante", "Nivel", "Índice"]}
-                    rows={(data?.slowStudents ?? []).slice(0, 12).map((student) => [
-                      <span key="student" className="font-medium">{student.student}</span>,
-                      <span key="level" className="text-slate-300">{student.level}</span>,
-                      <span key="metric" className="text-slate-200">
-                        {student.metric == null ? "—" : decimalFormatter.format(student.metric)}
-                      </span>,
-                    ])}
-                    getKey={(index) => `row-${index}`}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle
-              title="Estudiantes estancados"
-              description="Más de 14 días sin avanzar en una lección."
-            />
-            <div className="mt-4 max-h-[240px] overflow-y-auto pr-2">
-              <SimpleTable
-                headers={["Estudiante", "Nivel", "Lección", "Días"]}
-                rows={(data?.stuckStudents ?? []).map((student) => [
-                  <span key="student" className="font-medium text-slate-100">{student.student}</span>,
-                  <span key="level" className="text-slate-300">{student.level}</span>,
-                  <span key="lesson" className="text-slate-300">{student.lesson}</span>,
-                  <span
-                    key="days"
-                    className={classNames(
-                      "font-semibold",
-                      student.daysStuck != null && student.daysStuck >= 14
-                        ? "text-rose-300"
-                        : "text-slate-200"
-                    )}
-                  >
-                    {formatIntegerValue(student.daysStuck ?? null)}
-                  </span>,
-                ])}
-                getKey={(index) => `row-${index}`}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      ) : null}
     </PanelWrapper>
   );
 }

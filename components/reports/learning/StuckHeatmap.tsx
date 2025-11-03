@@ -8,9 +8,9 @@ import type { StuckHeatCell, StuckStudent } from "@/types/reports.learning";
 
 const integerFormatter = new Intl.NumberFormat("es-EC");
 
-function getCellClasses(count: number, max: number) {
+function getCellClasses(count: number, max: number, variant: "light" | "dark") {
   if (count <= 0) {
-    return "bg-slate-100 text-slate-400";
+    return variant === "dark" ? "bg-slate-800 text-slate-500" : "bg-slate-100 text-slate-400";
   }
   const ratio = max > 0 ? count / max : 0;
   if (ratio >= 0.66) return "bg-rose-500 text-white";
@@ -20,6 +20,7 @@ function getCellClasses(count: number, max: number) {
 
 type Props = {
   cells: StuckHeatCell[];
+  variant?: "light" | "dark";
 };
 
 type SelectedCell = {
@@ -28,7 +29,7 @@ type SelectedCell = {
   stuck_count: number;
 };
 
-export function StuckHeatmap({ cells }: Props) {
+export function StuckHeatmap({ cells, variant = "light" }: Props) {
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [students, setStudents] = useState<StuckStudent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,25 +103,49 @@ export function StuckHeatmap({ cells }: Props) {
   };
 
   if (!cells.length) {
+    const emptyClasses =
+      variant === "dark"
+        ? "flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/60 p-6 text-center text-sm text-slate-300"
+        : "flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200/70 bg-white/95 p-6 text-center text-sm text-slate-500";
+    const emptyTitle = variant === "dark" ? "text-base font-semibold text-slate-200" : "text-base font-semibold text-slate-600";
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200/70 bg-white/95 p-6 text-center text-sm text-slate-500">
-        <h3 className="text-base font-semibold text-slate-600">Alumnos estancados por lección (últimos 7 días)</h3>
+      <section className={emptyClasses}>
+        <h3 className={emptyTitle}>Alumnos estancados por lección (últimos 7 días)</h3>
         <p>No hay registros recientes de alumnos estancados.</p>
       </section>
     );
   }
 
+  const isDark = variant === "dark";
+  const sectionClasses = isDark
+    ? "flex h-full flex-col gap-5 rounded-2xl border border-slate-800/60 bg-slate-900/70 p-6 shadow-sm text-slate-100"
+    : "flex h-full flex-col gap-5 rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm";
+  const headerTitle = isDark ? "text-lg font-semibold text-slate-100" : "text-lg font-semibold text-slate-800";
+  const headerDescription = isDark ? "text-sm text-slate-400" : "text-sm text-slate-500";
+  const infoIcon = "text-xs text-slate-400";
+  const levelLabel = isDark
+    ? "text-xs font-semibold uppercase tracking-[0.32em] text-slate-400"
+    : "text-xs font-semibold uppercase tracking-[0.32em] text-slate-500";
+  const tableHeader = isDark
+    ? "text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400"
+    : "text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400";
+  const tableDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100";
+  const tableBodyDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100/80";
+  const tableRowClass = isDark ? "text-slate-200" : "text-slate-700";
+  const loadingText = isDark ? "flex items-center justify-center py-12 text-sm text-slate-400" : "flex items-center justify-center py-12 text-sm text-slate-500";
+  const emptyModalText = isDark ? "py-12 text-center text-sm text-slate-400" : "py-12 text-center text-sm text-slate-500";
+
   return (
-    <section className="flex h-full flex-col gap-5 rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
+    <section className={sectionClasses}>
       {error ? (
         <EphemeralToast message={error} tone="error" onDismiss={() => setError(null)} />
       ) : null}
       <header className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h3 className="text-lg font-semibold text-slate-800">Alumnos estancados por lección (últimos 7 días)</h3>
-          <p className="text-sm text-slate-500">Activos en 7 días sin completar lección en ≥14 días.</p>
+          <h3 className={headerTitle}>Alumnos estancados por lección (últimos 7 días)</h3>
+          <p className={headerDescription}>Activos en 7 días sin completar lección en ≥14 días.</p>
         </div>
-        <span className="text-xs text-slate-400" title="Activos en 7 días sin completar lección en ≥14 días.">
+        <span className={infoIcon} title="Activos en 7 días sin completar lección en ≥14 días.">
           ℹ
         </span>
       </header>
@@ -129,10 +154,10 @@ export function StuckHeatmap({ cells }: Props) {
           const levelCells = grouped.get(level) ?? [];
           return (
             <div key={level} className="flex flex-col gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">Nivel {level}</span>
+              <span className={levelLabel}>Nivel {level}</span>
               <div className="flex flex-wrap gap-2">
                 {levelCells.map((cell) => {
-                  const classes = getCellClasses(cell.stuck_count, maxCount);
+                  const classes = getCellClasses(cell.stuck_count, maxCount, variant);
                   const label = `L${cell.current_seq}`;
                   const title = `${cell.stuck_count} alumno${cell.stuck_count === 1 ? "" : "s"} estancado${cell.stuck_count === 1 ? "" : "s"}`;
                   return (
@@ -164,25 +189,25 @@ export function StuckHeatmap({ cells }: Props) {
         description="Lista de estudiantes activos sin progreso reciente."
       >
         {loading ? (
-          <div className="flex items-center justify-center py-12 text-sm text-slate-500">Cargando…</div>
+          <div className={loadingText}>Cargando…</div>
         ) : students.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-500">Sin alumnos registrados en este punto.</div>
+          <div className={emptyModalText}>Sin alumnos registrados en este punto.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100 text-sm">
+            <table className={`min-w-full ${tableDivider} text-sm`}>
               <thead>
-                <tr className="text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                <tr className={tableHeader}>
                   <th className="py-2 pr-3">Nombre</th>
                   <th className="py-2 pr-3">Última vez visto</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100/80">
+              <tbody className={tableBodyDivider}>
                 {students.map((student) => {
                   const lastSeen = student.last_seen_date
                     ? new Date(student.last_seen_date).toLocaleDateString("es-EC")
                     : "—";
                   return (
-                    <tr key={student.student_id} className="text-slate-700">
+                    <tr key={student.student_id} className={tableRowClass}>
                       <td className="py-2 pr-3 font-medium">{student.full_name}</td>
                       <td className="py-2 pr-3">{lastSeen}</td>
                     </tr>

@@ -18,6 +18,7 @@ const DONUT_COLORS = {
 
 type Props = {
   buckets: LearningReport["speed_buckets"];
+  variant?: "light" | "dark";
 };
 
 function formatLei(value: number | null) {
@@ -36,12 +37,17 @@ function sortBucket(rows: SpeedBucketRow[]) {
   return [...rows].sort((a, b) => (b.lei_30d_plan ?? 0) - (a.lei_30d_plan ?? 0));
 }
 
-export function SpeedBuckets({ buckets }: Props) {
+export function SpeedBuckets({ buckets, variant = "light" }: Props) {
   const totalRows = buckets.fast.length + buckets.typical.length + buckets.slow.length;
   if (totalRows === 0) {
+    const emptyClasses =
+      variant === "dark"
+        ? "flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/60 p-6 text-center text-sm text-slate-300"
+        : "flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-slate-200/70 bg-white/95 p-6 text-center text-sm text-slate-500";
+    const emptyTitle = variant === "dark" ? "text-base font-semibold text-slate-200" : "text-base font-semibold text-slate-600";
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-slate-200/70 bg-white/95 p-6 text-center text-sm text-slate-500">
-        <h3 className="text-base font-semibold text-slate-600">Ritmo de aprendizaje (Rápidos / Típicos / Lentos)</h3>
+      <section className={emptyClasses}>
+        <h3 className={emptyTitle}>Ritmo de aprendizaje (Rápidos / Típicos / Lentos)</h3>
         <p>No hay datos suficientes para mostrar los grupos de velocidad.</p>
       </section>
     );
@@ -84,18 +90,43 @@ export function SpeedBuckets({ buckets }: Props) {
     },
   ];
 
+  const isDark = variant === "dark";
+  const cardClasses = isDark
+    ? "flex h-full flex-col gap-6 rounded-2xl border border-slate-800/60 bg-slate-900/70 p-6 shadow-sm text-slate-100"
+    : "flex h-full flex-col gap-6 rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm";
+  const titleClass = isDark ? "text-lg font-semibold text-slate-100" : "text-lg font-semibold text-slate-800";
+  const descriptionClass = isDark ? "text-sm text-slate-400" : "text-sm text-slate-500";
+  const infoIconClass = isDark ? "text-xs text-slate-400" : "text-xs text-slate-400";
+  const legendTextClass = isDark ? "text-slate-200" : "text-slate-700";
+  const legendStrongClass = isDark ? "text-slate-100" : "text-slate-800";
+  const accordionClasses = isDark
+    ? "group rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4 shadow-sm"
+    : "group rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm";
+  const accordionTitle = isDark ? "text-sm font-semibold text-slate-100" : "text-sm font-semibold text-slate-800";
+  const accordionDescription = isDark ? "text-xs text-slate-400" : "text-xs text-slate-500";
+  const accordionChevron = isDark ? "text-sm text-slate-500 transition group-open:rotate-180" : "text-sm text-slate-400 transition group-open:rotate-180";
+  const tableDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100";
+  const tableBodyDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100/80";
+  const tableHeader = isDark
+    ? "text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400"
+    : "text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400";
+  const tableRow = isDark ? "text-slate-200" : "text-slate-700";
+  const tableEmptyText = isDark ? "py-4 text-center text-xs text-slate-500" : "py-4 text-center text-xs text-slate-400";
+  const tableCell = isDark ? "py-2 pr-3" : "py-2 pr-3";
+  const tableLeiClass = isDark ? "py-2 pr-3 text-slate-100" : "py-2 pr-3";
+  const tableDaysClass = isDark ? "py-2 text-slate-200" : "py-2";
+  const donutOuter = isDark ? "#111827" : "#f8fafc";
+  const donutInner = isDark ? "#0b1220" : "white";
+  const donutText = isDark ? "fill-slate-100" : "fill-slate-700";
+
   return (
-    <section className="flex h-full flex-col gap-6 rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
+    <section className={cardClasses}>
       <header className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h3 className="text-lg font-semibold text-slate-800">
-            Ritmo de aprendizaje (Rápidos / Típicos / Lentos)
-          </h3>
-          <p className="text-sm text-slate-500">
-            Distribución de alumnos por percentil LEI reciente.
-          </p>
+          <h3 className={titleClass}>Ritmo de aprendizaje (Rápidos / Típicos / Lentos)</h3>
+          <p className={descriptionClass}>Distribución de alumnos por percentil LEI reciente.</p>
         </div>
-        <span className="text-xs text-slate-400" title="LEI reciente por percentil. Rápidos = ≥ 75%.">
+        <span className={infoIconClass} title="LEI reciente por percentil. Rápidos = ≥ 75%.">
           ℹ
         </span>
       </header>
@@ -103,7 +134,7 @@ export function SpeedBuckets({ buckets }: Props) {
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center">
         <div className="flex flex-col items-center gap-4">
           <svg viewBox="0 0 120 120" className="h-44 w-44">
-            <circle cx="60" cy="60" r="45" fill="#f8fafc" />
+            <circle cx="60" cy="60" r="45" fill={donutOuter} />
             {segments.map((segment) => {
               const dash = (segment.value / 100) * circumference;
               const circle = (
@@ -123,17 +154,14 @@ export function SpeedBuckets({ buckets }: Props) {
               offset -= dash;
               return circle;
             })}
-            <circle cx="60" cy="60" r="32" fill="white" />
-            <text
-              x="60"
-              y="64"
-              textAnchor="middle"
-              className="fill-slate-700 text-lg font-semibold"
-            >
-              {percentileFormatter.format(buckets.proportions.fast_pct + buckets.proportions.typical_pct + buckets.proportions.slow_pct)}%
+            <circle cx="60" cy="60" r="32" fill={donutInner} />
+            <text x="60" y="64" textAnchor="middle" className={`${donutText} text-lg font-semibold`}>
+              {percentileFormatter.format(
+                buckets.proportions.fast_pct + buckets.proportions.typical_pct + buckets.proportions.slow_pct,
+              )}%
             </text>
           </svg>
-          <div className="flex items-center gap-4 text-sm">
+          <div className={`flex items-center gap-4 text-sm ${legendTextClass}`}>
             {segments.map((segment) => (
               <div key={segment.key} className="flex items-center gap-2">
                 <span
@@ -141,29 +169,25 @@ export function SpeedBuckets({ buckets }: Props) {
                   style={{ backgroundColor: DONUT_COLORS[segment.key] }}
                 />
                 <span>{segment.label}</span>
-                <strong className="text-slate-800">{percentileFormatter.format(segment.value)}%</strong>
+                <strong className={legendStrongClass}>{percentileFormatter.format(segment.value)}%</strong>
               </div>
             ))}
           </div>
         </div>
         <div className="flex-1 space-y-4">
           {groups.map((group) => (
-            <details
-              key={group.key}
-              className="group rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm"
-              open={group.key !== "typical"}
-            >
+            <details key={group.key} className={accordionClasses} open={group.key !== "typical"}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-left">
                 <div className="flex flex-col">
-                  <span className="text-sm font-semibold text-slate-800">{group.title}</span>
-                  <span className="text-xs text-slate-500">{group.description}</span>
+                  <span className={accordionTitle}>{group.title}</span>
+                  <span className={accordionDescription}>{group.description}</span>
                 </div>
-                <span className="text-sm text-slate-400 transition group-open:rotate-180">⌃</span>
+                <span className={accordionChevron}>⌃</span>
               </summary>
               <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-100 text-sm">
+                <table className={`min-w-full ${tableDivider} text-sm`}>
                   <thead>
-                    <tr className="text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                    <tr className={tableHeader}>
                       <th className="py-2 pr-3">Nombre</th>
                       <th className="py-2 pr-3">Nivel</th>
                       <th className="py-2 pr-3">Lección</th>
@@ -171,10 +195,10 @@ export function SpeedBuckets({ buckets }: Props) {
                       {hasDaysColumn ? <th className="py-2">Días sin progreso</th> : null}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100/80">
+                  <tbody className={tableBodyDivider}>
                     {group.rows.length === 0 ? (
                       <tr>
-                        <td colSpan={hasDaysColumn ? 5 : 4} className="py-4 text-center text-xs text-slate-400">
+                        <td colSpan={hasDaysColumn ? 5 : 4} className={tableEmptyText}>
                           Sin alumnos en este grupo.
                         </td>
                       </tr>
@@ -186,12 +210,12 @@ export function SpeedBuckets({ buckets }: Props) {
                             ? formatDays((row as SpeedBucketRow & { days_since_progress?: number | null }).days_since_progress)
                             : "";
                         return (
-                          <tr key={`${row.student_id}-${row.speed_bucket}`} className="text-slate-700">
-                            <td className="py-2 pr-3 font-medium">{row.full_name ?? "Sin nombre"}</td>
-                            <td className="py-2 pr-3">{row.level ?? "—"}</td>
-                            <td className="py-2 pr-3">{lessonLabel}</td>
-                            <td className="py-2 pr-3">{formatLei(row.lei_30d_plan)}</td>
-                            {hasDaysColumn ? <td className="py-2">{daysSince || "—"}</td> : null}
+                          <tr key={`${row.student_id}-${row.speed_bucket}`} className={tableRow}>
+                            <td className={`${tableCell} font-medium`}>{row.full_name ?? "Sin nombre"}</td>
+                            <td className={tableCell}>{row.level ?? "—"}</td>
+                            <td className={tableCell}>{lessonLabel}</td>
+                            <td className={tableLeiClass}>{formatLei(row.lei_30d_plan)}</td>
+                            {hasDaysColumn ? <td className={tableDaysClass}>{daysSince || "—"}</td> : null}
                           </tr>
                         );
                       })
