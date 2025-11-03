@@ -1982,28 +1982,66 @@ export function AdminCalendarDashboard() {
                   );
                 })}
               </div>
-              <div className="flex items-center gap-3 text-sm font-semibold text-brand-ink">
-                <button
-                  type="button"
-                  onClick={goToPrevious}
-                  className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  ‹ Anterior
-                </button>
-                <button
-                  type="button"
-                  onClick={goToToday}
-                  className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  Hoy
-                </button>
-                <button
-                  type="button"
-                  onClick={goToNext}
-                  className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                >
-                  Siguiente ›
-                </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-3 text-sm font-semibold text-brand-ink">
+                  <button
+                    type="button"
+                    onClick={goToPrevious}
+                    className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    ‹ Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToToday}
+                    className="rounded-full border border-brand-ink-muted/20 bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNext}
+                    className="rounded-full border border-transparent bg-white px-3 py-1 text-sm font-semibold text-brand-ink shadow transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    Siguiente ›
+                  </button>
+                </div>
+                {typeFilter === "exam" && (
+                  <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
+                    <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
+                    {STATUS_OPTIONS.map((option) => {
+                      if (option.value === "all") {
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => updateStatusFilter(option.value)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                              statusFilter === option.value
+                                ? "bg-brand-teal text-white"
+                                : "bg-transparent text-brand-ink"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      }
+                      const isActive = statusFilter === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => updateStatusFilter(option.value)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                            isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2028,43 +2066,6 @@ export function AdminCalendarDashboard() {
                   );
                 })}
               </div>
-
-              {typeFilter === "exam" && (
-                <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                  <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
-                  {STATUS_OPTIONS.map((option) => {
-                    if (option.value === "all") {
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => updateStatusFilter(option.value)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                            statusFilter === option.value
-                              ? "bg-brand-teal text-white"
-                              : "bg-transparent text-brand-ink"
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    }
-                    const isActive = statusFilter === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => updateStatusFilter(option.value)}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                          isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
 
               {typeFilter === "exam" && (
                 <div className="flex items-center gap-3 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
