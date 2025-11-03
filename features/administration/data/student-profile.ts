@@ -3496,12 +3496,45 @@ async function fetchStudentBasicDetailsRows(
   return [];
 }
 
+let studentAttendanceSoftDeleteSupported: boolean | null = null;
+
+async function supportsStudentAttendanceSoftDelete(
+  sqlClient?: ReturnType<typeof getSqlClient>,
+): Promise<boolean> {
+  if (studentAttendanceSoftDeleteSupported != null) {
+    return studentAttendanceSoftDeleteSupported;
+  }
+
+  const sql = sqlClient ?? getSqlClient();
+
+  try {
+    const rows = normalizeRows<SqlRow>(await sql`
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'student_attendance'
+        AND column_name = 'deleted_at'
+      LIMIT 1
+    `);
+    studentAttendanceSoftDeleteSupported = rows.length > 0;
+  } catch (error) {
+    console.error(
+      "No se pudo verificar la compatibilidad de eliminado suave en student_attendance",
+      error,
+    );
+    studentAttendanceSoftDeleteSupported = false;
+  }
+
+  return studentAttendanceSoftDeleteSupported;
+}
+
 export async function listStudentAttendanceHistory(
   studentId: number,
   limit = 60,
 ): Promise<StudentAttendanceHistoryEntry[]> {
   noStore();
   const sql = getSqlClient();
+  const supportsSoftDelete = await supportsStudentAttendanceSoftDelete(sql);
 
   const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.trunc(limit), 200) : 60;
 
@@ -3517,6 +3550,7 @@ export async function listStudentAttendanceHistory(
     FROM public.student_attendance sa
     LEFT JOIN lessons l ON l.id = sa.lesson_id
     WHERE sa.student_id = ${studentId}::bigint
+      ${supportsSoftDelete ? sql`AND sa.deleted_at IS NULL` : sql``}
     ORDER BY sa.checkin_time DESC
     LIMIT ${safeLimit}
   `);
@@ -3614,6 +3648,63 @@ export async function createStudentAttendanceEntry({
   }
 
   return mapped;
+}
+
+export type DeleteStudentAttendanceResult = {
+  attendanceId: number;
+  softDeleted: boolean;
+};
+
+export async function deleteStudentAttendanceEntry({
+  studentId,
+  attendanceId,
+}: {
+  studentId: number;
+  attendanceId: number;
+}): Promise<DeleteStudentAttendanceResult | null> {
+  const sql = getSqlClient();
+
+  const sanitizedStudentId = Math.trunc(studentId);
+  if (!Number.isFinite(sanitizedStudentId) || sanitizedStudentId <= 0) {
+    throw new Error("El estudiante indicado no es válido.");
+  }
+
+  const sanitizedAttendanceId = Math.trunc(attendanceId);
+  if (!Number.isFinite(sanitizedAttendanceId) || sanitizedAttendanceId <= 0) {
+    throw new Error("El registro de asistencia indicado no es válido.");
+  }
+
+  const supportsSoftDelete = await supportsStudentAttendanceSoftDelete(sql);
+
+  if (supportsSoftDelete) {
+    const updatedRows = normalizeRows<SqlRow>(await sql`
+      UPDATE public.student_attendance
+      SET deleted_at = NOW()
+      WHERE id = ${sanitizedAttendanceId}::bigint
+        AND student_id = ${sanitizedStudentId}::bigint
+        AND deleted_at IS NULL
+      RETURNING id
+    `);
+
+    if (!updatedRows.length) {
+      return null;
+    }
+
+    return { attendanceId: sanitizedAttendanceId, softDeleted: true };
+  }
+
+  const deletedRows = normalizeRows<SqlRow>(await sql`
+    DELETE FROM public.student_attendance
+    WHERE id = ${sanitizedAttendanceId}::bigint
+      AND student_id = ${sanitizedStudentId}::bigint
+    RETURNING id
+  `);
+
+  if (!deletedRows.length) {
+    return null;
+  }
+
+  return { attendanceId: sanitizedAttendanceId, softDeleted: false };
 }
 
 export async function getStudentProgressEvents(

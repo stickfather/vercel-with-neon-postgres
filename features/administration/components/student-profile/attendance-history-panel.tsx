@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import type { StudentAttendanceHistoryEntry } from "@/features/administration/data/student-profile";
 import type { LevelLessons } from "@/features/student-checkin/data/queries";
@@ -89,6 +90,7 @@ type ManagedAttendance = StudentAttendanceHistoryEntry & {
 };
 
 export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, errorMessage }: AttendanceHistoryPanelProps) {
+  const router = useRouter();
   const [history, setHistory] = useState<ManagedAttendance[]>(() => entries.slice());
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -97,6 +99,8 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
   const [checkInValue, setCheckInValue] = useState("");
   const [checkOutValue, setCheckOutValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ManagedAttendance | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const lessonsByLevel = useMemo(() => {
     const map = new Map<string, LevelLessons["lessons"]>();
@@ -154,6 +158,78 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
       return [...entries, ...remainingPending];
     });
   }, [entries]);
+
+  const handleRequestDelete = useCallback((entry: ManagedAttendance) => {
+    if (entry.isPending) {
+      return;
+    }
+    setDeleteTarget(entry);
+  }, []);
+
+  const handleCancelDelete = useCallback(() => {
+    if (isDeleting) {
+      return;
+    }
+    setDeleteTarget(null);
+  }, [isDeleting]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const response = await queueableFetch(
+        `/api/students/${studentId}/attendance/${deleteTarget.id}`,
+        {
+          method: "DELETE",
+          offlineLabel: "attendance-delete",
+        },
+      );
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        deleted?: boolean;
+        queued?: boolean;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "No se pudo eliminar el registro de asistencia.");
+      }
+
+      setHistory((previous) => previous.filter((entry) => entry.id !== deleteTarget.id));
+      setToast({
+        tone: "success",
+        message: payload?.queued
+          ? "El registro se eliminará cuando recuperes la conexión."
+          : "Registro de asistencia eliminado correctamente.",
+      });
+
+      if (typeof window === "undefined" || navigator.onLine) {
+        router.refresh();
+      } else if (payload?.queued) {
+        window.addEventListener(
+          "online",
+          () => {
+            router.refresh();
+          },
+          { once: true },
+        );
+      }
+
+      setDeleteTarget(null);
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudo eliminar el registro de asistencia.";
+      setToast({ tone: "error", message });
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [deleteTarget, router, studentId]);
 
   const handleOpenDialog = useCallback(() => {
     const initialLevel = selectedLevel || lessonCatalog[0]?.level || "";
@@ -377,6 +453,9 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
                   <th className="px-4 py-3 text-left">Ingreso</th>
                   <th className="px-4 py-3 text-left">Salida</th>
                   <th className="px-4 py-3 text-left">Duración</th>
+                  <th className="px-4 py-3 text-right">
+                    <span className="sr-only">Acciones</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-deep-soft/30">
@@ -390,6 +469,37 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
                       <td className="px-4 py-3 text-brand-ink-muted">{formatTime(entry.checkInTime)}</td>
                       <td className="px-4 py-3 text-brand-ink-muted">{checkoutLabel}</td>
                       <td className="px-4 py-3 text-brand-ink-muted">{formatDuration(entry.durationMinutes)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleRequestDelete(entry)}
+                          disabled={Boolean(entry.isPending) || isDeleting}
+                          title={
+                            entry.isPending
+                              ? "Esperando sincronización para este registro."
+                              : "Eliminar registro"
+                          }
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent bg-rose-600 text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            className="h-4 w-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={1.6}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M9 4.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4.5V6" />
+                            <path d="M5 6h14" />
+                            <path d="M7 6l.6 12.1a2 2 0 0 0 2 1.9h4.8a2 2 0 0 0 2-1.9L17 6" />
+                            <path d="M10 10.5v5.5" />
+                            <path d="M14 10.5v5.5" />
+                          </svg>
+                          <span className="sr-only">Eliminar registro</span>
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -410,6 +520,34 @@ export function AttendanceHistoryPanel({ studentId, entries, lessonCatalog, erro
           </p>
         </div>
       )}
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-[28px] border border-white/70 bg-white px-6 py-6 text-brand-deep shadow-[0_26px_60px_rgba(15,23,42,0.2)]">
+            <h3 className="text-xl font-black">Eliminar registro de asistencia</h3>
+            <p className="mt-2 text-sm text-brand-ink-muted">
+              ¿Estás seguro? Esta acción no se puede deshacer.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-5 py-2 text-xs font-semibold uppercase tracking-wide text-brand-deep shadow-sm transition hover:-translate-y-[1px] hover:border-brand-teal hover:bg-brand-teal-soft/60 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-6 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-[1px] hover:bg-[#e06820] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#ff9c66] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDeleting ? "Eliminando…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {isDialogOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6 backdrop-blur-sm">
           <form
