@@ -20,6 +20,7 @@ export type DaysSinceProgressLevel = {
 
 export type VelocityLevel = {
   level: string;
+  lessons_completed_30d: number;
   lessons_per_week_total: number;
   lessons_per_week_per_student: number;
   active_students_level_30d: number;
