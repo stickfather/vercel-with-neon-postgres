@@ -18,6 +18,7 @@ import type { CalendarEvent } from "@/features/administration/data/calendar";
 import type { StudentName } from "@/features/student-checkin/data/queries";
 
 import { formatLocalDateTime, formatLocalTime } from "@/lib/datetime/format";
+import { StudentAvatar } from "@/components/student/StudentAvatar";
 
 const TIMEZONE = "America/Guayaquil";
 
@@ -1082,7 +1083,111 @@ type EventDetailProps = {
   onClose(): void;
 };
 
+type StudentPreviewProfile = {
+  id: number;
+  fullName: string;
+  photoUrl: string | null;
+  photoUpdatedAt: string | null;
+};
+
 function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
+  const [studentPreview, setStudentPreview] = useState<StudentPreviewProfile | null>(null);
+  const [studentPreviewLoading, setStudentPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (event.kind !== "exam" || event.studentId == null) {
+      setStudentPreview(null);
+      setStudentPreviewLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    const controller = new AbortController();
+    const studentId = event.studentId;
+
+    setStudentPreviewLoading(true);
+    setStudentPreview((previous) => {
+      if (previous && previous.id === studentId) {
+        return previous;
+      }
+      return {
+        id: studentId,
+        fullName: event.title,
+        photoUrl: null,
+        photoUpdatedAt: null,
+      };
+    });
+
+    async function loadStudentPreview() {
+      try {
+        const response = await fetch(`/api/students/${studentId}/basic-details`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Estado ${response.status}`);
+        }
+
+        const payload = (await response.json().catch(() => ({}))) as Partial<{
+          fullName: unknown;
+          photoUrl: unknown;
+          photoUpdatedAt: unknown;
+        }>;
+
+        if (!isActive) {
+          return;
+        }
+
+        const resolvedName =
+          typeof payload.fullName === "string" && payload.fullName.trim().length
+            ? payload.fullName.trim()
+            : event.title;
+        const resolvedPhotoUrl =
+          typeof payload.photoUrl === "string" && payload.photoUrl.trim().length
+            ? payload.photoUrl.trim()
+            : null;
+        const resolvedUpdatedAt =
+          typeof payload.photoUpdatedAt === "string" && payload.photoUpdatedAt.trim().length
+            ? payload.photoUpdatedAt
+            : null;
+
+        setStudentPreview({
+          id: studentId,
+          fullName: resolvedName,
+          photoUrl: resolvedPhotoUrl,
+          photoUpdatedAt: resolvedUpdatedAt,
+        });
+        setStudentPreviewLoading(false);
+      } catch (error) {
+        if (controller.signal.aborted || !isActive) {
+          return;
+        }
+        console.error("No se pudo cargar el perfil del estudiante.", error);
+        setStudentPreview({
+          id: studentId,
+          fullName: event.title,
+          photoUrl: null,
+          photoUpdatedAt: null,
+        });
+        setStudentPreviewLoading(false);
+      }
+    }
+
+    void loadStudentPreview();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [event.kind, event.studentId, event.title]);
+
+  const studentProfile =
+    event.kind === "exam" && event.studentId != null ? studentPreview : null;
+  const studentName =
+    studentProfile && studentProfile.fullName.trim().length
+      ? studentProfile.fullName
+      : event.title;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
@@ -1110,12 +1215,28 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
               Perfil del estudiante
             </dt>
             <dd>
-              <Link
-                href={`/administracion/gestion-estudiantes/${event.studentId}`}
-                className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-              >
-                Ver perfil del estudiante
-              </Link>
+              <div className="flex items-center gap-3">
+                <div
+                  className={`rounded-full shadow-[0_10px_24px_rgba(15,23,42,0.18)] ring-1 ring-brand-ink-muted/15 ${studentPreviewLoading ? "animate-pulse" : ""}`.trim()}
+                >
+                  <StudentAvatar
+                    name={studentName}
+                    photoUrl={studentProfile?.photoUrl ?? null}
+                    updatedAt={studentProfile?.photoUpdatedAt ?? null}
+                    size={64}
+                    className="shadow-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-semibold text-brand-deep">{studentName}</span>
+                  <Link
+                    href={`/administracion/gestion-estudiantes/${event.studentId}`}
+                    className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                  >
+                    Ver perfil del estudiante
+                  </Link>
+                </div>
+              </div>
             </dd>
           </div>
         )}
