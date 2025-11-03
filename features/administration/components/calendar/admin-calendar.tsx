@@ -37,12 +37,13 @@ const TYPE_OPTIONS: Array<{ value: CalendarTypeFilter; label: string }> = [
   { value: "activity", label: "Actividades" },
 ];
 
-type StatusFilter = "all" | "scheduled" | "completed" | "cancelled";
+type StatusFilter = "all" | "scheduled" | "approved" | "failed" | "cancelled";
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Todos" },
   { value: "scheduled", label: "Programado" },
-  { value: "completed", label: "Realizado" },
+  { value: "approved", label: "Aprobado" },
+  { value: "failed", label: "Reprobado" },
   { value: "cancelled", label: "Cancelado" },
 ];
 
@@ -74,8 +75,6 @@ const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat("es-EC", {
 
 const EXAM_EVENT_STYLES: Record<
   | "scheduled"
-  | "rescheduled"
-  | "completed"
   | "approved"
   | "failed"
   | "cancelled"
@@ -85,14 +84,6 @@ const EXAM_EVENT_STYLES: Record<
   scheduled: {
     container: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
     accent: "bg-[#0f3f86]",
-  },
-  rescheduled: {
-    container: "border border-[#b9cdf3] bg-[#e6f0ff] text-[#0f3f86]",
-    accent: "bg-[#0f3f86]",
-  },
-  completed: {
-    container: "border border-[#0c2c59] bg-[#123b7a] text-white hover:border-[#0c2c59]",
-    accent: "bg-[#0c2c59]",
   },
   approved: {
     container: "border border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -136,8 +127,15 @@ function parseTypeParam(value: string | null): CalendarTypeFilter {
 function parseStatusParam(value: string | null): StatusFilter {
   const normalized = (value ?? "").trim().toLowerCase();
   if (normalized === "scheduled" || normalized === "programado") return "scheduled";
-  if (normalized === "completed" || normalized === "completado") return "completed";
-  if (normalized === "cancelled" || normalized === "cancelado") return "cancelled";
+  if (["approved", "aprobado", "aprobada", "passed"].includes(normalized)) {
+    return "approved";
+  }
+  if (["failed", "reprobado", "reprobada"].includes(normalized)) {
+    return "failed";
+  }
+  if (["cancelled", "cancelado", "cancelada"].includes(normalized)) {
+    return "cancelled";
+  }
   return "all";
 }
 
@@ -291,7 +289,7 @@ function getEventTooltip(event: CalendarEvent): string {
       formatDateTime(event.startTime),
     ].filter(Boolean);
     const status = event.status
-      ? `Estado: ${translateStatus(event.status)}`
+      ? `Estado: ${translateStatus(event.status, event.passed)}`
       : null;
     const score = event.score != null ? `Nota: ${event.score}%` : null;
     const passedLabel =
@@ -317,16 +315,25 @@ function getEventTooltip(event: CalendarEvent): string {
     .join(" · ");
 }
 
-function translateStatus(status: string | null): string {
-  if (!status) return "Sin estado";
+function translateStatus(status: string | null, passed?: boolean | null): string {
+  if (passed === true) {
+    return "Aprobado";
+  }
+  if (passed === false) {
+    return "Reprobado";
+  }
+  if (!status) return "Programado";
   const normalized = status.trim().toLowerCase();
-  if (normalized === "scheduled") return "Programado";
-  if (normalized === "completed") return "Realizado";
-  if (normalized === "approved" || normalized === "passed") return "Aprobado";
-  if (normalized === "failed" || normalized === "reprobado") return "Reprobado";
-  if (normalized === "cancelled") return "Cancelado";
-  if (normalized === "rescheduled") return "Reprogramado";
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  if (["approved", "aprobado", "aprobada", "passed"].includes(normalized)) {
+    return "Aprobado";
+  }
+  if (["failed", "reprobado", "reprobada"].includes(normalized)) {
+    return "Reprobado";
+  }
+  if (["cancelled", "cancelado", "cancelada"].includes(normalized)) {
+    return "Cancelado";
+  }
+  return "Programado";
 }
 
 
@@ -361,18 +368,12 @@ type DialogState =
       event: CalendarEvent;
     };
 
-const STATUS_BADGES: Record<string, { label: string; className: string }> = {
+type ExamLegendKey = Exclude<StatusFilter, "all">;
+
+const STATUS_BADGES: Record<ExamLegendKey, { label: string; className: string }> = {
   scheduled: {
     label: "Programado",
     className: EXAM_EVENT_STYLES.scheduled.container,
-  },
-  rescheduled: {
-    label: "Reprogramado",
-    className: EXAM_EVENT_STYLES.rescheduled.container,
-  },
-  completed: {
-    label: "Realizado",
-    className: EXAM_EVENT_STYLES.completed.container,
   },
   approved: {
     label: "Aprobado",
@@ -389,7 +390,7 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
 };
 
 const EXAM_STATUS_LEGEND_ITEMS: Array<{
-  key: string;
+  key: ExamLegendKey;
   label: string;
   className: string;
   accentClassName: string;
@@ -399,18 +400,6 @@ const EXAM_STATUS_LEGEND_ITEMS: Array<{
     label: "Programado",
     className: EXAM_EVENT_STYLES.scheduled.container,
     accentClassName: EXAM_EVENT_STYLES.scheduled.accent,
-  },
-  {
-    key: "rescheduled",
-    label: "Reprogramado",
-    className: EXAM_EVENT_STYLES.rescheduled.container,
-    accentClassName: EXAM_EVENT_STYLES.rescheduled.accent,
-  },
-  {
-    key: "completed",
-    label: "Realizado",
-    className: EXAM_EVENT_STYLES.completed.container,
-    accentClassName: EXAM_EVENT_STYLES.completed.accent,
   },
   {
     key: "approved",
@@ -654,9 +643,10 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
   const [dateTime, setDateTime] = useState(() =>
     event ? toLocalInputValue(event.startTime) : defaultDate ?? "",
   );
-  const [status, setStatus] = useState<StatusFilter>(() =>
-    event ? parseStatusParam(event.status ?? "scheduled") : "scheduled",
-  );
+  const [status, setStatus] = useState<StatusFilter>(() => {
+    const parsed = event ? parseStatusParam(event.status ?? "scheduled") : "scheduled";
+    return parsed === "all" ? "scheduled" : parsed;
+  });
   const [score, setScore] = useState(() =>
     event?.score != null ? String(event.score) : "",
   );
@@ -671,7 +661,22 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
     setStudent(initialStudent);
   }, [event?.id]);
 
-  const requiresResult = status === "completed";
+  const requiresResult = status === "approved" || status === "failed";
+
+  const handleStatusChange = (nextStatus: StatusFilter) => {
+    setStatus(nextStatus);
+    if (nextStatus === "approved") {
+      setPassed(true);
+    } else if (nextStatus === "failed") {
+      setPassed(false);
+    } else {
+      setPassed(null);
+    }
+
+    if (nextStatus === "scheduled" || nextStatus === "cancelled") {
+      setScore("");
+    }
+  };
 
   const handleSubmit = async (submissionEvent: React.FormEvent<HTMLFormElement>) => {
     submissionEvent.preventDefault();
@@ -698,19 +703,33 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
       return;
     }
 
-    if (requiresResult && normalizedScore != null && passed == null) {
-      setError("Debes indicar si aprobó el examen cuando registras una nota.");
+    if (requiresResult && passed == null) {
+      setError("Debes indicar si aprobó el examen para este estado.");
+      return;
+    }
+
+    if (status === "approved" && passed === false) {
+      setError("Un examen aprobado debe marcarse como aprobado.");
+      return;
+    }
+
+    if (status === "failed" && passed === true) {
+      setError("Un examen reprobado no puede marcarse como aprobado.");
       return;
     }
 
     setSubmitting(true);
     try {
+      const nextPassed =
+        status === "approved" ? true : status === "failed" ? false : passed;
+      const nextScore = requiresResult ? normalizedScore : null;
+
       const payload = {
         studentId: student.id,
         timeScheduled,
         status: status === "all" ? "scheduled" : status,
-        score: normalizedScore,
-        passed,
+        score: nextScore,
+        passed: nextPassed,
         notes: notes.trim() ? notes.trim() : null,
       };
 
@@ -776,7 +795,7 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
           </span>
           <select
             value={status === "all" ? "scheduled" : status}
-            onChange={(event) => setStatus(event.target.value as StatusFilter)}
+            onChange={(event) => handleStatusChange(event.target.value as StatusFilter)}
             disabled={submitting}
             className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
           >
@@ -1105,7 +1124,7 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
               Estado
             </dt>
-            <dd>{translateStatus(event.status)}</dd>
+            <dd>{translateStatus(event.status, event.passed)}</dd>
           </div>
         )}
         {event.kind === "exam" && event.score != null && (
@@ -1251,28 +1270,29 @@ function getEventStyle(event: CalendarEvent): {
   if (event.kind === "exam") {
     const status = event.status?.trim().toLowerCase() ?? "scheduled";
 
-    if (status === "cancelled") {
+    if (["cancelled", "cancelado", "cancelada"].includes(status)) {
       const style = EXAM_EVENT_STYLES.cancelled;
       return { className: style.container, accentClassName: style.accent };
     }
 
-    if (status === "approved" || status === "passed" || event.passed === true) {
+    if (
+      status === "approved" ||
+      status === "passed" ||
+      status === "aprobado" ||
+      status === "aprobada" ||
+      event.passed === true
+    ) {
       const style = EXAM_EVENT_STYLES.approved;
       return { className: style.container, accentClassName: style.accent };
     }
 
-    if (status === "failed" || status === "reprobado" || event.passed === false) {
+    if (
+      status === "failed" ||
+      status === "reprobado" ||
+      status === "reprobada" ||
+      event.passed === false
+    ) {
       const style = EXAM_EVENT_STYLES.failed;
-      return { className: style.container, accentClassName: style.accent };
-    }
-
-    if (status === "completed") {
-      const style = EXAM_EVENT_STYLES.completed;
-      return { className: style.container, accentClassName: style.accent };
-    }
-
-    if (status === "rescheduled") {
-      const style = EXAM_EVENT_STYLES.rescheduled;
       return { className: style.container, accentClassName: style.accent };
     }
 
