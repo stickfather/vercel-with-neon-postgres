@@ -59,86 +59,83 @@ export function EngagementHeaderTiles({
   const wowDisplay = wowChange !== null ? percentFormatter.format(Math.abs(wowChange * 100)) : "—";
 
   return (
-    <>
-      {/* Row 1: Active Students (7/14/30/180 days) */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
-          <header className="flex items-center justify-between">
-            <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
-              Activos (7 días)
-            </span>
-            <span title="Alumnos con ≥1 asistencia en los últimos 7 días." className={`text-xs ${hintText}`}>
-              ℹ
-            </span>
-          </header>
-          <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_7d)}</div>
-          <div className={`h-10 text-sm ${secondaryText}`}>Últimos 7 días</div>
-        </article>
+    <section className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+      {/* Active 7 days */}
+      <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
+        <header className="flex items-center justify-between">
+          <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
+            Activos (7d)
+          </span>
+          <span title="Alumnos con ≥1 asistencia en los últimos 7 días." className={`text-xs ${hintText}`}>
+            ℹ
+          </span>
+        </header>
+        <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_7d)}</div>
+        <div className={`text-xs ${secondaryText}`}>Últimos 7 días</div>
+      </article>
 
-        <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
-          <header className="flex items-center justify-between">
-            <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
-              Activos (14 días)
-            </span>
-            <span title="Alumnos con ≥1 asistencia en los últimos 14 días." className={`text-xs ${hintText}`}>
-              ℹ
-            </span>
-          </header>
-          <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_14d)}</div>
-          <div className={`h-10 text-sm ${secondaryText}`}>Últimos 14 días</div>
-        </article>
+      {/* Active 14 days */}
+      <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
+        <header className="flex items-center justify-between">
+          <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
+            Activos (14d)
+          </span>
+          <span title="Alumnos con ≥1 asistencia en los últimos 14 días." className={`text-xs ${hintText}`}>
+            ℹ
+          </span>
+        </header>
+        <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_14d)}</div>
+        <div className={`text-xs ${secondaryText}`}>Últimos 14 días</div>
+      </article>
 
-        <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
-          <header className="flex items-center justify-between">
-            <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
-              Activos (30 días)
-            </span>
-            <span title="Alumnos con ≥1 asistencia en los últimos 30 días." className={`text-xs ${hintText}`}>
-              ℹ
-            </span>
-          </header>
-          <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_30d)}</div>
-          <div className={`h-10 text-sm ${secondaryText}`}>Últimos 30 días</div>
-        </article>
+      {/* Active 30 days */}
+      <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
+        <header className="flex items-center justify-between">
+          <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
+            Activos (30d)
+          </span>
+          <span title="Alumnos con ≥1 asistencia en los últimos 30 días." className={`text-xs ${hintText}`}>
+            ℹ
+          </span>
+        </header>
+        <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_30d)}</div>
+        <div className={`text-xs ${secondaryText}`}>Últimos 30 días</div>
+      </article>
 
-        <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
-          <header className="flex items-center justify-between">
-            <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
-              Activos (6 meses)
-            </span>
-            <span title="Alumnos con ≥1 asistencia en los últimos 180 días." className={`text-xs ${hintText}`}>
-              ℹ
-            </span>
-          </header>
-          <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_6mo)}</div>
-          <div className={`h-10 text-sm ${secondaryText}`}>Últimos 180 días</div>
-        </article>
-      </section>
+      {/* Active 6 months */}
+      <article className={`flex flex-col gap-3 ${mutedTile} transition duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
+        <header className="flex items-center justify-between">
+          <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
+            Activos (6mo)
+          </span>
+          <span title="Alumnos con ≥1 asistencia en los últimos 180 días." className={`text-xs ${hintText}`}>
+            ℹ
+          </span>
+        </header>
+        <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_6mo)}</div>
+        <div className={`text-xs ${secondaryText}`}>Últimos 180 días</div>
+      </article>
 
-      {/* Row 2: Engagement Decline Index */}
-      <section className="grid gap-4">
-        <article
-          className={`flex flex-col gap-3 rounded-2xl border p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md ${getToneClasses(wowTone, variant)}`}
-        >
-          <header className="flex items-center justify-between">
-            <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
-              Índice de declive de engagement (WoW)
-            </span>
-            <span title="Cambio semana a semana en alumnos activos." className={`text-xs ${hintText}`}>
-              ℹ
-            </span>
-          </header>
-          <div className="flex items-center justify-between">
-            <div className={`flex items-baseline gap-2 text-3xl font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>
-              {wowChange !== null && <span>{wowChange >= 0 ? "↑" : "↓"}</span>}
-              <span>{wowDisplay}%</span>
-            </div>
-            <div className={`text-sm ${secondaryText}`}>
-              {wowChange !== null && wowChange >= 0 ? "Incremento en participación" : wowChange !== null ? "Descenso en participación" : "Sin datos comparativos"}
-            </div>
-          </div>
-        </article>
-      </section>
-    </>
+      {/* WoW Decline Index */}
+      <article
+        className={`flex flex-col gap-3 rounded-2xl border p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md ${getToneClasses(wowTone, variant)}`}
+      >
+        <header className="flex items-center justify-between">
+          <span className={`text-xs font-semibold uppercase tracking-[0.28em] ${secondaryText}`}>
+            Declive WoW
+          </span>
+          <span title="Cambio semana a semana en alumnos activos." className={`text-xs ${hintText}`}>
+            ℹ
+          </span>
+        </header>
+        <div className={`flex items-baseline gap-2 text-3xl font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>
+          {wowChange !== null && <span>{wowChange >= 0 ? "↑" : "↓"}</span>}
+          <span>{wowDisplay}%</span>
+        </div>
+        <div className={`text-xs ${secondaryText}`}>
+          {wowChange !== null && wowChange >= 0 ? "↑ Incremento" : wowChange !== null ? "↓ Descenso" : "Sin datos"}
+        </div>
+      </article>
+    </section>
   );
 }
