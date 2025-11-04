@@ -350,22 +350,22 @@ export async function getPersonnelReport(sql: SqlClient = getSqlClient()): Promi
   ]);
 
   const staffingMix = mapRows(mixRows, (row) => {
-    const hour = readString(row, ["hour", "hora"], [["hour"], ["hora"]]);
-    const students = readNumber(row, ["students", "student_minutes", "alumnos"], [["student"], ["alumno"]]);
-    const staff = readNumber(row, ["staff", "staff_minutes", "personal"], [["staff"], ["personal"]]);
+    const hour = readString(row, ["hour", "hora", "bloque"], [["hour"], ["hora"], ["bloque"]]);
+    const students = readNumber(row, ["students", "student_minutes", "minutos_estudiantes", "alumnos"], [["student"], ["alumno"], ["minutos"]]) ?? 0;
+    const staff = readNumber(row, ["staff", "staff_minutes", "minutos_personal", "personal"], [["staff"], ["personal"], ["minutos"]]) ?? 0;
     return { hour, students, staff } satisfies PersonnelMix;
   });
 
   const coverage = mapRows(coverageRows, (row) => {
-    const area = readString(row, ["area", "zona"], [["area"], ["zona"]]);
-    const status = readString(row, ["status", "descripcion"], [["status"], ["desc"]]);
-    const riskLevel = readString(row, ["risk_level", "riesgo"], [["risk"], ["riesgo"]]);
+    const area = readString(row, ["area", "zona", "hour_of_day"], [["area"], ["zona"], ["hour"]]);
+    const status = readString(row, ["status", "descripcion", "estado_cobertura"], [["status"], ["desc"], ["estado"], ["cobertura"]]);
+    const riskLevel = readString(row, ["risk_level", "riesgo", "nivel_riesgo"], [["risk"], ["riesgo"], ["nivel"]]);
     return { area, status, riskLevel } satisfies PersonnelCoverage;
   });
 
   const studentLoad = mapRows(loadRows, (row) => {
-    const hour = readString(row, ["hour", "hora"], [["hour"], ["hora"]]);
-    const value = readNumber(row, ["load", "students_per_teacher", "valor"], [["load"], ["students"], ["alumno"]]);
+    const hour = readString(row, ["hour", "hora", "hour_of_day"], [["hour"], ["hora"]]);
+    const value = readNumber(row, ["load", "students_per_teacher", "estudiantes_por_profesor", "valor"], [["load"], ["students"], ["alumno"], ["profesor"]]) ?? 0;
     return { hour, value } satisfies PersonnelLoadPoint;
   });
 

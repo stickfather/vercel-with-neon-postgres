@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { LearningReport, SpeedBucketRow } from "@/types/reports.learning";
 
 const numberFormatter = new Intl.NumberFormat("es-EC", {
@@ -37,7 +38,48 @@ function sortBucket(rows: SpeedBucketRow[]) {
   return [...rows].sort((a, b) => (b.lei_30d_plan ?? 0) - (a.lei_30d_plan ?? 0));
 }
 
+const STORAGE_KEY = "salc.learning.ritmo.openKeys";
+
+function loadOpenState(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return new Set(JSON.parse(stored));
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return new Set();
+}
+
+function saveOpenState(keys: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...keys]));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function SpeedBuckets({ buckets, variant = "light" }: Props) {
+  const [openKeys, setOpenKeys] = useState<Set<string>>(() => loadOpenState());
+
+  useEffect(() => {
+    saveOpenState(openKeys);
+  }, [openKeys]);
+
+  const toggleOpen = (key: string) => {
+    setOpenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
   const totalRows = buckets.fast.length + buckets.typical.length + buckets.slow.length;
   if (totalRows === 0) {
     const emptyClasses =
@@ -72,19 +114,22 @@ export function SpeedBuckets({ buckets, variant = "light" }: Props) {
   const groups = [
     {
       key: "fast" as const,
-      title: "Rápidos (≥75%)",
+      title: `Rápidos (${buckets.fast.length})`,
+      subtitle: "≥75%",
       description: "Alumnos en percentil igual o superior a 75.",
       rows: sortBucket(buckets.fast),
     },
     {
       key: "typical" as const,
-      title: "Típicos (25–74%)",
+      title: `Típicos (${buckets.typical.length})`,
+      subtitle: "25–74%",
       description: "Alumnos en percentiles medios.",
       rows: sortBucket(buckets.typical),
     },
     {
       key: "slow" as const,
-      title: "Lentos (<25%)",
+      title: `Lentos (${buckets.slow.length})`,
+      subtitle: "<25%",
       description: "Alumnos que necesitan apoyo adicional.",
       rows: sortBucket(buckets.slow),
     },
@@ -100,11 +145,12 @@ export function SpeedBuckets({ buckets, variant = "light" }: Props) {
   const legendTextClass = isDark ? "text-slate-200" : "text-slate-700";
   const legendStrongClass = isDark ? "text-slate-100" : "text-slate-800";
   const accordionClasses = isDark
-    ? "group rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4 shadow-sm"
-    : "group rounded-2xl border border-slate-200/70 bg-white/90 p-4 shadow-sm";
+    ? "group overflow-hidden rounded-2xl border border-slate-800/60 bg-slate-900/60 shadow-sm transition-all duration-200"
+    : "group overflow-hidden rounded-2xl border border-slate-200/70 bg-white/90 shadow-sm transition-all duration-200";
   const accordionTitle = isDark ? "text-sm font-semibold text-slate-100" : "text-sm font-semibold text-slate-800";
+  const accordionSubtitle = isDark ? "text-xs font-medium text-slate-400" : "text-xs font-medium text-slate-500";
   const accordionDescription = isDark ? "text-xs text-slate-400" : "text-xs text-slate-500";
-  const accordionChevron = isDark ? "text-sm text-slate-500 transition group-open:rotate-180" : "text-sm text-slate-400 transition group-open:rotate-180";
+  const accordionChevron = isDark ? "text-slate-500 transition-transform duration-200" : "text-slate-400 transition-transform duration-200";
   const tableDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100";
   const tableBodyDivider = isDark ? "divide-y divide-slate-800/60" : "divide-y divide-slate-100/80";
   const tableHeader = isDark
@@ -175,56 +221,78 @@ export function SpeedBuckets({ buckets, variant = "light" }: Props) {
           </div>
         </div>
         <div className="flex-1 space-y-4">
-          {groups.map((group) => (
-            <details key={group.key} className={accordionClasses} open={group.key !== "typical"}>
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-left">
-                <div className="flex flex-col">
-                  <span className={accordionTitle}>{group.title}</span>
-                  <span className={accordionDescription}>{group.description}</span>
-                </div>
-                <span className={accordionChevron}>⌃</span>
-              </summary>
-              <div className="mt-4 overflow-x-auto">
-                <table className={`min-w-full ${tableDivider} text-sm`}>
-                  <thead>
-                    <tr className={tableHeader}>
-                      <th className="py-2 pr-3">Nombre</th>
-                      <th className="py-2 pr-3">Nivel</th>
-                      <th className="py-2 pr-3">Lección</th>
-                      <th className="py-2 pr-3">LEI</th>
-                      {hasDaysColumn ? <th className="py-2">Días sin progreso</th> : null}
-                    </tr>
-                  </thead>
-                  <tbody className={tableBodyDivider}>
-                    {group.rows.length === 0 ? (
-                      <tr>
-                        <td colSpan={hasDaysColumn ? 5 : 4} className={tableEmptyText}>
-                          Sin alumnos en este grupo.
-                        </td>
-                      </tr>
-                    ) : (
-                      group.rows.map((row) => {
-                        const lessonLabel = row.current_seq != null ? `L${row.current_seq}` : "—";
-                        const daysSince =
-                          hasDaysColumn && "days_since_progress" in row
-                            ? formatDays((row as SpeedBucketRow & { days_since_progress?: number | null }).days_since_progress)
-                            : "";
-                        return (
-                          <tr key={`${row.student_id}-${row.speed_bucket}`} className={tableRow}>
-                            <td className={`${tableCell} font-medium`}>{row.full_name ?? "Sin nombre"}</td>
-                            <td className={tableCell}>{row.level ?? "—"}</td>
-                            <td className={tableCell}>{lessonLabel}</td>
-                            <td className={tableLeiClass}>{formatLei(row.lei_30d_plan)}</td>
-                            {hasDaysColumn ? <td className={tableDaysClass}>{daysSince || "—"}</td> : null}
+          {groups.map((group) => {
+            const isOpen = openKeys.has(group.key);
+            return (
+              <div key={group.key} className={accordionClasses}>
+                <button
+                  type="button"
+                  onClick={() => toggleOpen(group.key)}
+                  className="flex w-full cursor-pointer items-center justify-between gap-2 p-4 text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-col">
+                      <span className={accordionTitle}>{group.title}</span>
+                      <span className={accordionSubtitle}>{group.subtitle}</span>
+                    </div>
+                  </div>
+                  <span className={`${accordionChevron} ${isOpen ? "rotate-180" : ""}`}>
+                    ⌃
+                  </span>
+                </button>
+                <div
+                  className="overflow-hidden transition-all duration-200"
+                  style={{
+                    maxHeight: isOpen ? "1000px" : "0px",
+                    opacity: isOpen ? 1 : 0,
+                  }}
+                >
+                  <div className="px-4 pb-4">
+                    <p className={`${accordionDescription} mb-3`}>{group.description}</p>
+                    <div className="overflow-x-auto">
+                      <table className={`min-w-full ${tableDivider} text-sm`}>
+                        <thead>
+                          <tr className={tableHeader}>
+                            <th className="py-2 pr-3">Nombre</th>
+                            <th className="py-2 pr-3">Nivel</th>
+                            <th className="py-2 pr-3">Lección</th>
+                            <th className="py-2 pr-3">LEI</th>
+                            {hasDaysColumn ? <th className="py-2">Días sin progreso</th> : null}
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                        </thead>
+                        <tbody className={tableBodyDivider}>
+                          {group.rows.length === 0 ? (
+                            <tr>
+                              <td colSpan={hasDaysColumn ? 5 : 4} className={tableEmptyText}>
+                                Sin alumnos en este grupo.
+                              </td>
+                            </tr>
+                          ) : (
+                            group.rows.map((row) => {
+                              const lessonLabel = row.current_seq != null ? `L${row.current_seq}` : "—";
+                              const daysSince =
+                                hasDaysColumn && "days_since_progress" in row
+                                  ? formatDays((row as SpeedBucketRow & { days_since_progress?: number | null }).days_since_progress)
+                                  : "";
+                              return (
+                                <tr key={`${row.student_id}-${row.speed_bucket}`} className={tableRow}>
+                                  <td className={`${tableCell} font-medium`}>{row.full_name ?? "Sin nombre"}</td>
+                                  <td className={tableCell}>{row.level ?? "—"}</td>
+                                  <td className={tableCell}>{lessonLabel}</td>
+                                  <td className={tableLeiClass}>{formatLei(row.lei_30d_plan)}</td>
+                                  {hasDaysColumn ? <td className={tableDaysClass}>{daysSince || "—"}</td> : null}
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </details>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
