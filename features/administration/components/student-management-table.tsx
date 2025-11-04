@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
@@ -125,6 +125,7 @@ function StudentManagementTable({ students }: Props) {
   const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setStudentList((previous) => {
@@ -182,6 +183,18 @@ function StudentManagementTable({ students }: Props) {
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
     },
     [pathname, router, searchParams],
+  );
+
+  const debouncedUpdateQueryParams = useCallback(
+    (nextSearch: string, nextLevel: LevelFilterValue) => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+      searchDebounceRef.current = setTimeout(() => {
+        updateQueryParams(nextSearch, nextLevel);
+      }, 300);
+    },
+    [updateQueryParams],
   );
 
   const totalStudents = studentList.length;
@@ -421,7 +434,7 @@ function StudentManagementTable({ students }: Props) {
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setSearchTerm(nextValue);
-                    updateQueryParams(nextValue, levelFilter);
+                    debouncedUpdateQueryParams(nextValue, levelFilter);
                   }}
                   placeholder="Escribe un nombre para filtrar"
                   className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
