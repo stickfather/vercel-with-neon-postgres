@@ -80,6 +80,11 @@ function formatIntegerValue(value: number | null): string {
   return integerFormatter.format(value);
 }
 
+function calculatePercentBenchmark(value: number | null): number | undefined {
+  if (value == null) return undefined;
+  return Math.min(value * (value > 1 ? 1 : 100), 100);
+}
+
 const TAB_CONFIG: { key: TabKey; label: string }[] = [
   { key: "aprendizaje", label: "Aprendizaje" },
   { key: "engagement", label: "Engagement" },
@@ -1032,7 +1037,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
               value={formatPercentValue(data?.firstAttemptRate?.value ?? null)}
               caption="Tasa de aprobación"
               size="large"
-              benchmark={data?.firstAttemptRate?.value ? Math.min(data.firstAttemptRate.value * (data.firstAttemptRate.value > 1 ? 1 : 100), 100) : undefined}
+              benchmark={calculatePercentBenchmark(data?.firstAttemptRate?.value ?? null)}
             />
             <StatCard
               title={data?.overallRate?.label ?? "Global"}
@@ -1040,7 +1045,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
               caption="Tasa acumulada"
               accent="text-sky-300"
               size="large"
-              benchmark={data?.overallRate?.value ? Math.min(data.overallRate.value * (data.overallRate.value > 1 ? 1 : 100), 100) : undefined}
+              benchmark={calculatePercentBenchmark(data?.overallRate?.value ?? null)}
             />
             <StatCard
               title={data?.averageScore?.label ?? "Puntaje promedio"}
@@ -1056,7 +1061,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
               caption="Cumplimiento"
               accent="text-amber-300"
               size="large"
-              benchmark={data?.instructiveCompletion?.value ? Math.min(data.instructiveCompletion.value * (data.instructiveCompletion.value > 1 ? 1 : 100), 100) : undefined}
+              benchmark={calculatePercentBenchmark(data?.instructiveCompletion?.value ?? null)}
             />
           </div>
           <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">

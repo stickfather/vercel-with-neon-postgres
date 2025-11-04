@@ -351,8 +351,8 @@ export async function getPersonnelReport(sql: SqlClient = getSqlClient()): Promi
 
   const staffingMix = mapRows(mixRows, (row) => {
     const hour = readString(row, ["hour", "hora", "bloque"], [["hour"], ["hora"], ["bloque"]]);
-    const students = readNumber(row, ["students", "student_minutes", "minutos_estudiantes", "alumnos"], [["student"], ["alumno"], ["minutos"]]) ?? 0;
-    const staff = readNumber(row, ["staff", "staff_minutes", "minutos_personal", "personal"], [["staff"], ["personal"], ["minutos"]]) ?? 0;
+    const students = readNumber(row, ["students", "student_minutes", "minutos_estudiantes", "alumnos"], [["minutos", "estudiantes"], ["student", "minutes"]]) ?? 0;
+    const staff = readNumber(row, ["staff", "staff_minutes", "minutos_personal", "personal"], [["minutos", "personal"], ["staff", "minutes"]]) ?? 0;
     return { hour, students, staff } satisfies PersonnelMix;
   });
 
