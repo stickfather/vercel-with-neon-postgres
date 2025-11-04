@@ -22,6 +22,8 @@ import type {
   EngagementDeclinePoint,
   EngagementHourSplit,
   EngagementReport,
+  EngagementShiftPoint,
+  EngagementStudyShift,
   EngagementVisitPace,
   ExamsReport,
   FinancialReport,
@@ -78,6 +80,11 @@ function formatCurrencyValue(value: number | null): string {
 function formatIntegerValue(value: number | null): string {
   if (value == null) return "—";
   return integerFormatter.format(value);
+}
+
+function calculatePercentBenchmark(value: number | null): number | undefined {
+  if (value == null) return undefined;
+  return Math.min(value * (value > 1 ? 1 : 100), 100);
 }
 
 const TAB_CONFIG: { key: TabKey; label: string }[] = [
@@ -304,8 +311,8 @@ function SectionTitle({
 }) {
   return (
     <header className="flex flex-col gap-1">
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
-      {description ? <p className="text-sm text-slate-300">{description}</p> : null}
+      <h3 className="text-base font-semibold text-white md:text-lg">{title}</h3>
+      {description ? <p className="text-sm text-slate-400">{description}</p> : null}
     </header>
   );
 }
@@ -315,16 +322,34 @@ function StatCard({
   value,
   caption,
   accent = "text-emerald-300",
+  benchmark,
+  size = "normal",
 }: {
   title: string;
   value: string;
   caption?: string;
   accent?: string;
+  benchmark?: number;
+  size?: "normal" | "large";
 }) {
+  const valueClass = size === "large" ? "text-3xl md:text-4xl font-black" : "text-2xl font-black";
   return (
-    <div className="flex flex-col gap-2 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5">
+    <div className="flex min-h-[120px] flex-col gap-2 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5">
       <span className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{title}</span>
-      <span className={classNames("text-2xl font-black", accent)}>{value}</span>
+      <div className="relative">
+        {benchmark != null && (
+          <div className="absolute inset-0 flex items-center">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800/60">
+              <div
+                className="h-2 rounded-full bg-slate-700/40"
+                style={{ width: `${Math.min(benchmark, 100)}%` }}
+                aria-hidden
+              />
+            </div>
+          </div>
+        )}
+        <span className={classNames(valueClass, accent, "relative z-10")}>{value}</span>
+      </div>
       {caption ? <p className="text-xs text-slate-400">{caption}</p> : null}
     </div>
   );
@@ -477,7 +502,7 @@ function Sparkline({ points }: { points: EngagementDeclinePoint[] }) {
     .join(" ");
 
   return (
-    <svg viewBox="0 0 100 100" className="h-24 w-full overflow-visible">
+    <svg viewBox="0 0 100 100" className="h-24 w-full overflow-visible" aria-label="Gráfico de índice de declive">
       <path d={`${d} L 100 100 L 0 100 Z`} fill="url(#sparkGradient)" opacity={0.35} />
       <path d={d} fill="none" stroke="#34d399" strokeWidth={2.5} strokeLinecap="round" />
       <defs>
@@ -502,7 +527,7 @@ function StackedHourBar({ split }: { split: EngagementHourSplit }) {
         <span>{split.hour}</span>
         <span>{total ? integerFormatter.format(total) : "—"}</span>
       </div>
-      <div className="flex h-3 overflow-hidden rounded-full border border-slate-800/60">
+      <div className="flex h-3 overflow-hidden rounded-full border border-slate-800/60" title={`Mañana: ${split.morning ?? 0}, Tarde: ${split.afternoon ?? 0}, Noche: ${split.evening ?? 0}`}>
         <div className="h-full bg-sky-400/80" style={{ width: `${morningWidth}%` }} aria-label="Mañana" />
         <div className="h-full bg-amber-400/80" style={{ width: `${afternoonWidth}%` }} aria-label="Tarde" />
         <div className="h-full bg-fuchsia-500/80" style={{ width: `${eveningWidth}%` }} aria-label="Noche" />
@@ -527,7 +552,7 @@ function LineAreaChart({ points }: { points: PersonnelLoadPoint[] }) {
     .join(" ");
 
   return (
-    <svg viewBox="0 0 100 100" className="h-40 w-full overflow-visible">
+    <svg viewBox="0 0 100 100" className="h-40 w-full overflow-visible" aria-label="Gráfico de carga de estudiantes por docente">
       <path d={`${d} L 100 100 L 0 100 Z`} fill="url(#loadGradient)" opacity={0.35} />
       <path d={d} fill="none" stroke="#60a5fa" strokeWidth={2.5} strokeLinecap="round" />
       <defs>
@@ -537,6 +562,69 @@ function LineAreaChart({ points }: { points: PersonnelLoadPoint[] }) {
         </linearGradient>
       </defs>
     </svg>
+  );
+}
+
+function StudyShiftChart({ shift }: { shift: EngagementStudyShift | undefined }) {
+  if (!shift || shift.points.length === 0) {
+    return (
+      <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
+        Sin práctica registrada en los últimos 30 días
+      </div>
+    );
+  }
+
+  const maxMinutes = Math.max(...shift.points.map(p => p.minutes), 1);
+  const totalHours = (shift.total_minutes_30d / 60).toFixed(1);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-1">
+          <h4 className="text-base font-semibold text-slate-100">Horas de estudio (últimos 30 días)</h4>
+          <p className="text-xs text-slate-400">Distribución de minutos de práctica por hora local</p>
+        </div>
+        <span className="inline-flex items-center rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-200">
+          Total: {totalHours} h
+        </span>
+      </div>
+      <div className="flex items-end gap-1 h-32" role="img" aria-label={`Gráfico de horas de estudio. Total: ${totalHours} horas en 30 días`}>
+        {shift.points.map((point) => {
+          const height = maxMinutes > 0 ? (point.minutes / maxMinutes) * 100 : 0;
+          const hours = (point.minutes / 60).toFixed(1);
+          return (
+            <div
+              key={point.hour_of_day}
+              className="group relative flex flex-1 flex-col items-center"
+            >
+              <div
+                className="w-full rounded-t bg-emerald-500/70 transition-all hover:bg-emerald-500/90"
+                style={{ height: `${Math.max(height, 2)}%`, minHeight: height > 0 ? "4px" : "0" }}
+                title={`${String(point.hour_of_day).padStart(2, '0')}:00 — ${point.minutes} min (${hours} h)`}
+              />
+              {point.hour_of_day % 3 === 0 && (
+                <span className="mt-1 text-[9px] text-slate-500">
+                  {String(point.hour_of_day).padStart(2, '0')}
+                </span>
+              )}
+              <div className="absolute bottom-full mb-2 hidden group-hover:flex flex-col items-center">
+                <div className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-100 whitespace-nowrap shadow-lg">
+                  {String(point.hour_of_day).padStart(2, '0')}:00 — {point.minutes} min ({hours} h)
+                </div>
+                <div className="h-0 w-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-800" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between border-t border-slate-800/60 pt-2 text-xs text-slate-400">
+        <span>00:00</span>
+        <span>06:00</span>
+        <span>12:00</span>
+        <span>18:00</span>
+        <span>23:00</span>
+      </div>
+    </div>
   );
 }
 
@@ -691,6 +779,23 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
       data.visitPace.length === 0 &&
       data.declineIndex.length === 0);
 
+  // Helper to determine risk color based on inactive days
+  const getRiskColor = (range: string) => {
+    if (range.includes("180+") || range.includes("90+")) return "text-rose-300";
+    if (range.includes("30+") || range.includes("60+")) return "text-orange-300";
+    if (range.includes("14+")) return "text-amber-300";
+    return "text-slate-300";
+  };
+
+  // Helper to get initials from student name
+  const getInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
   return (
     <PanelWrapper
       status={state.status}
@@ -701,7 +806,10 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
     >
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <div className="flex flex-col gap-6">
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
+            <StudyShiftChart shift={data?.studyShift} />
+          </div>
+          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
             <SectionTitle title="Activos recientes" description="Estudiantes activos en los últimos días." />
             {(data?.active ?? []).map((bucket) => (
               <StatCard
@@ -712,25 +820,25 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
               />
             ))}
           </div>
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
-            <SectionTitle title="Inactivos" description="Alumnos que necesitan reactivación." />
+          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
+            <SectionTitle title="Inactivos / Riesgo" description="Alumnos que necesitan reactivación." />
             {(data?.inactive ?? []).map((bucket) => (
               <StatCard
                 key={bucket.range}
                 title={bucket.range}
                 value={formatIntegerValue(bucket.count ?? null)}
                 caption="Estudiantes"
-                accent="text-amber-300"
+                accent={getRiskColor(bucket.range)}
               />
             ))}
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Días promedio entre visitas" description="Promedio de días por segmento." />
             <div className="mt-4">
               <HorizontalBarList data={data?.visitPace ?? []} unit=" d" accent="bg-amber-400" />
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Índice de declive" description="Tendencia semanal del engagement." />
             <div className="mt-4">
               <Sparkline points={data?.declineIndex ?? []} />
@@ -738,7 +846,7 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
           </div>
         </div>
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle
               title="Horario de visitas"
               description="Distribución de estudiantes por bloques horarios."
@@ -747,9 +855,23 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
               {(data?.hourSplit ?? []).map((split) => (
                 <StackedHourBar key={split.hour} split={split} />
               ))}
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-sky-400/80" />
+                  <span>Mañana (08–12)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-amber-400/80" />
+                  <span>Tarde (12–17)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-fuchsia-500/80" />
+                  <span>Noche (17–20)</span>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle
               title="Alumnos inactivos"
               description="Lista prioritaria para llamadas de seguimiento."
@@ -758,7 +880,12 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
               <SimpleTable
                 headers={["Estudiante", "Estado", "Última visita", "Días"]}
                 rows={(data?.roster ?? []).map((row) => [
-                  <span key="student" className="font-medium text-slate-100">{row.student}</span>,
+                  <div key="student" className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[10px] font-semibold text-slate-200">
+                      {getInitials(row.student)}
+                    </span>
+                    <span className="font-medium text-slate-100">{row.student}</span>
+                  </div>,
                   <span key="status" className="text-slate-300">{row.status}</span>,
                   <span key="visit" className="text-slate-400">{row.lastVisit}</span>,
                   <span key="days" className="font-semibold text-rose-200">
@@ -795,6 +922,28 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
     );
   }
 
+  // Helper to get aging bucket color
+  const getAgingColor = (label: string) => {
+    if (label.includes("90+") || label.includes(">90")) return "#dc2626";
+    if (label.includes("60") || label.includes("61-90")) return "#ea580c";
+    if (label.includes("30") || label.includes("31-60")) return "#f59e0b";
+    if (label.includes("15") || label.includes("15-30")) return "#facc15";
+    if (label.includes("8") || label.includes("8-14")) return "#84cc16";
+    if (label.includes("1-7")) return "#22c55e";
+    return "#10b981";
+  };
+
+  // Calculate total for aging stacked bar
+  const agingTotal = (data?.aging ?? []).reduce((sum, bucket) => sum + (bucket.value ?? 0), 0);
+
+  // Sort debtors: days overdue desc, then amount desc
+  const sortedDebtors = [...(data?.debtors ?? [])]
+    .sort((a, b) => {
+      const daysDiff = (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0);
+      if (daysDiff !== 0) return daysDiff;
+      return (b.amount ?? 0) - (a.amount ?? 0);
+    });
+
   return (
     <PanelWrapper
       status={state.status}
@@ -806,69 +955,110 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
       {data ? (
         <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <div className="flex flex-col gap-6">
-            <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
+            <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
               <StatCard
                 title="Estudiantes con saldo"
                 value={formatIntegerValue(data.outstanding.students ?? null)}
                 caption="Actualmente con deuda"
-                accent="text-rose-300"
+                accent="text-amber-300"
+                size="large"
               />
               <StatCard
                 title="Saldo pendiente"
                 value={formatCurrencyValue(data.outstanding.balance ?? null)}
                 caption="Total consolidado"
                 accent="text-emerald-300"
+                size="large"
               />
             </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
               <SectionTitle title="Aging de cartera" description="Distribución por días de mora." />
-              <div className="mt-4 space-y-3">
-                {(data.aging ?? []).map((bucket) => (
-                  <div key={bucket.label} className="flex items-center gap-4">
-                    <span className="w-28 text-sm text-slate-200">{bucket.label}</span>
-                    <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-800/80">
-                      <div
-                        className="h-3 rounded-full bg-rose-400"
-                        style={{
-                          width: data.outstanding.balance
-                            ? `${Math.max(((bucket.value ?? 0) / Math.max(data.outstanding.balance, 1)) * 100, 4)}%`
-                            : "0%",
-                        }}
-                        aria-hidden
-                      />
-                    </div>
-                    <span className="w-28 text-right text-sm font-semibold text-slate-200">
-                      {formatCurrencyValue(bucket.value ?? null)}
-                    </span>
+              {agingTotal > 0 ? (
+                <div className="mt-4 flex flex-col gap-3">
+                  <div className="flex h-8 overflow-hidden rounded-full border border-slate-800/60">
+                    {(data.aging ?? []).map((bucket, index) => {
+                      const width = agingTotal > 0 ? ((bucket.value ?? 0) / agingTotal) * 100 : 0;
+                      if (width === 0) return null;
+                      return (
+                        <div
+                          key={bucket.label}
+                          className="h-full transition-all hover:opacity-80"
+                          style={{
+                            width: `${width}%`,
+                            backgroundColor: getAgingColor(bucket.label),
+                          }}
+                          title={`${bucket.label}: ${formatCurrencyValue(bucket.value ?? null)} (${Math.round(width)}%)`}
+                          aria-label={bucket.label}
+                        />
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+                    {(data.aging ?? []).map((bucket) => (
+                      <div key={bucket.label} className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                          style={{ backgroundColor: getAgingColor(bucket.label) }}
+                        />
+                        <span className="truncate text-slate-300">{bucket.label}</span>
+                        <span className="ml-auto font-semibold text-slate-200">
+                          {formatCurrencyValue(bucket.value ?? null)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
+                  Sin deudas en el rango
+                </div>
+              )}
             </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
               <SectionTitle title="Cobros últimos 30 días" description="Pagos registrados semana a semana." />
-              <div className="mt-4 grid gap-3">
-                {(data.collections ?? []).map((point) => (
-                  <div key={point.label} className="flex items-center justify-between rounded-2xl bg-slate-800/60 px-4 py-3 text-sm text-slate-200">
-                    <span>{point.label}</span>
+              {(data.collections ?? []).length > 0 ? (
+                <div className="mt-4 flex flex-col gap-3">
+                  <div className="flex items-end gap-2">
+                    {(data.collections ?? []).map((point) => {
+                      const maxValue = Math.max(...(data.collections ?? []).map(p => p.value ?? 0), 1);
+                      const height = ((point.value ?? 0) / maxValue) * 100;
+                      return (
+                        <div key={point.label} className="flex flex-1 flex-col items-center gap-1">
+                          <div
+                            className="w-full rounded-t-lg bg-emerald-500/70 transition-all hover:bg-emerald-500/90"
+                            style={{ height: `${Math.max(height, 8)}px`, minHeight: "32px" }}
+                            title={`${point.label}: ${formatCurrencyValue(point.value ?? null)}`}
+                          />
+                          <span className="text-[10px] text-slate-400">{point.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between border-t border-slate-800/60 pt-2 text-xs text-slate-300">
+                    <span>Total</span>
                     <span className="font-semibold text-emerald-300">
-                      {formatCurrencyValue(point.value ?? null)}
+                      {formatCurrencyValue((data.collections ?? []).reduce((sum, p) => sum + (p.value ?? 0), 0))}
                     </span>
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
+                  Sin cobros en el período
+                </div>
+              )}
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle title="Estudiantes con deuda" description="Ordenados por mayor mora." />
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
+            <SectionTitle title="Estudiantes con deuda" description="Ordenados por días de mora y monto." />
             <div className="mt-4 max-h-[480px] overflow-y-auto pr-2">
               <SimpleTable
                 headers={["Estudiante", "Monto", "Días mora"]}
-                rows={(data.debtors ?? []).map((debtor) => [
+                rows={sortedDebtors.map((debtor, index) => [
                   <span key="student" className="font-medium text-slate-100">{debtor.student}</span>,
-                  <span key="amount" className="font-semibold text-emerald-300">
+                  <span key="amount" className="text-right font-semibold tabular-nums text-emerald-300">
                     {formatCurrencyValue(debtor.amount ?? null)}
                   </span>,
-                  <span key="days" className="font-semibold text-rose-200">
+                  <span key="days" className="text-right font-semibold tabular-nums text-rose-200">
                     {formatIntegerValue(debtor.daysOverdue ?? null)}
                   </span>,
                 ])}
@@ -891,6 +1081,22 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
       !data.averageScore &&
       (data.strugglingStudents ?? []).length === 0);
 
+  // Helper to get score color
+  const getScoreColor = (score: number | null) => {
+    if (score == null) return "text-slate-400";
+    if (score >= 70) return "text-emerald-300";
+    if (score >= 50) return "text-amber-300";
+    return "text-rose-300";
+  };
+
+  // Helper to get score pill classes
+  const getScorePill = (score: number | null) => {
+    if (score == null) return "bg-slate-700/40 text-slate-300";
+    if (score >= 70) return "bg-emerald-500/20 text-emerald-200 border border-emerald-500/40";
+    if (score >= 50) return "bg-amber-500/20 text-amber-200 border border-amber-500/40";
+    return "bg-rose-500/20 text-rose-200 border border-rose-500/40";
+  };
+
   return (
     <PanelWrapper
       status={state.status}
@@ -901,40 +1107,48 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
     >
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <div className="flex flex-col gap-6">
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
+          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
             <StatCard
               title={data?.firstAttemptRate?.label ?? "1er intento"}
               value={formatPercentValue(data?.firstAttemptRate?.value ?? null)}
               caption="Tasa de aprobación"
+              size="large"
+              benchmark={calculatePercentBenchmark(data?.firstAttemptRate?.value ?? null)}
             />
             <StatCard
               title={data?.overallRate?.label ?? "Global"}
               value={formatPercentValue(data?.overallRate?.value ?? null)}
               caption="Tasa acumulada"
               accent="text-sky-300"
+              size="large"
+              benchmark={calculatePercentBenchmark(data?.overallRate?.value ?? null)}
             />
             <StatCard
               title={data?.averageScore?.label ?? "Puntaje promedio"}
               value={data?.averageScore?.value == null ? "—" : decimalFormatter.format(data.averageScore.value)}
               caption="Sobre 100"
               accent="text-emerald-300"
+              size="large"
+              benchmark={data?.averageScore?.value ?? undefined}
             />
             <StatCard
               title={data?.instructiveCompletion?.label ?? "Instructivo"}
               value={formatPercentValue(data?.instructiveCompletion?.value ?? null)}
               caption="Cumplimiento"
               accent="text-amber-300"
+              size="large"
+              benchmark={calculatePercentBenchmark(data?.instructiveCompletion?.value ?? null)}
             />
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle title="Próximos exámenes (30 días)" />
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
+            <SectionTitle title="Próximos exámenes (30 días)" description="Fechas y candidatos programados." />
             <div className="mt-4 max-h-[240px] overflow-y-auto pr-2">
               <SimpleTable
                 headers={["Examen", "Fecha", "Candidatos"]}
                 rows={(data?.upcoming ?? []).map((exam) => [
                   <span key="exam" className="font-medium text-slate-100">{exam.exam}</span>,
                   <span key="date" className="text-slate-300">{exam.date}</span>,
-                  <span key="count" className="text-slate-200">
+                  <span key="count" className="inline-flex items-center justify-center rounded-full bg-sky-500/20 px-2 py-1 text-xs font-semibold text-sky-200">
                     {formatIntegerValue(exam.candidates ?? null)}
                   </span>,
                 ])}
@@ -944,18 +1158,18 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
           </div>
         </div>
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Alumnos con dificultad" description="Prioriza refuerzos y tutorías." />
             <div className="mt-4 max-h-[280px] overflow-y-auto pr-2">
               <SimpleTable
                 headers={["Estudiante", "Examen", "Intentos", "Puntaje"]}
-                rows={(data?.strugglingStudents ?? []).map((student) => [
+                rows={(data?.strugglingStudents ?? []).map((student, index) => [
                   <span key="student" className="font-medium text-slate-100">{student.student}</span>,
                   <span key="exam" className="text-slate-300">{student.exam}</span>,
                   <span key="attempts" className="text-slate-200">
                     {formatIntegerValue(student.attempts ?? null)}
                   </span>,
-                  <span key="score" className="text-rose-200">
+                  <span key="score" className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${getScorePill(student.score)}`}>
                     {student.score == null ? "—" : decimalFormatter.format(student.score)}
                   </span>,
                 ])}
@@ -963,7 +1177,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
               />
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Instructivo post-evaluación" description="Seguimiento después de reprobar." />
             <div className="mt-4 grid gap-3">
               <StatCard
@@ -1005,63 +1219,90 @@ function PersonnelPanel({ state }: { state: PanelState<{
     >
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Mix de cobertura" description="Minutos de estudiantes vs staff por hora." />
-            <div className="mt-4 flex flex-col gap-3">
-              {(data?.staffingMix ?? []).map((mix) => (
-                <div key={mix.hour} className="flex items-center gap-4">
-                  <span className="w-16 text-sm text-slate-200">{mix.hour}</span>
-                  <div className="flex h-3 flex-1 overflow-hidden rounded-full border border-slate-800/60">
-                    <div
-                      className="h-full bg-emerald-400/80"
-                      style={{
-                        width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
-                          ? `${((mix.students ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
-                          : "0%",
-                      }}
-                      aria-label="Minutos estudiantes"
-                    />
-                    <div
-                      className="h-full bg-sky-400/80"
-                      style={{
-                        width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
-                          ? `${((mix.staff ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
-                          : "0%",
-                      }}
-                      aria-label="Minutos staff"
-                    />
+            {(data?.staffingMix ?? []).length > 0 ? (
+              <div className="mt-4 flex flex-col gap-3">
+                {(data?.staffingMix ?? []).map((mix) => {
+                  const ratio = (mix.staff ?? 0) > 0 
+                    ? ((mix.students ?? 0) / (mix.staff ?? 0)).toFixed(1)
+                    : "—";
+                  return (
+                    <div key={mix.hour} className="flex items-center gap-4">
+                      <span className="w-16 text-sm text-slate-200">{mix.hour}</span>
+                      <div className="flex h-3 flex-1 overflow-hidden rounded-full border border-slate-800/60">
+                        <div
+                          className="h-full bg-emerald-400/80"
+                          style={{
+                            width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
+                              ? `${((mix.students ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
+                              : "0%",
+                          }}
+                          aria-label="Minutos estudiantes"
+                          title={`Estudiantes: ${Math.round(mix.students ?? 0)} min`}
+                        />
+                        <div
+                          className="h-full bg-sky-400/80"
+                          style={{
+                            width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
+                              ? `${((mix.staff ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
+                              : "0%",
+                          }}
+                          aria-label="Minutos staff"
+                          title={`Personal: ${Math.round(mix.staff ?? 0)} min`}
+                        />
+                      </div>
+                      <span className="inline-flex items-center rounded-full bg-slate-700/60 px-2 py-1 text-xs font-semibold tabular-nums text-slate-200">
+                        {ratio}×
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400/80" />
+                    <span>Estudiantes</span>
                   </div>
-                  <span className="w-20 text-right text-xs text-slate-300">
-                    {mix.students == null && mix.staff == null
-                      ? "—"
-                      : `${integerFormatter.format(Math.round((mix.students ?? 0)))}/${integerFormatter.format(Math.round((mix.staff ?? 0)))}`}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-sky-400/80" />
+                    <span>Personal</span>
+                  </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
+                Sin datos de staffing mix
+              </div>
+            )}
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Carga por docente" description="Estudiantes promedio por hora." />
             <div className="mt-4">
               <LineAreaChart points={data?.studentLoad ?? []} />
             </div>
           </div>
         </div>
-        <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+        <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
           <SectionTitle title="Cobertura en picos" description="Zonas de riesgo operativo." />
-          <div className="mt-4 flex flex-col gap-3">
-            {(data?.coverage ?? []).map((coverage) => (
-              <div key={coverage.area} className="flex flex-col gap-2 rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-100">{coverage.area}</span>
-                  <span className={classNames("rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide", mapRiskChip(coverage.riskLevel))}>
-                    {coverage.riskLevel}
-                  </span>
+          {(data?.coverage ?? []).length > 0 ? (
+            <div className="mt-4 flex flex-col gap-3">
+              {(data?.coverage ?? []).map((coverage) => (
+                <div key={coverage.area} className="flex flex-col gap-2 rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-100">{coverage.area}</span>
+                    <span className={classNames("rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide", mapRiskChip(coverage.riskLevel))}>
+                      {coverage.riskLevel}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300">{coverage.status}</p>
                 </div>
-                <p className="text-xs text-slate-300">{coverage.status}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
+              Sin datos de cobertura
+            </div>
+          )}
         </div>
       </div>
     </PanelWrapper>

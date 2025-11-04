@@ -9,6 +9,8 @@ import type {
   EngagementReport,
   EngagementRosterEntry,
   EngagementVisitPace,
+  EngagementShiftPoint,
+  EngagementStudyShift,
   ExamsAverageScore,
   ExamStrugglingStudent,
   ExamsRate,
@@ -157,6 +159,7 @@ export async function getEngagementReport(sql: SqlClient = getSqlClient()): Prom
     paceRows,
     declineRows,
     splitRows,
+    shiftRows,
   ] = await Promise.all([
     safeRows(() => sql`SELECT * FROM mgmt.engagement_active_counts_v`, "mgmt.engagement_active_counts_v"),
     safeRows(() => sql`SELECT * FROM mgmt.engagement_inactive_counts_v`, "mgmt.engagement_inactive_counts_v"),
@@ -164,6 +167,12 @@ export async function getEngagementReport(sql: SqlClient = getSqlClient()): Prom
     safeRows(() => sql`SELECT * FROM mgmt.engagement_avg_days_between_visits_v`, "mgmt.engagement_avg_days_between_visits_v"),
     safeRows(() => sql`SELECT * FROM mgmt.engagement_decline_index_v`, "mgmt.engagement_decline_index_v"),
     safeRows(() => sql`SELECT * FROM mgmt.engagement_hour_split_v`, "mgmt.engagement_hour_split_v"),
+    safeRows(() => sql`
+      SELECT hour_of_day, SUM(minutes) AS minutes
+      FROM mart.student_hourly_30d_mv
+      GROUP BY hour_of_day
+      ORDER BY hour_of_day
+    `, "mart.student_hourly_30d_mv"),
   ]);
 
   const active = mapRows(activeRows, (row) => {
@@ -209,7 +218,29 @@ export async function getEngagementReport(sql: SqlClient = getSqlClient()): Prom
     return { hour, morning, afternoon, evening } satisfies EngagementHourSplit;
   });
 
-  return { active, inactive, roster, visitPace, declineIndex, hourSplit };
+  // Process study shift data - ensure all 24 hours are present
+  const shiftMap = new Map<number, number>();
+  shiftRows.forEach((row) => {
+    const hour = readInteger(row, ["hour_of_day", "hour"], [["hour"]]);
+    const minutes = readNumber(row, ["minutes", "mins"], [["minutes"], ["mins"]]);
+    if (hour !== null && minutes !== null) {
+      shiftMap.set(hour, minutes);
+    }
+  });
+
+  // Fill in missing hours with 0
+  const points: EngagementShiftPoint[] = [];
+  for (let hour = 0; hour < 24; hour++) {
+    points.push({
+      hour_of_day: hour,
+      minutes: shiftMap.get(hour) ?? 0,
+    });
+  }
+
+  const total_minutes_30d = points.reduce((sum, p) => sum + p.minutes, 0);
+  const studyShift: EngagementStudyShift = { points, total_minutes_30d };
+
+  return { active, inactive, roster, visitPace, declineIndex, hourSplit, studyShift };
 }
 
 export async function getFinancialReport(sql: SqlClient = getSqlClient()): Promise<FinancialReport> {
@@ -350,22 +381,22 @@ export async function getPersonnelReport(sql: SqlClient = getSqlClient()): Promi
   ]);
 
   const staffingMix = mapRows(mixRows, (row) => {
-    const hour = readString(row, ["hour", "hora"], [["hour"], ["hora"]]);
-    const students = readNumber(row, ["students", "student_minutes", "alumnos"], [["student"], ["alumno"]]);
-    const staff = readNumber(row, ["staff", "staff_minutes", "personal"], [["staff"], ["personal"]]);
+    const hour = readString(row, ["hour", "hora", "bloque"], [["hour"], ["hora"], ["bloque"]]);
+    const students = readNumber(row, ["students", "student_minutes", "minutos_estudiantes", "alumnos"], [["minutos", "estudiantes"], ["student", "minutes"]]) ?? 0;
+    const staff = readNumber(row, ["staff", "staff_minutes", "minutos_personal", "personal"], [["minutos", "personal"], ["staff", "minutes"]]) ?? 0;
     return { hour, students, staff } satisfies PersonnelMix;
   });
 
   const coverage = mapRows(coverageRows, (row) => {
-    const area = readString(row, ["area", "zona"], [["area"], ["zona"]]);
-    const status = readString(row, ["status", "descripcion"], [["status"], ["desc"]]);
-    const riskLevel = readString(row, ["risk_level", "riesgo"], [["risk"], ["riesgo"]]);
+    const area = readString(row, ["area", "zona", "hour_of_day"], [["area"], ["zona"], ["hour"]]);
+    const status = readString(row, ["status", "descripcion", "estado_cobertura"], [["status"], ["desc"], ["estado"], ["cobertura"]]);
+    const riskLevel = readString(row, ["risk_level", "riesgo", "nivel_riesgo"], [["risk"], ["riesgo"], ["nivel"]]);
     return { area, status, riskLevel } satisfies PersonnelCoverage;
   });
 
   const studentLoad = mapRows(loadRows, (row) => {
-    const hour = readString(row, ["hour", "hora"], [["hour"], ["hora"]]);
-    const value = readNumber(row, ["load", "students_per_teacher", "valor"], [["load"], ["students"], ["alumno"]]);
+    const hour = readString(row, ["hour", "hora", "hour_of_day"], [["hour"], ["hora"]]);
+    const value = readNumber(row, ["load", "students_per_teacher", "estudiantes_por_profesor", "valor"], [["load"], ["students"], ["alumno"], ["profesor"]]) ?? 0;
     return { hour, value } satisfies PersonnelLoadPoint;
   });
 

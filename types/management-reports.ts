@@ -85,6 +85,16 @@ export type EngagementHourSplit = {
   evening: number | null;
 };
 
+export type EngagementShiftPoint = {
+  hour_of_day: number;
+  minutes: number;
+};
+
+export type EngagementStudyShift = {
+  points: EngagementShiftPoint[];
+  total_minutes_30d: number;
+};
+
 export type EngagementReport = {
   active: EngagementActiveCounts[];
   inactive: EngagementInactiveCounts[];
@@ -92,6 +102,7 @@ export type EngagementReport = {
   visitPace: EngagementVisitPace[];
   declineIndex: EngagementDeclinePoint[];
   hourSplit: EngagementHourSplit[];
+  studyShift?: EngagementStudyShift;
 };
 
 export type FinancialOutstandingSummary = {
