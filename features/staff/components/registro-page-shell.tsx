@@ -19,13 +19,14 @@ type StaffRegistroPageShellProps = {
 };
 
 export function StaffRegistroPageShell({
-  staffMembers,
+  staffMembers: initialStaffMembers,
   attendances,
   formError,
   boardError,
 }: StaffRegistroPageShellProps) {
   const router = useRouter();
   const [showFarewell, setShowFarewell] = useState(false);
+  const [staffMembers, setStaffMembers] = useState(initialStaffMembers);
   const farewellTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -37,6 +38,27 @@ export function StaffRegistroPageShell({
       }
     };
   }, []);
+
+  // Load staff from cache if initial data is empty (offline scenario)
+  useEffect(() => {
+    if (staffMembers.length > 0) {
+      return;
+    }
+
+    const loadFromCache = async () => {
+      try {
+        const { getStaffCache } = await import("@/lib/offline/indexeddb");
+        const cached = await getStaffCache();
+        if (cached.length > 0) {
+          setStaffMembers(cached);
+        }
+      } catch (error) {
+        console.error("Failed to load staff from cache", error);
+      }
+    };
+
+    void loadFromCache();
+  }, [staffMembers.length]);
 
   const handleCheckoutComplete = useCallback(() => {
     setShowFarewell(true);

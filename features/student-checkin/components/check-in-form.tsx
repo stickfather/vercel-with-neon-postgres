@@ -307,6 +307,29 @@ export function CheckInForm({
           params.set("query", studentQuery.trim());
         }
 
+        const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
+
+        if (!isOnline) {
+          // Use IndexedDB cache when offline
+          const { getStudentsCache } = await import("@/lib/offline/indexeddb");
+          const cachedStudents = await getStudentsCache();
+          
+          if (controller.signal.aborted) return;
+
+          // Filter cached students by query
+          const query = studentQuery.trim().toLowerCase();
+          const filtered = query
+            ? cachedStudents.filter((s) =>
+                s.fullName.toLowerCase().includes(query)
+              ).slice(0, SUGGESTION_LIMIT)
+            : cachedStudents.slice(0, SUGGESTION_LIMIT);
+
+          setSuggestions(filtered);
+          setHighlightedSuggestion(0);
+          setSuggestionState("idle");
+          return;
+        }
+
         const response = await fetch(`/api/students?${params.toString()}`, {
           signal: controller.signal,
         });
@@ -324,6 +347,28 @@ export function CheckInForm({
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error("No se pudieron cargar sugerencias", error);
+        
+        // Try to fall back to cache on error
+        try {
+          const { getStudentsCache } = await import("@/lib/offline/indexeddb");
+          const cachedStudents = await getStudentsCache();
+          const query = studentQuery.trim().toLowerCase();
+          const filtered = query
+            ? cachedStudents.filter((s) =>
+                s.fullName.toLowerCase().includes(query)
+              ).slice(0, SUGGESTION_LIMIT)
+            : cachedStudents.slice(0, SUGGESTION_LIMIT);
+          
+          if (filtered.length > 0) {
+            setSuggestions(filtered);
+            setHighlightedSuggestion(0);
+            setSuggestionState("idle");
+            return;
+          }
+        } catch (cacheError) {
+          console.error("No se pudo cargar desde la caché", cacheError);
+        }
+        
         setSuggestions([]);
         setSuggestionState("error");
       }
