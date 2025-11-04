@@ -197,6 +197,14 @@ function StudentManagementTable({ students }: Props) {
     [updateQueryParams],
   );
 
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
   const totalStudents = studentList.length;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
 
