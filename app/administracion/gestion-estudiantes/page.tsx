@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import { listStudentManagementEntries } from "@/features/administration/data/students";
 import { StudentManagementTable } from "@/features/administration/components/student-management-table";

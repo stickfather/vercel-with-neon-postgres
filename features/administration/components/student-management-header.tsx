@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type Props = {
   initialRefreshedAt: string | null;
@@ -23,6 +24,7 @@ function formatLocalTime(isoString: string | null): string {
 }
 
 export function StudentManagementHeader({ initialRefreshedAt }: Props) {
+  const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshedAt, setRefreshedAt] = useState<string | null>(initialRefreshedAt);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
@@ -50,8 +52,8 @@ export function StudentManagementHeader({ initialRefreshedAt }: Props) {
       setRefreshedAt(data.refreshed_at ?? null);
       setToast({ message: "Datos actualizados", tone: "success" });
 
-      // Refresh the page data
-      window.location.reload();
+      // Refresh the page data using Next.js router
+      router.refresh();
     } catch (error) {
       console.error("Error refreshing data:", error);
       setToast({
@@ -116,7 +118,7 @@ export function StudentManagementHeader({ initialRefreshedAt }: Props) {
             onClick={handleRefresh}
             disabled={isRefreshing}
             className={`${actionButtonBaseClass} border border-transparent bg-brand-teal text-white shadow hover:bg-[#04a890] focus-visible:outline-[#00bfa6] disabled:cursor-not-allowed disabled:opacity-70`}
-            title="Refresh all data"
+            title="Refrescar todos los datos"
           >
             {isRefreshing ? (
               <>
