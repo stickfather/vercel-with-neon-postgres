@@ -81,7 +81,7 @@ export default function RegistroPage() {
               .map((s) => ({
                 id: s.id,
                 fullName: s.fullName,
-                lesson: s.currentLesson,
+                lesson: s.currentLesson ?? null,
                 level: null,
                 lessonSequence: null,
                 lessonGlobalSequence: null,
