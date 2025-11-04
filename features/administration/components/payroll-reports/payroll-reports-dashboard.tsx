@@ -2535,16 +2535,22 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
+                                  // Determine cell status using the exact boolean checks:
+                                  // - Orange (Pendiente): session exists AND approved = false AND edited = false
+                                  // - Green (Aprobado): approved = true AND edited = false
+                                  // - Yellow (Editado y aprobado): approved = true AND edited = true
+                                  // - Purple (Editado sin aprobar): approved = false AND edited = true
+                                  const cellEdited = cell.edited ?? cell.hasEdits ?? false;
                                   const cellStatus =
                                     cell.status ??
                                     (cell as { dayStatus?: string }).dayStatus ??
-                                    (cell.hasEdits
-                                      ? cell.approved
-                                        ? "edited_and_approved"
-                                        : "edited_not_approved"
-                                      : cell.approved
+                                    (cell.approved && cellEdited
+                                      ? "edited_and_approved"
+                                      : cell.approved && !cellEdited
                                         ? "approved"
-                                        : "pending");
+                                        : !cell.approved && cellEdited
+                                          ? "edited_not_approved"
+                                          : "pending");
                                   const cellClass =
                                     STATUS_BUTTON_CLASSES[cellStatus] ?? STATUS_BUTTON_CLASSES.pending;
                                   return (

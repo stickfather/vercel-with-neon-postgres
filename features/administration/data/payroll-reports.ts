@@ -36,6 +36,7 @@ export type MatrixCell = {
   approvedHours: number | null;
   hasEdits?: boolean;
   editedAfterApproval?: boolean;
+  edited?: boolean;
   status?: PayrollDayStatus;
 };
 
@@ -371,21 +372,24 @@ function toBoolean(value: unknown): boolean {
 
 function resolveDayStatus(
   approved: boolean,
-  hasEdits: boolean,
-  editedAfterApproval: boolean,
+  edited: boolean,
 ): PayrollDayStatus {
-  if (!approved && !hasEdits) {
-    return "pending";
-  }
-  if (!approved && hasEdits) {
-    return "edited_not_approved";
-  }
-  if (approved && editedAfterApproval) {
+  // Color rules:
+  // - Orange (Pendiente): session exists AND approved = false AND edited = false
+  // - Purple (Editado sin aprobar): approved = false AND edited = true
+  // - Green (Aprobado): approved = true AND edited = false
+  // - Yellow (Editado y aprobado): approved = true AND edited = true
+  
+  if (approved && edited) {
     return "edited_and_approved";
   }
-  if (approved) {
+  if (approved && !edited) {
     return "approved";
   }
+  if (!approved && edited) {
+    return "edited_not_approved";
+  }
+  // !approved && !edited
   return "pending";
 }
 
@@ -710,7 +714,9 @@ export async function fetchPayrollMatrix({
     const editedAfterApproval = toBoolean(
       readRowValue(row, ["edited_after_approval", "editedAfterApproval"]),
     );
-    const dayStatus = resolveDayStatus(approved, hasEdits, editedAfterApproval);
+    // Use hasEdits as the "edited" field - any edits regardless of timing
+    const edited = hasEdits;
+    const dayStatus = resolveDayStatus(approved, edited);
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
@@ -719,6 +725,7 @@ export async function fetchPayrollMatrix({
       approvedHours: safeApprovedHours,
       hasEdits,
       editedAfterApproval,
+      edited,
       status: dayStatus,
     });
   }
@@ -736,6 +743,7 @@ export async function fetchPayrollMatrix({
         approvedHours: null,
         hasEdits: false,
         editedAfterApproval: false,
+        edited: false,
         status: "pending",
       };
     });
