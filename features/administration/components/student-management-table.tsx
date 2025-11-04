@@ -115,6 +115,7 @@ function StudentManagementTable({ students }: Props) {
   const [statusFilters, setStatusFilters] = useState<StudentStatusKey[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get("q") ?? "");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(() => searchParams.get("q") ?? "");
   const [levelFilter, setLevelFilter] = useState<LevelFilterValue>(() =>
     normalizeLevelFilter(searchParams.get("level")),
   );
@@ -144,6 +145,7 @@ function StudentManagementTable({ students }: Props) {
     const paramSearch = searchParams.get("q") ?? "";
     if (paramSearch !== searchTerm) {
       setSearchTerm(paramSearch);
+      setDebouncedSearchTerm(paramSearch);
     }
 
     const normalizedLevel = normalizeLevelFilter(searchParams.get("level"));
@@ -191,6 +193,7 @@ function StudentManagementTable({ students }: Props) {
         clearTimeout(searchDebounceRef.current);
       }
       searchDebounceRef.current = setTimeout(() => {
+        setDebouncedSearchTerm(nextSearch);
         updateQueryParams(nextSearch, nextLevel);
       }, 300);
     },
@@ -206,7 +209,7 @@ function StudentManagementTable({ students }: Props) {
   }, []);
 
   const totalStudents = studentList.length;
-  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const normalizedSearchTerm = debouncedSearchTerm.trim().toLowerCase();
 
   const statusTotals = useMemo(() => {
     return buildStudentStatusSummary(studentList).map((item) => ({
