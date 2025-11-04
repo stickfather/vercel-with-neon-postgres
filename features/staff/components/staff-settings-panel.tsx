@@ -26,6 +26,8 @@ const emptyForm: FormState = {
   active: true,
 };
 
+const VALID_ROLES = ["Profesor", "Personal de apoyo"] as const;
+
 function parseNumber(value: string): number | null {
   if (!value.trim()) {
     return null;
@@ -261,7 +263,7 @@ export function StaffSettingsPanel({ initialStaff, initialError = null }: Props)
           <label className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
             Rol
           </label>
-          <input
+          <select
             value={createForm.role}
             onChange={(event) =>
               setCreateForm((previous) => ({
@@ -270,8 +272,14 @@ export function StaffSettingsPanel({ initialStaff, initialError = null }: Props)
               }))
             }
             className="rounded-2xl border border-[#ffd1a3] bg-white px-4 py-3 text-sm shadow-sm focus:border-[#00bfa6]"
-            placeholder="Coordinador, profesor, etc."
-          />
+          >
+            <option value="">Selecciona un rol</option>
+            {VALID_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-brand-deep">
@@ -362,7 +370,7 @@ export function StaffSettingsPanel({ initialStaff, initialError = null }: Props)
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
                     Rol
                   </label>
-                  <input
+                  <select
                     value={editForm.role}
                     onChange={(event) =>
                       setEditForm((previous) => ({
@@ -371,7 +379,14 @@ export function StaffSettingsPanel({ initialStaff, initialError = null }: Props)
                       }))
                     }
                     className="rounded-2xl border border-[#d7ddff] bg-white px-3 py-2 text-sm focus:border-[#00bfa6]"
-                  />
+                  >
+                    <option value="">Selecciona un rol</option>
+                    {VALID_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">

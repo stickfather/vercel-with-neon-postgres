@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
@@ -115,6 +115,7 @@ function StudentManagementTable({ students }: Props) {
   const [statusFilters, setStatusFilters] = useState<StudentStatusKey[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get("q") ?? "");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(() => searchParams.get("q") ?? "");
   const [levelFilter, setLevelFilter] = useState<LevelFilterValue>(() =>
     normalizeLevelFilter(searchParams.get("level")),
   );
@@ -125,6 +126,8 @@ function StudentManagementTable({ students }: Props) {
   const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     setStudentList((previous) => {
@@ -141,15 +144,18 @@ function StudentManagementTable({ students }: Props) {
 
   useEffect(() => {
     const paramSearch = searchParams.get("q") ?? "";
-    if (paramSearch !== searchTerm) {
+    const paramLevel = normalizeLevelFilter(searchParams.get("level"));
+    
+    // Only update if URL params are different from current state
+    if (paramSearch !== debouncedSearchTerm) {
       setSearchTerm(paramSearch);
+      setDebouncedSearchTerm(paramSearch);
     }
 
-    const normalizedLevel = normalizeLevelFilter(searchParams.get("level"));
-    if (normalizedLevel !== levelFilter) {
-      setLevelFilter(normalizedLevel);
+    if (paramLevel !== levelFilter) {
+      setLevelFilter(paramLevel);
     }
-  }, [searchParams, searchTerm, levelFilter]);
+  }, [searchParams, debouncedSearchTerm, levelFilter]);
 
   useEffect(() => {
     if (lastSyncAt) {
@@ -184,8 +190,31 @@ function StudentManagementTable({ students }: Props) {
     [pathname, router, searchParams],
   );
 
+  const debouncedUpdateQueryParams = useCallback(
+    (nextSearch: string, nextLevel: LevelFilterValue) => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+      searchDebounceRef.current = setTimeout(() => {
+        startTransition(() => {
+          setDebouncedSearchTerm(nextSearch);
+          updateQueryParams(nextSearch, nextLevel);
+        });
+      }, 300);
+    },
+    [updateQueryParams, startTransition],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
   const totalStudents = studentList.length;
-  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const normalizedSearchTerm = debouncedSearchTerm.trim().toLowerCase();
 
   const statusTotals = useMemo(() => {
     return buildStudentStatusSummary(studentList).map((item) => ({
@@ -421,7 +450,7 @@ function StudentManagementTable({ students }: Props) {
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setSearchTerm(nextValue);
-                    updateQueryParams(nextValue, levelFilter);
+                    debouncedUpdateQueryParams(nextValue, levelFilter);
                   }}
                   placeholder="Escribe un nombre para filtrar"
                   className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm leading-relaxed text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
