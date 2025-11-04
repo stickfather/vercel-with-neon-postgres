@@ -714,9 +714,8 @@ export async function fetchPayrollMatrix({
     const editedAfterApproval = toBoolean(
       readRowValue(row, ["edited_after_approval", "editedAfterApproval"]),
     );
-    // Use hasEdits as the "edited" field - any edits regardless of timing
-    const edited = hasEdits;
-    const dayStatus = resolveDayStatus(approved, edited);
+    // Use hasEdits directly as the "edited" field - indicates any edits regardless of timing
+    const dayStatus = resolveDayStatus(approved, hasEdits);
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
@@ -725,7 +724,7 @@ export async function fetchPayrollMatrix({
       approvedHours: safeApprovedHours,
       hasEdits,
       editedAfterApproval,
-      edited,
+      edited: hasEdits,
       status: dayStatus,
     });
   }
