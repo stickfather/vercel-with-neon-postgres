@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { StudentManagementEntry } from "@/features/administration/data/students";
@@ -127,6 +127,7 @@ function StudentManagementTable({ students }: Props) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     setStudentList((previous) => {
@@ -195,11 +196,13 @@ function StudentManagementTable({ students }: Props) {
         clearTimeout(searchDebounceRef.current);
       }
       searchDebounceRef.current = setTimeout(() => {
-        setDebouncedSearchTerm(nextSearch);
-        updateQueryParams(nextSearch, nextLevel);
+        startTransition(() => {
+          setDebouncedSearchTerm(nextSearch);
+          updateQueryParams(nextSearch, nextLevel);
+        });
       }, 300);
     },
-    [updateQueryParams],
+    [updateQueryParams, startTransition],
   );
 
   useEffect(() => {
