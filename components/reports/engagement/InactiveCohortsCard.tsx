@@ -63,7 +63,7 @@ export function InactiveCohortsCard({ counts, variant = "light" }: Props) {
       </div>
 
       <div className={`mt-4 pt-4 border-t text-xs ${secondaryText}`} style={{ borderColor: isDark ? "#334155" : "#e2e8f0" }}>
-        Haz clic en una barra para ver el roster detallado (próximamente)
+        Click en una barra para ver el roster detallado
       </div>
     </section>
   );

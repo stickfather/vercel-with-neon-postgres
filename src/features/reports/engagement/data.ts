@@ -32,6 +32,26 @@ function normalizeString(value: unknown, fallback = ""): string {
   return str.length ? str : fallback;
 }
 
+function normalizeDaypart(value: unknown): HourSplitRow['daypart'] {
+  const str = normalizeString(value);
+  const validDayparts: HourSplitRow['daypart'][] = ['morning_08_12', 'afternoon_12_17', 'evening_17_20'];
+  if (validDayparts.includes(str as HourSplitRow['daypart'])) {
+    return str as HourSplitRow['daypart'];
+  }
+  return 'morning_08_12'; // default fallback
+}
+
+function normalizeInactivityBucket(value: unknown): InactiveRosterRow['inactivity_bucket'] {
+  const str = normalizeString(value);
+  const validBuckets: InactiveRosterRow['inactivity_bucket'][] = [
+    'inactive_7d', 'inactive_14d', 'dormant_30d', 'long_term_inactive_180d', 'active_recent'
+  ];
+  if (validBuckets.includes(str as InactiveRosterRow['inactivity_bucket'])) {
+    return str as InactiveRosterRow['inactivity_bucket'];
+  }
+  return 'active_recent'; // default fallback
+}
+
 export async function getEngagementReport(): Promise<EngagementReport> {
   const sql = getSqlClient();
 
@@ -101,7 +121,7 @@ export async function getEngagementReport(): Promise<EngagementReport> {
       inactive_7d_count: 0, inactive_14d_count: 0, dormant_30d_count: 0, inactive_180d_count: 0
     },
     hour_split: hourSplitRows.map((row) => ({
-      daypart: normalizeString(row.daypart) as HourSplitRow['daypart'],
+      daypart: normalizeDaypart(row.daypart),
       total_minutes: toNumber(row.total_minutes),
     })),
   };
@@ -121,6 +141,6 @@ export async function getInactiveRoster(bucket: 'inactive_7d'|'inactive_14d'|'do
     level: row.level === null || row.level === undefined ? null : String(row.level),
     last_checkin_time: row.last_checkin_time === null || row.last_checkin_time === undefined ? null : String(row.last_checkin_time),
     days_since_last_checkin: toNullableNumber(row.days_since_last_checkin),
-    inactivity_bucket: normalizeString(row.inactivity_bucket) as InactiveRosterRow['inactivity_bucket'],
+    inactivity_bucket: normalizeInactivityBucket(row.inactivity_bucket),
   }));
 }
