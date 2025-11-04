@@ -44,7 +44,13 @@ async function refreshDirectoryCaches() {
     const studentsResponse = await fetch("/api/students/cache-snapshot");
     if (studentsResponse.ok) {
       const studentsData = (await studentsResponse.json()) as {
-        students?: Array<{ id: number; fullName: string }>;
+        students?: Array<{
+          id: number;
+          fullName: string;
+          lastCheckIn?: string | null;
+          currentLesson?: string | null;
+          isCheckedIn?: boolean;
+        }>;
       };
       
       if (Array.isArray(studentsData.students)) {

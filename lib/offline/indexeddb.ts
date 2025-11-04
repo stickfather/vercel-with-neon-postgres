@@ -1,7 +1,7 @@
 "use client";
 
 const DB_NAME = "salc_offline";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Increment version for schema change
 
 export type CacheMetadata = {
   key: string;
@@ -22,6 +22,9 @@ export type PendingEvent = {
 export type StudentCacheEntry = {
   id: number;
   fullName: string;
+  lastCheckIn?: string | null;
+  currentLesson?: string | null;
+  isCheckedIn?: boolean;
 };
 
 export type StaffCacheEntry = {

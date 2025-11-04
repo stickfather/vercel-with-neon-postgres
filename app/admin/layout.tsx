@@ -1,20 +1,20 @@
 import type { ReactNode } from "react";
 
-import { PinGate } from "@/features/security/components/PinGate";
+import { ClientPinGate } from "@/features/security/components/ClientPinGate";
 
 type Props = {
   children: ReactNode;
 };
 
-export default async function AdminLayout({ children }: Props) {
+export default function AdminLayout({ children }: Props) {
   return (
-    <PinGate
+    <ClientPinGate
       scope="staff"
       title="Introduce tu PIN del personal"
       description="Necesitamos confirmar tu acceso antes de entrar a los reportes gerenciales."
       ctaLabel="Desbloquear"
     >
       {children}
-    </PinGate>
+    </ClientPinGate>
   );
 }
