@@ -2535,16 +2535,27 @@ export function PayrollReportsDashboard({ initialMonth }: Props) {
                                     cell.approved && cell.approvedHours != null
                                       ? cell.approvedHours
                                       : cell.hours;
-                                  const cellStatus =
-                                    cell.status ??
-                                    (cell as { dayStatus?: string }).dayStatus ??
-                                    (cell.hasEdits
-                                      ? cell.approved
-                                        ? "edited_and_approved"
-                                        : "edited_not_approved"
-                                      : cell.approved
-                                        ? "approved"
-                                        : "pending");
+                                  
+                                  // Determine cell status using the exact boolean checks:
+                                  // - Orange (Pendiente): session exists AND approved = false AND edited = false
+                                  // - Green (Aprobado): approved = true AND edited = false
+                                  // - Yellow (Editado y aprobado): approved = true AND edited = true
+                                  // - Purple (Editado sin aprobar): approved = false AND edited = true
+                                  const cellEdited = cell.edited ?? cell.hasEdits ?? false;
+                                  
+                                  let cellStatus = cell.status ?? (cell as { dayStatus?: string }).dayStatus;
+                                  if (!cellStatus) {
+                                    if (cell.approved && cellEdited) {
+                                      cellStatus = "edited_and_approved";
+                                    } else if (cell.approved && !cellEdited) {
+                                      cellStatus = "approved";
+                                    } else if (!cell.approved && cellEdited) {
+                                      cellStatus = "edited_not_approved";
+                                    } else {
+                                      cellStatus = "pending";
+                                    }
+                                  }
+                                  
                                   const cellClass =
                                     STATUS_BUTTON_CLASSES[cellStatus] ?? STATUS_BUTTON_CLASSES.pending;
                                   return (

@@ -510,7 +510,7 @@ describe("payroll integration", () => {
     assert.equal(onlyRow.cells[1].date, "2025-10-02");
   });
 
-  it("derives bubble status using approved, edit, and edited-after-approval flags", async () => {
+  it("derives bubble status using approved and edited flags", async () => {
     const { sql } = createMockSqlClient([
       {
         match: /staff_day_matrix_local_v/,
@@ -556,7 +556,7 @@ describe("payroll integration", () => {
             approved_hours: 1,
             horas_mostrar: 1,
             approved: true,
-            has_edits: true,
+            has_edits: false,
             edited_after_approval: false,
           },
         ],
@@ -567,11 +567,16 @@ describe("payroll integration", () => {
     assert.deepEqual(matrix.days, ["2025-10-01", "2025-10-02", "2025-10-03", "2025-10-04"]);
     assert.equal(matrix.rows.length, 1);
     const statuses = matrix.rows[0].cells.map((cell) => cell.dayStatus);
+    // Status rules:
+    // - Orange (Pendiente): approved = false AND edited = false
+    // - Purple (Editado sin aprobar): approved = false AND edited = true
+    // - Yellow (Editado y aprobado): approved = true AND edited = true
+    // - Green (Aprobado): approved = true AND edited = false
     assert.deepEqual(statuses, [
-      "pending",
-      "edited_not_approved",
-      "edited_and_approved",
-      "approved",
+      "pending",              // approved=false, edited=false -> Orange
+      "edited_not_approved",  // approved=false, edited=true -> Purple
+      "edited_and_approved",  // approved=true, edited=true -> Yellow
+      "approved",             // approved=true, edited=false -> Green
     ]);
   });
 

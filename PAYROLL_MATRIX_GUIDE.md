@@ -39,13 +39,14 @@ ORDER BY m.staff_id, m.work_date;
 
 ### 🎨 Color Logic (Frontend)
 
-| Color     | Meaning             | Condition                               |
-| --------- | ------------------- | --------------------------------------- |
-| 🟠 Orange | Pending             | `approved = false`                      |
-| 🟢 Green  | Approved (no edits) | `approved = true AND has_edits = false` |
-| 🟡 Yellow | Approved & Edited   | `approved = true AND has_edits = true`  |
+| Color     | Meaning                       | Condition                                    |
+| --------- | ----------------------------- | -------------------------------------------- |
+| 🟠 Orange | Pendiente (Pending)           | `approved = false AND edited = false`        |
+| 🟢 Green  | Aprobado (Approved)           | `approved = true AND edited = false`         |
+| 🟡 Yellow | Editado y aprobado            | `approved = true AND edited = true`          |
+| 🟣 Purple | Editado sin aprobar           | `approved = false AND edited = true`         |
 
-When a session is edited, the totals are recalculated and the day remains approved automatically (color changes to 🟡).
+**Note:** The `edited` field indicates if any edits have been made to the sessions for that day, regardless of when the edits occurred. Green is ONLY shown when a day is approved AND has never been edited.
 
 ### 🧮 Optional Filtering
 
@@ -243,7 +244,10 @@ timezone('America/Guayaquil', timestamp_column)
 * Manual approval and revocation still exist for manager control.
 * The color logic clearly reflects state transitions:
 
-  * 🟠 Pending → 🟢 Approved → 🟡 Edited+Approved → 🟠 Revoked
+  * 🟠 Pending (not approved, no edits)
+  * 🟣 Edited without approval (has edits, not yet approved)
+  * 🟢 Approved (approved, no edits)
+  * 🟡 Edited after approval (approved and edited)
 
 ---
 

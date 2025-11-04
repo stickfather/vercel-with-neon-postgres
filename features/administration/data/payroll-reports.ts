@@ -35,8 +35,9 @@ export type MatrixCell = {
   approved: boolean;
   approvedHours: number | null;
   hasEdits?: boolean;
-  editedAfterApproval?: boolean;
+  edited?: boolean;
   status?: PayrollDayStatus;
+  dayStatus?: PayrollDayStatus;
 };
 
 export type MatrixRow = {
@@ -371,21 +372,24 @@ function toBoolean(value: unknown): boolean {
 
 function resolveDayStatus(
   approved: boolean,
-  hasEdits: boolean,
-  editedAfterApproval: boolean,
+  edited: boolean,
 ): PayrollDayStatus {
-  if (!approved && !hasEdits) {
-    return "pending";
-  }
-  if (!approved && hasEdits) {
-    return "edited_not_approved";
-  }
-  if (approved && editedAfterApproval) {
+  // Color rules:
+  // - Orange (Pendiente): session exists AND approved = false AND edited = false
+  // - Purple (Editado sin aprobar): approved = false AND edited = true
+  // - Green (Aprobado): approved = true AND edited = false
+  // - Yellow (Editado y aprobado): approved = true AND edited = true
+  
+  if (approved && edited) {
     return "edited_and_approved";
   }
-  if (approved) {
+  if (approved && !edited) {
     return "approved";
   }
+  if (!approved && edited) {
+    return "edited_not_approved";
+  }
+  // !approved && !edited
   return "pending";
 }
 
@@ -626,10 +630,12 @@ export async function fetchPayrollMatrix({
       m.approved,
       m.approved_hours,
       m.total_hours,
-      m.has_edits,
-      m.edited_after_approval
+      COALESCE(e.has_edits, false) AS has_edits
     FROM public.staff_day_matrix_local_v AS m
     LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+    LEFT JOIN public.staff_day_has_edits_v AS e 
+      ON e.staff_id = m.staff_id 
+     AND e.work_date = m.work_date
     WHERE m.work_date BETWEEN ${rangeStart}::date AND ${rangeEnd}::date
     ORDER BY m.staff_id, m.work_date
   `);
@@ -707,10 +713,8 @@ export async function fetchPayrollMatrix({
         ? Math.max(0, Number(baseHours.toFixed(2)))
         : 0;
     const hasEdits = toBoolean(readRowValue(row, ["has_edits", "hasEdits"]));
-    const editedAfterApproval = toBoolean(
-      readRowValue(row, ["edited_after_approval", "editedAfterApproval"]),
-    );
-    const dayStatus = resolveDayStatus(approved, hasEdits, editedAfterApproval);
+    // Use hasEdits directly as the "edited" field - indicates any edits regardless of timing
+    const dayStatus = resolveDayStatus(approved, hasEdits);
 
     grouped.get(staffId)!.cells.set(workDate, {
       date: workDate,
@@ -718,8 +722,9 @@ export async function fetchPayrollMatrix({
       approved,
       approvedHours: safeApprovedHours,
       hasEdits,
-      editedAfterApproval,
+      edited: hasEdits,
       status: dayStatus,
+      dayStatus, // For backward compatibility with tests and other code
     });
   }
 
@@ -735,8 +740,9 @@ export async function fetchPayrollMatrix({
         approved: false,
         approvedHours: null,
         hasEdits: false,
-        editedAfterApproval: false,
+        edited: false,
         status: "pending",
+        dayStatus: "pending", // For backward compatibility
       };
     });
 
