@@ -13,7 +13,12 @@ type Props = {
 };
 
 export function DurationVariance({ rows, variant = "light" }: Props) {
-  if (!rows.length) {
+  // Limit to top 20 by variance (descending)
+  const topRows = [...rows]
+    .sort((a, b) => (b.lesson_minutes_stddev ?? 0) - (a.lesson_minutes_stddev ?? 0))
+    .slice(0, 20);
+
+  if (!topRows.length) {
     const emptyClasses =
       variant === "dark"
         ? "flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/60 p-6 text-center text-sm text-slate-300"
@@ -43,9 +48,9 @@ export function DurationVariance({ rows, variant = "light" }: Props) {
       <header className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h3 className={titleClass}>Varianza en duración de lecciones (30 días)</h3>
-          <p className={descriptionClass}>Irregularidad en duración de sesiones.</p>
+          <p className={descriptionClass}>Top 20 estudiantes por irregularidad en duración de sesiones.</p>
         </div>
-        <span className={infoIconClass} title="Irregularidad en duración de sesiones.">
+        <span className={infoIconClass} title="Desviación estándar de minutos por lección.">
           ℹ
         </span>
       </header>
@@ -53,19 +58,19 @@ export function DurationVariance({ rows, variant = "light" }: Props) {
         <table className={`min-w-full ${tableDivider} text-sm`}>
           <thead>
             <tr className="text-left text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
-              <th className="py-2 pr-3">Nombre</th>
-              <th className="py-2 pr-3">Lecciones (30 d)</th>
-              <th className="py-2 pr-3">Min promedio</th>
-              <th className="py-2">Desviación</th>
+              <th className="py-2 pr-3">Estudiante</th>
+              <th className="py-2 pr-3 text-right">Varianza (min)</th>
+              <th className="py-2 pr-3 text-right">Promedio (min)</th>
+              <th className="py-2 text-right">Sesiones</th>
             </tr>
           </thead>
           <tbody className={tableBodyDivider}>
-            {rows.map((row) => (
+            {topRows.map((row) => (
               <tr key={row.student_id} className={rowClass}>
                 <td className="py-2 pr-3 font-medium">{row.full_name}</td>
-                <td className="py-2 pr-3">{integerFormatter.format(row.lessons_completed_30d)}</td>
-                <td className="py-2 pr-3">{decimalFormatter.format(row.avg_minutes_per_lesson)} min</td>
-                <td className="py-2">{decimalFormatter.format(row.lesson_minutes_stddev)} min</td>
+                <td className="py-2 pr-3 text-right tabular-nums">{decimalFormatter.format(row.lesson_minutes_stddev)}</td>
+                <td className="py-2 pr-3 text-right tabular-nums">{decimalFormatter.format(row.avg_minutes_per_lesson)}</td>
+                <td className="py-2 text-right tabular-nums">{integerFormatter.format(row.lessons_completed_30d)}</td>
               </tr>
             ))}
           </tbody>

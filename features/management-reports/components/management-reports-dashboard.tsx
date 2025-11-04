@@ -936,6 +936,14 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
   // Calculate total for aging stacked bar
   const agingTotal = (data?.aging ?? []).reduce((sum, bucket) => sum + (bucket.value ?? 0), 0);
 
+  // Sort debtors: days overdue desc, then amount desc
+  const sortedDebtors = [...(data?.debtors ?? [])]
+    .sort((a, b) => {
+      const daysDiff = (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0);
+      if (daysDiff !== 0) return daysDiff;
+      return (b.amount ?? 0) - (a.amount ?? 0);
+    });
+
   return (
     <PanelWrapper
       status={state.status}
@@ -1041,11 +1049,11 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
             </div>
           </div>
           <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
-            <SectionTitle title="Estudiantes con deuda" description="Ordenados por mayor mora." />
+            <SectionTitle title="Estudiantes con deuda" description="Ordenados por días de mora y monto." />
             <div className="mt-4 max-h-[480px] overflow-y-auto pr-2">
               <SimpleTable
                 headers={["Estudiante", "Monto", "Días mora"]}
-                rows={(data.debtors ?? []).map((debtor, index) => [
+                rows={sortedDebtors.map((debtor, index) => [
                   <span key="student" className="font-medium text-slate-100">{debtor.student}</span>,
                   <span key="amount" className="text-right font-semibold tabular-nums text-emerald-300">
                     {formatCurrencyValue(debtor.amount ?? null)}
@@ -1215,36 +1223,51 @@ function PersonnelPanel({ state }: { state: PanelState<{
             <SectionTitle title="Mix de cobertura" description="Minutos de estudiantes vs staff por hora." />
             {(data?.staffingMix ?? []).length > 0 ? (
               <div className="mt-4 flex flex-col gap-3">
-                {(data?.staffingMix ?? []).map((mix) => (
-                  <div key={mix.hour} className="flex items-center gap-4">
-                    <span className="w-16 text-sm text-slate-200">{mix.hour}</span>
-                    <div className="flex h-3 flex-1 overflow-hidden rounded-full border border-slate-800/60">
-                      <div
-                        className="h-full bg-emerald-400/80"
-                        style={{
-                          width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
-                            ? `${((mix.students ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
-                            : "0%",
-                        }}
-                        aria-label="Minutos estudiantes"
-                      />
-                      <div
-                        className="h-full bg-sky-400/80"
-                        style={{
-                          width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
-                            ? `${((mix.staff ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
-                            : "0%",
-                        }}
-                        aria-label="Minutos staff"
-                      />
+                {(data?.staffingMix ?? []).map((mix) => {
+                  const ratio = (mix.staff ?? 0) > 0 
+                    ? ((mix.students ?? 0) / (mix.staff ?? 0)).toFixed(1)
+                    : "—";
+                  return (
+                    <div key={mix.hour} className="flex items-center gap-4">
+                      <span className="w-16 text-sm text-slate-200">{mix.hour}</span>
+                      <div className="flex h-3 flex-1 overflow-hidden rounded-full border border-slate-800/60">
+                        <div
+                          className="h-full bg-emerald-400/80"
+                          style={{
+                            width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
+                              ? `${((mix.students ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
+                              : "0%",
+                          }}
+                          aria-label="Minutos estudiantes"
+                          title={`Estudiantes: ${Math.round(mix.students ?? 0)} min`}
+                        />
+                        <div
+                          className="h-full bg-sky-400/80"
+                          style={{
+                            width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
+                              ? `${((mix.staff ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
+                              : "0%",
+                          }}
+                          aria-label="Minutos staff"
+                          title={`Personal: ${Math.round(mix.staff ?? 0)} min`}
+                        />
+                      </div>
+                      <span className="inline-flex items-center rounded-full bg-slate-700/60 px-2 py-1 text-xs font-semibold tabular-nums text-slate-200">
+                        {ratio}×
+                      </span>
                     </div>
-                    <span className="w-20 text-right text-xs text-slate-300">
-                      {mix.students == null && mix.staff == null
-                        ? "—"
-                        : `${integerFormatter.format(Math.round((mix.students ?? 0)))}/${integerFormatter.format(Math.round((mix.staff ?? 0)))}`}
-                    </span>
+                  );
+                })}
+                <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400/80" />
+                    <span>Estudiantes</span>
                   </div>
-                ))}
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-sky-400/80" />
+                    <span>Personal</span>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
