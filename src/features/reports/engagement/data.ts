@@ -52,41 +52,89 @@ function normalizeInactivityBucket(value: unknown): InactiveRosterRow['inactivit
   return 'active_recent'; // default fallback
 }
 
+function isMissingRelation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const pgError = error as { code?: string; message?: string };
+  if (pgError.code && pgError.code.toUpperCase() === "42P01") return true;
+  return typeof pgError.message === "string" && /does not exist/i.test(pgError.message);
+}
+
+async function safeQuery<T>(
+  primary: () => Promise<T>,
+  fallback: T,
+  label: string
+): Promise<T> {
+  try {
+    return await primary();
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn(`Vista no encontrada: ${label}, usando fallback`);
+      return fallback;
+    }
+    console.error(`Error en query ${label}:`, error);
+    return fallback;
+  }
+}
+
 export async function getEngagementReport(): Promise<EngagementReport> {
   const sql = getSqlClient();
 
   const [activeCounts, wowIndex, dailyActivity, avgBetweenRows, inactiveCounts, hourSplit] = await Promise.all([
-    sql`SELECT active_7d, active_14d, active_30d, active_180d FROM engagement_active_counts_v`,
-    sql`
-      SELECT active_students_7d, active_students_prev7d,
-             active_students_wow_change,
-             total_minutes_7d, total_minutes_prev7d,
-             total_minutes_wow_change
-      FROM engagement_decline_index_v
-    `,
-    sql`
-      SELECT d::text AS d, active_students::int, total_minutes::numeric AS total_minutes
-      FROM engagement_daily_activity_v
-      ORDER BY d
-    `,
-    sql`
-      SELECT scope::text AS scope, level::text AS level, avg_days_between_visits::numeric AS avg_days_between_visits
-      FROM engagement_avg_days_between_visits_v
-      ORDER BY scope DESC, level NULLS FIRST
-    `,
-    sql`
-      SELECT inactive_7d_count, inactive_14d_count, dormant_30d_count, inactive_180d_count
-      FROM engagement_inactive_counts_v
-    `,
-    sql`
-      SELECT daypart::text AS daypart, total_minutes::numeric AS total_minutes
-      FROM engagement_hour_split_v
-      ORDER BY CASE daypart
-        WHEN 'morning_08_12' THEN 1
-        WHEN 'afternoon_12_17' THEN 2
-        WHEN 'evening_17_20' THEN 3
-        ELSE 99 END
-    `,
+    safeQuery(
+      () => sql`SELECT active_7d, active_14d, active_30d, active_180d FROM mgmt.engagement_active_counts_v`,
+      [],
+      "mgmt.engagement_active_counts_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT active_students_7d, active_students_prev7d,
+               active_students_wow_change,
+               total_minutes_7d, total_minutes_prev7d,
+               total_minutes_wow_change
+        FROM mgmt.engagement_decline_index_v
+      `,
+      [],
+      "mgmt.engagement_decline_index_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT d::text AS d, active_students::int, total_minutes::numeric AS total_minutes
+        FROM mgmt.engagement_daily_activity_v
+        ORDER BY d
+      `,
+      [],
+      "mgmt.engagement_daily_activity_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT scope::text AS scope, level::text AS level, avg_days_between_visits::numeric AS avg_days_between_visits
+        FROM mgmt.engagement_avg_days_between_visits_v
+        ORDER BY scope DESC, level NULLS FIRST
+      `,
+      [],
+      "mgmt.engagement_avg_days_between_visits_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT inactive_7d_count, inactive_14d_count, dormant_30d_count, inactive_180d_count
+        FROM mgmt.engagement_inactive_counts_v
+      `,
+      [],
+      "mgmt.engagement_inactive_counts_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT daypart::text AS daypart, total_minutes::numeric AS total_minutes
+        FROM mgmt.engagement_hour_split_v
+        ORDER BY CASE daypart
+          WHEN 'morning_08_12' THEN 1
+          WHEN 'afternoon_12_17' THEN 2
+          WHEN 'evening_17_20' THEN 3
+          ELSE 99 END
+      `,
+      [],
+      "mgmt.engagement_hour_split_v"
+    ),
   ]);
 
   const activeCountsRows = normalizeRows<ActiveCounts>(activeCounts);
@@ -129,18 +177,26 @@ export async function getEngagementReport(): Promise<EngagementReport> {
 
 export async function getInactiveRoster(bucket: 'inactive_7d'|'inactive_14d'|'dormant_30d'|'long_term_inactive_180d'): Promise<InactiveRosterRow[]> {
   const sql = getSqlClient();
-  const res = await sql`
-    SELECT student_id, full_name, level::text AS level, last_checkin_time, days_since_last_checkin, inactivity_bucket
-    FROM engagement_inactive_roster_v
-    WHERE inactivity_bucket = ${bucket}
-    ORDER BY days_since_last_checkin DESC, full_name
-  `;
-  return normalizeRows<InactiveRosterRow>(res).map((row) => ({
-    student_id: toNumber(row.student_id),
-    full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
-    level: row.level === null || row.level === undefined ? null : String(row.level),
-    last_checkin_time: row.last_checkin_time === null || row.last_checkin_time === undefined ? null : String(row.last_checkin_time),
-    days_since_last_checkin: toNullableNumber(row.days_since_last_checkin),
-    inactivity_bucket: normalizeInactivityBucket(row.inactivity_bucket),
-  }));
+  try {
+    const res = await sql`
+      SELECT student_id, full_name, level::text AS level, last_checkin_time, days_since_last_checkin, inactivity_bucket
+      FROM mgmt.engagement_inactive_roster_v
+      WHERE inactivity_bucket = ${bucket}
+      ORDER BY days_since_last_checkin DESC, full_name
+    `;
+    return normalizeRows<InactiveRosterRow>(res).map((row) => ({
+      student_id: toNumber(row.student_id),
+      full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
+      level: row.level === null || row.level === undefined ? null : String(row.level),
+      last_checkin_time: row.last_checkin_time === null || row.last_checkin_time === undefined ? null : String(row.last_checkin_time),
+      days_since_last_checkin: toNullableNumber(row.days_since_last_checkin),
+      inactivity_bucket: normalizeInactivityBucket(row.inactivity_bucket),
+    }));
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn('Vista mgmt.engagement_inactive_roster_v no encontrada, retornando array vacío');
+      return [];
+    }
+    throw error;
+  }
 }
