@@ -143,16 +143,18 @@ function StudentManagementTable({ students }: Props) {
 
   useEffect(() => {
     const paramSearch = searchParams.get("q") ?? "";
-    if (paramSearch !== searchTerm) {
+    const paramLevel = normalizeLevelFilter(searchParams.get("level"));
+    
+    // Only update if URL params are different from current state
+    if (paramSearch !== debouncedSearchTerm) {
       setSearchTerm(paramSearch);
       setDebouncedSearchTerm(paramSearch);
     }
 
-    const normalizedLevel = normalizeLevelFilter(searchParams.get("level"));
-    if (normalizedLevel !== levelFilter) {
-      setLevelFilter(normalizedLevel);
+    if (paramLevel !== levelFilter) {
+      setLevelFilter(paramLevel);
     }
-  }, [searchParams, searchTerm, levelFilter]);
+  }, [searchParams, debouncedSearchTerm, levelFilter]);
 
   useEffect(() => {
     if (lastSyncAt) {
