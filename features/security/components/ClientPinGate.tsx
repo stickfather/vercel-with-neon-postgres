@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { PinScope } from "@/lib/security/pin-session";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
-import { hasValidOfflinePinToken } from "@/lib/security/offline-pin";
+import { hasValidOfflinePinToken, hasCachedPinHash } from "@/lib/security/offline-pin";
 
 type ClientPinGateProps = {
   scope: PinScope;
@@ -30,7 +30,7 @@ export function ClientPinGate({
       const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
       
       if (!isOnline) {
-        // When offline, check for offline token
+        // When offline, check for offline token (recent successful auth)
         const hasToken = hasValidOfflinePinToken(scope);
         setIsAuthorized(hasToken);
         setIsChecking(false);
