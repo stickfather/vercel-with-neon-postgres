@@ -116,7 +116,7 @@ export async function syncPendingEvents(): Promise<{
     return { synced: syncedCount, failed: failedCount };
   } catch (error) {
     console.error("Failed to sync pending events", error);
-    return { synced: 0, failed: pending.length };
+    return { synced: 0, failed: 0 };
   } finally {
     syncStatus.isSyncing = false;
   }

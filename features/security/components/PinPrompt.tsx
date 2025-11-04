@@ -96,15 +96,11 @@ export function PinPrompt({
     setError(null);
 
     try {
-      const response = await fetch("/api/security/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: scope === "staff" ? "staff" : "manager", pin: trimmedPin }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.valid !== true) {
-        throw new Error(payload?.error ?? "PIN incorrecto.");
+      const { verifyPin } = await import("@/lib/security/offline-pin");
+      const result = await verifyPin(scope, trimmedPin);
+      
+      if (!result.valid) {
+        throw new Error(result.error ?? "PIN incorrecto.");
       }
 
       setPin("");
