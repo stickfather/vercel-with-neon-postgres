@@ -23,7 +23,7 @@ async function adaptEngagementData(): Promise<EngagementReport> {
     { range: "7 días", count: newData.active_counts.active_7d },
     { range: "14 días", count: newData.active_counts.active_14d },
     { range: "30 días", count: newData.active_counts.active_30d },
-    { range: "180 días", count: newData.active_counts.active_180d },
+    { range: "180 días", count: newData.active_counts.active_6mo },
   ];
   
   // Transform inactive counts to old format

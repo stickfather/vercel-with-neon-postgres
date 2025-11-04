@@ -110,7 +110,7 @@ export function EngagementHeaderTiles({
               ℹ
             </span>
           </header>
-          <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_180d)}</div>
+          <div className={`text-3xl font-semibold ${primaryText}`}>{integerFormatter.format(activeCounts.active_6mo)}</div>
           <div className={`h-10 text-sm ${secondaryText}`}>Últimos 180 días</div>
         </article>
       </section>

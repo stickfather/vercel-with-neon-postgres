@@ -7,7 +7,7 @@ export type WoWIndex = {
   total_minutes_prev7d: number;
   total_minutes_wow_change: number | null;
 };
-export type ActiveCounts = { active_7d: number; active_14d: number; active_30d: number; active_180d: number };
+export type ActiveCounts = { active_7d: number; active_14d: number; active_30d: number; active_6mo: number };
 
 export type InactiveCounts = {
   inactive_7d_count: number;

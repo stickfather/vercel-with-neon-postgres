@@ -81,7 +81,7 @@ export async function getEngagementReport(): Promise<EngagementReport> {
 
   const [activeCounts, wowIndex, dailyActivity, avgBetweenRows, inactiveCounts, hourSplit] = await Promise.all([
     safeQuery(
-      () => sql`SELECT active_7d, active_14d, active_30d, active_180d FROM mgmt.engagement_active_counts_v`,
+      () => sql`SELECT active_7d, active_14d, active_30d, active_6mo FROM mgmt.engagement_active_counts_v`,
       [],
       "mgmt.engagement_active_counts_v"
     ),
@@ -149,7 +149,7 @@ export async function getEngagementReport(): Promise<EngagementReport> {
 
   return {
     last_refreshed_at: new Date().toISOString(),
-    active_counts: activeCountsRows[0] ?? {active_7d:0,active_14d:0,active_30d:0,active_180d:0},
+    active_counts: activeCountsRows[0] ?? {active_7d:0,active_14d:0,active_30d:0,active_6mo:0},
     wow_index: wowIndexRows[0] ?? {
       active_students_7d: 0, active_students_prev7d: 0, active_students_wow_change: null,
       total_minutes_7d: 0, total_minutes_prev7d: 0, total_minutes_wow_change: null

@@ -49,7 +49,7 @@ export default async function EngagementPage() {
             a7={data.active_counts.active_7d}
             a14={data.active_counts.active_14d}
             a30={data.active_counts.active_30d}
-            a180={data.active_counts.active_180d}
+            a180={data.active_counts.active_6mo}
           />
           <InactiveCohortsCard counts={data.inactive_counts} />
         </section>
