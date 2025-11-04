@@ -111,7 +111,7 @@ export async function getEngagementReport(): Promise<EngagementReport> {
       active_students: toNumber(row.active_students),
       total_minutes: toNumber(row.total_minutes),
     })),
-    avg_between_visits_global: Number(globalRow?.avg_days_between_visits ?? 0),
+    avg_between_visits_global: toNumber(globalRow?.avg_days_between_visits ?? 0),
     avg_between_visits_by_level: perLevel.map((row) => ({
       scope: row.scope,
       level: row.level,
