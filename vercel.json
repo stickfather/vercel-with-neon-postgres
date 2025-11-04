@@ -1,8 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/refresh-mvs",
-      "schedule": "0 3 * * *"
+      "path": "/api/cron/nightly-maintenance",
+      "schedule": "10 1 * * *"
     }
   ]
 }

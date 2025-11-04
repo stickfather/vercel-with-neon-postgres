@@ -8,17 +8,26 @@ async function refreshMaterializedViews() {
 
   console.log("🔄 Running full MV refresh (manual or cron)...");
 
-  await sql`
-      REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_activity_30d_mv;
-      REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_hourly_30d_mv;
-      REFRESH MATERIALIZED VIEW CONCURRENTLY mart.staff_hourly_30d_mv;
-      REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_daypart_30d_mv;
-      REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_lei_rank_30d_mv;
-      REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_lesson_effort_mv;
-      REFRESH MATERIALIZED VIEW CONCURRENTLY mart.mv_kpi_active_students_mtd;
-      REFRESH MATERIALIZED VIEW mart.mv_kpi_avg_daily_checkins;
-      REFRESH MATERIALIZED VIEW mart.lei_speed_benchmarks_30d_mv;
-    `;
+  // Phase 1: Base MVs (run in parallel)
+  console.log("⏳ Phase 1: Refreshing base MVs...");
+  await Promise.all([
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_activity_30d_mv`,
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_hourly_30d_mv`,
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_daypart_30d_mv`,
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_lesson_effort_mv`,
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.staff_hourly_30d_mv`,
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.mv_kpi_active_students_mtd`,
+    sql`REFRESH MATERIALIZED VIEW mart.mv_kpi_avg_daily_checkins`,
+  ]);
+  console.log("✅ Phase 1 complete");
+
+  // Phase 2: Dependent MVs (run in parallel after Phase 1)
+  console.log("⏳ Phase 2: Refreshing dependent MVs...");
+  await Promise.all([
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.lei_speed_benchmarks_30d_mv`,
+    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_lei_rank_30d_mv`,
+  ]);
+  console.log("✅ Phase 2 complete");
 
   const rows = (await sql`
       INSERT INTO mgmt.data_refresh_log (refreshed_at)
