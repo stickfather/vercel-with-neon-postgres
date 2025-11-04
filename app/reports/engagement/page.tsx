@@ -7,6 +7,7 @@ import { HourSplitCard } from "@/components/reports/engagement/HourSplitCard";
 import { getEngagementReport } from "@/src/features/reports/engagement/data";
 
 export const revalidate = 600;
+export const dynamic = "force-dynamic";
 
 export default async function EngagementPage() {
   const data = await getEngagementReport();
