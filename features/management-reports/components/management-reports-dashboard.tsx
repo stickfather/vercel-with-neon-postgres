@@ -22,6 +22,8 @@ import type {
   EngagementDeclinePoint,
   EngagementHourSplit,
   EngagementReport,
+  EngagementShiftPoint,
+  EngagementStudyShift,
   EngagementVisitPace,
   ExamsReport,
   FinancialReport,
@@ -563,6 +565,69 @@ function LineAreaChart({ points }: { points: PersonnelLoadPoint[] }) {
   );
 }
 
+function StudyShiftChart({ shift }: { shift: EngagementStudyShift | undefined }) {
+  if (!shift || shift.points.length === 0) {
+    return (
+      <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
+        Sin práctica registrada en los últimos 30 días
+      </div>
+    );
+  }
+
+  const maxMinutes = Math.max(...shift.points.map(p => p.minutes), 1);
+  const totalHours = (shift.total_minutes_30d / 60).toFixed(1);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-1">
+          <h4 className="text-base font-semibold text-slate-100">Horas de estudio (últimos 30 días)</h4>
+          <p className="text-xs text-slate-400">Distribución de minutos de práctica por hora local</p>
+        </div>
+        <span className="inline-flex items-center rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-200">
+          Total: {totalHours} h
+        </span>
+      </div>
+      <div className="flex items-end gap-1 h-32" role="img" aria-label={`Gráfico de horas de estudio. Total: ${totalHours} horas en 30 días`}>
+        {shift.points.map((point) => {
+          const height = maxMinutes > 0 ? (point.minutes / maxMinutes) * 100 : 0;
+          const hours = (point.minutes / 60).toFixed(1);
+          return (
+            <div
+              key={point.hour_of_day}
+              className="group relative flex flex-1 flex-col items-center"
+            >
+              <div
+                className="w-full rounded-t bg-emerald-500/70 transition-all hover:bg-emerald-500/90"
+                style={{ height: `${Math.max(height, 2)}%`, minHeight: height > 0 ? "4px" : "0" }}
+                title={`${String(point.hour_of_day).padStart(2, '0')}:00 — ${point.minutes} min (${hours} h)`}
+              />
+              {point.hour_of_day % 3 === 0 && (
+                <span className="mt-1 text-[9px] text-slate-500">
+                  {String(point.hour_of_day).padStart(2, '0')}
+                </span>
+              )}
+              <div className="absolute bottom-full mb-2 hidden group-hover:flex flex-col items-center">
+                <div className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-100 whitespace-nowrap shadow-lg">
+                  {String(point.hour_of_day).padStart(2, '0')}:00 — {point.minutes} min ({hours} h)
+                </div>
+                <div className="h-0 w-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-800" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between border-t border-slate-800/60 pt-2 text-xs text-slate-400">
+        <span>00:00</span>
+        <span>06:00</span>
+        <span>12:00</span>
+        <span>18:00</span>
+        <span>23:00</span>
+      </div>
+    </div>
+  );
+}
+
 function mapRiskChip(riskLevel: string) {
   const normalized = riskLevel.toLowerCase();
   if (normalized.includes("alto") || normalized.includes("rojo")) {
@@ -741,6 +806,9 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
     >
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <div className="flex flex-col gap-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+            <StudyShiftChart shift={data?.studyShift} />
+          </div>
           <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
             <SectionTitle title="Activos recientes" description="Estudiantes activos en los últimos días." />
             {(data?.active ?? []).map((bucket) => (
