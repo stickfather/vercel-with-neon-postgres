@@ -10,7 +10,6 @@ export type PayrollMatrixCell = {
   approved: boolean;
   approvedHours: number | null;
   hasEdits?: boolean;
-  editedAfterApproval?: boolean;
   edited?: boolean;
   dayStatus?: PayrollDayStatus;
   status?: PayrollDayStatus;

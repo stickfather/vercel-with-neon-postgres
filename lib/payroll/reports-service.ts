@@ -189,21 +189,24 @@ export async function executeDeleteStaffSessionSql(
 
 function resolveDayStatus(
   approved: boolean,
-  hasEdits: boolean,
-  editedAfterApproval: boolean,
+  edited: boolean,
 ): PayrollDayStatus {
-  if (!approved && !hasEdits) {
-    return "pending";
-  }
-  if (!approved && hasEdits) {
-    return "edited_not_approved";
-  }
-  if (approved && editedAfterApproval) {
+  // Color rules:
+  // - Orange (Pendiente): session exists AND approved = false AND edited = false
+  // - Purple (Editado sin aprobar): approved = false AND edited = true
+  // - Green (Aprobado): approved = true AND edited = false
+  // - Yellow (Editado y aprobado): approved = true AND edited = true
+  
+  if (approved && edited) {
     return "edited_and_approved";
   }
-  if (approved) {
+  if (approved && !edited) {
     return "approved";
   }
+  if (!approved && edited) {
+    return "edited_not_approved";
+  }
+  // !approved && !edited
   return "pending";
 }
 
@@ -703,10 +706,12 @@ export async function getPayrollMatrix(
         m.approved_hours,
         m.horas_mostrar,
         m.approved,
-        m.has_edits,
-        m.edited_after_approval
+        COALESCE(e.has_edits, false) AS has_edits
       FROM public.staff_day_matrix_local_v AS m
       LEFT JOIN public.staff_members AS sm ON sm.id = m.staff_id
+      LEFT JOIN public.staff_day_has_edits_v AS e 
+        ON e.staff_id = m.staff_id 
+       AND e.work_date = m.work_date
       WHERE m.work_date BETWEEN ${start}::date AND ${end}::date
       ORDER BY m.staff_id, m.work_date
     `,
@@ -745,8 +750,8 @@ export async function getPayrollMatrix(
     }
     const entry = grouped.get(staffId)!;
     const hasEdits = toBoolean(row["has_edits"]);
-    const editedAfterApproval = toBoolean(row["edited_after_approval"]);
-    const dayStatus = resolveDayStatus(approved, hasEdits, editedAfterApproval);
+    // Use hasEdits directly as the "edited" field - indicates any edits regardless of timing
+    const dayStatus = resolveDayStatus(approved, hasEdits);
 
     entry.cellMap.set(workDate, {
       date: workDate,
@@ -754,7 +759,7 @@ export async function getPayrollMatrix(
       hours,
       approvedHours,
       hasEdits,
-      editedAfterApproval,
+      edited: hasEdits,
       dayStatus,
     });
   }
@@ -773,7 +778,7 @@ export async function getPayrollMatrix(
         approved: false,
         approvedHours: null,
         hasEdits: false,
-        editedAfterApproval: false,
+        edited: false,
         dayStatus: "pending",
       };
 
