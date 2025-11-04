@@ -38,6 +38,7 @@ export type MatrixCell = {
   editedAfterApproval?: boolean;
   edited?: boolean;
   status?: PayrollDayStatus;
+  dayStatus?: PayrollDayStatus;
 };
 
 export type MatrixRow = {
@@ -726,6 +727,7 @@ export async function fetchPayrollMatrix({
       editedAfterApproval,
       edited: hasEdits,
       status: dayStatus,
+      dayStatus, // For backward compatibility with tests and other code
     });
   }
 
@@ -744,6 +746,7 @@ export async function fetchPayrollMatrix({
         editedAfterApproval: false,
         edited: false,
         status: "pending",
+        dayStatus: "pending", // For backward compatibility
       };
     });
 
