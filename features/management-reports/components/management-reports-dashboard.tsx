@@ -495,7 +495,7 @@ function Sparkline({ points }: { points: EngagementDeclinePoint[] }) {
     .join(" ");
 
   return (
-    <svg viewBox="0 0 100 100" className="h-24 w-full overflow-visible">
+    <svg viewBox="0 0 100 100" className="h-24 w-full overflow-visible" aria-label="Gráfico de índice de declive">
       <path d={`${d} L 100 100 L 0 100 Z`} fill="url(#sparkGradient)" opacity={0.35} />
       <path d={d} fill="none" stroke="#34d399" strokeWidth={2.5} strokeLinecap="round" />
       <defs>
@@ -545,7 +545,7 @@ function LineAreaChart({ points }: { points: PersonnelLoadPoint[] }) {
     .join(" ");
 
   return (
-    <svg viewBox="0 0 100 100" className="h-40 w-full overflow-visible">
+    <svg viewBox="0 0 100 100" className="h-40 w-full overflow-visible" aria-label="Gráfico de carga de estudiantes por docente">
       <path d={`${d} L 100 100 L 0 100 Z`} fill="url(#loadGradient)" opacity={0.35} />
       <path d={d} fill="none" stroke="#60a5fa" strokeWidth={2.5} strokeLinecap="round" />
       <defs>
