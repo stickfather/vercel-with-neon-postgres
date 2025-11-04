@@ -311,8 +311,8 @@ function SectionTitle({
 }) {
   return (
     <header className="flex flex-col gap-1">
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
-      {description ? <p className="text-sm text-slate-300">{description}</p> : null}
+      <h3 className="text-base font-semibold text-white md:text-lg">{title}</h3>
+      {description ? <p className="text-sm text-slate-400">{description}</p> : null}
     </header>
   );
 }
@@ -334,7 +334,7 @@ function StatCard({
 }) {
   const valueClass = size === "large" ? "text-3xl md:text-4xl font-black" : "text-2xl font-black";
   return (
-    <div className="flex flex-col gap-2 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5">
+    <div className="flex min-h-[120px] flex-col gap-2 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5">
       <span className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{title}</span>
       <div className="relative">
         {benchmark != null && (
@@ -806,10 +806,10 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
     >
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <StudyShiftChart shift={data?.studyShift} />
           </div>
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
+          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
             <SectionTitle title="Activos recientes" description="Estudiantes activos en los últimos días." />
             {(data?.active ?? []).map((bucket) => (
               <StatCard
@@ -820,7 +820,7 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
               />
             ))}
           </div>
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
+          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
             <SectionTitle title="Inactivos / Riesgo" description="Alumnos que necesitan reactivación." />
             {(data?.inactive ?? []).map((bucket) => (
               <StatCard
@@ -832,13 +832,13 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
               />
             ))}
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Días promedio entre visitas" description="Promedio de días por segmento." />
             <div className="mt-4">
               <HorizontalBarList data={data?.visitPace ?? []} unit=" d" accent="bg-amber-400" />
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Índice de declive" description="Tendencia semanal del engagement." />
             <div className="mt-4">
               <Sparkline points={data?.declineIndex ?? []} />
@@ -846,7 +846,7 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
           </div>
         </div>
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle
               title="Horario de visitas"
               description="Distribución de estudiantes por bloques horarios."
@@ -871,7 +871,7 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
               </div>
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle
               title="Alumnos inactivos"
               description="Lista prioritaria para llamadas de seguimiento."
@@ -955,7 +955,7 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
       {data ? (
         <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <div className="flex flex-col gap-6">
-            <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
+            <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
               <StatCard
                 title="Estudiantes con saldo"
                 value={formatIntegerValue(data.outstanding.students ?? null)}
@@ -971,7 +971,7 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
                 size="large"
               />
             </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
               <SectionTitle title="Aging de cartera" description="Distribución por días de mora." />
               {agingTotal > 0 ? (
                 <div className="mt-4 flex flex-col gap-3">
@@ -1014,7 +1014,7 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
                 </div>
               )}
             </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
               <SectionTitle title="Cobros últimos 30 días" description="Pagos registrados semana a semana." />
               {(data.collections ?? []).length > 0 ? (
                 <div className="mt-4 flex flex-col gap-3">
@@ -1048,7 +1048,7 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
               )}
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Estudiantes con deuda" description="Ordenados por días de mora y monto." />
             <div className="mt-4 max-h-[480px] overflow-y-auto pr-2">
               <SimpleTable
@@ -1107,7 +1107,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
     >
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <div className="flex flex-col gap-6">
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6 sm:grid-cols-2">
+          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
             <StatCard
               title={data?.firstAttemptRate?.label ?? "1er intento"}
               value={formatPercentValue(data?.firstAttemptRate?.value ?? null)}
@@ -1140,7 +1140,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
               benchmark={calculatePercentBenchmark(data?.instructiveCompletion?.value ?? null)}
             />
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Próximos exámenes (30 días)" description="Fechas y candidatos programados." />
             <div className="mt-4 max-h-[240px] overflow-y-auto pr-2">
               <SimpleTable
@@ -1158,7 +1158,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
           </div>
         </div>
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Alumnos con dificultad" description="Prioriza refuerzos y tutorías." />
             <div className="mt-4 max-h-[280px] overflow-y-auto pr-2">
               <SimpleTable
@@ -1177,7 +1177,7 @@ function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
               />
             </div>
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Instructivo post-evaluación" description="Seguimiento después de reprobar." />
             <div className="mt-4 grid gap-3">
               <StatCard
@@ -1219,7 +1219,7 @@ function PersonnelPanel({ state }: { state: PanelState<{
     >
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Mix de cobertura" description="Minutos de estudiantes vs staff por hora." />
             {(data?.staffingMix ?? []).length > 0 ? (
               <div className="mt-4 flex flex-col gap-3">
@@ -1275,14 +1275,14 @@ function PersonnelPanel({ state }: { state: PanelState<{
               </div>
             )}
           </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
             <SectionTitle title="Carga por docente" description="Estudiantes promedio por hora." />
             <div className="mt-4">
               <LineAreaChart points={data?.studentLoad ?? []} />
             </div>
           </div>
         </div>
-        <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-6">
+        <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
           <SectionTitle title="Cobertura en picos" description="Zonas de riesgo operativo." />
           {(data?.coverage ?? []).length > 0 ? (
             <div className="mt-4 flex flex-col gap-3">
