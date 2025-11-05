@@ -417,6 +417,8 @@ export async function checkoutStaff(staffId: number): Promise<{ queued: boolean 
   }
 }
 
+const MAX_RETRY_ATTEMPTS = 3;
+
 // Sync engine
 export async function syncOutbox(): Promise<{ processed: number; failed: number }> {
   if (!isOnline()) {
@@ -480,7 +482,7 @@ export async function syncOutbox(): Promise<{ processed: number; failed: number 
       } else {
         await db.outbox.update(entry.id, {
           attemptCount: entry.attemptCount + 1,
-          status: entry.attemptCount + 1 >= 3 ? "failed" : "pending",
+          status: entry.attemptCount + 1 >= MAX_RETRY_ATTEMPTS ? "failed" : "pending",
         });
         failed++;
       }
@@ -488,7 +490,7 @@ export async function syncOutbox(): Promise<{ processed: number; failed: number 
       console.error(`Failed to sync outbox entry ${entry.id}`, error);
       await db.outbox.update(entry.id, {
         attemptCount: entry.attemptCount + 1,
-        status: entry.attemptCount + 1 >= 3 ? "failed" : "pending",
+        status: entry.attemptCount + 1 >= MAX_RETRY_ATTEMPTS ? "failed" : "pending",
       });
       failed++;
     }

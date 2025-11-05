@@ -8,7 +8,15 @@ export const dynamic = "force-dynamic";
  * GET /api/pins
  * 
  * Returns plaintext PINs for offline caching
- * WARNING: This is intentionally insecure for offline-first mode
+ * 
+ * SECURITY WARNING: This endpoint returns PINs in plaintext.
+ * This is INTENTIONALLY INSECURE for offline-first mode as per requirements.
+ * 
+ * In production with sensitive data:
+ * - Add proper authentication
+ * - Use encrypted storage
+ * - Load from environment variables
+ * - Implement audit logging
  */
 export async function GET() {
   try {

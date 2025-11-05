@@ -38,11 +38,17 @@ export async function syncPinsFromServer(): Promise<void> {
   }
 }
 
-// Seed default PINs for development (if none exist)
+/**
+ * Seed default PINs for development (if none exist)
+ * 
+ * WARNING: These are development-only defaults.
+ * In production, PINs should be set via admin interface or environment variables.
+ */
 export async function seedDefaultPins(): Promise<void> {
   const existingPins = await db.pins.toArray();
   
   if (existingPins.length === 0) {
+    // Development defaults - DO NOT use in production
     await db.pins.bulkPut([
       { role: "staff", pin: "1234", updatedAt: new Date().toISOString() },
       { role: "manager", pin: "5678", updatedAt: new Date().toISOString() },
