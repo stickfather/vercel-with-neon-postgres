@@ -8,6 +8,7 @@ import {
   OFFLINE_QUEUE_EVENT,
   type OfflineQueueEventDetail,
 } from "@/lib/offline/queue";
+import { syncOutbox, getOutboxCount } from "@/lib/dataClient";
 
 type OfflineContextValue = {
   isOnline: boolean;
@@ -35,28 +36,46 @@ export function OfflineProvider({ children }: Props) {
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
-  const [pendingCount, setPendingCount] = useState(() => getQueuedCount());
+  const [pendingCount, setPendingCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+
+  // Update pending count from both localStorage queue and IndexedDB outbox
+  const updatePendingCount = useCallback(async () => {
+    const localStorageCount = getQueuedCount();
+    const outboxCount = await getOutboxCount();
+    setPendingCount(localStorageCount + outboxCount);
+  }, []);
 
   const syncQueue = useCallback(async () => {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const processed = await processQueue();
-      if (processed > 0) {
+      // Sync both localStorage queue and IndexedDB outbox
+      const [processedQueue, syncResult] = await Promise.all([
+        processQueue(),
+        syncOutbox(),
+      ]);
+      
+      const totalProcessed = processedQueue + syncResult.processed;
+      
+      if (totalProcessed > 0) {
         setLastSyncAt(Date.now());
       }
+      
+      await updatePendingCount();
     } catch (error) {
       console.error("No se pudo sincronizar la cola sin conexión", error);
     } finally {
-      setPendingCount(getQueuedCount());
       setIsSyncing(false);
     }
-  }, [isSyncing]);
+  }, [isSyncing, updatePendingCount]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    // Initialize pending count
+    updatePendingCount();
 
     const handleOnline = () => {
       setIsOnline(true);
@@ -64,15 +83,13 @@ export function OfflineProvider({ children }: Props) {
     };
     const handleOffline = () => {
       setIsOnline(false);
-      setPendingCount(getQueuedCount());
+      void updatePendingCount();
     };
     const handleQueueChange = (event: Event) => {
       const detail = (event as CustomEvent<OfflineQueueEventDetail>).detail;
-      setPendingCount(
-        detail && typeof detail.size === "number"
-          ? detail.size
-          : getQueuedCount(),
-      );
+      if (detail && typeof detail.size === "number") {
+        void updatePendingCount();
+      }
     };
 
     window.addEventListener("online", handleOnline);
@@ -84,7 +101,7 @@ export function OfflineProvider({ children }: Props) {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener(OFFLINE_QUEUE_EVENT, handleQueueChange);
     };
-  }, [syncQueue]);
+  }, [syncQueue, updatePendingCount]);
 
   useEffect(() => {
     if (isOnline) {

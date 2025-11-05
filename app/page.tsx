@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import mantaSymbol from "@/assets/manta-symbol.svg";
+import { WelcomeMessage } from "@/components/welcome/welcome-message";
 
 type SearchParams = {
   saludo?: string;
@@ -19,40 +20,6 @@ function decodeName(nombre?: string) {
   } catch (error) {
     return nombre;
   }
-}
-
-function buildMessage({ saludo, despedida, nombre }: SearchParams) {
-  const safeName = decodeName(nombre);
-
-  if (saludo) {
-    return {
-      tone: "positivo" as const,
-      text: `¡Bienvenido/a, ${safeName || "estudiante"}! Tu registro quedó confirmado.`,
-    };
-  }
-
-  return null;
-}
-
-function MessageBanner({
-  message,
-}: {
-  message: ReturnType<typeof buildMessage>;
-}) {
-  if (!message) return null;
-
-  const toneStyles =
-    message.tone === "positivo"
-      ? "border-brand-teal bg-white/80"
-      : "border-brand-orange bg-white/70";
-
-  return (
-    <div
-      className={`w-full max-w-3xl rounded-3xl border px-6 py-4 text-center text-lg font-semibold shadow-md ${toneStyles}`}
-    >
-      {message.text}
-    </div>
-  );
 }
 
 async function resolveSearchParams(
@@ -80,7 +47,6 @@ async function resolveSearchParams(
 
 export default async function Home({ searchParams }: PageProps) {
   const resolvedParams = await resolveSearchParams(searchParams);
-  const message = resolvedParams ? buildMessage(resolvedParams) : null;
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden">
@@ -98,7 +64,7 @@ export default async function Home({ searchParams }: PageProps) {
       <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-16 px-6 py-16 md:px-10 lg:px-16">
         <div className="rounded-[44px] border border-white/70 bg-white/90 p-10 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur">
           <div className="flex flex-col gap-10">
-            <MessageBanner message={message} />
+            <WelcomeMessage searchParams={resolvedParams || {}} />
             <div className="grid gap-10 lg:grid-cols-[1.2fr_0.9fr] lg:items-center">
               <div className="flex flex-col items-start gap-8 text-left">
                 <span className="inline-flex items-center gap-2 rounded-full bg-brand-teal-soft px-5 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-brand-teal">
