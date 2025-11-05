@@ -2,10 +2,10 @@
 
 ## 🎯 Simplified Approach (No Setup Required!)
 
-**Staff PIN** now works offline with a **universal backup code: "1234"**
+**Staff PIN** now works offline with a **universal master override code: "9999"**
 
 - **When Online**: Uses actual PIN from database (normal validation)
-- **When Offline**: Accepts "1234" as universal override code
+- **When Offline**: Accepts "9999" as universal master override
 - **No environment variables needed**
 - **No prior online validation required**
 
@@ -57,9 +57,9 @@ SELECT role, pin_hash, active FROM access_pins WHERE active = TRUE;
 
 ### 3. How It Works
 
-**Staff PIN (Simple Universal Override)**:
+**Staff PIN (Simple Universal Master Override)**:
 - **Online**: Validates against actual PIN in database
-- **Offline**: Accepts "1234" as universal backup code (no configuration needed)
+- **Offline**: Accepts "9999" as universal master override (no configuration needed)
 - Works immediately without any prior validation
 
 **Manager PIN (Database Validation)**:
@@ -74,7 +74,7 @@ SELECT role, pin_hash, active FROM access_pins WHERE active = TRUE;
 4. Session created in localStorage (24hr)
 
 **Subsequent Access Offline**:
-1. Staff: Enter "1234" → Works immediately
+1. Staff: Enter "9999" → Works immediately (master override)
 2. Manager: Enter cached PIN → Works if validated online previously
 
 ### 4. Testing Offline Staff Access
@@ -82,7 +82,7 @@ SELECT role, pin_hash, active FROM access_pins WHERE active = TRUE;
 **Simple Test** (No Setup Required):
 1. Go to `/administracion` (staff admin hub)
 2. **Disconnect internet** (DevTools → Network → Offline)
-3. Enter PIN: **1234**
+3. Enter PIN: **9999** (master override)
 4. ✅ Should unlock immediately
 
 **Online Staff Access**:
@@ -98,10 +98,10 @@ If you still want to cache actual PINs for offline use:
 
 **"No pudimos validar el PIN solicitado" (Staff)**:
 
-1. **Try universal offline code**: Enter "1234" when offline
+1. **Try universal master override**: Enter "9999" when offline
 2. **Check browser console** for logs:
-   - `[Offline PIN] Staff universal offline code accepted: 1234`
-3. If "1234" doesn't work offline, check console for errors
+   - `[Offline PIN] Staff universal offline master override accepted: 9999`
+3. If "9999" doesn't work offline, check console for errors
 
 **"No pudimos validar el PIN solicitado" (Manager)**:
 
@@ -134,7 +134,7 @@ If you still want to cache actual PINs for offline use:
 ### 7. Security Note
 
 ⚠️ **This setup is intentionally simple** per requirements:
-- Staff PIN has universal offline override "1234" (no encryption)
+- Staff PIN has universal master override "9999" (no encryption)
 - Manager PIN requires database validation
 - PINs cached in plaintext in IndexedDB
 - Suitable for non-sensitive environments
@@ -150,7 +150,7 @@ For production with sensitive data:
 ## Common Issues
 
 ### "Staff PIN not working offline"
-- **Solution**: Try universal code "1234"
+- **Solution**: Try universal master override "9999"
 - Should work immediately without any setup
 
 ### "Manager PIN not working offline"
@@ -176,4 +176,4 @@ For production with sensitive data:
 | `OFFLINE_STAFF_PIN` | Staff PIN for API endpoint caching | `"1234"` | No (universal override exists) |
 | `OFFLINE_MANAGER_PIN` | Manager PIN for offline caching | `"5678"` | Optional |
 
-**Note**: Staff PIN has universal offline override "1234", so environment variables are optional for basic offline functionality.
+**Note**: Staff PIN has universal master override "9999", so environment variables are optional for basic offline functionality.

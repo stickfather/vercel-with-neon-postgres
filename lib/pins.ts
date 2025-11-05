@@ -3,20 +3,20 @@
 import { db, type Pin } from "@/lib/db";
 
 // Validate PIN offline (plaintext comparison)
-// SIMPLE OVERRIDE: Staff PIN accepts "1234" when offline (universal backup code)
+// SIMPLE OVERRIDE: Staff PIN accepts "9999" when offline (universal master override)
 export async function validatePinOffline(role: string, inputPin: string): Promise<boolean> {
   try {
     console.log(`[Offline PIN] Attempting to validate PIN for role: ${role}`);
     
     const trimmedPin = inputPin.trim();
     
-    // STAFF ONLY: Accept universal offline code "1234"
-    if (role === "staff" && trimmedPin === "1234") {
-      console.log(`[Offline PIN] Staff universal offline code accepted: 1234`);
+    // STAFF ONLY: Accept universal offline master override "9999"
+    if (role === "staff" && trimmedPin === "9999") {
+      console.log(`[Offline PIN] Staff universal offline master override accepted: 9999`);
       return true;
     }
     
-    // For manager or if staff entered something other than 1234, check cached PIN
+    // For manager or if staff entered something other than 9999, check cached PIN
     const allPins = await db.pins.toArray();
     console.log(`[Offline PIN] All cached PINs:`, allPins.map(p => ({ role: p.role, hasPin: !!p.pin })));
     
@@ -86,6 +86,7 @@ export async function seedDefaultPins(): Promise<void> {
     
     if (existingPins.length === 0) {
       // Development defaults - DO NOT use in production
+      // Note: Staff has offline master override 9999, these are just for online validation
       const defaultPins = [
         { role: "staff", pin: "1234", updatedAt: new Date().toISOString() },
         { role: "manager", pin: "5678", updatedAt: new Date().toISOString() },
