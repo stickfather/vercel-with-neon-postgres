@@ -128,19 +128,36 @@ export function CheckInForm({
     setLessonsFetchError(null);
 
     try {
-      const response = await fetch("/api/lessons", {
-        method: "GET",
-        cache: "no-store",
-        signal: controller.signal,
-      });
+      const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
+      let payload: unknown = [];
+      
+      if (isOnline) {
+        const response = await fetch("/api/lessons", {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        throw new Error("No se pudieron cargar las lecciones.");
-      }
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar las lecciones.");
+        }
 
-      const payload = (await response.json().catch(() => [])) as unknown;
-      if (controller.signal.aborted) {
-        return;
+        payload = await response.json().catch(() => []);
+        
+        if (controller.signal.aborted) {
+          return;
+        }
+        
+        // Cache lessons in IndexedDB
+        if (Array.isArray(payload) && payload.length > 0) {
+          const { db } = await import("@/lib/db");
+          await db.lessons.bulkPut(payload);
+        }
+      } else {
+        // Load from IndexedDB when offline
+        const { db } = await import("@/lib/db");
+        const cachedLessons = await db.lessons.toArray();
+        payload = cachedLessons;
       }
 
       if (!Array.isArray(payload)) {
@@ -177,8 +194,44 @@ export function CheckInForm({
         return;
       }
       console.error("No se pudo obtener el catálogo de lecciones", error);
-      setAllLessons([]);
-      setLessonsFetchError("No se pudieron cargar las lecciones.");
+      
+      // Try to load from cache on error
+      try {
+        const { db } = await import("@/lib/db");
+        const cachedLessons = await db.lessons.toArray();
+        
+        if (cachedLessons.length > 0) {
+          const normalized = cachedLessons
+            .map((entry) => {
+              const lessonName = (entry.lesson ?? "").trim();
+              const levelName = (entry.level ?? "").trim();
+              const id = Number(entry.id);
+              if (!lessonName || !levelName || !Number.isFinite(id)) {
+                return null;
+              }
+
+              return {
+                id,
+                lesson: lessonName,
+                level: levelName,
+                seq: normalizeSequence(entry.seq),
+              } satisfies LessonCatalogItem;
+            })
+            .filter(
+              (
+                value: LessonCatalogItem | null,
+              ): value is LessonCatalogItem => value !== null,
+            );
+          
+          setAllLessons(normalized);
+        } else {
+          setAllLessons([]);
+          setLessonsFetchError("No se pudieron cargar las lecciones.");
+        }
+      } catch (cacheError) {
+        setAllLessons([]);
+        setLessonsFetchError("No se pudieron cargar las lecciones.");
+      }
     } finally {
       if (!controller.signal.aborted) {
         setIsLoadingLessons(false);
@@ -302,30 +355,77 @@ export function CheckInForm({
 
     fetchTimeoutRef.current = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ limit: String(SUGGESTION_LIMIT) });
-        if (studentQuery.trim()) {
-          params.set("query", studentQuery.trim());
+        const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
+        let students: StudentName[] = [];
+        
+        if (isOnline) {
+          const params = new URLSearchParams({ limit: String(SUGGESTION_LIMIT) });
+          if (studentQuery.trim()) {
+            params.set("query", studentQuery.trim());
+          }
+
+          const response = await fetch(`/api/students?${params.toString()}`, {
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            throw new Error("No se pudo obtener la lista de estudiantes.");
+          }
+
+          const payload = (await response.json()) as { students?: StudentName[] };
+          if (controller.signal.aborted) return;
+
+          students = Array.isArray(payload.students) ? payload.students : [];
+          
+          // Cache students in IndexedDB
+          if (students.length > 0) {
+            const { db } = await import("@/lib/db");
+            await db.students.bulkPut(students);
+          }
+        } else {
+          // Load from IndexedDB when offline
+          const { db } = await import("@/lib/db");
+          const allStudents = await db.students.toArray();
+          
+          if (studentQuery.trim()) {
+            const normalizedQuery = studentQuery.toLowerCase().trim();
+            students = allStudents
+              .filter((s) => s.fullName.toLowerCase().includes(normalizedQuery))
+              .slice(0, SUGGESTION_LIMIT);
+          } else {
+            students = allStudents.slice(0, SUGGESTION_LIMIT);
+          }
         }
 
-        const response = await fetch(`/api/students?${params.toString()}`, {
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error("No se pudo obtener la lista de estudiantes.");
-        }
-
-        const payload = (await response.json()) as { students?: StudentName[] };
-        if (controller.signal.aborted) return;
-
-        setSuggestions(Array.isArray(payload.students) ? payload.students : []);
+        setSuggestions(students);
         setHighlightedSuggestion(0);
         setSuggestionState("idle");
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error("No se pudieron cargar sugerencias", error);
-        setSuggestions([]);
-        setSuggestionState("error");
+        
+        // Try loading from cache on error
+        try {
+          const { db } = await import("@/lib/db");
+          const allStudents = await db.students.toArray();
+          
+          let students: StudentName[] = [];
+          if (studentQuery.trim()) {
+            const normalizedQuery = studentQuery.toLowerCase().trim();
+            students = allStudents
+              .filter((s) => s.fullName.toLowerCase().includes(normalizedQuery))
+              .slice(0, SUGGESTION_LIMIT);
+          } else {
+            students = allStudents.slice(0, SUGGESTION_LIMIT);
+          }
+          
+          setSuggestions(students);
+          setHighlightedSuggestion(0);
+          setSuggestionState("idle");
+        } catch (cacheError) {
+          setSuggestions([]);
+          setSuggestionState("error");
+        }
       }
     }, SUGGESTION_DEBOUNCE_MS);
 

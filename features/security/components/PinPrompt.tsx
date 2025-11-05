@@ -96,25 +96,83 @@ export function PinPrompt({
     setError(null);
 
     try {
-      const response = await fetch("/api/security/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: scope === "staff" ? "staff" : "manager", pin: trimmedPin }),
-      });
+      const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
+      
+      console.log(`[PinPrompt] Submitting PIN for scope: ${scope}, isOnline: ${isOnline}, PIN entered: ${trimmedPin}`);
+      
+      // Always try online validation first (with timeout), then fallback to offline
+      let onlineValidationSucceeded = false;
+      
+      if (isOnline) {
+        try {
+          console.log("[PinPrompt] Attempting online validation");
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+          
+          const response = await fetch("/api/security/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: scope === "staff" ? "staff" : "manager", pin: trimmedPin }),
+            signal: controller.signal,
+          });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.valid !== true) {
-        throw new Error(payload?.error ?? "PIN incorrecto.");
+          clearTimeout(timeoutId);
+          const payload = await response.json().catch(() => ({}));
+          
+          if (response.ok && payload?.valid === true) {
+            console.log("[PinPrompt] Online validation succeeded, caching PIN");
+            onlineValidationSucceeded = true;
+            
+            // Store the PIN locally for offline use
+            const { storePinForOfflineUse } = await import("@/lib/pins");
+            await storePinForOfflineUse(scope, trimmedPin);
+
+            setPin("");
+            if (onSuccess) {
+              onSuccess();
+            } else {
+              router.refresh();
+            }
+            return;
+          }
+        } catch (onlineError) {
+          console.warn("[PinPrompt] Online validation failed, will try offline fallback");
+          console.warn("[PinPrompt] Online error:", onlineError);
+        }
       }
-
-      setPin("");
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.refresh();
+      
+      // If online validation didn't succeed, try offline validation
+      if (!onlineValidationSucceeded) {
+        console.log("[PinPrompt] Trying offline validation (isOnline:", isOnline, ", scope:", scope, ")");
+        const { validatePinOffline } = await import("@/lib/pins");
+        const isValid = await validatePinOffline(scope, trimmedPin);
+        
+        if (!isValid) {
+          console.error("[PinPrompt] Offline validation also failed");
+          console.error("[PinPrompt] Details - PIN:", trimmedPin, ", Scope:", scope, ", Length:", trimmedPin.length);
+          
+          setError("No pudimos validar el PIN solicitado.");
+          setIsSubmitting(false);
+          return;
+        }
+        
+        console.log("[PinPrompt] Offline validation succeeded!");
+        // Valid offline - set session in localStorage
+        if (typeof window !== "undefined") {
+          const sessionKey = `pin-session-${scope}`;
+          const expiry = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+          window.localStorage.setItem(sessionKey, JSON.stringify({ expiry }));
+        }
+        
+        setPin("");
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.refresh();
+        }
       }
     } catch (err) {
-      console.error(err);
+      console.error("[PinPrompt] Final error:", err);
       setError(
         err instanceof Error ? err.message : "No pudimos validar el PIN. Intenta nuevamente.",
       );
