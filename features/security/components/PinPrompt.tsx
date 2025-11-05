@@ -96,6 +96,34 @@ export function PinPrompt({
     setError(null);
 
     try {
+      const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
+      
+      if (!isOnline) {
+        // Offline PIN validation using IndexedDB
+        const { validatePinOffline } = await import("@/lib/pins");
+        const isValid = await validatePinOffline(scope, trimmedPin);
+        
+        if (!isValid) {
+          throw new Error("PIN incorrecto.");
+        }
+        
+        // Valid offline - set session in localStorage
+        if (typeof window !== "undefined") {
+          const sessionKey = `pin-session-${scope}`;
+          const expiry = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+          window.localStorage.setItem(sessionKey, JSON.stringify({ expiry }));
+        }
+        
+        setPin("");
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.refresh();
+        }
+        return;
+      }
+      
+      // Online validation via API
       const response = await fetch("/api/security/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

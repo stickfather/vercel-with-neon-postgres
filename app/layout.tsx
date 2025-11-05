@@ -4,6 +4,7 @@ import "./globals.css";
 import { OfflineBanner } from "@/components/offline/offline-banner";
 import { OfflineProvider } from "@/components/offline/offline-provider";
 import { ServiceWorkerRegistration } from "@/components/offline/sw-registration";
+import { DataInitializer } from "@/components/offline/data-initializer";
 
 export const metadata: Metadata = {
   title: "Inglés Rápido · Manta",
@@ -31,6 +32,7 @@ export default function RootLayout({
       <body className="bg-app text-app-ink antialiased">
         <OfflineProvider>
           <ServiceWorkerRegistration />
+          <DataInitializer />
           <OfflineBanner />
           {children}
         </OfflineProvider>
