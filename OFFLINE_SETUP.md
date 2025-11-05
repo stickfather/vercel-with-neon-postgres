@@ -1,5 +1,18 @@
 # Offline Mode Setup Guide
 
+## 🎯 Simplified Approach (No Setup Required!)
+
+**Staff PIN** now works offline with a **universal backup code: "1234"**
+
+- **When Online**: Uses actual PIN from database (normal validation)
+- **When Offline**: Accepts "1234" as universal override code
+- **No environment variables needed**
+- **No prior online validation required**
+
+**Manager PIN** still requires database validation (no universal override for security).
+
+---
+
 ## Quick Start
 
 ### 1. Set Environment Variables
@@ -7,6 +20,17 @@
 For offline PIN validation to work, you need to set plaintext PINs in your environment that **match** the PINs stored (hashed) in your database.
 
 **Local Development** (`.env.local`):
+```bash
+OFFLINE_STAFF_PIN="your_actual_staff_pin"
+OFFLINE_MANAGER_PIN="your_actual_manager_pin"
+```
+
+**Vercel Deployment**:
+1. Go to Project Settings → Environment Variables
+2. Add actual PINs from database
+3. Redeploy
+
+### 6. Troubleshooting
 ```bash
 OFFLINE_STAFF_PIN="1234"
 OFFLINE_MANAGER_PIN="5678"
@@ -33,37 +57,53 @@ SELECT role, pin_hash, active FROM access_pins WHERE active = TRUE;
 
 ### 3. How It Works
 
-**First Time (Online)**:
+**Staff PIN (Simple Universal Override)**:
+- **Online**: Validates against actual PIN in database
+- **Offline**: Accepts "1234" as universal backup code (no configuration needed)
+- Works immediately without any prior validation
+
+**Manager PIN (Database Validation)**:
+- **Online**: Validates against actual PIN in database  
+- **Offline**: Requires prior online validation to cache PIN in IndexedDB
+- No universal override for manager scope
+
+**First Time Online Validation** (for caching actual PINs):
 1. User enters PIN
 2. Server validates against database (bcrypt hash)
 3. If valid, PIN is cached in IndexedDB (plaintext)
 4. Session created in localStorage (24hr)
 
-**Subsequent Access (Offline)**:
-1. User enters PIN
-2. App validates against cached PIN (plaintext comparison)
-3. No server connection needed
+**Subsequent Access Offline**:
+1. Staff: Enter "1234" → Works immediately
+2. Manager: Enter cached PIN → Works if validated online previously
 
-**The Problem**:
-If environment variable PINs don't match database PINs, online validation fails and there's nothing to cache for offline use.
+### 4. Testing Offline Staff Access
 
-### 4. Setting PINs for the First Time
+**Simple Test** (No Setup Required):
+1. Go to `/administracion` (staff admin hub)
+2. **Disconnect internet** (DevTools → Network → Offline)
+3. Enter PIN: **1234**
+4. ✅ Should unlock immediately
 
-**Option A: Via Admin UI (Recommended)**
-1. Go to `/administracion/configuracion`
-2. Set Staff PIN and Manager PIN
-3. Remember these PINs!
-4. Add them to environment variables
+**Online Staff Access**:
+1. With internet connected
+2. Enter your actual database PIN
+3. ✅ Validates against database normally
 
-**Option B: Default PINs**
-- Staff: `1234`
-- Manager: `5678`
+### 5. Environment Variables (Optional)
 
-If you haven't changed the PINs, the defaults should work. Make sure they're set in your environment variables.
+Environment variables are now **optional** since staff PIN has universal offline override.
 
-### 5. Troubleshooting
+If you still want to cache actual PINs for offline use:
 
-**"No pudimos validar el PIN solicitado"**:
+**"No pudimos validar el PIN solicitado" (Staff)**:
+
+1. **Try universal offline code**: Enter "1234" when offline
+2. **Check browser console** for logs:
+   - `[Offline PIN] Staff universal offline code accepted: 1234`
+3. If "1234" doesn't work offline, check console for errors
+
+**"No pudimos validar el PIN solicitado" (Manager)**:
 
 1. **Check browser console** for detailed logs:
    - `[DataInit]` - Shows if PINs were cached on load
@@ -91,12 +131,13 @@ If you haven't changed the PINs, the defaults should work. Make sure they're set
    - Refresh page
    - Try PIN validation while online
 
-### 6. Security Note
+### 7. Security Note
 
-⚠️ **This setup is intentionally simple** per requirements. PINs are:
-- Stored in plaintext in environment variables
-- Cached in plaintext in IndexedDB
-- Not encrypted
+⚠️ **This setup is intentionally simple** per requirements:
+- Staff PIN has universal offline override "1234" (no encryption)
+- Manager PIN requires database validation
+- PINs cached in plaintext in IndexedDB
+- Suitable for non-sensitive environments
 
 For production with sensitive data:
 - Use proper authentication (OAuth, JWT)
@@ -108,14 +149,18 @@ For production with sensitive data:
 
 ## Common Issues
 
-### "Offline fallback also failed"
-- PIN hasn't been validated online yet
-- No cached PIN in IndexedDB
-- **Solution**: Validate PIN online first
+### "Staff PIN not working offline"
+- **Solution**: Try universal code "1234"
+- Should work immediately without any setup
 
-### "Server validation failed"
-- Environment variable PIN doesn't match database PIN
-- **Solution**: Update `.env.local` or Vercel environment variables
+### "Manager PIN not working offline"
+- Manager PIN hasn't been validated online yet
+- No cached PIN in IndexedDB
+- **Solution**: Validate manager PIN online first to cache it
+
+### "Server validation failed (Online)"
+- Entered PIN doesn't match database PIN
+- **Solution**: Check actual PIN in database or admin UI
 
 ### "PINs not caching"
 - IndexedDB not initializing
@@ -124,13 +169,11 @@ For production with sensitive data:
 
 ---
 
-## Environment Variable Summary
+## Environment Variable Summary (Optional)
 
 | Variable | Purpose | Default | Required |
 |----------|---------|---------|----------|
-| `OFFLINE_STAFF_PIN` | Staff PIN for offline caching | `"1234"` | Recommended |
-| `OFFLINE_MANAGER_PIN` | Manager PIN for offline caching | `"5678"` | Recommended |
+| `OFFLINE_STAFF_PIN` | Staff PIN for API endpoint caching | `"1234"` | No (universal override exists) |
+| `OFFLINE_MANAGER_PIN` | Manager PIN for offline caching | `"5678"` | Optional |
 
-Set these in:
-- `.env.local` for local development
-- Vercel Project Settings for production
+**Note**: Staff PIN has universal offline override "1234", so environment variables are optional for basic offline functionality.

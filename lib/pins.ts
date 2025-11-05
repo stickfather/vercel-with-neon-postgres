@@ -3,11 +3,20 @@
 import { db, type Pin } from "@/lib/db";
 
 // Validate PIN offline (plaintext comparison)
+// SIMPLE OVERRIDE: Staff PIN accepts "1234" when offline (universal backup code)
 export async function validatePinOffline(role: string, inputPin: string): Promise<boolean> {
   try {
     console.log(`[Offline PIN] Attempting to validate PIN for role: ${role}`);
     
-    // List all cached PINs for debugging
+    const trimmedPin = inputPin.trim();
+    
+    // STAFF ONLY: Accept universal offline code "1234"
+    if (role === "staff" && trimmedPin === "1234") {
+      console.log(`[Offline PIN] Staff universal offline code accepted: 1234`);
+      return true;
+    }
+    
+    // For manager or if staff entered something other than 1234, check cached PIN
     const allPins = await db.pins.toArray();
     console.log(`[Offline PIN] All cached PINs:`, allPins.map(p => ({ role: p.role, hasPin: !!p.pin })));
     
@@ -19,7 +28,7 @@ export async function validatePinOffline(role: string, inputPin: string): Promis
     }
     
     console.log(`[Offline PIN] Found cached PIN for ${role}, comparing...`);
-    const isValid = pin.pin === inputPin.trim();
+    const isValid = pin.pin === trimmedPin;
     console.log(`[Offline PIN] Validation for ${role}: ${isValid ? 'SUCCESS' : 'FAILED'}`);
     return isValid;
   } catch (error) {
