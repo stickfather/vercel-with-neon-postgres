@@ -135,6 +135,10 @@ export function PinPrompt({
         throw new Error(payload?.error ?? "PIN incorrecto.");
       }
 
+      // Store the PIN locally for offline use (since validation succeeded)
+      const { storePinForOfflineUse } = await import("@/lib/pins");
+      await storePinForOfflineUse(scope, trimmedPin);
+
       setPin("");
       if (onSuccess) {
         onSuccess();

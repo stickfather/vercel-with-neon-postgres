@@ -8,13 +8,30 @@ export async function validatePinOffline(role: string, inputPin: string): Promis
     const pin = await db.pins.get(role);
     
     if (!pin) {
+      console.log(`[Offline PIN] No cached PIN found for role: ${role}`);
       return false;
     }
     
-    return pin.pin === inputPin.trim();
+    const isValid = pin.pin === inputPin.trim();
+    console.log(`[Offline PIN] Validation for ${role}:`, isValid);
+    return isValid;
   } catch (error) {
     console.error("Failed to validate PIN offline", error);
     return false;
+  }
+}
+
+// Store PIN after successful online validation (for offline use)
+export async function storePinForOfflineUse(role: string, pin: string): Promise<void> {
+  try {
+    await db.pins.put({
+      role,
+      pin: pin.trim(),
+      updatedAt: new Date().toISOString(),
+    });
+    console.log(`[Offline PIN] Stored PIN for role: ${role}`);
+  } catch (error) {
+    console.error("Failed to store PIN for offline use", error);
   }
 }
 
@@ -32,6 +49,7 @@ export async function syncPinsFromServer(): Promise<void> {
     
     if (pins.length > 0) {
       await db.pins.bulkPut(pins);
+      console.log(`[Offline PIN] Synced ${pins.length} PINs from server`);
     }
   } catch (error) {
     console.error("Failed to sync PINs", error);
@@ -53,6 +71,7 @@ export async function seedDefaultPins(): Promise<void> {
       { role: "staff", pin: "1234", updatedAt: new Date().toISOString() },
       { role: "manager", pin: "5678", updatedAt: new Date().toISOString() },
     ]);
+    console.log("[Offline PIN] Seeded default development PINs");
   }
 }
 

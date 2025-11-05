@@ -13,19 +13,52 @@ export async function getStudents(query?: string): Promise<Student[]> {
     if (isOnline()) {
       // Fetch from server and cache
       const params = new URLSearchParams();
-      if (query) params.set("query", query);
-      const response = await fetch(`/api/students?${params.toString()}`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        const students = (data.students || []) as Student[];
+      if (query) {
+        params.set("query", query);
+        // When searching, use limited results
+        const response = await fetch(`/api/students?${params.toString()}`);
         
-        // Cache students in IndexedDB
-        if (students.length > 0) {
-          await db.students.bulkPut(students);
+        if (response.ok) {
+          const data = await response.json();
+          const students = (data.students || []) as Student[];
+          
+          // Cache students in IndexedDB
+          if (students.length > 0) {
+            await db.students.bulkPut(students);
+          }
+          
+          return students;
+        }
+      } else {
+        // When no query, fetch ALL students for offline caching
+        try {
+          // First try to get all students via a dedicated endpoint
+          const allResponse = await fetch("/api/students/all");
+          if (allResponse.ok) {
+            const allStudents = (await allResponse.json()) as Student[];
+            if (allStudents.length > 0) {
+              await db.students.bulkPut(allStudents);
+              return allStudents;
+            }
+          }
+        } catch (error) {
+          console.warn("Failed to fetch all students, falling back to paginated fetch");
         }
         
-        return students;
+        // Fallback: fetch with high limit
+        params.set("limit", "1000");
+        const response = await fetch(`/api/students?${params.toString()}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const students = (data.students || []) as Student[];
+          
+          if (students.length > 0) {
+            await db.students.bulkPut(students);
+          }
+          
+          return students;
+        }
       }
     }
     
