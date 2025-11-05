@@ -155,15 +155,26 @@ export function PinPrompt({
         }
       } catch (onlineError) {
         // Online validation failed, try offline fallback
-        console.warn("[PinPrompt] Online PIN validation failed, trying offline fallback:", onlineError);
+        console.warn("[PinPrompt] Online PIN validation failed, trying offline fallback");
+        console.warn("[PinPrompt] Online error was:", onlineError);
         
         const { validatePinOffline } = await import("@/lib/pins");
         const isValid = await validatePinOffline(scope, trimmedPin);
         
         if (!isValid) {
-          console.log("[PinPrompt] Offline fallback also failed");
-          // Re-throw the original error if offline also fails
-          throw onlineError;
+          console.error("[PinPrompt] Offline fallback also failed");
+          console.error("[PinPrompt] Entered PIN length:", trimmedPin.length);
+          console.error("[PinPrompt] Scope:", scope);
+          
+          // Provide helpful error message
+          setError(
+            "No pudimos validar el PIN. " +
+            (isOnline 
+              ? "Verifica que el PIN sea correcto y que haya conexión al servidor." 
+              : "Primero debes validar tu PIN en línea para usarlo sin conexión.")
+          );
+          setIsSubmitting(false);
+          return;
         }
         
         console.log("[PinPrompt] Offline fallback succeeded");
