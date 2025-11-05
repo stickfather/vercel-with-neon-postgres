@@ -84,7 +84,7 @@ export function PinPrompt({
     hiddenInputRef.current?.focus();
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormForm>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedPin = pin.trim();
     if (!/^\d{4}$/.test(trimmedPin)) {
