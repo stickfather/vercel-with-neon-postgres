@@ -98,15 +98,20 @@ export function PinPrompt({
     try {
       const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
       
+      console.log(`[PinPrompt] Submitting PIN for scope: ${scope}, isOnline: ${isOnline}`);
+      
       // Try offline validation first if offline
       if (!isOnline) {
+        console.log("[PinPrompt] Offline mode detected, validating against cached PIN");
         const { validatePinOffline } = await import("@/lib/pins");
         const isValid = await validatePinOffline(scope, trimmedPin);
         
         if (!isValid) {
+          console.log("[PinPrompt] Offline validation failed");
           throw new Error("PIN incorrecto.");
         }
         
+        console.log("[PinPrompt] Offline validation succeeded");
         // Valid offline - set session in localStorage
         if (typeof window !== "undefined") {
           const sessionKey = `pin-session-${scope}`;
@@ -125,6 +130,7 @@ export function PinPrompt({
       
       // Try online validation via API
       try {
+        console.log("[PinPrompt] Attempting online validation");
         const response = await fetch("/api/security/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -136,6 +142,7 @@ export function PinPrompt({
           throw new Error(payload?.error ?? "PIN incorrecto.");
         }
 
+        console.log("[PinPrompt] Online validation succeeded, caching PIN");
         // Store the PIN locally for offline use (since validation succeeded)
         const { storePinForOfflineUse } = await import("@/lib/pins");
         await storePinForOfflineUse(scope, trimmedPin);
@@ -148,16 +155,18 @@ export function PinPrompt({
         }
       } catch (onlineError) {
         // Online validation failed, try offline fallback
-        console.warn("Online PIN validation failed, trying offline:", onlineError);
+        console.warn("[PinPrompt] Online PIN validation failed, trying offline fallback:", onlineError);
         
         const { validatePinOffline } = await import("@/lib/pins");
         const isValid = await validatePinOffline(scope, trimmedPin);
         
         if (!isValid) {
+          console.log("[PinPrompt] Offline fallback also failed");
           // Re-throw the original error if offline also fails
           throw onlineError;
         }
         
+        console.log("[PinPrompt] Offline fallback succeeded");
         // Valid offline - set session in localStorage
         if (typeof window !== "undefined") {
           const sessionKey = `pin-session-${scope}`;
@@ -173,7 +182,7 @@ export function PinPrompt({
         }
       }
     } catch (err) {
-      console.error(err);
+      console.error("[PinPrompt] Final error:", err);
       setError(
         err instanceof Error ? err.message : "No pudimos validar el PIN. Intenta nuevamente.",
       );

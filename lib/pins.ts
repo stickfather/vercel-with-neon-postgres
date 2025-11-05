@@ -5,6 +5,12 @@ import { db, type Pin } from "@/lib/db";
 // Validate PIN offline (plaintext comparison)
 export async function validatePinOffline(role: string, inputPin: string): Promise<boolean> {
   try {
+    console.log(`[Offline PIN] Attempting to validate PIN for role: ${role}`);
+    
+    // List all cached PINs for debugging
+    const allPins = await db.pins.toArray();
+    console.log(`[Offline PIN] All cached PINs:`, allPins.map(p => ({ role: p.role, hasPin: !!p.pin })));
+    
     const pin = await db.pins.get(role);
     
     if (!pin) {
@@ -12,11 +18,12 @@ export async function validatePinOffline(role: string, inputPin: string): Promis
       return false;
     }
     
+    console.log(`[Offline PIN] Found cached PIN for ${role}, comparing...`);
     const isValid = pin.pin === inputPin.trim();
-    console.log(`[Offline PIN] Validation for ${role}:`, isValid);
+    console.log(`[Offline PIN] Validation for ${role}: ${isValid ? 'SUCCESS' : 'FAILED'}`);
     return isValid;
   } catch (error) {
-    console.error("Failed to validate PIN offline", error);
+    console.error("[Offline PIN] Error during validation:", error);
     return false;
   }
 }
@@ -63,15 +70,32 @@ export async function syncPinsFromServer(): Promise<void> {
  * In production, PINs should be set via admin interface or environment variables.
  */
 export async function seedDefaultPins(): Promise<void> {
-  const existingPins = await db.pins.toArray();
-  
-  if (existingPins.length === 0) {
-    // Development defaults - DO NOT use in production
-    await db.pins.bulkPut([
-      { role: "staff", pin: "1234", updatedAt: new Date().toISOString() },
-      { role: "manager", pin: "5678", updatedAt: new Date().toISOString() },
-    ]);
-    console.log("[Offline PIN] Seeded default development PINs");
+  try {
+    const existingPins = await db.pins.toArray();
+    
+    console.log("[Offline PIN] Seeding check - existing PINs:", existingPins.length);
+    
+    if (existingPins.length === 0) {
+      // Development defaults - DO NOT use in production
+      const defaultPins = [
+        { role: "staff", pin: "1234", updatedAt: new Date().toISOString() },
+        { role: "manager", pin: "5678", updatedAt: new Date().toISOString() },
+      ];
+      
+      await db.pins.bulkPut(defaultPins);
+      console.log("[Offline PIN] Seeded default development PINs:", defaultPins.map(p => p.role));
+      
+      // Verify seeding
+      const verifyPins = await db.pins.toArray();
+      console.log("[Offline PIN] Verification after seeding:", verifyPins.map(p => ({ 
+        role: p.role, 
+        hasPin: !!p.pin 
+      })));
+    } else {
+      console.log("[Offline PIN] PINs already exist, skipping seed");
+    }
+  } catch (error) {
+    console.error("[Offline PIN] Failed to seed default PINs:", error);
   }
 }
 

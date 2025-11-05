@@ -11,11 +11,16 @@ export function DataInitializer() {
       
       try {
         // Pre-cache PINs when app loads
-        const { syncPinsFromServer, seedDefaultPins } = await import("@/lib/pins");
+        const { syncPinsFromServer, seedDefaultPins, getCachedPins } = await import("@/lib/pins");
+        
+        console.log("[DataInit] Starting initialization (online:", isOnline, ")");
         
         if (isOnline) {
           // Try to fetch from server, fallback to defaults
-          await syncPinsFromServer().catch(() => seedDefaultPins());
+          await syncPinsFromServer().catch(async (error) => {
+            console.warn("[DataInit] Server PIN sync failed, seeding defaults:", error);
+            await seedDefaultPins();
+          });
           
           // Also pre-cache all students for offline use
           try {
@@ -27,12 +32,21 @@ export function DataInitializer() {
           }
         } else {
           // When offline, ensure default PINs are seeded for first-time offline use
+          console.log("[DataInit] Offline mode - seeding default PINs");
           await seedDefaultPins();
         }
         
-        console.log("[DataInit] Offline data initialized (online:", isOnline, ")");
+        // Log all cached PINs for debugging
+        const cachedPins = await getCachedPins();
+        console.log("[DataInit] Cached PINs after initialization:", cachedPins.map(p => ({ 
+          role: p.role, 
+          hasPin: !!p.pin,
+          pinLength: p.pin?.length 
+        })));
+        
+        console.log("[DataInit] Offline data initialized successfully");
       } catch (error) {
-        console.warn("[DataInit] Failed to initialize offline data", error);
+        console.error("[DataInit] Failed to initialize offline data", error);
       }
     };
 
@@ -41,6 +55,7 @@ export function DataInitializer() {
 
     // Re-initialize when coming back online
     const handleOnline = () => {
+      console.log("[DataInit] Network came online, re-initializing...");
       initializeData();
     };
 
