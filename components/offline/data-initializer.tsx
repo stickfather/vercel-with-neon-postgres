@@ -9,16 +9,19 @@ export function DataInitializer() {
     const initializeData = async () => {
       const isOnline = navigator.onLine;
       
-      if (!isOnline) return;
-
       try {
         // Pre-cache PINs when app loads
         const { syncPinsFromServer, seedDefaultPins } = await import("@/lib/pins");
         
-        // Try to fetch from server, fallback to defaults
-        await syncPinsFromServer().catch(() => seedDefaultPins());
+        if (isOnline) {
+          // Try to fetch from server, fallback to defaults
+          await syncPinsFromServer().catch(() => seedDefaultPins());
+        } else {
+          // When offline, ensure default PINs are seeded for first-time offline use
+          await seedDefaultPins();
+        }
         
-        console.log("Offline data initialized");
+        console.log("Offline data initialized (online:", isOnline, ")");
       } catch (error) {
         console.warn("Failed to initialize offline data", error);
       }

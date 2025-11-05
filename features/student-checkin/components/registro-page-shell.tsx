@@ -114,6 +114,12 @@ export function StudentRegistroPageShell({
           </p>
           <div className="flex flex-wrap justify-end gap-3">
             <Link
+              href="/administracion/registro-personal"
+              className={`${quickLinkBaseClass} border border-brand-teal bg-brand-teal-soft/50 text-brand-teal hover:bg-brand-teal-soft focus-visible:outline-[#00bfa6]`}
+            >
+              Check-in de personal
+            </Link>
+            <Link
               href="/administracion"
               className={`${quickLinkBaseClass} border border-brand-ink-muted/20 bg-white text-brand-deep focus-visible:outline-[#00bfa6]`}
             >
