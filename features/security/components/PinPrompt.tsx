@@ -84,7 +84,7 @@ export function PinPrompt({
     hiddenInputRef.current?.focus();
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormForm>) => {
     event.preventDefault();
     const trimmedPin = pin.trim();
     if (!/^\d{4}$/.test(trimmedPin)) {
@@ -98,8 +98,8 @@ export function PinPrompt({
     try {
       const isOnline = typeof navigator === "undefined" ? true : navigator.onLine;
       
+      // Try offline validation first if offline
       if (!isOnline) {
-        // Offline PIN validation using IndexedDB
         const { validatePinOffline } = await import("@/lib/pins");
         const isValid = await validatePinOffline(scope, trimmedPin);
         
@@ -123,27 +123,54 @@ export function PinPrompt({
         return;
       }
       
-      // Online validation via API
-      const response = await fetch("/api/security/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: scope === "staff" ? "staff" : "manager", pin: trimmedPin }),
-      });
+      // Try online validation via API
+      try {
+        const response = await fetch("/api/security/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: scope === "staff" ? "staff" : "manager", pin: trimmedPin }),
+        });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.valid !== true) {
-        throw new Error(payload?.error ?? "PIN incorrecto.");
-      }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.valid !== true) {
+          throw new Error(payload?.error ?? "PIN incorrecto.");
+        }
 
-      // Store the PIN locally for offline use (since validation succeeded)
-      const { storePinForOfflineUse } = await import("@/lib/pins");
-      await storePinForOfflineUse(scope, trimmedPin);
+        // Store the PIN locally for offline use (since validation succeeded)
+        const { storePinForOfflineUse } = await import("@/lib/pins");
+        await storePinForOfflineUse(scope, trimmedPin);
 
-      setPin("");
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.refresh();
+        setPin("");
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.refresh();
+        }
+      } catch (onlineError) {
+        // Online validation failed, try offline fallback
+        console.warn("Online PIN validation failed, trying offline:", onlineError);
+        
+        const { validatePinOffline } = await import("@/lib/pins");
+        const isValid = await validatePinOffline(scope, trimmedPin);
+        
+        if (!isValid) {
+          // Re-throw the original error if offline also fails
+          throw onlineError;
+        }
+        
+        // Valid offline - set session in localStorage
+        if (typeof window !== "undefined") {
+          const sessionKey = `pin-session-${scope}`;
+          const expiry = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+          window.localStorage.setItem(sessionKey, JSON.stringify({ expiry }));
+        }
+        
+        setPin("");
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.refresh();
+        }
       }
     } catch (err) {
       console.error(err);
