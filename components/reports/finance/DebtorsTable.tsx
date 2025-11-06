@@ -1,7 +1,7 @@
 "use client";
 
 import type { DebtorRow } from "@/types/reports.finance";
-import { useState } from "react";
+import { getRiskTextColor } from "./financeUtils";
 
 const currencyFormatter = new Intl.NumberFormat("es-EC", {
   style: "currency",
@@ -102,8 +102,7 @@ export function DebtorsTable({ debtors, selectedAgingSegment, variant = "light" 
           <tbody>
             {filteredDebtors.map((debtor) => {
               const daysOverdue = debtor.max_days_overdue;
-              const chipColor = daysOverdue > 60 ? "text-red-600" : "text-amber-600";
-              const chipColorDark = daysOverdue > 60 ? "text-red-400" : "text-amber-400";
+              const textColor = getRiskTextColor(daysOverdue, isDark);
 
               return (
                 <tr
@@ -118,7 +117,7 @@ export function DebtorsTable({ debtors, selectedAgingSegment, variant = "light" 
                   <td className={`px-4 py-3 text-right font-medium ${titleClasses}`}>
                     {currencyFormatter.format(debtor.total_overdue_amount)}
                   </td>
-                  <td className={`px-4 py-3 text-center font-medium ${isDark ? chipColorDark : chipColor}`}>
+                  <td className={`px-4 py-3 text-center font-medium ${textColor}`}>
                     {integerFormatter.format(daysOverdue)}
                   </td>
                   <td className={`px-4 py-3 text-center ${secondaryText}`}>

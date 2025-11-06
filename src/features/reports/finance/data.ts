@@ -162,11 +162,11 @@ export async function getFinanceReport(): Promise<FinanceReport> {
   const debtorsNormalized = normalizeRows<DebtorRow>(debtorsRows);
   const debtors: DebtorRow[] = debtorsNormalized.map((row) => ({
     student_id: toNumber(row.student_id),
-    full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
+    full_name: row.full_name ?? null,
     total_overdue_amount: toNumber(row.total_overdue_amount),
     max_days_overdue: toNumber(row.max_days_overdue),
-    oldest_due_date: row.oldest_due_date === null || row.oldest_due_date === undefined ? null : String(row.oldest_due_date),
-    most_recent_missed_due_date: row.most_recent_missed_due_date === null || row.most_recent_missed_due_date === undefined ? null : String(row.most_recent_missed_due_date),
+    oldest_due_date: row.oldest_due_date ? String(row.oldest_due_date) : null,
+    most_recent_missed_due_date: row.most_recent_missed_due_date ? String(row.most_recent_missed_due_date) : null,
     open_invoices: toNumber(row.open_invoices),
     priority_score: toNullableNumber(row.priority_score),
   }));

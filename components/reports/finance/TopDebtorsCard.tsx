@@ -1,4 +1,5 @@
 import type { DebtorRow } from "@/types/reports.finance";
+import { getRiskColorClasses } from "./financeUtils";
 
 const currencyFormatter = new Intl.NumberFormat("es-EC", {
   style: "currency",
@@ -54,8 +55,7 @@ export function TopDebtorsCard({ debtors, variant = "light" }: Props) {
       <div className="space-y-3">
         {topDebtors.map((debtor) => {
           const daysOverdue = debtor.max_days_overdue;
-          const chipColor = daysOverdue > 60 ? "bg-red-100 text-red-700 border-red-200" : "bg-amber-100 text-amber-700 border-amber-200";
-          const chipColorDark = daysOverdue > 60 ? "bg-red-900/30 text-red-300 border-red-700/50" : "bg-amber-900/30 text-amber-300 border-amber-700/50";
+          const chipClasses = getRiskColorClasses(daysOverdue, isDark);
 
           return (
             <div
@@ -74,7 +74,7 @@ export function TopDebtorsCard({ debtors, variant = "light" }: Props) {
                   {currencyFormatter.format(debtor.total_overdue_amount)}
                 </div>
               </div>
-              <div className={`rounded-md border px-2 py-1 text-xs font-medium ${isDark ? chipColorDark : chipColor}`}>
+              <div className={`rounded-md border px-2 py-1 text-xs font-medium ${chipClasses}`}>
                 {integerFormatter.format(daysOverdue)} d · {integerFormatter.format(debtor.open_invoices)} facturas
               </div>
             </div>

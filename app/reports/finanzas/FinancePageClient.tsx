@@ -30,9 +30,9 @@ export function FinancePageClient({ data }: Props) {
   };
 
   const handleDueSoonClick = () => {
-    setShowDueSoonModal(true);
-    // In a full implementation, this would open a modal with the due soon roster
-    alert("Modal de vencimientos próximos (implementar según necesidad)");
+    // TODO: Implement modal to display due soon roster from API
+    // For now, show a placeholder message
+    console.log("Due Soon modal - to be implemented with proper modal component");
   };
 
   return (
