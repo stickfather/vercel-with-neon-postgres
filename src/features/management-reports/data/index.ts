@@ -303,7 +303,7 @@ export async function getFinancialReport(sql: SqlClient = getSqlClient()): Promi
 
   const debtors = mapRows(debtorsRows, (row) => ({
     student_id: readInteger(row, ["student_id"]) ?? 0,
-    full_name: row.full_name ?? null,
+    full_name: typeof row.full_name === 'string' ? row.full_name : null,
     total_overdue_amount: readNumber(row, ["total_overdue_amount"]) ?? 0,
     max_days_overdue: readInteger(row, ["max_days_overdue"]) ?? 0,
     oldest_due_date: row.oldest_due_date ? String(row.oldest_due_date) : null,
