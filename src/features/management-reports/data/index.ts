@@ -245,48 +245,96 @@ export async function getEngagementReport(sql: SqlClient = getSqlClient()): Prom
 
 export async function getFinancialReport(sql: SqlClient = getSqlClient()): Promise<FinancialReport> {
   const [
-    outstandingRows,
+    outstandingStudentsRows,
+    outstandingBalanceRows,
     agingRows,
-    collectionsRows,
-    debtRows,
+    collectionsTotalsRows,
+    collectionsSeriesRows,
+    debtorsRows,
+    dueSoonSummaryRows,
+    dueSoonSeriesRows,
   ] = await Promise.all([
-    safeRows(() => sql`SELECT * FROM mgmt.financial_outstanding_balance_v`, "mgmt.financial_outstanding_balance_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.financial_aging_buckets_v`, "mgmt.financial_aging_buckets_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.financial_collections_30d_v`, "mgmt.financial_collections_30d_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.financial_students_with_debts_v`, "mgmt.financial_students_with_debts_v"),
+    safeRows(() => sql`SELECT outstanding_students FROM financial_outstanding_students_v`, "financial_outstanding_students_v"),
+    safeRows(() => sql`SELECT outstanding_balance FROM financial_outstanding_balance_v`, "financial_outstanding_balance_v"),
+    safeRows(() => sql`SELECT * FROM financial_aging_buckets_v`, "financial_aging_buckets_v"),
+    safeRows(() => sql`SELECT total_collected_30d, payments_count_30d FROM financial_collections_30d_v`, "financial_collections_30d_v"),
+    safeRows(() => sql`SELECT d, amount FROM financial_collections_30d_series_v ORDER BY d`, "financial_collections_30d_series_v"),
+    safeRows(() => sql`
+      SELECT student_id, full_name, total_overdue_amount, max_days_overdue, 
+             oldest_due_date, most_recent_missed_due_date, open_invoices, 
+             COALESCE(priority_score, NULL) AS priority_score
+      FROM financial_students_with_debts_v
+      ORDER BY total_overdue_amount DESC
+      LIMIT 200
+    `, "financial_students_with_debts_v"),
+    safeRows(() => sql`
+      SELECT invoices_due_7d, students_due_7d, amount_due_7d, amount_due_today 
+      FROM mgmt.financial_due_soon_summary_v
+    `, "mgmt.financial_due_soon_summary_v"),
+    safeRows(() => sql`SELECT d, amount, invoices FROM mgmt.financial_due_soon_series_v ORDER BY d`, "mgmt.financial_due_soon_series_v"),
   ]);
 
-  const outstandingRecord = outstandingRows[0] ?? {};
-  const outstanding: FinancialOutstandingSummary = {
-    students: normalizeInteger(
-      readInteger(outstandingRecord, ["students", "students_outstanding", "alumnos"], [["student"], ["alumno"]]),
-    ),
-    balance: readNumber(outstandingRecord, ["balance", "total_balance", "saldo"], [["balance"], ["saldo"]]),
+  const outstanding_students = readInteger(outstandingStudentsRows[0] ?? {}, ["outstanding_students"]) ?? 0;
+  const outstanding_balance = readNumber(outstandingBalanceRows[0] ?? {}, ["outstanding_balance"]) ?? 0;
+
+  const agingRow = agingRows[0] ?? {};
+  const aging = {
+    amt_0_30: readNumber(agingRow, ["amt_0_30"]) ?? 0,
+    amt_31_60: readNumber(agingRow, ["amt_31_60"]) ?? 0,
+    amt_61_90: readNumber(agingRow, ["amt_61_90"]) ?? 0,
+    amt_over_90: readNumber(agingRow, ["amt_over_90"]) ?? 0,
+    cnt_0_30: readInteger(agingRow, ["cnt_0_30"]) ?? 0,
+    cnt_31_60: readInteger(agingRow, ["cnt_31_60"]) ?? 0,
+    cnt_61_90: readInteger(agingRow, ["cnt_61_90"]) ?? 0,
+    cnt_over_90: readInteger(agingRow, ["cnt_over_90"]) ?? 0,
+    amt_total: readNumber(agingRow, ["amt_total"]) ?? 0,
+    cnt_total: readInteger(agingRow, ["cnt_total"]) ?? 0,
   };
 
-  const aging = mapRows(agingRows, (row) => {
-    const label = readString(row, ["bucket", "label", "rango"], [["bucket"], ["rango"]]);
-    const value = readNumber(row, ["amount", "balance", "valor"], [["amount"], ["saldo"], ["total"]]);
-    return { label, value } satisfies FinancialAgingBucket;
-  });
+  const collections_totals = {
+    total_collected_30d: readNumber(collectionsTotalsRows[0] ?? {}, ["total_collected_30d"]) ?? 0,
+    payments_count_30d: readInteger(collectionsTotalsRows[0] ?? {}, ["payments_count_30d"]) ?? 0,
+  };
 
-  const collections = mapRows(collectionsRows, (row) => {
-    const label = readString(row, ["date", "fecha", "period"], [["dia"], ["fecha"], ["period"]]);
-    const value = readNumber(row, ["amount", "monto", "total"], [["amount"], ["monto"], ["total"]]);
-    return { label, value } satisfies FinancialCollectionPoint;
-  });
+  const collections_series = mapRows(collectionsSeriesRows, (row) => ({
+    d: readString(row, ["d"]),
+    amount: readNumber(row, ["amount"]) ?? 0,
+  }));
 
-  const debtors = mapRows(debtRows, (row) => {
-    const student = readString(row, ["student", "nombre"], [["student"], ["nombre"]]);
-    const amount = readNumber(row, ["amount", "balance", "saldo"], [["amount"], ["saldo"]]);
-    const daysOverdue = readInteger(row, ["days_overdue", "dias_mora"], [
-      ["dias", "mora"],
-      ["day", "overdue"],
-    ]);
-    return { student, amount, daysOverdue } satisfies FinancialDebtor;
-  });
+  const debtors = mapRows(debtorsRows, (row) => ({
+    student_id: readInteger(row, ["student_id"]) ?? 0,
+    full_name: row.full_name ?? null,
+    total_overdue_amount: readNumber(row, ["total_overdue_amount"]) ?? 0,
+    max_days_overdue: readInteger(row, ["max_days_overdue"]) ?? 0,
+    oldest_due_date: row.oldest_due_date ? String(row.oldest_due_date) : null,
+    most_recent_missed_due_date: row.most_recent_missed_due_date ? String(row.most_recent_missed_due_date) : null,
+    open_invoices: readInteger(row, ["open_invoices"]) ?? 0,
+    priority_score: readNumber(row, ["priority_score"]),
+  }));
 
-  return { outstanding, aging, collections, debtors };
+  const due_soon_summary = {
+    invoices_due_7d: readInteger(dueSoonSummaryRows[0] ?? {}, ["invoices_due_7d"]) ?? 0,
+    students_due_7d: readInteger(dueSoonSummaryRows[0] ?? {}, ["students_due_7d"]) ?? 0,
+    amount_due_7d: readNumber(dueSoonSummaryRows[0] ?? {}, ["amount_due_7d"]) ?? 0,
+    amount_due_today: readNumber(dueSoonSummaryRows[0] ?? {}, ["amount_due_today"]) ?? 0,
+  };
+
+  const due_soon_series = mapRows(dueSoonSeriesRows, (row) => ({
+    d: readString(row, ["d"]),
+    amount: readNumber(row, ["amount"]) ?? 0,
+    invoices: readInteger(row, ["invoices"]) ?? 0,
+  }));
+
+  return {
+    outstanding_students,
+    outstanding_balance,
+    aging,
+    collections_totals,
+    collections_series,
+    debtors,
+    due_soon_summary,
+    due_soon_series,
+  };
 }
 
 export async function getExamsReport(sql: SqlClient = getSqlClient()): Promise<ExamsReport> {

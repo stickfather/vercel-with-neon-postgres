@@ -904,10 +904,12 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
 
 function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>; locked: boolean }) {
   const data = state.data;
-  const empty = !data ||
-    ((data.aging ?? []).length === 0 &&
-      (data.collections ?? []).length === 0 &&
-      (data.debtors ?? []).length === 0);
+  const [selectedAgingSegment, setSelectedAgingSegment] = useState<string | null>(null);
+  const empty = !data || (
+    data.outstanding_students === 0 &&
+    data.outstanding_balance === 0 &&
+    data.debtors.length === 0
+  );
 
   if (locked) {
     return (
@@ -922,27 +924,38 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
     );
   }
 
-  // Helper to get aging bucket color
-  const getAgingColor = (label: string) => {
-    if (label.includes("90+") || label.includes(">90")) return "#dc2626";
-    if (label.includes("60") || label.includes("61-90")) return "#ea580c";
-    if (label.includes("30") || label.includes("31-60")) return "#f59e0b";
-    if (label.includes("15") || label.includes("15-30")) return "#facc15";
-    if (label.includes("8") || label.includes("8-14")) return "#84cc16";
-    if (label.includes("1-7")) return "#22c55e";
-    return "#10b981";
+  const handleAgingSegmentClick = (segment: string) => {
+    setSelectedAgingSegment(selectedAgingSegment === segment ? null : segment);
   };
 
-  // Calculate total for aging stacked bar
-  const agingTotal = (data?.aging ?? []).reduce((sum, bucket) => sum + (bucket.value ?? 0), 0);
+  // Filter debtors based on selected aging segment
+  const filteredDebtors = selectedAgingSegment
+    ? data?.debtors.filter((debtor) => {
+        const days = debtor.max_days_overdue;
+        switch (selectedAgingSegment) {
+          case "0-30":
+            return days >= 0 && days <= 30;
+          case "31-60":
+            return days >= 31 && days <= 60;
+          case "61-90":
+            return days >= 61 && days <= 90;
+          case "90+":
+            return days > 90;
+          default:
+            return true;
+        }
+      }) || []
+    : data?.debtors || [];
 
-  // Sort debtors: days overdue desc, then amount desc
-  const sortedDebtors = [...(data?.debtors ?? [])]
-    .sort((a, b) => {
-      const daysDiff = (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0);
-      if (daysDiff !== 0) return daysDiff;
-      return (b.amount ?? 0) - (a.amount ?? 0);
-    });
+  // Get aging segments data
+  const agingSegments = data ? [
+    { key: "0-30", label: "0-30d", amount: data.aging.amt_0_30, count: data.aging.cnt_0_30, color: "#10b981" },
+    { key: "31-60", label: "31-60d", amount: data.aging.amt_31_60, count: data.aging.cnt_31_60, color: "#3b82f6" },
+    { key: "61-90", label: "61-90d", amount: data.aging.amt_61_90, count: data.aging.cnt_61_90, color: "#f59e0b" },
+    { key: "90+", label: ">90d", amount: data.aging.amt_over_90, count: data.aging.cnt_over_90, color: "#ef4444" },
+  ] : [];
+
+  const maxAmount = Math.max(...agingSegments.map((s) => s.amount), 1);
 
   return (
     <PanelWrapper
@@ -953,117 +966,276 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
       onRetry={state.reload}
     >
       {data ? (
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          <div className="flex flex-col gap-6">
-            <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
-              <StatCard
-                title="Estudiantes con saldo"
-                value={formatIntegerValue(data.outstanding.students ?? null)}
-                caption="Actualmente con deuda"
-                accent="text-amber-300"
-                size="large"
-              />
-              <StatCard
-                title="Saldo pendiente"
-                value={formatCurrencyValue(data.outstanding.balance ?? null)}
-                caption="Total consolidado"
-                accent="text-emerald-300"
-                size="large"
-              />
-            </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-              <SectionTitle title="Aging de cartera" description="Distribución por días de mora." />
-              {agingTotal > 0 ? (
-                <div className="mt-4 flex flex-col gap-3">
-                  <div className="flex h-8 overflow-hidden rounded-full border border-slate-800/60">
-                    {(data.aging ?? []).map((bucket, index) => {
-                      const width = agingTotal > 0 ? ((bucket.value ?? 0) / agingTotal) * 100 : 0;
-                      if (width === 0) return null;
-                      return (
-                        <div
-                          key={bucket.label}
-                          className="h-full transition-all hover:opacity-80"
-                          style={{
-                            width: `${width}%`,
-                            backgroundColor: getAgingColor(bucket.label),
-                          }}
-                          title={`${bucket.label}: ${formatCurrencyValue(bucket.value ?? null)} (${Math.round(width)}%)`}
-                          aria-label={bucket.label}
-                        />
-                      );
-                    })}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                    {(data.aging ?? []).map((bucket) => (
-                      <div key={bucket.label} className="flex items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                          style={{ backgroundColor: getAgingColor(bucket.label) }}
-                        />
-                        <span className="truncate text-slate-300">{bucket.label}</span>
-                        <span className="ml-auto font-semibold text-slate-200">
-                          {formatCurrencyValue(bucket.value ?? null)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
-                  Sin deudas en el rango
-                </div>
-              )}
-            </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-              <SectionTitle title="Cobros últimos 30 días" description="Pagos registrados semana a semana." />
-              {(data.collections ?? []).length > 0 ? (
-                <div className="mt-4 flex flex-col gap-3">
-                  <div className="flex items-end gap-2">
-                    {(data.collections ?? []).map((point) => {
-                      const maxValue = Math.max(...(data.collections ?? []).map(p => p.value ?? 0), 1);
-                      const height = ((point.value ?? 0) / maxValue) * 100;
-                      return (
-                        <div key={point.label} className="flex flex-1 flex-col items-center gap-1">
-                          <div
-                            className="w-full rounded-t-lg bg-emerald-500/70 transition-all hover:bg-emerald-500/90"
-                            style={{ height: `${Math.max(height, 8)}px`, minHeight: "32px" }}
-                            title={`${point.label}: ${formatCurrencyValue(point.value ?? null)}`}
-                          />
-                          <span className="text-[10px] text-slate-400">{point.label}</span>
+        <div className="flex flex-col gap-6">
+          {/* Row 1: Snapshot tiles */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              title="Alumnos con deudas"
+              value={formatIntegerValue(data.outstanding_students)}
+              caption="Con saldos vencidos"
+              accent="text-amber-300"
+            />
+            <StatCard
+              title="Saldo vencido"
+              value={formatCurrencyValue(data.outstanding_balance)}
+              caption="Total pendiente"
+              accent="text-rose-300"
+            />
+            <StatCard
+              title="Cobrado (30d)"
+              value={formatCurrencyValue(data.collections_totals.total_collected_30d)}
+              caption="Últimos 30 días"
+              accent="text-emerald-300"
+            />
+            <StatCard
+              title="Pagos (30d)"
+              value={formatIntegerValue(data.collections_totals.payments_count_30d)}
+              caption="Transacciones"
+              accent="text-blue-300"
+            />
+          </div>
+
+          {/* Row 2: Aging buckets */}
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
+            <SectionTitle title="Envejecimiento de saldos" description="Distribución de deudas por antigüedad. Haz clic en un segmento para filtrar." />
+            <div className="mt-4 space-y-3">
+              {agingSegments.map((segment) => {
+                const widthPercent = maxAmount > 0 ? (segment.amount / maxAmount) * 100 : 0;
+                const isSelected = selectedAgingSegment === segment.key;
+
+                return (
+                  <div
+                    key={segment.key}
+                    className="cursor-pointer transition-all duration-200"
+                    onClick={() => handleAgingSegmentClick(segment.key)}
+                  >
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="text-slate-300">{segment.label}</span>
+                      <span className="text-xs text-slate-400">
+                        {formatCurrencyValue(segment.amount)} · {formatIntegerValue(segment.count)} facturas
+                      </span>
+                    </div>
+                    <div className="relative h-8 overflow-hidden rounded-lg bg-slate-800/80">
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{
+                          width: `${widthPercent}%`,
+                          backgroundColor: segment.color,
+                          opacity: isSelected ? 1 : 0.85,
+                          transform: isSelected ? "scaleY(1.05)" : "scaleY(1)",
+                        }}
+                      />
+                      {isSelected && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-xs font-semibold text-white">✓ Filtrado</span>
                         </div>
-                      );
-                    })}
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between border-t border-slate-800/60 pt-2 text-xs text-slate-300">
-                    <span>Total</span>
-                    <span className="font-semibold text-emerald-300">
-                      {formatCurrencyValue((data.collections ?? []).reduce((sum, p) => sum + (p.value ?? 0), 0))}
-                    </span>
-                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-800/60 pt-4">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-slate-400">Total vencido</div>
+                <div className="text-xl font-semibold text-slate-100">
+                  {formatCurrencyValue(data.aging.amt_total)}
                 </div>
-              ) : (
-                <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
-                  Sin cobros en el período
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wider text-slate-400">Facturas vencidas</div>
+                <div className="text-xl font-semibold text-slate-100">
+                  {formatIntegerValue(data.aging.cnt_total)}
                 </div>
-              )}
+              </div>
             </div>
           </div>
+
+          {/* Row 3: Collections trend */}
           <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Estudiantes con deuda" description="Ordenados por días de mora y monto." />
-            <div className="mt-4 max-h-[480px] overflow-y-auto pr-2">
+            <SectionTitle title="Tendencia de cobranzas (30 días)" description="Monto cobrado por día." />
+            {data.collections_series.length > 0 ? (
+              <div className="mt-4">
+                <div className="relative" style={{ height: "200px" }}>
+                  <svg width="100%" height="100%" viewBox="0 0 800 200" preserveAspectRatio="none">
+                    {[0, 1, 2, 3, 4].map((i) => {
+                      const y = (i / 4) * 200;
+                      return <line key={`grid-${i}`} x1="0" y1={y} x2="800" y2={y} stroke="#334155" strokeWidth="1" strokeDasharray="4 4" />;
+                    })}
+                    <polyline
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth="3"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      points={data.collections_series
+                        .map((p, i) => {
+                          const x = (i / Math.max(1, data.collections_series.length - 1)) * 800;
+                          const maxAmt = Math.max(...data.collections_series.map(pt => pt.amount), 1);
+                          const y = 200 - (p.amount / maxAmt) * 180;
+                          return `${x},${y}`;
+                        })
+                        .join(" ")}
+                    />
+                  </svg>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-800/60 pt-4 text-xs">
+                  <div>
+                    <div className="uppercase tracking-wider text-slate-400">Total cobrado</div>
+                    <div className="text-lg font-semibold text-emerald-300">
+                      {formatCurrencyValue(data.collections_series.reduce((sum, p) => sum + p.amount, 0))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="uppercase tracking-wider text-slate-400">Promedio diario</div>
+                    <div className="text-lg font-semibold text-emerald-300">
+                      {formatCurrencyValue(data.collections_series.reduce((sum, p) => sum + p.amount, 0) / data.collections_series.length)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 flex h-48 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
+                Sin cobranzas en los últimos 30 días
+              </div>
+            )}
+          </div>
+
+          {/* Row 4: Due Soon + Top Debtors */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Due Soon Card */}
+            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
+              <SectionTitle title="Vence pronto (7 días)" description="Facturas que vencen en los próximos 7 días." />
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-700/60 bg-slate-800/70 p-3">
+                  <div className="text-xs uppercase tracking-wider text-slate-400">Total 7 días</div>
+                  <div className="text-lg font-semibold text-slate-100">
+                    {formatCurrencyValue(data.due_soon_summary.amount_due_7d)}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-700/60 bg-slate-800/70 p-3">
+                  <div className="text-xs uppercase tracking-wider text-slate-400">Hoy</div>
+                  <div className="text-lg font-semibold text-slate-100">
+                    {formatCurrencyValue(data.due_soon_summary.amount_due_today)}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-700/60 bg-slate-800/70 p-3">
+                  <div className="text-xs uppercase tracking-wider text-slate-400">Facturas 7d</div>
+                  <div className="text-lg font-semibold text-slate-100">
+                    {formatIntegerValue(data.due_soon_summary.invoices_due_7d)}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-700/60 bg-slate-800/70 p-3">
+                  <div className="text-xs uppercase tracking-wider text-slate-400">Alumnos 7d</div>
+                  <div className="text-lg font-semibold text-slate-100">
+                    {formatIntegerValue(data.due_soon_summary.students_due_7d)}
+                  </div>
+                </div>
+              </div>
+              {data.due_soon_series.length > 0 && (
+                <div className="mt-4 relative" style={{ height: "120px" }}>
+                  <svg width="100%" height="100%" viewBox="0 0 800 120" preserveAspectRatio="none">
+                    {data.due_soon_series.map((point, i) => {
+                      const barWidth = 800 / Math.max(data.due_soon_series.length, 1) - 10;
+                      const x = (i / Math.max(data.due_soon_series.length, 1)) * 800 + 5;
+                      const maxAmt = Math.max(...data.due_soon_series.map(p => p.amount), 1);
+                      const heightPercent = maxAmt > 0 ? (point.amount / maxAmt) : 0;
+                      const barHeight = heightPercent * 100;
+                      const y = 120 - barHeight;
+
+                      return (
+                        <rect
+                          key={i}
+                          x={x}
+                          y={y}
+                          width={barWidth}
+                          height={barHeight}
+                          fill="#3b82f6"
+                          opacity="0.85"
+                          rx="3"
+                        />
+                      );
+                    })}
+                  </svg>
+                </div>
+              )}
+            </div>
+
+            {/* Top Debtors Card */}
+            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
+              <SectionTitle title="Principales deudores" description="Los 10 alumnos con mayores saldos vencidos." />
+              <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                {data.debtors.slice(0, 10).map((debtor) => {
+                  const daysOverdue = debtor.max_days_overdue;
+                  const chipColor = daysOverdue > 60 
+                    ? "bg-red-900/30 text-red-300 border-red-700/50" 
+                    : "bg-amber-900/30 text-amber-300 border-amber-700/50";
+
+                  return (
+                    <div
+                      key={debtor.student_id}
+                      className="flex items-center justify-between rounded-lg border border-slate-700/60 bg-slate-800/50 p-3 transition-colors hover:bg-slate-800/80"
+                    >
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-100">
+                          {debtor.full_name || `ID ${debtor.student_id}`}
+                        </div>
+                        <div className="text-sm text-emerald-300">
+                          {formatCurrencyValue(debtor.total_overdue_amount)}
+                        </div>
+                      </div>
+                      <div className={`rounded-md border px-2 py-1 text-xs font-medium ${chipColor}`}>
+                        {formatIntegerValue(daysOverdue)} d · {formatIntegerValue(debtor.open_invoices)} facturas
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Row 5: Full debtors table */}
+          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
+            <SectionTitle 
+              title={selectedAgingSegment ? `Tabla completa de deudores (Filtrado: ${selectedAgingSegment})` : "Tabla completa de deudores"} 
+              description="Listado completo de alumnos con saldos vencidos." 
+            />
+            <div className="mt-4 overflow-x-auto">
               <SimpleTable
-                headers={["Estudiante", "Monto", "Días mora"]}
-                rows={sortedDebtors.map((debtor, index) => [
-                  <span key="student" className="font-medium text-slate-100">{debtor.student}</span>,
-                  <span key="amount" className="text-right font-semibold tabular-nums text-emerald-300">
-                    {formatCurrencyValue(debtor.amount ?? null)}
-                  </span>,
-                  <span key="days" className="text-right font-semibold tabular-nums text-rose-200">
-                    {formatIntegerValue(debtor.daysOverdue ?? null)}
-                  </span>,
-                ])}
+                headers={["Alumno", "Monto total", "Días máx", "Facturas", "Más antigua"]}
+                rows={filteredDebtors.map((debtor) => {
+                  const daysOverdue = debtor.max_days_overdue;
+                  const textColor = daysOverdue > 60 ? "text-red-400" : "text-amber-400";
+                  
+                  return [
+                    <span key="student" className="font-medium text-slate-100">
+                      {debtor.full_name || `ID ${debtor.student_id}`}
+                    </span>,
+                    <span key="amount" className="text-right font-semibold tabular-nums text-emerald-300">
+                      {formatCurrencyValue(debtor.total_overdue_amount)}
+                    </span>,
+                    <span key="days" className={`text-center font-semibold tabular-nums ${textColor}`}>
+                      {formatIntegerValue(daysOverdue)}
+                    </span>,
+                    <span key="invoices" className="text-center text-slate-300">
+                      {formatIntegerValue(debtor.open_invoices)}
+                    </span>,
+                    <span key="oldest" className="text-xs text-slate-400">
+                      {debtor.oldest_due_date
+                        ? new Date(debtor.oldest_due_date).toLocaleDateString("es-EC", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })
+                        : "—"}
+                    </span>,
+                  ];
+                })}
                 getKey={(index) => `row-${index}`}
               />
+            </div>
+            <div className="mt-4 text-xs text-slate-400 text-center">
+              Mostrando {formatIntegerValue(filteredDebtors.length)} de {formatIntegerValue(data.debtors.length)} deudores
             </div>
           </div>
         </div>
