@@ -11,12 +11,6 @@ import {
   type ReactNode,
 } from "react";
 
-import { DaysInLevelBars } from "@/components/reports/learning/DaysInLevelBars";
-import { DurationVariance } from "@/components/reports/learning/DurationVariance";
-import { LearningHeaderTiles } from "@/components/reports/learning/LearningHeaderTiles";
-import { SpeedBuckets } from "@/components/reports/learning/SpeedBuckets";
-import { StuckHeatmap } from "@/components/reports/learning/StuckHeatmap";
-import { VelocityByLevel } from "@/components/reports/learning/VelocityByLevel";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
 import type {
   EngagementDeclinePoint,
@@ -712,61 +706,35 @@ function LearningPanel({
 }: {
   state: PanelState<LearningReport>;
 }) {
-  const data = state.data;
-  const empty =
-    !data ||
-    (data.lei_trend.length === 0 &&
-      data.transitions_30d_series.length === 0 &&
-      data.days_since_progress.by_level.length === 0 &&
-      data.at_risk.length === 0 &&
-      data.speed_buckets.fast.length === 0 &&
-      data.speed_buckets.typical.length === 0 &&
-      data.speed_buckets.slow.length === 0 &&
-      data.velocity_per_level.length === 0 &&
-      data.stuck_heatmap.length === 0 &&
-      data.days_in_level.length === 0 &&
-      data.duration_variance.length === 0);
-
-  const lastRefreshed = data?.last_refreshed_at
-    ? new Date(data.last_refreshed_at).toLocaleString("es-EC")
-    : null;
-
+  // Redirect to new comprehensive learning panel
   return (
-    <PanelWrapper
-      status={state.status}
-      error={state.error}
-      empty={empty}
-      label="los indicadores de aprendizaje"
-      onRetry={state.reload}
-    >
-      {data ? (
-        <div className="flex flex-col gap-6">
-          {lastRefreshed ? (
-            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
-              Actualizado: {lastRefreshed}
-            </div>
-          ) : null}
-          <LearningHeaderTiles
-            leiTrend={data.lei_trend}
-            leiTrendPctChange={data.lei_trend_pct_change_30d}
-            transitionsTotal={data.transitions_30d_total}
-            transitionsSeries={data.transitions_30d_series}
-            daysSinceMedian={data.days_since_progress.global_median}
-            atRiskCount={data.at_risk.length}
-            variant="dark"
-          />
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <SpeedBuckets buckets={data.speed_buckets} variant="dark" />
-            <VelocityByLevel rows={data.velocity_per_level} variant="dark" />
-          </div>
-          <StuckHeatmap cells={data.stuck_heatmap} variant="dark" />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <DaysInLevelBars rows={data.days_in_level} variant="dark" />
-            <DurationVariance rows={data.duration_variance} variant="dark" />
-          </div>
+    <div className="flex flex-col gap-6">
+      <div className="rounded-3xl border border-emerald-500/40 bg-emerald-500/10 p-8 text-center">
+        <h3 className="mb-3 text-xl font-semibold text-emerald-100">
+          Panel de Aprendizaje Mejorado
+        </h3>
+        <p className="mb-6 text-sm text-emerald-200/80">
+          El panel de aprendizaje ha sido actualizado con 16 módulos completos basados en datos de los últimos 90 días, 
+          incluyendo KPIs de eficiencia (LEI), análisis de velocidad, heatmap de estudiantes atascados, 
+          gráficos de tendencias y tablas interactivas con drill-down.
+        </p>
+        <Link
+          href="/reports/aprendizaje"
+          className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg transition hover:-translate-y-[1px] hover:bg-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        >
+          Ver Panel Completo de Aprendizaje →
+        </Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-2 text-xs text-emerald-200/60">
+          <span>• LEI 7-day avg</span>
+          <span>• Speed Buckets</span>
+          <span>• Heatmap estudiantes atascados</span>
+          <span>• Varianza de duración</span>
+          <span>• Velocidad por nivel</span>
+          <span>• Tendencia LEI semanal</span>
+          <span>• Estudiantes en riesgo</span>
         </div>
-      ) : null}
-    </PanelWrapper>
+      </div>
+    </div>
   );
 }
 
