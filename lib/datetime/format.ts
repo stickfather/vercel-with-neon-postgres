@@ -153,3 +153,54 @@ export function parseLocalDateKey(value: string): Date | null {
   const candidate = new Date(`${year}-${month}-${day}T00:00:00-05:00`);
   return Number.isNaN(candidate.getTime()) ? null : candidate;
 }
+
+// D3 Smart Mix formatting for Finance panel
+// Charts: "14 Oct"
+export function formatChartDate(input: string | Date): string {
+  const date = toDate(input);
+  if (!date) {
+    return "";
+  }
+
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIMEZONE,
+    day: "numeric",
+    month: "short",
+  });
+
+  return formatter.format(date);
+}
+
+// Tooltips & Tables: "14 October 2025"
+export function formatFullDate(input: string | Date): string {
+  const date = toDate(input);
+  if (!date) {
+    return "";
+  }
+
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIMEZONE,
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  return formatter.format(date);
+}
+
+// C4 LatAm English currency format: $ 12.345,67
+export function formatCurrency(value: number | null | undefined): string {
+  if (value == null) {
+    return "—";
+  }
+
+  // Use es-EC locale which gives format with . as thousands and , as decimal
+  const formatter = new Intl.NumberFormat("es-EC", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  return formatter.format(value);
+}

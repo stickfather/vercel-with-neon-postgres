@@ -773,172 +773,35 @@ function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
 }
 
 function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>; locked: boolean }) {
-  const data = state.data;
-  const empty = !data ||
-    ((data.aging ?? []).length === 0 &&
-      (data.collections ?? []).length === 0 &&
-      (data.debtors ?? []).length === 0);
-
-  if (locked) {
-    return (
-      <div className="relative overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-900/70 p-10 text-center">
-        <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" aria-hidden />
-        <div className="relative flex flex-col items-center gap-4 text-slate-200">
-          <span className="text-4xl">🔒</span>
-          <p className="text-sm font-semibold">Solo acceso gerencial</p>
-          <p className="text-xs text-slate-300">Ingresa el PIN gerencial para visualizar los indicadores financieros.</p>
+  // Redirect to new comprehensive finance panel
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="rounded-3xl border border-emerald-500/40 bg-emerald-500/10 p-8 text-center">
+        <h3 className="mb-3 text-xl font-semibold text-emerald-100">
+          Panel de Finanzas Mejorado
+        </h3>
+        <p className="mb-6 text-sm text-emerald-200/80">
+          El panel de finanzas ha sido actualizado con 11 módulos completos basados en vistas read-only mgmt, 
+          incluyendo KPIs de deuda pendiente, análisis de aging buckets, colecciones 30d, pagos próximos (7d), 
+          tabla de estudiantes con deuda, drawer de detalles y micro-KPIs operacionales.
+        </p>
+        <Link
+          href="/reports/finanzas"
+          className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg transition hover:-translate-y-[1px] hover:bg-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        >
+          Ver Panel Completo de Finanzas →
+        </Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-2 text-xs text-emerald-200/60">
+          <span>• Outstanding Students &amp; Balance</span>
+          <span>• Aging Buckets (0-30, 31-60, 61-90, &gt;90)</span>
+          <span>• Collections 30d</span>
+          <span>• Due Soon (7d)</span>
+          <span>• Students with Debts Table</span>
+          <span>• Debt Breakdown Drawer</span>
+          <span>• Micro-KPIs operacionales</span>
         </div>
       </div>
-    );
-  }
-
-  // Helper to get aging bucket color
-  const getAgingColor = (label: string) => {
-    if (label.includes("90+") || label.includes(">90")) return "#dc2626";
-    if (label.includes("60") || label.includes("61-90")) return "#ea580c";
-    if (label.includes("30") || label.includes("31-60")) return "#f59e0b";
-    if (label.includes("15") || label.includes("15-30")) return "#facc15";
-    if (label.includes("8") || label.includes("8-14")) return "#84cc16";
-    if (label.includes("1-7")) return "#22c55e";
-    return "#10b981";
-  };
-
-  // Calculate total for aging stacked bar
-  const agingTotal = (data?.aging ?? []).reduce((sum, bucket) => sum + (bucket.value ?? 0), 0);
-
-  // Sort debtors: days overdue desc, then amount desc
-  const sortedDebtors = [...(data?.debtors ?? [])]
-    .sort((a, b) => {
-      const daysDiff = (b.daysOverdue ?? 0) - (a.daysOverdue ?? 0);
-      if (daysDiff !== 0) return daysDiff;
-      return (b.amount ?? 0) - (a.amount ?? 0);
-    });
-
-  return (
-    <PanelWrapper
-      status={state.status}
-      error={state.error}
-      empty={empty}
-      label="los indicadores financieros"
-      onRetry={state.reload}
-    >
-      {data ? (
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          <div className="flex flex-col gap-6">
-            <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
-              <StatCard
-                title="Estudiantes con saldo"
-                value={formatIntegerValue(data.outstanding.students ?? null)}
-                caption="Actualmente con deuda"
-                accent="text-amber-300"
-                size="large"
-              />
-              <StatCard
-                title="Saldo pendiente"
-                value={formatCurrencyValue(data.outstanding.balance ?? null)}
-                caption="Total consolidado"
-                accent="text-emerald-300"
-                size="large"
-              />
-            </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-              <SectionTitle title="Aging de cartera" description="Distribución por días de mora." />
-              {agingTotal > 0 ? (
-                <div className="mt-4 flex flex-col gap-3">
-                  <div className="flex h-8 overflow-hidden rounded-full border border-slate-800/60">
-                    {(data.aging ?? []).map((bucket, index) => {
-                      const width = agingTotal > 0 ? ((bucket.value ?? 0) / agingTotal) * 100 : 0;
-                      if (width === 0) return null;
-                      return (
-                        <div
-                          key={bucket.label}
-                          className="h-full transition-all hover:opacity-80"
-                          style={{
-                            width: `${width}%`,
-                            backgroundColor: getAgingColor(bucket.label),
-                          }}
-                          title={`${bucket.label}: ${formatCurrencyValue(bucket.value ?? null)} (${Math.round(width)}%)`}
-                          aria-label={bucket.label}
-                        />
-                      );
-                    })}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                    {(data.aging ?? []).map((bucket) => (
-                      <div key={bucket.label} className="flex items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                          style={{ backgroundColor: getAgingColor(bucket.label) }}
-                        />
-                        <span className="truncate text-slate-300">{bucket.label}</span>
-                        <span className="ml-auto font-semibold text-slate-200">
-                          {formatCurrencyValue(bucket.value ?? null)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
-                  Sin deudas en el rango
-                </div>
-              )}
-            </div>
-            <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-              <SectionTitle title="Cobros últimos 30 días" description="Pagos registrados semana a semana." />
-              {(data.collections ?? []).length > 0 ? (
-                <div className="mt-4 flex flex-col gap-3">
-                  <div className="flex items-end gap-2">
-                    {(data.collections ?? []).map((point) => {
-                      const maxValue = Math.max(...(data.collections ?? []).map(p => p.value ?? 0), 1);
-                      const height = ((point.value ?? 0) / maxValue) * 100;
-                      return (
-                        <div key={point.label} className="flex flex-1 flex-col items-center gap-1">
-                          <div
-                            className="w-full rounded-t-lg bg-emerald-500/70 transition-all hover:bg-emerald-500/90"
-                            style={{ height: `${Math.max(height, 8)}px`, minHeight: "32px" }}
-                            title={`${point.label}: ${formatCurrencyValue(point.value ?? null)}`}
-                          />
-                          <span className="text-[10px] text-slate-400">{point.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center justify-between border-t border-slate-800/60 pt-2 text-xs text-slate-300">
-                    <span>Total</span>
-                    <span className="font-semibold text-emerald-300">
-                      {formatCurrencyValue((data.collections ?? []).reduce((sum, p) => sum + (p.value ?? 0), 0))}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
-                  Sin cobros en el período
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Estudiantes con deuda" description="Ordenados por días de mora y monto." />
-            <div className="mt-4 max-h-[480px] overflow-y-auto pr-2">
-              <SimpleTable
-                headers={["Estudiante", "Monto", "Días mora"]}
-                rows={sortedDebtors.map((debtor, index) => [
-                  <span key="student" className="font-medium text-slate-100">{debtor.student}</span>,
-                  <span key="amount" className="text-right font-semibold tabular-nums text-emerald-300">
-                    {formatCurrencyValue(debtor.amount ?? null)}
-                  </span>,
-                  <span key="days" className="text-right font-semibold tabular-nums text-rose-200">
-                    {formatIntegerValue(debtor.daysOverdue ?? null)}
-                  </span>,
-                ])}
-                getKey={(index) => `row-${index}`}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </PanelWrapper>
+    </div>
   );
 }
 
