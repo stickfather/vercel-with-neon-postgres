@@ -131,7 +131,7 @@ export async function listCalendarEvents({
 
   if (kind) {
     parameterIndex += 1;
-    whereClauses.push(`kind = $${parameterIndex}`);
+    whereClauses.push(`v.kind = $${parameterIndex}`);
     values.push(kind);
     if (kind === "exam") {
       ensuresExamFilter = true;
@@ -140,21 +140,21 @@ export async function listCalendarEvents({
 
   if (status && status.trim().length) {
     if (!ensuresExamFilter) {
-      whereClauses.push("kind = 'exam'");
+      whereClauses.push("v.kind = 'exam'");
       ensuresExamFilter = true;
     }
     parameterIndex += 1;
-    whereClauses.push(`status = $${parameterIndex}`);
+    whereClauses.push(`v.status = $${parameterIndex}`);
     values.push(status);
   }
 
   if (studentId != null) {
     if (!ensuresExamFilter) {
-      whereClauses.push("kind = 'exam'");
+      whereClauses.push("v.kind = 'exam'");
       ensuresExamFilter = true;
     }
     parameterIndex += 1;
-    whereClauses.push(`student_id = $${parameterIndex}::bigint`);
+    whereClauses.push(`v.student_id = $${parameterIndex}::bigint`);
     values.push(studentId);
   }
 
