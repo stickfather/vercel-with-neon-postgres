@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
+import { es } from "date-fns/locale";
 import type {
   DrillDownSlice,
   StuckStudent,
@@ -73,7 +74,7 @@ export function DrillDownDrawer({ slice, onClose }: Props) {
 
   const formatTime = (timeStr: string) => {
     try {
-      return format(parseISO(timeStr), "HH:mm");
+      return format(parseISO(timeStr), "HH:mm", { locale: es });
     } catch {
       return "";
     }
@@ -82,7 +83,7 @@ export function DrillDownDrawer({ slice, onClose }: Props) {
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "—";
     try {
-      return format(parseISO(dateStr), "dd MMM");
+      return format(parseISO(dateStr), "dd MMM", { locale: es });
     } catch {
       return "—";
     }

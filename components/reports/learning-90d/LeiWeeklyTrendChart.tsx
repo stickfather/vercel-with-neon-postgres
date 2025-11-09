@@ -1,6 +1,7 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
+import { es } from "date-fns/locale";
 import {
   ComposedChart,
   Bar,
@@ -39,14 +40,14 @@ export function LeiWeeklyTrendChart({ data }: Props) {
 
   const chartData = data.map((item) => ({
     ...item,
-    weekLabel: format(parseISO(item.week_start), "dd MMM"),
+    weekLabel: format(parseISO(item.week_start), "dd MMM", { locale: es }),
   }));
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (!active || !payload || !payload.length) return null;
     const data = payload[0].payload;
     const weekDate = parseISO(data.week_start);
-    const formattedDate = format(weekDate, "dd MMM");
+    const formattedDate = format(weekDate, "dd MMM", { locale: es });
 
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
