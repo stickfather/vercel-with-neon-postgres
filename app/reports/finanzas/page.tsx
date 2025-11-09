@@ -12,10 +12,10 @@ export default function FinancePage() {
               Informes de gestión
             </span>
             <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">
-              Finance
+              Reporte de Finanzas
             </h1>
             <p className="max-w-2xl text-sm text-slate-600">
-              Comprehensive financial analysis including outstanding debts, collections, and payment tracking.
+              Análisis financiero integral que incluye deudas pendientes, colecciones y seguimiento de pagos.
             </p>
           </div>
         </header>

@@ -1,42 +1,78 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-const tiles = [
+const tileGroups = [
   {
-    href: "/administracion/registro-personal",
-    title: "Registro del personal",
-    description: "Controla las entradas y salidas del equipo académico y administrativo.",
-    emoji: "🕒",
+    title: "Check-in",
+    subtitle: "Registro de asistencias en tiempo real.",
+    tiles: [
+      {
+        href: "/registro",
+        title: "Registro de estudiantes",
+        description: "Check-in de alumnos en kiosco o recepción.",
+        emoji: "🎓",
+      },
+      {
+        href: "/administracion/registro-personal",
+        title: "Registro del personal",
+        description: "Entradas y salidas del personal.",
+        emoji: "🕒",
+      },
+    ],
   },
   {
-    href: "/administracion/reportes-nomina",
-    title: "Reportes de nómina",
-    description: "Consulta nóminas, bonos y ausencias del personal para cierres semanales.",
-    emoji: "📊",
+    title: "Gestión Académica",
+    subtitle: "Herramientas para coordinar clases, progreso y evaluaciones.",
+    tiles: [
+      {
+        href: "/administracion/gestion-estudiantes",
+        title: "Gestión de estudiantes",
+        description: "Actualiza datos, progreso y seguimientos personalizados de cada alumno.",
+        emoji: "👥",
+      },
+      {
+        href: "/administracion/calendario",
+        title: "Calendario de Exámenes",
+        description: "Fechas, turnos y logística de evaluaciones.",
+        emoji: "🗓️",
+      },
+    ],
   },
   {
-    href: "/administracion/gestion-estudiantes",
-    title: "Gestión de estudiantes",
-    description: "Actualiza datos, progreso y seguimientos personalizados de cada alumno.",
-    emoji: "🎓",
+    title: "Administración & HR",
+    subtitle: "Gestión de personal y reportes de nómina.",
+    tiles: [
+      {
+        href: "/administracion/reportes-nomina",
+        title: "Reportes de nómina",
+        description: "Consulta nóminas, bonos y ausencias del personal para cierres semanales.",
+        emoji: "📊",
+      },
+    ],
   },
   {
-    href: "/administracion/calendario",
-    title: "Calendario",
-    description: "Coordina eventos, evaluaciones y actividades especiales de la sede.",
-    emoji: "🗓️",
+    title: "Centro & Ajustes",
+    subtitle: "Configuración operativa y preferencias del sistema.",
+    tiles: [
+      {
+        href: "/administracion/configuracion",
+        title: "Configuración",
+        description: "Ajusta horarios, accesos y preferencias generales del centro.",
+        emoji: "🛠️",
+      },
+    ],
   },
   {
-    href: "/administracion/configuracion",
-    title: "Configuración",
-    description: "Ajusta horarios, accesos y preferencias generales del centro.",
-    emoji: "🛠️",
-  },
-  {
-    href: "/admin/reportes",
-    title: "Reportes gerenciales",
-    description: "Indicadores clave del centro para aprendizaje, engagement y finanzas.",
-    emoji: "📈",
+    title: "Dirección & Análisis",
+    subtitle: "Indicadores clave y reportes estratégicos del centro.",
+    tiles: [
+      {
+        href: "/admin/reportes",
+        title: "Reportes gerenciales",
+        description: "Indicadores clave del centro para aprendizaje, engagement y finanzas.",
+        emoji: "📈",
+      },
+    ],
   },
 ];
 
@@ -87,33 +123,41 @@ export default function AdministracionPage() {
             </Link>
           </div>
         </header>
-        <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {tiles.map((tile) => {
-            return (
-              <Link
-                key={tile.href}
-                href={tile.href}
-                className={`group relative overflow-hidden flex min-h-[200px] flex-col gap-5 rounded-[32px] border-2 p-6 text-left shadow-[0_24px_52px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_rgba(15,23,42,0.16)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${tileTheme.container}`}
-              >
-                <span
-                  aria-hidden
-                  className={`pointer-events-none absolute -right-12 top-10 h-32 w-32 rounded-full opacity-50 blur-2xl ${tileTheme.orb}`}
-                />
-                <div className="relative z-10 flex flex-col gap-4">
-                  <span className={`inline-flex w-fit items-center gap-2 rounded-full px-4 py-1 text-[11px] font-semibold uppercase tracking-wide ${tileTheme.badge}`}>
-                    {tile.emoji} Abrir
-                  </span>
-                  <h2 className="text-xl font-black leading-snug">{tile.title}</h2>
-                  <p className={`text-sm leading-relaxed ${tileTheme.description}`}>{tile.description}</p>
-                </div>
-                <span className={`relative z-10 mt-auto inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide ${tileTheme.arrow}`}>
-                  Explorar
-                  <span aria-hidden className="transition-transform group-hover:translate-x-1">→</span>
-                </span>
-              </Link>
-            );
-          })}
-        </section>
+        {tileGroups.map((group) => (
+          <section key={group.title} className="flex flex-col gap-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-2xl font-black text-brand-deep">{group.title}</h2>
+              <p className="text-sm text-brand-ink-muted">{group.subtitle}</p>
+            </div>
+            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {group.tiles.map((tile) => {
+                return (
+                  <Link
+                    key={tile.href}
+                    href={tile.href}
+                    className={`group relative overflow-hidden flex min-h-[200px] flex-col gap-5 rounded-[32px] border-2 p-6 text-left shadow-[0_24px_52px_rgba(15,23,42,0.12)] transition hover:-translate-y-1 hover:shadow-[0_28px_60px_rgba(15,23,42,0.16)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${tileTheme.container}`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`pointer-events-none absolute -right-12 top-10 h-32 w-32 rounded-full opacity-50 blur-2xl ${tileTheme.orb}`}
+                    />
+                    <div className="relative z-10 flex flex-col gap-4">
+                      <span className={`inline-flex w-fit items-center gap-2 rounded-full px-4 py-1 text-[11px] font-semibold uppercase tracking-wide ${tileTheme.badge}`}>
+                        {tile.emoji} Abrir
+                      </span>
+                      <h3 className="text-xl font-black leading-snug">{tile.title}</h3>
+                      <p className={`text-sm leading-relaxed ${tileTheme.description}`}>{tile.description}</p>
+                    </div>
+                    <span className={`relative z-10 mt-auto inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide ${tileTheme.arrow}`}>
+                      Explorar
+                      <span aria-hidden className="transition-transform group-hover:translate-x-1">→</span>
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </main>
     </div>
   );

@@ -9,13 +9,13 @@ export default function PersonnelPage() {
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-2">
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">
-              Management Reports
+              Informes de gestión
             </span>
             <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">
-              Teacher Coverage & Load
+              Cobertura y Carga de Personal
             </h1>
             <p className="max-w-2xl text-sm text-slate-600">
-              Comprehensive analysis of staffing coverage, teacher load ratios, and operational capacity across all hours.
+              Análisis integral de cobertura de personal, ratios de carga docente y capacidad operativa en todas las horas.
             </p>
           </div>
         </header>
