@@ -61,18 +61,6 @@ export function LeiWeeklyTrendChart({ data }: Props) {
               {data.lei_week.toFixed(2)}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-slate-600">Minutes:</span>
-            <span className="font-semibold text-slate-900">
-              {numberFormatter.format(data.weekly_minutes)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-slate-600">Completions:</span>
-            <span className="font-semibold text-slate-900">
-              {data.weekly_completions}
-            </span>
-          </div>
         </div>
       </div>
     );
@@ -92,30 +80,13 @@ export function LeiWeeklyTrendChart({ data }: Props) {
             style={{ fontSize: 12 }}
           />
           <YAxis
-            yAxisId="left"
             stroke="#64748b"
             style={{ fontSize: 12 }}
             label={{ value: "LEI", angle: -90, position: "insideLeft" }}
           />
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            stroke="#94a3b8"
-            style={{ fontSize: 12 }}
-            label={{ value: "Minutes", angle: 90, position: "insideRight" }}
-          />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
-          <Bar
-            yAxisId="right"
-            dataKey="weekly_minutes"
-            fill="#e2e8f0"
-            name="Minutes"
-            radius={[4, 4, 0, 0]}
-            opacity={0.4}
-          />
           <Line
-            yAxisId="left"
             type="monotone"
             dataKey="lei_week"
             stroke="#10b981"
@@ -126,7 +97,7 @@ export function LeiWeeklyTrendChart({ data }: Props) {
         </ComposedChart>
       </ResponsiveContainer>
       <figcaption className="mt-2 text-xs text-slate-500">
-        Learning Efficiency Index (lessons/hour) and study minutes by week. Last 90 days.
+        Learning Efficiency Index (lessons/hour) by week. Last 90 days.
       </figcaption>
     </figure>
   );

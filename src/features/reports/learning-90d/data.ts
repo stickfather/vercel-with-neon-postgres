@@ -32,23 +32,26 @@ function toString(value: unknown, fallback = ""): string {
 export async function getLeiKpiData(): Promise<LeiKpiData> {
   const sql = getSqlClient();
 
-  const rows = normalizeRows<LearningLeiDaily>(await sql`
-    SELECT activity_date::text, total_completed_lessons, total_study_minutes
-    FROM mgmt.learning_lei_daily_v
-    WHERE activity_date >= (current_date - INTERVAL '90 days')
-    ORDER BY activity_date
+  // Use learning_lei_trend_v which has snapshot_date and median_lei
+  const rows = normalizeRows<{ snapshot_date: string; median_lei: number }>(await sql`
+    SELECT snapshot_date::text, median_lei
+    FROM mgmt.learning_lei_trend_v
+    ORDER BY snapshot_date
   `);
 
-  // Calculate LEI daily
-  const dailyData = rows.map((row) => {
-    const lei = toNumber(row.total_completed_lessons) / Math.max(toNumber(row.total_study_minutes) / 60.0, 0.1);
-    return {
-      activity_date: toString(row.activity_date),
-      lei_daily: lei,
-      total_study_minutes: toNumber(row.total_study_minutes),
-      total_completed_lessons: toNumber(row.total_completed_lessons),
-    };
+  // Filter to last 90 days
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 90);
+  const last90Days = rows.filter(row => {
+    const date = new Date(toString(row.snapshot_date));
+    return date >= cutoffDate;
   });
+
+  // Calculate daily LEI values (median_lei is already calculated in the view)
+  const dailyData = last90Days.map((row) => ({
+    activity_date: toString(row.snapshot_date),
+    lei_daily: toNumber(row.median_lei),
+  }));
 
   // Last 7 days average
   const last7 = dailyData.slice(-7);
@@ -57,7 +60,7 @@ export async function getLeiKpiData(): Promise<LeiKpiData> {
     : 0;
 
   // Aggregate to ISO weeks for sparkline
-  const weeklyMap = new Map<string, { minutes: number; completions: number }>();
+  const weeklyMap = new Map<string, { count: number; total: number }>();
   
   dailyData.forEach((d) => {
     const date = new Date(d.activity_date);
@@ -68,17 +71,17 @@ export async function getLeiKpiData(): Promise<LeiKpiData> {
     const weekStart = monday.toISOString().split('T')[0];
 
     if (!weeklyMap.has(weekStart)) {
-      weeklyMap.set(weekStart, { minutes: 0, completions: 0 });
+      weeklyMap.set(weekStart, { count: 0, total: 0 });
     }
     const week = weeklyMap.get(weekStart)!;
-    week.minutes += d.total_study_minutes;
-    week.completions += d.total_completed_lessons;
+    week.count += 1;
+    week.total += d.lei_daily;
   });
 
   const sparkline_90d = Array.from(weeklyMap.entries())
     .map(([week_start, data]) => ({
       week_start,
-      lei_week: data.completions / Math.max(data.minutes / 60.0, 0.1),
+      lei_week: data.count > 0 ? data.total / data.count : 0,
     }))
     .sort((a, b) => a.week_start.localeCompare(b.week_start));
 
@@ -165,15 +168,16 @@ export async function getDaysSinceProgressData(): Promise<DaysSinceProgressData>
 export async function getStuckHeatmapData(): Promise<StuckHeatmapCell[]> {
   const sql = getSqlClient();
 
-  const rows = normalizeRows<{ level: string; lesson_name: string; stuck_count: number }>(await sql`
-    SELECT level::text, lesson_name, stuck_count
-    FROM mgmt.learning_stuck_heatmap_90d_v
-    ORDER BY level, lesson_name
+  // The view has level and current_seq, not lesson_name
+  const rows = normalizeRows<{ level: string; current_seq: number; stuck_count: number }>(await sql`
+    SELECT level::text, current_seq, stuck_count
+    FROM mgmt.learning_stuck_heatmap_v
+    ORDER BY level, current_seq
   `);
 
   return rows.map((row) => ({
     level: toString(row.level),
-    lesson_name: toString(row.lesson_name),
+    lesson_name: `Lesson ${toNumber(row.current_seq)}`,
     stuck_count: toNumber(row.stuck_count),
   }));
 }
@@ -185,12 +189,15 @@ export async function getStuckStudentsDrilldown(
 ): Promise<StuckStudent[]> {
   const sql = getSqlClient();
 
+  // Extract lesson number from "Lesson X" format
+  const lessonSeq = parseInt(lesson_name.replace(/\D/g, '')) || 0;
+
   const rows = normalizeRows<StuckStudent>(await sql`
     SELECT student_id, full_name, level::text, current_seq, 
            last_seen_date::text, stall, inactive_14d
-    FROM mgmt.learning_stuck_students_90d_v
+    FROM mgmt.learning_stuck_students_v
     WHERE level = ${level}
-      AND CONCAT('Lesson ', current_seq::text) = ${lesson_name}
+      AND current_seq = ${lessonSeq}
     ORDER BY last_seen_date DESC, full_name
   `);
 
@@ -285,18 +292,22 @@ export async function getVelocityByLevelData(): Promise<VelocityByLevel[]> {
 export async function getLeiWeeklyTrendData(): Promise<LeiWeeklyData[]> {
   const sql = getSqlClient();
 
-  const rows = normalizeRows<LearningLeiDaily>(await sql`
-    SELECT activity_date::text, total_completed_lessons, total_study_minutes
-    FROM mgmt.learning_lei_daily_v
-    WHERE activity_date >= (current_date - INTERVAL '90 days')
-    ORDER BY activity_date
+  // Use learning_lei_trend_v which has snapshot_date and median_lei
+  const rows = normalizeRows<{ snapshot_date: string; median_lei: number }>(await sql`
+    SELECT snapshot_date::text, median_lei
+    FROM mgmt.learning_lei_trend_v
+    ORDER BY snapshot_date
   `);
 
-  // Aggregate to ISO weeks
-  const weeklyMap = new Map<string, { minutes: number; completions: number }>();
+  // Filter to last 90 days and aggregate to ISO weeks
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 90);
+  const weeklyMap = new Map<string, { count: number; total: number }>();
   
   rows.forEach((row) => {
-    const date = new Date(toString(row.activity_date));
+    const date = new Date(toString(row.snapshot_date));
+    if (date < cutoffDate) return;
+    
     const dayOfWeek = date.getUTCDay();
     const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday
     const monday = new Date(date);
@@ -304,19 +315,19 @@ export async function getLeiWeeklyTrendData(): Promise<LeiWeeklyData[]> {
     const weekStart = monday.toISOString().split('T')[0];
 
     if (!weeklyMap.has(weekStart)) {
-      weeklyMap.set(weekStart, { minutes: 0, completions: 0 });
+      weeklyMap.set(weekStart, { count: 0, total: 0 });
     }
     const week = weeklyMap.get(weekStart)!;
-    week.minutes += toNumber(row.total_study_minutes);
-    week.completions += toNumber(row.total_completed_lessons);
+    week.count += 1;
+    week.total += toNumber(row.median_lei);
   });
 
   return Array.from(weeklyMap.entries())
     .map(([week_start, data]) => ({
       week_start,
-      lei_week: data.completions / Math.max(data.minutes / 60.0, 0.1),
-      weekly_minutes: data.minutes,
-      weekly_completions: data.completions,
+      lei_week: data.count > 0 ? data.total / data.count : 0,
+      weekly_minutes: 0, // Not available in this view
+      weekly_completions: 0, // Not available in this view
     }))
     .sort((a, b) => a.week_start.localeCompare(b.week_start));
 }
@@ -347,7 +358,7 @@ export async function getAtRiskLearnersData(): Promise<AtRiskLearner[]> {
 export async function getMicroKpi7dData(): Promise<MicroKpi7d> {
   const sql = getSqlClient();
 
-  // Active learners (7d)
+  // Active learners (7d) - count distinct students with completed lessons
   const activeRows = normalizeRows<{ active_7d: number }>(await sql`
     SELECT COUNT(DISTINCT student_id) AS active_7d
     FROM (
@@ -359,17 +370,22 @@ export async function getMicroKpi7dData(): Promise<MicroKpi7d> {
   `);
   const active_learners = activeRows.length > 0 ? toNumber(activeRows[0].active_7d) : 0;
 
-  // Total minutes and completions (7d)
-  const metricsRows = normalizeRows<{ minutes_7d: number; comps_7d: number }>(await sql`
-    SELECT 
-      SUM(total_study_minutes) AS minutes_7d,
-      SUM(total_completed_lessons) AS comps_7d
-    FROM mgmt.learning_lei_daily_v
-    WHERE activity_date >= (current_date - INTERVAL '7 days')
+  // Completions (7d) - count from effort view
+  const completionsRows = normalizeRows<{ comps_7d: number }>(await sql`
+    SELECT COUNT(*) AS comps_7d
+    FROM mart.student_lesson_effort_v e
+    WHERE e.finished_on >= (current_date - INTERVAL '7 days')
   `);
+  const completions = completionsRows.length > 0 ? toNumber(completionsRows[0].comps_7d) : 0;
 
-  const minutes_7d = metricsRows.length > 0 ? toNumber(metricsRows[0].minutes_7d) : 0;
-  const completions = metricsRows.length > 0 ? toNumber(metricsRows[0].comps_7d) : 0;
+  // Total minutes (7d) - sum from effort view
+  const minutesRows = normalizeRows<{ minutes_7d: number }>(await sql`
+    SELECT COALESCE(SUM(total_minutes), 0) AS minutes_7d
+    FROM mart.student_lesson_effort_v e
+    WHERE e.finished_on >= (current_date - INTERVAL '7 days')
+  `);
+  const minutes_7d = minutesRows.length > 0 ? toNumber(minutesRows[0].minutes_7d) : 0;
+
   const avg_minutes_per_active = active_learners > 0 ? minutes_7d / active_learners : 0;
 
   return {

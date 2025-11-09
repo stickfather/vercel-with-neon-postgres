@@ -1,11 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-import { OfflineBanner } from "@/components/offline/offline-banner";
-import { OfflineProvider } from "@/components/offline/offline-provider";
-import { ServiceWorkerRegistration } from "@/components/offline/sw-registration";
-import { DataInitializer } from "@/components/offline/data-initializer";
-
 export const metadata: Metadata = {
   title: "Inglés Rápido · Manta",
   description:
@@ -30,12 +25,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
       </head>
       <body className="bg-app text-app-ink antialiased">
-        <OfflineProvider>
-          <ServiceWorkerRegistration />
-          <DataInitializer />
-          <OfflineBanner />
-          {children}
-        </OfflineProvider>
+        {children}
       </body>
     </html>
   );
