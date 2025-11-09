@@ -1834,7 +1834,8 @@ export function AdminCalendarDashboard() {
             const key = getDateKey(day);
             const dayEvents = groupedEvents.get(key) ?? [];
             const isCurrentMonth = day.getUTCMonth() === range.start.getUTCMonth();
-            const isToday = getDateKey(day) === getDateKey(new Date());
+            const today = new Date();
+            const isToday = getDateKey(day) === getDateKey(today) && today.getUTCDay() !== 0;
             return (
               <button
                 key={key}
@@ -1899,7 +1900,8 @@ export function AdminCalendarDashboard() {
           {days.map((day) => {
             const key = getDateKey(day);
             const dayEvents = groupedEvents.get(key) ?? [];
-            const isToday = getDateKey(day) === getDateKey(new Date());
+            const today = new Date();
+            const isToday = getDateKey(day) === getDateKey(today) && today.getUTCDay() !== 0;
             return (
               <div key={key} className="flex flex-col gap-3 rounded-3xl border border-brand-ink-muted/15 bg-white p-3">
                 <div className="flex items-center justify-between">
