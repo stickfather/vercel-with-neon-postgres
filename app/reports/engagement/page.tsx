@@ -8,6 +8,15 @@ import { MauRollingTrend } from "@/components/reports/engagement/MauRollingTrend
 import { HourSplitBarsCard } from "@/components/reports/engagement/HourSplitBarsCard";
 import { HourlyHeatmap } from "@/components/reports/engagement/HourlyHeatmap";
 import { WeekdayTrafficBars } from "@/components/reports/engagement/WeekdayTrafficBars";
+import { InactiveRosterTable } from "@/components/reports/engagement/InactiveRosterTable";
+import { AtRiskStudentsTable } from "@/components/reports/engagement/AtRiskStudentsTable";
+import { RecentlyReactivatedTable } from "@/components/reports/engagement/RecentlyReactivatedTable";
+import { HighEngagementStudentsTable } from "@/components/reports/engagement/HighEngagementStudentsTable";
+import { SessionFrequencyHistogram } from "@/components/reports/engagement/SessionFrequencyHistogram";
+import { WeekdayConcentrationChart } from "@/components/reports/engagement/WeekdayConcentrationChart";
+import { DaypartRetentionCard } from "@/components/reports/engagement/DaypartRetentionCard";
+import { DualRiskStudentsTable } from "@/components/reports/engagement/DualRiskStudentsTable";
+import { ExportActionsCard } from "@/components/reports/engagement/ExportActionsCard";
 import { getEngagementReport } from "@/src/features/reports/engagement/data";
 
 export const revalidate = 600;
@@ -70,6 +79,39 @@ export default async function EngagementPage() {
 
         {/* Module 10: Día de la Semana con Mayor Tráfico */}
         <WeekdayTrafficBars data={data.daily_activity} />
+
+        {/* Section D — Student-Level Engagement Insights (Part 2/2) */}
+
+        {/* Module 11: Inactive Roster */}
+        <InactiveRosterTable data={data.inactive_roster} />
+
+        {/* Module 12: At-Risk Students */}
+        <AtRiskStudentsTable data={data.at_risk_students} />
+
+        {/* Module 13: Recently Reactivated Students */}
+        <RecentlyReactivatedTable data={data.recently_reactivated} />
+
+        {/* Module 14: High-Engagement Consistency Students */}
+        <HighEngagementStudentsTable data={data.high_engagement_students} />
+
+        {/* Section E — Deep-Dive Engagement Metrics (Part 2/2) */}
+
+        {/* Module 15: Session Frequency Distribution */}
+        <SessionFrequencyHistogram data={data.session_frequency_distribution} />
+
+        {/* Module 16: Attendance Concentration by Day of Week */}
+        <WeekdayConcentrationChart data={data.daily_activity} />
+
+        {/* Module 17: Time of Day Return Rate */}
+        <DaypartRetentionCard data={data.daypart_retention} />
+
+        {/* Section F — Cross-Panel Alignment & Interventions (Part 2/2) */}
+
+        {/* Module 19: Students Needing Both Engagement & Learning Support */}
+        <DualRiskStudentsTable data={data.dual_risk_students} />
+
+        {/* Module 20: Export + Manager Action Notes */}
+        <ExportActionsCard data={data} />
       </main>
     </div>
   );

@@ -58,6 +58,43 @@ export type HourlyHeatmapCell = {
   minutes: number;
 };
 
+// Part 2/2 types - Section D, E, F
+export type StudentActivityRow = {
+  student_id: number;
+  full_name: string | null;
+  level: string | null;
+  sessions_30d: number;
+  avg_days_between_visits: number | null;
+  days_since_last_checkin: number | null;
+  consistency_score: number | null; // 0-100
+};
+
+export type ReactivatedStudentRow = {
+  student_id: number;
+  full_name: string | null;
+  days_inactive_before_return: number;
+  return_date: string;
+};
+
+export type SessionFrequencyBin = {
+  bin_label: string;
+  student_count: number;
+};
+
+export type DaypartRetention = {
+  daypart: 'morning_08_12' | 'afternoon_12_17' | 'evening_17_20';
+  return_rate: number; // 0-1
+};
+
+export type DualRiskStudent = {
+  student_id: number;
+  full_name: string | null;
+  level: string | null;
+  engagement_issue: string;
+  learning_issue: string;
+  days_since_last_checkin: number | null;
+};
+
 export type EngagementReport = {
   last_refreshed_at: string;
   // Section A - Core Engagement KPIs
@@ -80,6 +117,16 @@ export type EngagementReport = {
   // Legacy (keep for compatibility)
   avg_between_visits_by_level: AvgBetweenVisitsRow[];
   
-  // drills
-  inactive_roster?: InactiveRosterRow[];
+  // Section D - Student-Level Engagement Insights (Part 2/2)
+  inactive_roster: InactiveRosterRow[];
+  at_risk_students: StudentActivityRow[];
+  recently_reactivated: ReactivatedStudentRow[];
+  high_engagement_students: StudentActivityRow[];
+  
+  // Section E - Deep-Dive Engagement Metrics (Part 2/2)
+  session_frequency_distribution: SessionFrequencyBin[];
+  daypart_retention: DaypartRetention[];
+  
+  // Section F - Cross-Panel Alignment (Part 2/2)
+  dual_risk_students: DualRiskStudent[];
 };

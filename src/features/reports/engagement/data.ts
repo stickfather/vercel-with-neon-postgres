@@ -16,7 +16,12 @@ import type {
   MedianDaysBetweenVisits,
   WeeklyEngagementPoint,
   MauRollingPoint,
-  HourlyHeatmapCell
+  HourlyHeatmapCell,
+  StudentActivityRow,
+  ReactivatedStudentRow,
+  SessionFrequencyBin,
+  DaypartRetention,
+  DualRiskStudent
 } from "@/types/reports.engagement";
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -95,7 +100,14 @@ export async function getEngagementReport(): Promise<EngagementReport> {
     medianBetween,
     weeklyEngagement,
     mauRolling,
-    hourlyHeatmap
+    hourlyHeatmap,
+    // Part 2/2 queries
+    inactiveRoster,
+    studentActivity,
+    recentlyReactivated,
+    sessionFrequency,
+    daypartRetention,
+    dualRisk
   ] = await Promise.all([
     safeQuery(
       () => sql`SELECT active_7d, active_14d, active_30d, active_6mo FROM mgmt.engagement_active_counts_v`,
@@ -200,6 +212,73 @@ export async function getEngagementReport(): Promise<EngagementReport> {
       [],
       "mgmt.engagement_hourly_heatmap_90d_v"
     ),
+    // Module 11: Inactive Roster
+    safeQuery(
+      () => sql`
+        SELECT student_id, full_name, level, last_checkin_time, 
+               days_since_last_checkin, inactivity_bucket
+        FROM mgmt.engagement_inactive_roster_v
+        ORDER BY days_since_last_checkin DESC
+      `,
+      [],
+      "mgmt.engagement_inactive_roster_v"
+    ),
+    // Module 12 & 14: Student Activity (for at-risk and high-engagement)
+    safeQuery(
+      () => sql`
+        SELECT student_id, full_name, level, sessions_30d, 
+               avg_days_between_visits, days_since_last_checkin, consistency_score
+        FROM mgmt.engagement_student_activity_v
+        ORDER BY days_since_last_checkin DESC NULLS LAST, consistency_score DESC NULLS LAST
+      `,
+      [],
+      "mgmt.engagement_student_activity_v"
+    ),
+    // Module 13: Recently Reactivated
+    safeQuery(
+      () => sql`
+        SELECT student_id, full_name, days_inactive_before_return, return_date::text AS return_date
+        FROM mgmt.engagement_recent_reactivated_14d_v
+        ORDER BY return_date DESC
+      `,
+      [],
+      "mgmt.engagement_recent_reactivated_14d_v"
+    ),
+    // Module 15: Session Frequency Distribution
+    safeQuery(
+      () => sql`
+        SELECT bin_label, student_count
+        FROM mgmt.engagement_session_frequency_30d_v
+        ORDER BY bin_label
+      `,
+      [],
+      "mgmt.engagement_session_frequency_30d_v"
+    ),
+    // Module 17: Daypart Retention
+    safeQuery(
+      () => sql`
+        SELECT daypart::text AS daypart, return_rate
+        FROM mgmt.engagement_daypart_retention_v
+        ORDER BY CASE daypart
+          WHEN 'morning_08_12' THEN 1
+          WHEN 'afternoon_12_17' THEN 2
+          WHEN 'evening_17_20' THEN 3
+          ELSE 99 END
+      `,
+      [],
+      "mgmt.engagement_daypart_retention_v"
+    ),
+    // Module 19: Dual Risk Students
+    safeQuery(
+      () => sql`
+        SELECT student_id, full_name, level, engagement_issue, 
+               learning_issue, days_since_last_checkin
+        FROM mgmt.engagement_dual_risk_students_v
+        ORDER BY days_since_last_checkin DESC NULLS LAST
+      `,
+      [],
+      "mgmt.engagement_dual_risk_students_v"
+    ),
   ]);
 
   const activeCountsRows = normalizeRows<ActiveCounts>(activeCounts);
@@ -213,9 +292,29 @@ export async function getEngagementReport(): Promise<EngagementReport> {
   const weeklyEngagementRows = normalizeRows<WeeklyEngagementPoint>(weeklyEngagement);
   const mauRollingRows = normalizeRows<MauRollingPoint>(mauRolling);
   const hourlyHeatmapRows = normalizeRows<HourlyHeatmapCell>(hourlyHeatmap);
+  const inactiveRosterRows = normalizeRows<InactiveRosterRow>(inactiveRoster);
+  const studentActivityRows = normalizeRows<StudentActivityRow>(studentActivity);
+  const recentlyReactivatedRows = normalizeRows<ReactivatedStudentRow>(recentlyReactivated);
+  const sessionFrequencyRows = normalizeRows<SessionFrequencyBin>(sessionFrequency);
+  const daypartRetentionRows = normalizeRows<DaypartRetention>(daypartRetention);
+  const dualRiskRows = normalizeRows<DualRiskStudent>(dualRisk);
 
   const globalRow = avgBetweenRowsNormalized.find(r => r.scope === 'GLOBAL');
   const perLevel  = avgBetweenRowsNormalized.filter(r => r.scope === 'LEVEL');
+
+  // Split student activity into at-risk and high-engagement
+  const atRiskStudents = studentActivityRows
+    .filter(s => (s.days_since_last_checkin ?? 0) >= 7)
+    .sort((a, b) => {
+      const aDays = a.days_since_last_checkin ?? 0;
+      const bDays = b.days_since_last_checkin ?? 0;
+      if (aDays !== bDays) return bDays - aDays;
+      return (a.avg_days_between_visits ?? 999) - (b.avg_days_between_visits ?? 999);
+    });
+
+  const highEngagementStudents = studentActivityRows
+    .filter(s => s.sessions_30d >= 5 && (s.consistency_score ?? 0) >= 60)
+    .sort((a, b) => (b.consistency_score ?? 0) - (a.consistency_score ?? 0));
 
   return {
     last_refreshed_at: new Date().toISOString(),
@@ -259,6 +358,55 @@ export async function getEngagementReport(): Promise<EngagementReport> {
       scope: row.scope,
       level: row.level,
       avg_days_between_visits: toNumber(row.avg_days_between_visits),
+    })),
+    // Part 2/2 data
+    inactive_roster: inactiveRosterRows.map((row) => ({
+      student_id: toNumber(row.student_id),
+      full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
+      level: row.level === null || row.level === undefined ? null : String(row.level),
+      last_checkin_time: row.last_checkin_time === null || row.last_checkin_time === undefined ? null : String(row.last_checkin_time),
+      days_since_last_checkin: toNullableNumber(row.days_since_last_checkin),
+      inactivity_bucket: normalizeInactivityBucket(row.inactivity_bucket),
+    })),
+    at_risk_students: atRiskStudents.map((row) => ({
+      student_id: toNumber(row.student_id),
+      full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
+      level: row.level === null || row.level === undefined ? null : String(row.level),
+      sessions_30d: toNumber(row.sessions_30d),
+      avg_days_between_visits: toNullableNumber(row.avg_days_between_visits),
+      days_since_last_checkin: toNullableNumber(row.days_since_last_checkin),
+      consistency_score: toNullableNumber(row.consistency_score),
+    })),
+    recently_reactivated: recentlyReactivatedRows.map((row) => ({
+      student_id: toNumber(row.student_id),
+      full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
+      days_inactive_before_return: toNumber(row.days_inactive_before_return),
+      return_date: normalizeString(row.return_date),
+    })),
+    high_engagement_students: highEngagementStudents.map((row) => ({
+      student_id: toNumber(row.student_id),
+      full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
+      level: row.level === null || row.level === undefined ? null : String(row.level),
+      sessions_30d: toNumber(row.sessions_30d),
+      avg_days_between_visits: toNullableNumber(row.avg_days_between_visits),
+      days_since_last_checkin: toNullableNumber(row.days_since_last_checkin),
+      consistency_score: toNullableNumber(row.consistency_score),
+    })),
+    session_frequency_distribution: sessionFrequencyRows.map((row) => ({
+      bin_label: normalizeString(row.bin_label),
+      student_count: toNumber(row.student_count),
+    })),
+    daypart_retention: daypartRetentionRows.map((row) => ({
+      daypart: normalizeDaypart(row.daypart) as DaypartRetention["daypart"],
+      return_rate: toNumber(row.return_rate),
+    })),
+    dual_risk_students: dualRiskRows.map((row) => ({
+      student_id: toNumber(row.student_id),
+      full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
+      level: row.level === null || row.level === undefined ? null : String(row.level),
+      engagement_issue: normalizeString(row.engagement_issue),
+      learning_issue: normalizeString(row.learning_issue),
+      days_since_last_checkin: toNullableNumber(row.days_since_last_checkin),
     })),
   };
 }
