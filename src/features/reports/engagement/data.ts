@@ -11,7 +11,12 @@ import type {
   AvgBetweenVisitsRow,
   InactiveCounts,
   HourSplitRow,
-  InactiveRosterRow
+  InactiveRosterRow,
+  WauMauMetrics,
+  MedianDaysBetweenVisits,
+  WeeklyEngagementPoint,
+  MauRollingPoint,
+  HourlyHeatmapCell
 } from "@/types/reports.engagement";
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -79,7 +84,19 @@ async function safeQuery<T>(
 export async function getEngagementReport(): Promise<EngagementReport> {
   const sql = getSqlClient();
 
-  const [activeCounts, wowIndex, dailyActivity, avgBetweenRows, inactiveCounts, hourSplit] = await Promise.all([
+  const [
+    activeCounts, 
+    wowIndex, 
+    dailyActivity, 
+    avgBetweenRows, 
+    inactiveCounts, 
+    hourSplit,
+    wauMau,
+    medianBetween,
+    weeklyEngagement,
+    mauRolling,
+    hourlyHeatmap
+  ] = await Promise.all([
     safeQuery(
       () => sql`SELECT active_7d, active_14d, active_30d, active_6mo FROM mgmt.engagement_active_counts_v`,
       [],
@@ -99,11 +116,11 @@ export async function getEngagementReport(): Promise<EngagementReport> {
     safeQuery(
       () => sql`
         SELECT d::text AS d, active_students::int, total_minutes::numeric AS total_minutes
-        FROM mgmt.engagement_daily_activity_v
+        FROM mgmt.engagement_dau_90d_v
         ORDER BY d
       `,
       [],
-      "mgmt.engagement_daily_activity_v"
+      "mgmt.engagement_dau_90d_v"
     ),
     safeQuery(
       () => sql`
@@ -135,6 +152,54 @@ export async function getEngagementReport(): Promise<EngagementReport> {
       [],
       "mgmt.engagement_hour_split_v"
     ),
+    safeQuery(
+      () => sql`
+        SELECT wau, mau, wau_mau_ratio
+        FROM mgmt.engagement_wau_mau_v
+      `,
+      [],
+      "mgmt.engagement_wau_mau_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT median_days_between_visits
+        FROM mgmt.engagement_median_days_between_visits_v
+      `,
+      [],
+      "mgmt.engagement_median_days_between_visits_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT week_start::text AS week_start, 
+               max_daily_actives, 
+               total_minutes, 
+               sessions, 
+               sum_active_students
+        FROM mgmt.engagement_weekly_active_90d_v
+        ORDER BY week_start
+      `,
+      [],
+      "mgmt.engagement_weekly_active_90d_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT snapshot_date::text AS snapshot_date, 
+               mau_rolling_30d
+        FROM mgmt.engagement_mau_rolling_90d_v
+        ORDER BY snapshot_date
+      `,
+      [],
+      "mgmt.engagement_mau_rolling_90d_v"
+    ),
+    safeQuery(
+      () => sql`
+        SELECT iso_weekday, hour_local, minutes
+        FROM mgmt.engagement_hourly_heatmap_90d_v
+        ORDER BY iso_weekday, hour_local
+      `,
+      [],
+      "mgmt.engagement_hourly_heatmap_90d_v"
+    ),
   ]);
 
   const activeCountsRows = normalizeRows<ActiveCounts>(activeCounts);
@@ -143,6 +208,11 @@ export async function getEngagementReport(): Promise<EngagementReport> {
   const avgBetweenRowsNormalized = normalizeRows<AvgBetweenVisitsRow>(avgBetweenRows);
   const inactiveCountsRows = normalizeRows<InactiveCounts>(inactiveCounts);
   const hourSplitRows = normalizeRows<HourSplitRow>(hourSplit);
+  const wauMauRows = normalizeRows<WauMauMetrics>(wauMau);
+  const medianBetweenRows = normalizeRows<MedianDaysBetweenVisits>(medianBetween);
+  const weeklyEngagementRows = normalizeRows<WeeklyEngagementPoint>(weeklyEngagement);
+  const mauRollingRows = normalizeRows<MauRollingPoint>(mauRolling);
+  const hourlyHeatmapRows = normalizeRows<HourlyHeatmapCell>(hourlyHeatmap);
 
   const globalRow = avgBetweenRowsNormalized.find(r => r.scope === 'GLOBAL');
   const perLevel  = avgBetweenRowsNormalized.filter(r => r.scope === 'LEVEL');
@@ -150,27 +220,45 @@ export async function getEngagementReport(): Promise<EngagementReport> {
   return {
     last_refreshed_at: new Date().toISOString(),
     active_counts: activeCountsRows[0] ?? {active_7d:0,active_14d:0,active_30d:0,active_6mo:0},
+    inactive_counts: inactiveCountsRows[0] ?? {
+      inactive_7d_count: 0, inactive_14d_count: 0, dormant_30d_count: 0, inactive_180d_count: 0
+    },
+    wau_mau_metrics: wauMauRows[0] ?? {wau:0, mau:0, wau_mau_ratio:0},
+    avg_between_visits_global: toNumber(globalRow?.avg_days_between_visits ?? 0),
+    median_between_visits: toNumber(medianBetweenRows[0]?.median_days_between_visits ?? 0),
     wow_index: wowIndexRows[0] ?? {
       active_students_7d: 0, active_students_prev7d: 0, active_students_wow_change: null,
       total_minutes_7d: 0, total_minutes_prev7d: 0, total_minutes_wow_change: null
     },
+    weekly_engagement_90d: weeklyEngagementRows.map((row) => ({
+      week_start: normalizeString(row.week_start),
+      max_daily_actives: toNumber(row.max_daily_actives),
+      total_minutes: toNumber(row.total_minutes),
+      sessions: toNumber(row.sessions),
+      sum_active_students: toNumber(row.sum_active_students),
+    })),
+    mau_rolling_90d: mauRollingRows.map((row) => ({
+      snapshot_date: normalizeString(row.snapshot_date),
+      mau_rolling_30d: toNumber(row.mau_rolling_30d),
+    })),
+    hour_split: hourSplitRows.map((row) => ({
+      daypart: normalizeDaypart(row.daypart),
+      total_minutes: toNumber(row.total_minutes),
+    })),
+    hourly_heatmap_90d: hourlyHeatmapRows.map((row) => ({
+      iso_weekday: toNumber(row.iso_weekday),
+      hour_local: toNumber(row.hour_local),
+      minutes: toNumber(row.minutes),
+    })),
     daily_activity: dailyActivityRows.map((row) => ({
       d: normalizeString(row.d),
       active_students: toNumber(row.active_students),
       total_minutes: toNumber(row.total_minutes),
     })),
-    avg_between_visits_global: toNumber(globalRow?.avg_days_between_visits ?? 0),
     avg_between_visits_by_level: perLevel.map((row) => ({
       scope: row.scope,
       level: row.level,
       avg_days_between_visits: toNumber(row.avg_days_between_visits),
-    })),
-    inactive_counts: inactiveCountsRows[0] ?? {
-      inactive_7d_count: 0, inactive_14d_count: 0, dormant_30d_count: 0, inactive_180d_count: 0
-    },
-    hour_split: hourSplitRows.map((row) => ({
-      daypart: normalizeDaypart(row.daypart),
-      total_minutes: toNumber(row.total_minutes),
     })),
   };
 }
