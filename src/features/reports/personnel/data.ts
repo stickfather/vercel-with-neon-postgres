@@ -1,4 +1,4 @@
-import { getSqlClient } from "@/lib/db/client";
+import { getSqlClient, normalizeRows } from "@/lib/db/client";
 import type {
   PersonnelPanelData,
   PersonnelCoverageByHour,
@@ -18,7 +18,7 @@ export async function getPersonnelPanelData(
 ): Promise<PersonnelPanelData> {
   // Fetch all three views in parallel
   const [coverageRows, loadRows, mixRows] = await Promise.all([
-    sql<PersonnelCoverageByHour[]>`
+    sql`
       SELECT 
         hour_of_day, 
         minutos_estudiantes, 
@@ -29,7 +29,7 @@ export async function getPersonnelPanelData(
       WHERE hour_of_day BETWEEN 8 AND 20
       ORDER BY hour_of_day
     `,
-    sql<PersonnelStudentLoad[]>`
+    sql`
       SELECT 
         hour_of_day, 
         minutos_estudiantes, 
@@ -39,7 +39,7 @@ export async function getPersonnelPanelData(
       WHERE hour_of_day BETWEEN 8 AND 20
       ORDER BY hour_of_day
     `,
-    sql<PersonnelStaffingMix[]>`
+    sql`
       SELECT 
         bloque, 
         minutos_estudiantes, 
@@ -50,10 +50,15 @@ export async function getPersonnelPanelData(
     `,
   ]);
 
+  // Normalize rows
+  const normalizedCoverage = normalizeRows<PersonnelCoverageByHour>(coverageRows);
+  const normalizedLoad = normalizeRows<PersonnelStudentLoad>(loadRows);
+  const normalizedMix = normalizeRows<PersonnelStaffingMix>(mixRows);
+
   // Ensure all hours 08-20 are present
-  const coverageByHour = fillMissingHours(coverageRows);
-  const studentLoad = fillMissingHoursLoad(loadRows);
-  const staffingMixByBand = mixRows;
+  const coverageByHour = fillMissingHours(normalizedCoverage);
+  const studentLoad = fillMissingHoursLoad(normalizedLoad);
+  const staffingMixByBand = normalizedMix;
 
   // Calculate KPI snapshot
   const kpiSnapshot = calculateKpiSnapshot(coverageByHour);
