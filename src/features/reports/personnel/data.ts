@@ -58,7 +58,14 @@ export async function getPersonnelPanelData(
   // Ensure all hours 08-20 are present
   const coverageByHour = fillMissingHours(normalizedCoverage);
   const studentLoad = fillMissingHoursLoad(normalizedLoad);
-  const staffingMixByBand = normalizedMix;
+  
+  // Normalize staffing mix to handle null ratios
+  const staffingMixByBand = normalizedMix.map(mix => ({
+    ...mix,
+    minutos_estudiantes: mix.minutos_estudiantes ?? 0,
+    minutos_personal: mix.minutos_personal ?? 0,
+    ratio_estudiantes_personal: mix.ratio_estudiantes_personal ?? 0,
+  }));
 
   // Calculate KPI snapshot
   const kpiSnapshot = calculateKpiSnapshot(coverageByHour);
@@ -88,7 +95,15 @@ function fillMissingHours(
   const hourMap = new Map<number, PersonnelCoverageByHour>();
   
   rows.forEach((row) => {
-    hourMap.set(row.hour_of_day, row);
+    // Ensure numeric fields are never null
+    const normalized = {
+      ...row,
+      minutos_estudiantes: row.minutos_estudiantes ?? 0,
+      minutos_personal: row.minutos_personal ?? 0,
+      carga_relativa: row.carga_relativa ?? 0,
+      estado_cobertura: row.estado_cobertura || "No Coverage",
+    };
+    hourMap.set(normalized.hour_of_day, normalized);
   });
 
   const result: PersonnelCoverageByHour[] = [];
@@ -119,7 +134,14 @@ function fillMissingHoursLoad(
   const hourMap = new Map<number, PersonnelStudentLoad>();
   
   rows.forEach((row) => {
-    hourMap.set(row.hour_of_day, row);
+    // Ensure numeric fields are never null
+    const normalized = {
+      ...row,
+      minutos_estudiantes: row.minutos_estudiantes ?? 0,
+      minutos_personal: row.minutos_personal ?? 0,
+      estudiantes_por_profesor: row.estudiantes_por_profesor ?? 0,
+    };
+    hourMap.set(normalized.hour_of_day, normalized);
   });
 
   const result: PersonnelStudentLoad[] = [];
@@ -190,30 +212,46 @@ function generateManagerNotes(
   studentLoad: PersonnelStudentLoad[],
   staffingMix: PersonnelStaffingMix[]
 ): PersonnelManagerNotes {
+  // Safety check for empty data
+  if (coverage.length === 0) {
+    return {
+      summary: "No coverage data available for analysis.",
+      bullets: [
+        "Ensure staff attendance tracking is active.",
+        "Verify student session data is being recorded.",
+        "Check database views are populated with recent data.",
+      ],
+    };
+  }
+
   // Find worst hour
   const worstHour = coverage.reduce((max, hour) => 
     hour.carga_relativa > max.carga_relativa ? hour : max
   );
 
-  // Find highest pressure block
-  const worstBlock = staffingMix.reduce((max, block) => 
-    block.ratio_estudiantes_personal > max.ratio_estudiantes_personal ? block : max
-  );
+  // Find highest pressure block (with safety check)
+  let worstBlock = staffingMix.length > 0 
+    ? staffingMix.reduce((max, block) => 
+        block.ratio_estudiantes_personal > max.ratio_estudiantes_personal ? block : max
+      )
+    : null;
 
   // Count hours at risk
   const atRiskCount = coverage.filter((h) => h.carga_relativa > 3.0).length;
 
-  // Build summary
+  // Build summary (with null safety)
   let summary = "";
-  if (worstHour.carga_relativa <= 2.0) {
+  const ratio = worstHour.carga_relativa ?? 0;
+  
+  if (ratio <= 2.0) {
     summary = "Coverage is well-balanced across the day. All hours are adequately staffed with ratios under 2.0×.";
-  } else if (worstHour.carga_relativa <= 3.0) {
-    summary = `Coverage is generally adequate with some tight spots. The highest load is ${worstHour.hour_of_day}:00 at ${worstHour.carga_relativa.toFixed(2)}×, indicating moderate pressure on teachers.`;
+  } else if (ratio <= 3.0) {
+    summary = `Coverage is generally adequate with some tight spots. The highest load is ${worstHour.hour_of_day}:00 at ${ratio.toFixed(2)}×, indicating moderate pressure on teachers.`;
   } else {
     if (worstHour.minutos_personal === 0) {
       summary = `Coverage has critical gaps. ${worstHour.hour_of_day}:00 has no staff coverage while students are active. Immediate staffing required.`;
     } else {
-      summary = `Coverage is under-resourced at peak hours. The highest load is ${worstHour.hour_of_day}:00 at ${worstHour.carga_relativa.toFixed(2)}×, indicating high pressure on teachers.`;
+      summary = `Coverage is under-resourced at peak hours. The highest load is ${worstHour.hour_of_day}:00 at ${ratio.toFixed(2)}×, indicating high pressure on teachers.`;
     }
   }
 
@@ -224,8 +262,9 @@ function generateManagerNotes(
     bullets.push(`Address ${atRiskCount} hour${atRiskCount === 1 ? '' : 's'} with load ratio above 3.0× to prevent teacher burnout.`);
   }
 
-  if (worstBlock.ratio_estudiantes_personal > 3.0) {
-    bullets.push(`Highest-pressure block is ${worstBlock.bloque} with ${worstBlock.ratio_estudiantes_personal.toFixed(2)}× ratio. Consider adding one teacher during this window.`);
+  if (worstBlock && worstBlock.ratio_estudiantes_personal > 3.0) {
+    const blockRatio = worstBlock.ratio_estudiantes_personal ?? 0;
+    bullets.push(`Highest-pressure block is ${worstBlock.bloque} with ${blockRatio.toFixed(2)}× ratio. Consider adding one teacher during this window.`);
   }
 
   // Find hours with no coverage
