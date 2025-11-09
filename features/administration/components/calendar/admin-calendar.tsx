@@ -105,7 +105,7 @@ const EXAM_EVENT_STYLES: Record<
   },
 };
 
-const WEEKDAY_ORDER = Array.from({ length: 7 }, (_, index) => index);
+const WEEKDAY_ORDER = Array.from({ length: 6 }, (_, index) => index + 1); // Monday (1) to Saturday (6)
 
 function parseViewParam(value: string | null): CalendarView {
   const normalized = (value ?? "").trim().toLowerCase();
@@ -240,10 +240,13 @@ function buildMonthDays(monthStart: Date): Date[] {
   const nextMonth = addMonths(monthStart, 1);
   const days: Date[] = [];
   let cursor = firstVisibleDay;
-  while (cursor < nextMonth || days.length % 7 !== 0) {
-    days.push(cursor);
+  while (cursor < nextMonth || days.length % 6 !== 0) {
+    // Skip Sundays (day 0)
+    if (cursor.getUTCDay() !== 0) {
+      days.push(cursor);
+    }
     cursor = addDays(cursor, 1);
-    if (days.length > 42) break;
+    if (days.length > 36) break; // 6 weeks * 6 days = 36
   }
   return days;
 }
@@ -1813,12 +1816,12 @@ export function AdminCalendarDashboard() {
     const days = buildMonthDays(range.start);
     return (
       <div className="rounded-[36px] border border-white/70 bg-white/95 p-4 shadow-[0_32px_64px_rgba(15,23,42,0.12)]">
-        <div className="grid grid-cols-7 gap-2 pb-4 text-center text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+        <div className="grid grid-cols-6 gap-2 pb-4 text-center text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
           {WEEKDAY_ORDER.map((index) => (
             <div key={index}>{formatDayHeader(index)}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-6 gap-2">
           {days.map((day) => {
             const key = getDateKey(day);
             const dayEvents = groupedEvents.get(key) ?? [];
@@ -1847,6 +1850,7 @@ export function AdminCalendarDashboard() {
                   {dayEvents.map((event) => {
                     const style = getEventStyle(event);
                     const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
+                    const examLevel = event.kind === "exam" ? event.level : null;
                     return (
                       <button
                         key={event.id}
@@ -1856,20 +1860,18 @@ export function AdminCalendarDashboard() {
                           handleEventSelection(event);
                         }}
                         title={getEventTooltip(event)}
-                        className={`group relative flex flex-col gap-0.5 rounded-2xl px-3 py-2 text-left text-xs transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
+                        className={`group relative flex flex-col gap-1 rounded-2xl px-2 py-1.5 text-left text-[10px] transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className={`h-2 w-2 flex-shrink-0 rounded-full ${style.accentClassName}`} />
-                          <span className="flex-1 truncate font-semibold">{event.title}</span>
-                        </div>
-                        <div className="ml-4 flex items-center gap-2 text-[10px] font-normal text-current/80">
-                          <span>{formatTime(event.startTime)}</span>
-                          {examType && (
-                            <>
-                              <span>•</span>
-                              <span className="truncate">{examType}</span>
-                            </>
-                          )}
+                        <div className="flex items-start gap-1.5">
+                          <span className={`mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full ${style.accentClassName}`} />
+                          <div className="flex-1 min-w-0 space-y-0.5">
+                            <div className="font-medium text-[10px] leading-tight break-words">{formatTime(event.startTime)}</div>
+                            <div className="font-semibold text-[11px] leading-tight break-words">{event.title}</div>
+                            <div className="flex flex-wrap gap-x-1.5 text-[9px] font-normal text-current/70">
+                              {examType && <span>{examType}</span>}
+                              {examLevel && <span>{examLevel}</span>}
+                            </div>
+                          </div>
                         </div>
                       </button>
                     );
@@ -1884,10 +1886,11 @@ export function AdminCalendarDashboard() {
   };
 
   const renderWeekView = () => {
-    const days = Array.from({ length: 7 }, (_, index) => addDays(range.start, index));
+    const allDays = Array.from({ length: 7 }, (_, index) => addDays(range.start, index));
+    const days = allDays.filter((day) => day.getUTCDay() !== 0); // Exclude Sundays
     return (
       <div className="rounded-[36px] border border-white/70 bg-white/95 p-4 shadow-[0_32px_64px_rgba(15,23,42,0.12)]">
-        <div className="grid grid-cols-7 gap-4">
+        <div className="grid grid-cols-6 gap-4">
           {days.map((day) => {
             const key = getDateKey(day);
             const dayEvents = groupedEvents.get(key) ?? [];
@@ -1920,6 +1923,7 @@ export function AdminCalendarDashboard() {
                   {dayEvents.map((event) => {
                     const style = getEventStyle(event);
                     const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
+                    const examLevel = event.kind === "exam" ? event.level : null;
                     return (
                       <button
                         key={event.id}
@@ -1928,18 +1932,16 @@ export function AdminCalendarDashboard() {
                         title={getEventTooltip(event)}
                         className={`group flex flex-col gap-1 rounded-2xl px-3 py-2 text-left text-xs transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-2 w-2 flex-shrink-0 rounded-full ${style.accentClassName}`} />
-                          <span className="flex-1 truncate font-semibold">{event.title}</span>
-                        </div>
-                        <div className="ml-4 flex items-center gap-2 text-[10px] font-normal text-current/80">
-                          <span>{formatTime(event.startTime)}</span>
-                          {examType && (
-                            <>
-                              <span>•</span>
-                              <span className="truncate">{examType}</span>
-                            </>
-                          )}
+                        <div className="flex items-start gap-2">
+                          <span className={`mt-0.5 inline-flex h-2 w-2 flex-shrink-0 rounded-full ${style.accentClassName}`} />
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="font-medium text-[11px] leading-tight">{formatTime(event.startTime)}</div>
+                            <div className="font-semibold text-xs leading-tight break-words">{event.title}</div>
+                            <div className="flex flex-wrap gap-x-2 text-[10px] font-normal text-current/70">
+                              {examType && <span>{examType}</span>}
+                              {examLevel && <span>{examLevel}</span>}
+                            </div>
+                          </div>
                         </div>
                       </button>
                     );
@@ -1982,6 +1984,7 @@ export function AdminCalendarDashboard() {
           {dayEvents.map((event) => {
             const style = getEventStyle(event);
             const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
+            const examLevel = event.kind === "exam" ? event.level : null;
             return (
               <button
                 key={event.id}
@@ -1990,17 +1993,13 @@ export function AdminCalendarDashboard() {
                 title={getEventTooltip(event)}
                 className={`group flex flex-col gap-2 rounded-3xl px-4 py-3 text-left transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-sm font-semibold">{event.title}</span>
-                    <div className="flex items-center gap-2 text-xs font-normal text-current/80">
-                      <span>{formatTime(event.startTime)}</span>
-                      {examType && (
-                        <>
-                          <span>•</span>
-                          <span>{examType}</span>
-                        </>
-                      )}
+                <div className="flex items-start gap-2">
+                  <div className="flex flex-col gap-1.5 flex-1">
+                    <div className="font-medium text-xs">{formatTime(event.startTime)}</div>
+                    <div className="text-sm font-semibold break-words">{event.title}</div>
+                    <div className="flex flex-wrap gap-x-2 text-xs font-normal text-current/70">
+                      {examType && <span>{examType}</span>}
+                      {examLevel && <span>{examLevel}</span>}
                     </div>
                   </div>
                 </div>
