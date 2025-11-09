@@ -28,23 +28,105 @@ export type InactiveRosterRow = {
 export type AvgBetweenVisitsRow = { scope: 'GLOBAL'|'LEVEL'; level: string | null; avg_days_between_visits: number };
 export type HourSplitRow = { daypart: 'morning_08_12'|'afternoon_12_17'|'evening_17_20'; total_minutes: number };
 
+// New types for MD-Clean implementation
+export type WauMauMetrics = {
+  wau: number;
+  mau: number;
+  wau_mau_ratio: number; // 0-1
+};
+
+export type MedianDaysBetweenVisits = {
+  median_days_between_visits: number;
+};
+
+export type WeeklyEngagementPoint = {
+  week_start: string;
+  max_daily_actives: number;
+  total_minutes: number;
+  sessions: number;
+  sum_active_students: number;
+};
+
+export type MauRollingPoint = {
+  snapshot_date: string;
+  mau_rolling_30d: number;
+};
+
+export type HourlyHeatmapCell = {
+  iso_weekday: number; // 1-7 (Mon-Sun)
+  hour_local: number;  // 0-23
+  minutes: number;
+};
+
+// Part 2/2 types - Section D, E, F
+export type StudentActivityRow = {
+  student_id: number;
+  full_name: string | null;
+  level: string | null;
+  sessions_30d: number;
+  avg_days_between_visits: number | null;
+  days_since_last_checkin: number | null;
+  consistency_score: number | null; // 0-100
+};
+
+export type ReactivatedStudentRow = {
+  student_id: number;
+  full_name: string | null;
+  days_inactive_before_return: number;
+  return_date: string;
+};
+
+export type SessionFrequencyBin = {
+  bin_label: string;
+  student_count: number;
+};
+
+export type DaypartRetention = {
+  daypart: 'morning_08_12' | 'afternoon_12_17' | 'evening_17_20';
+  return_rate: number; // 0-1
+};
+
+export type DualRiskStudent = {
+  student_id: number;
+  full_name: string | null;
+  level: string | null;
+  engagement_issue: string;
+  learning_issue: string;
+  days_since_last_checkin: number | null;
+};
+
 export type EngagementReport = {
   last_refreshed_at: string;
-  // row 1 tiles
+  // Section A - Core Engagement KPIs
   active_counts: ActiveCounts;
-  wow_index: WoWIndex;
-
-  // row 2 trend + average gap
-  daily_activity: DailyActivityPoint[];
-  avg_between_visits_global: number;      // from GLOBAL row
-  avg_between_visits_by_level: AvgBetweenVisitsRow[]; // LEVEL rows only
-
-  // row 3 funnels/cohorts
   inactive_counts: InactiveCounts;
-
-  // row 4 hour split
+  wau_mau_metrics: WauMauMetrics;
+  avg_between_visits_global: number;
+  median_between_visits: number;
+  
+  // Section B - Engagement Trends
+  wow_index: WoWIndex;
+  weekly_engagement_90d: WeeklyEngagementPoint[];
+  mau_rolling_90d: MauRollingPoint[];
+  
+  // Section C - Time Distribution & Behavior Patterns
   hour_split: HourSplitRow[];
-
-  // drills
-  inactive_roster?: InactiveRosterRow[]; // fetched on-demand in FE if desired
+  hourly_heatmap_90d: HourlyHeatmapCell[];
+  daily_activity: DailyActivityPoint[]; // for weekday traffic calculation
+  
+  // Legacy (keep for compatibility)
+  avg_between_visits_by_level: AvgBetweenVisitsRow[];
+  
+  // Section D - Student-Level Engagement Insights (Part 2/2)
+  inactive_roster: InactiveRosterRow[];
+  at_risk_students: StudentActivityRow[];
+  recently_reactivated: ReactivatedStudentRow[];
+  high_engagement_students: StudentActivityRow[];
+  
+  // Section E - Deep-Dive Engagement Metrics (Part 2/2)
+  session_frequency_distribution: SessionFrequencyBin[];
+  daypart_retention: DaypartRetention[];
+  
+  // Section F - Cross-Panel Alignment (Part 2/2)
+  dual_risk_students: DualRiskStudent[];
 };
