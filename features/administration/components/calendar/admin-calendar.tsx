@@ -1685,10 +1685,6 @@ export function AdminCalendarDashboard() {
   }, []);
 
   useEffect(() => {
-    if (typeFilter !== "exam") {
-      setStudentFilterSelection(null);
-      return;
-    }
     if (!studentIdFilter) {
       setStudentFilterSelection(null);
       return;
@@ -1702,7 +1698,7 @@ export function AdminCalendarDashboard() {
         fullName: `Estudiante #${studentIdFilter}`,
       };
     });
-  }, [studentIdFilter, typeFilter]);
+  }, [studentIdFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1713,15 +1709,11 @@ export function AdminCalendarDashboard() {
       start: range.start.toISOString(),
       end: range.end.toISOString(),
     });
-    if (typeFilter === "exam") {
-      params.set("kind", "exam");
-    } else if (typeFilter === "activity") {
-      params.set("kind", "activity");
-    }
-    if (typeFilter === "exam" && statusFilter !== "all") {
+    // Always fetch both exams and activities
+    if (statusFilter !== "all") {
       params.set("status", statusFilter);
     }
-    if (typeFilter === "exam" && studentIdFilter) {
+    if (studentIdFilter) {
       params.set("studentId", String(studentIdFilter));
     }
 
@@ -1751,7 +1743,7 @@ export function AdminCalendarDashboard() {
       });
 
     return () => controller.abort();
-  }, [range.start, range.end, typeFilter, statusFilter, studentIdFilter, refreshCounter]);
+  }, [range.start, range.end, statusFilter, studentIdFilter, refreshCounter]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(events), [events]);
 
@@ -2014,7 +2006,7 @@ export function AdminCalendarDashboard() {
   const currentView = view === "month" ? renderMonthView() : view === "week" ? renderWeekView() : renderDayView();
 
   const activeStatusBadge =
-    typeFilter === "exam" && statusFilter !== "all"
+    statusFilter !== "all"
       ? STATUS_BADGES[statusFilter] ?? null
       : null;
 
@@ -2132,59 +2124,47 @@ export function AdminCalendarDashboard() {
                     Siguiente ›
                   </button>
                 </div>
-                {typeFilter === "exam" && (
-                  <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                    <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
-                    {STATUS_OPTIONS.map((option) => {
-                      if (option.value === "all") {
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => updateStatusFilter(option.value)}
-                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                              statusFilter === option.value
-                                ? "bg-brand-teal text-white"
-                                : "bg-transparent text-brand-ink"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      }
-                      const isActive = statusFilter === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => updateStatusFilter(option.value)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                            isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-3 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
+                <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estudiante</span>
+                <StudentSelector
+                  label="Buscar estudiante"
+                  value={studentFilterSelection}
+                  onChange={updateStudentFilter}
+                  placeholder="Buscar"
+                />
+              </div>
+
               <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Tipo</span>
-                {TYPE_OPTIONS.map((option) => {
-                  const isActive = option.value === typeFilter;
+                <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
+                {STATUS_OPTIONS.map((option) => {
+                  if (option.value === "all") {
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => updateStatusFilter(option.value)}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                          statusFilter === option.value
+                            ? "bg-brand-teal text-white"
+                            : "bg-transparent text-brand-ink"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  }
+                  const isActive = statusFilter === option.value;
                   return (
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => updateTypeFilter(option.value)}
+                      onClick={() => updateStatusFilter(option.value)}
                       className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                        isActive
-                          ? "bg-brand-teal text-white"
-                          : "bg-transparent text-brand-ink"
+                        isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
                       }`}
                     >
                       {option.label}
@@ -2192,24 +2172,6 @@ export function AdminCalendarDashboard() {
                   );
                 })}
               </div>
-
-              {typeFilter === "exam" && (
-                <div className="flex items-center gap-3 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                  <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estudiante</span>
-                  <StudentSelector
-                    label="Buscar estudiante"
-                    value={studentFilterSelection}
-                    onChange={updateStudentFilter}
-                    placeholder="Buscar"
-                  />
-                </div>
-              )}
-
-              {activeStatusBadge && (
-                <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${activeStatusBadge.className}`}>
-                  {activeStatusBadge.label}
-                </span>
-              )}
             </div>
           </div>
 
