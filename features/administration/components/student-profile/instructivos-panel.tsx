@@ -26,8 +26,10 @@ type ModalProps = {
   children: ReactNode;
 };
 
+type DerivedStatus = "completado" | "atrasado" | "en-curso";
+
 function formatDate(value: string | null): string {
-  if (!value) return "Sin fecha";
+  if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("es-EC", {
@@ -35,6 +37,72 @@ function formatDate(value: string | null): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function getStartOfToday(): Date {
+  // Get today's date in America/Guayaquil timezone
+  const now = new Date();
+  const guayaquilFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Guayaquil",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const guayaquilDateStr = guayaquilFormatter.format(now);
+  const [year, month, day] = guayaquilDateStr.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function deriveStatus(instructivo: StudentInstructivo): DerivedStatus {
+  if (instructivo.completed) {
+    return "completado";
+  }
+  
+  if (!instructivo.dueDate) {
+    return "en-curso";
+  }
+  
+  const dueDate = new Date(instructivo.dueDate);
+  const startOfToday = getStartOfToday();
+  
+  if (dueDate < startOfToday) {
+    return "atrasado";
+  }
+  
+  return "en-curso";
+}
+
+function getStatusBadgeClass(status: DerivedStatus): string {
+  switch (status) {
+    case "completado":
+      return "bg-emerald-50 text-emerald-700 border border-emerald-200";
+    case "atrasado":
+      return "bg-rose-50 text-rose-700 border border-rose-200";
+    case "en-curso":
+      return "bg-blue-50 text-blue-700 border border-blue-200";
+  }
+}
+
+function getStatusLabel(status: DerivedStatus): string {
+  switch (status) {
+    case "completado":
+      return "Completado";
+    case "atrasado":
+      return "Atrasado";
+    case "en-curso":
+      return "En curso";
+  }
+}
+
+function getStatusOrder(status: DerivedStatus): number {
+  switch (status) {
+    case "atrasado":
+      return 0;
+    case "en-curso":
+      return 1;
+    case "completado":
+      return 2;
+  }
 }
 
 function Modal({ title, description, onClose, children }: ModalProps) {
@@ -81,7 +149,6 @@ export function InstructivosPanel({
   const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
   const [editingItem, setEditingItem] = useState<StudentInstructivo | null>(null);
   const [editForm, setEditForm] = useState({
-    title: "",
     dueDate: "",
     completed: false,
     note: "",
@@ -89,21 +156,32 @@ export function InstructivosPanel({
 
   const sortedItems = useMemo(() => {
     return [...instructivos].sort((a, b) => {
+      // First, group by status
+      const statusA = deriveStatus(a);
+      const statusB = deriveStatus(b);
+      const statusOrderA = getStatusOrder(statusA);
+      const statusOrderB = getStatusOrder(statusB);
+      
+      if (statusOrderA !== statusOrderB) {
+        return statusOrderA - statusOrderB;
+      }
+      
+      // Within same status, sort by due_date ASC (NULLs last)
       const aDue = a.dueDate ?? "";
       const bDue = b.dueDate ?? "";
+      
       if (aDue && bDue) return aDue.localeCompare(bDue);
       if (aDue) return -1;
       if (bDue) return 1;
-      const aCreated = a.createdAt ?? "";
-      const bCreated = b.createdAt ?? "";
-      return bCreated.localeCompare(aCreated);
+      
+      return 0;
     });
   }, [instructivos]);
 
   const closeEditModal = () => {
     if (isPending && activeRequest === "edit") return;
     setEditingItem(null);
-    setEditForm({ title: "", dueDate: "", completed: false, note: "" });
+    setEditForm({ dueDate: "", completed: false, note: "" });
   };
 
   const handleAddRequest = () => {
@@ -117,7 +195,6 @@ export function InstructivosPanel({
     setMessage(null);
     setEditingItem(item);
     setEditForm({
-      title: item.title,
       dueDate: item.dueDate ?? "",
       completed: Boolean(item.completed),
       note: item.note ?? "",
@@ -127,11 +204,6 @@ export function InstructivosPanel({
   const handleUpdate = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editingItem || activeRequest) return;
-
-    if (!editForm.title.trim()) {
-      setError("El título es obligatorio.");
-      return;
-    }
 
     if (!editForm.note.trim()) {
       setError("Debes ingresar la descripción o nota del instructivo.");
@@ -151,7 +223,6 @@ export function InstructivosPanel({
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                title: editForm.title.trim(),
                 dueDate: editForm.dueDate.trim() || null,
                 completed: editForm.completed,
                 note: editForm.note.trim() || null,
@@ -257,9 +328,8 @@ export function InstructivosPanel({
         <table className="min-w-full table-auto divide-y divide-brand-ink-muted/15 text-left text-sm text-brand-ink">
           <thead className="bg-brand-teal-soft/40 text-xs uppercase tracking-wide text-brand-ink">
             <tr>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Creado</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Fecha límite</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Título</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Instructivo N°</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Fecha objetivo</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Estado</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Nota</th>
               <th className="px-4 py-3 text-right font-semibold text-brand-deep">Acciones</th>
@@ -268,43 +338,40 @@ export function InstructivosPanel({
           <tbody>
             {sortedItems.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
-                  No se han registrado instructivos todavía. Usa el botón “Agregar instructivo” para crear uno nuevo.
+                <td colSpan={5} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
+                  No hay instructivos. Usa "Agregar instructivo" para crear el primero.
                 </td>
               </tr>
             ) : (
-              sortedItems.map((item) => (
-                <tr key={item.id} className="divide-x divide-brand-ink-muted/10">
+              sortedItems.map((item) => {
+                const status = deriveStatus(item);
+                const statusLabel = getStatusLabel(status);
+                const statusBadgeClass = getStatusBadgeClass(status);
+                
+                return (
+                <tr key={item.id} className="divide-x divide-brand-ink-muted/10 hover:bg-brand-teal-soft/10">
                   <td className="px-4 py-3 align-top font-semibold text-brand-deep">
-                    {formatDate(item.createdAt)}
+                    {item.instructivoNo != null ? `#${item.instructivoNo}` : "—"}
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
                     {formatDate(item.dueDate)}
                   </td>
-                  <td className="px-4 py-3 align-top text-brand-ink">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold text-brand-deep">{item.title}</span>
-                      <span className="text-xs text-brand-ink-muted">
-                        Última actualización: {formatDate(item.updatedAt ?? item.createdAt)}
-                      </span>
-                    </div>
-                  </td>
                   <td className="px-4 py-3 align-top">
                     <span
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${
-                        item.completed
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-amber-100 text-amber-700"
-                      }`}
+                      className={`inline-flex min-w-[100px] items-center justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusBadgeClass}`}
                     >
-                      {item.completed ? "Completado" : "Pendiente"}
+                      {statusLabel}
                     </span>
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
                     {item.note ? (
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{item.note}</p>
+                      <div className="max-w-md">
+                        <p className="line-clamp-1 text-sm leading-relaxed" title={item.note}>
+                          {item.note}
+                        </p>
+                      </div>
                     ) : (
-                      <span className="text-sm text-brand-ink-muted">Sin nota registrada</span>
+                      <span className="text-sm text-brand-ink-muted">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 align-top">
@@ -312,7 +379,7 @@ export function InstructivosPanel({
                       <button
                         type="button"
                         onClick={() => openEditModal(item)}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                        className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-ink shadow-sm transition hover:border-brand-teal hover:bg-brand-teal-soft/20 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                       >
                         Editar
                       </button>
@@ -320,14 +387,14 @@ export function InstructivosPanel({
                         type="button"
                         onClick={() => void handleDelete(item.id)}
                         disabled={activeRequest === "delete" && isPending}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#e06820] disabled:cursor-not-allowed disabled:opacity-70"
+                        className="inline-flex items-center justify-center rounded-full border border-brand-orange/30 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-orange shadow-sm transition hover:border-brand-orange hover:bg-brand-orange/10 disabled:cursor-not-allowed disabled:opacity-70"
                       >
                         Eliminar
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))
+              )})
             )}
           </tbody>
         </table>
@@ -340,20 +407,18 @@ export function InstructivosPanel({
           onClose={closeEditModal}
         >
           <form className="flex flex-col gap-4" onSubmit={handleUpdate}>
+            <div className="rounded-2xl bg-brand-teal-soft/30 p-4">
+              <div className="flex flex-col gap-1 text-left">
+                <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                  Instructivo N°
+                </span>
+                <span className="text-lg font-bold text-brand-deep">
+                  {editingItem.instructivoNo != null ? `#${editingItem.instructivoNo}` : "(se asignará)"}
+                </span>
+              </div>
+            </div>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Título
-              <input
-                type="text"
-                value={editForm.title}
-                onChange={(event) =>
-                  setEditForm((previous) => ({ ...previous, title: event.target.value }))
-                }
-                className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-              Fecha límite (opcional)
+              Fecha objetivo
               <input
                 type="date"
                 value={editForm.dueDate}
@@ -361,10 +426,11 @@ export function InstructivosPanel({
                   setEditForm((previous) => ({ ...previous, dueDate: event.target.value }))
                 }
                 className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                required
               />
             </label>
             <label className="flex items-center justify-between gap-4 rounded-2xl bg-white/95 p-4 text-left text-sm font-semibold text-brand-deep shadow-inner">
-              <span>Marcar como completado</span>
+              <span>Marcado como completado</span>
               <input
                 type="checkbox"
                 checked={editForm.completed}

@@ -38,14 +38,6 @@ export async function PUT(
       return NextResponse.json({ error: "Datos inválidos." }, { status: 400 });
     }
     const payload = body as Record<string, unknown>;
-    const title = typeof payload.title === "string" ? (payload.title as string).trim() : "";
-
-    if (!title) {
-      return NextResponse.json(
-        { error: "El título es obligatorio." },
-        { status: 400 },
-      );
-    }
 
     const dueDate =
       typeof payload.dueDate === "string" && (payload.dueDate as string).trim().length
@@ -61,7 +53,6 @@ export async function PUT(
     const note = typeof payload.note === "string" ? (payload.note as string).trim() || null : null;
 
     const updated = await updateStudentInstructivo(instructivoId, {
-      title,
       dueDate,
       completed,
       note,
