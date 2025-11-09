@@ -160,20 +160,21 @@ export async function listCalendarEvents({
 
   const query = `
     SELECT
-      kind,
-      id,
-      title,
-      start_time,
-      end_time,
-      status,
-      notes,
-      student_id,
-      level,
-      score,
-      passed
-    FROM public.calendar_events_v
+      v.kind,
+      v.id,
+      v.title,
+      v.start_time,
+      v.end_time,
+      v.status,
+      v.notes,
+      v.student_id,
+      v.score,
+      v.passed,
+      CASE WHEN v.kind = 'exam' THEN e.level ELSE NULL END AS level
+    FROM public.calendar_events_v v
+    LEFT JOIN public.exam_appointments e ON v.kind = 'exam' AND v.id = e.id
     WHERE ${whereClauses.join(" AND ")}
-    ORDER BY start_time ASC, id ASC
+    ORDER BY v.start_time ASC, v.id ASC
   `;
 
   const rows = normalizeRows<SqlRow>(await sql.query(query, values));

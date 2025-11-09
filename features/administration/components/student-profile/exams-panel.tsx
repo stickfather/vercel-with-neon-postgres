@@ -268,6 +268,7 @@ export function ExamsPanel({
             <tr>
               <th className="px-4 py-3 font-semibold text-brand-deep">Fecha y hora</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Tipo de examen</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Nivel</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Calificación</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Estado</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Nota</th>
@@ -277,7 +278,7 @@ export function ExamsPanel({
           <tbody>
             {sortedExams.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
+                <td colSpan={7} className="px-4 py-6 text-center text-sm text-brand-ink-muted">
                   No hay exámenes registrados. Usa el botón “Agregar examen” para programar el primero.
                 </td>
               </tr>
@@ -289,6 +290,9 @@ export function ExamsPanel({
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
                     {exam.status ? exam.status : "Sin tipo"}
+                  </td>
+                  <td className="px-4 py-3 align-top text-brand-ink">
+                    {exam.level ? exam.level : "—"}
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
                     {exam.score == null ? "—" : exam.score}
