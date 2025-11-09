@@ -1,0 +1,121 @@
+"use client";
+
+import { formatCurrency, formatChartDate, formatFullDate } from "@/lib/datetime/format";
+import type {
+  FinancialDueSoonSummary,
+  FinancialDueSoonSeries,
+} from "@/types/finance";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+
+type Props = {
+  summary: FinancialDueSoonSummary | null;
+  series: FinancialDueSoonSeries[];
+};
+
+export function DueSoon7dCard({ summary, series }: Props) {
+  const invoicesDue = summary?.invoices_due_7d ?? 0;
+  const studentsDue = summary?.students_due_7d ?? 0;
+  const amountDue = summary?.amount_due_7d ?? 0;
+  const amountToday = summary?.amount_due_today ?? 0;
+
+  const chartData = series.map((point) => ({
+    date: point.d,
+    amount: point.amount,
+    invoices: point.invoices,
+  }));
+
+  // Mark today's bar
+  const today = new Date().toISOString().split("T")[0];
+
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+      <h2 className="text-base font-semibold text-slate-900">
+        Due Soon (7 Days)
+      </h2>
+
+      {/* Mini-KPIs */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
+          <span className="text-xs font-medium text-slate-500">Invoices (7d)</span>
+          <span className="text-2xl font-bold text-slate-900">
+            {invoicesDue}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
+          <span className="text-xs font-medium text-slate-500">Students (7d)</span>
+          <span className="text-2xl font-bold text-slate-900">
+            {studentsDue}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
+          <span className="text-xs font-medium text-slate-500">Amount (7d)</span>
+          <span className="text-lg font-bold text-slate-900">
+            {formatCurrency(amountDue)}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg bg-amber-50 p-3">
+          <span className="text-xs font-medium text-amber-700">Due Today</span>
+          <span className="text-lg font-bold text-amber-900">
+            {formatCurrency(amountToday)}
+          </span>
+        </div>
+      </div>
+
+      {/* Bar Chart */}
+      <figure>
+        <figcaption className="mb-3 text-sm font-medium text-slate-600">
+          Daily Due Amounts (Next 7 Days)
+        </figcaption>
+        <div className="h-[280px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={(value) => formatChartDate(value)}
+                tick={{ fontSize: 12, fill: "#64748b" }}
+                tickLine={{ stroke: "#e2e8f0" }}
+              />
+              <YAxis
+                tickFormatter={(value) => formatCurrency(value).replace(/\.\d+/, "")}
+                tick={{ fontSize: 12, fill: "#64748b" }}
+                tickLine={{ stroke: "#e2e8f0" }}
+              />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload || payload.length === 0) return null;
+                  const data = payload[0].payload;
+                  const isToday = data.date === today;
+                  return (
+                    <div className="rounded-lg bg-slate-900 px-3 py-2 text-white shadow-lg">
+                      <p className="text-sm font-medium">
+                        {formatFullDate(data.date)}
+                        {isToday && " (Today)"}
+                      </p>
+                      <p className="text-sm">
+                        {formatCurrency(data.amount)} ({data.invoices} invoices)
+                      </p>
+                    </div>
+                  );
+                }}
+              />
+              <Bar
+                dataKey="amount"
+                fill="#3b82f6"
+                radius={[4, 4, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </figure>
+    </div>
+  );
+}
