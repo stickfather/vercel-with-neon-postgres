@@ -63,7 +63,7 @@ export function WeekdayConcentrationChart({ data }: Props) {
             cx="50%"
             cy="50%"
             labelLine={false}
-            label={(entry) => `${entry.name} ${percentFormatter.format(entry.percent)}%`}
+            label={(entry: any) => `${entry.name} ${percentFormatter.format(entry.percent as number)}%`}
             outerRadius={100}
             fill="#8884d8"
             dataKey="value"
@@ -80,13 +80,13 @@ export function WeekdayConcentrationChart({ data }: Props) {
               fontSize: "12px",
             }}
             formatter={(value: number, _name: string, props: any) => {
-              const percent = props.payload.percent;
+              const percent = props.payload.percent as number;
               return [`${percentFormatter.format(percent)}%`, ""];
             }}
           />
           <Legend 
             wrapperStyle={{ fontSize: "12px" }}
-            formatter={(value, entry: any) => `${value} — ${percentFormatter.format(entry.payload.percent)}%`}
+            formatter={(value, entry: any) => `${value} — ${percentFormatter.format(entry.payload.percent as number)}%`}
           />
         </PieChart>
       </ResponsiveContainer>
