@@ -810,7 +810,7 @@ export async function deleteStudentExam(examId: number): Promise<StudentExam | n
 export type StudentInstructivo = {
   id: number;
   studentId: number;
-  title: string;
+  instructivoNo: number | null;
   dueDate: string | null;
   completed: boolean;
   note: string | null;
@@ -825,7 +825,7 @@ function mapInstructivoRow(
   return {
     id: Number(row.id),
     studentId: Number(row.student_id ?? fallbackStudentId),
-    title: normalizeFieldValue(row.title, "text") ?? "",
+    instructivoNo: row.instructivo_no != null ? Number(row.instructivo_no) : null,
     dueDate: normalizeFieldValue(row.due_date, "date"),
     completed: normalizeFieldValue(row.completed, "boolean") ?? false,
     note: normalizeFieldValue(row.note, "text"),
@@ -841,7 +841,7 @@ export async function listStudentInstructivos(
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, student_id, title, due_date, completed, note, updated_at, created_at
+    SELECT id, student_id, instructivo_no, due_date, completed, note, updated_at, created_at
     FROM public.student_instructivos
     WHERE student_id = ${studentId}::bigint
     ORDER BY created_at DESC NULLS LAST, id DESC
@@ -853,7 +853,6 @@ export async function listStudentInstructivos(
 export async function createStudentInstructivo(
   studentId: number,
   data: {
-    title: string;
     dueDate?: string | null;
     completed?: boolean;
     note?: string | null;
@@ -863,15 +862,14 @@ export async function createStudentInstructivo(
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.student_instructivos (student_id, title, due_date, completed, note)
+    INSERT INTO public.student_instructivos (student_id, due_date, completed, note)
     VALUES (
       ${studentId}::bigint,
-      ${data.title},
       ${data.dueDate ?? null},
       ${data.completed ?? false},
       ${data.note ?? null}
     )
-    RETURNING id, student_id, title, due_date, completed, note, updated_at, created_at
+    RETURNING id, student_id, instructivo_no, due_date, completed, note, updated_at, created_at
   `);
 
   if (!rows.length) {
@@ -884,7 +882,6 @@ export async function createStudentInstructivo(
 export async function updateStudentInstructivo(
   instructivoId: number,
   data: {
-    title: string;
     dueDate: string | null;
     completed: boolean;
     note: string | null;
@@ -895,13 +892,12 @@ export async function updateStudentInstructivo(
 
   const rows = normalizeRows<SqlRow>(await sql`
     UPDATE public.student_instructivos
-    SET title = ${data.title},
-      due_date = ${data.dueDate},
+    SET due_date = ${data.dueDate},
       completed = ${data.completed},
       note = ${data.note},
       updated_at = NOW()
     WHERE id = ${instructivoId}::bigint
-    RETURNING id, student_id, title, due_date, completed, note, updated_at, created_at
+    RETURNING id, student_id, instructivo_no, due_date, completed, note, updated_at, created_at
   `);
 
   if (!rows.length) {
@@ -919,7 +915,7 @@ export async function deleteStudentInstructivo(
   const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.student_instructivos
     WHERE id = ${instructivoId}::bigint
-    RETURNING id, student_id, title, due_date, completed, note, updated_at, created_at
+    RETURNING id, student_id, instructivo_no, due_date, completed, note, updated_at, created_at
   `);
 
   if (!rows.length) {

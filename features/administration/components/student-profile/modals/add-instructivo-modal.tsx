@@ -7,7 +7,6 @@ import { FullScreenModal } from "@/components/ui/full-screen-modal";
 import type { StudentInstructivo } from "@/features/administration/data/student-profile";
 
 const INITIAL_STATE = {
-  title: "",
   dueDate: "",
   completed: false,
   note: "",
@@ -46,11 +45,6 @@ export function AddInstructivoModal({
     event.preventDefault();
     if (isPending) return;
 
-    if (!form.title.trim()) {
-      setError("El título es obligatorio.");
-      return;
-    }
-
     if (!form.note.trim()) {
       setError("Debes ingresar la descripción o nota del instructivo.");
       return;
@@ -65,7 +59,6 @@ export function AddInstructivoModal({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              title: form.title.trim(),
               dueDate: form.dueDate.trim() || null,
               completed: form.completed,
               note: form.note.trim() || null,
@@ -123,21 +116,18 @@ export function AddInstructivoModal({
             {error}
           </p>
         ) : null}
+        <div className="rounded-2xl bg-brand-teal-soft/30 p-4">
+          <div className="flex flex-col gap-1 text-left">
+            <span className="text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+              Instructivo N°
+            </span>
+            <span className="text-lg font-bold text-brand-ink-muted italic">
+              (se asignará)
+            </span>
+          </div>
+        </div>
         <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-          Título
-          <input
-            type="text"
-            value={form.title}
-            onChange={(event) =>
-              setForm((previous) => ({ ...previous, title: event.target.value }))
-            }
-            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-            placeholder="Ej. Guía de estudio Unidad 5"
-            required
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
-          Fecha objetivo (opcional)
+          Fecha objetivo
           <input
             type="date"
             value={form.dueDate}
@@ -145,6 +135,7 @@ export function AddInstructivoModal({
               setForm((previous) => ({ ...previous, dueDate: event.target.value }))
             }
             className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+            required
           />
         </label>
         <label className="flex items-center justify-between gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-inner">
