@@ -1308,7 +1308,7 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
                     name={studentName}
                     photoUrl={studentProfile?.photoUrl ?? null}
                     updatedAt={studentProfile?.photoUpdatedAt ?? null}
-                    size={64}
+                    size={96}
                     className="shadow-none"
                   />
                 </div>
@@ -1839,11 +1839,8 @@ export function AdminCalendarDashboard() {
                 }`}
               >
                 <div className="flex items-center justify-between text-xs font-semibold text-brand-ink">
-                  <span className={`${isToday ? "inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-teal text-white" : "text-brand-ink"}`}>
+                  <span className={`${isToday ? "inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-teal text-white" : "inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-ink-muted/15 text-brand-ink"}`}>
                     {getDayNumber(day)}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-[0.28em] text-brand-ink-muted">
-                    {DAY_NAME_FULL_FORMATTER.format(day).slice(0, 3)}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1">
