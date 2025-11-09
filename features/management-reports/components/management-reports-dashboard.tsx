@@ -1073,130 +1073,33 @@ function FinancialPanel({ state, locked }: { state: PanelState<FinancialReport>;
 }
 
 function ExamsPanel({ state }: { state: PanelState<ExamsReport> }) {
-  const data = state.data;
-  const empty = !data ||
-    (data.upcoming.length === 0 &&
-      !data.firstAttemptRate &&
-      !data.overallRate &&
-      !data.averageScore &&
-      (data.strugglingStudents ?? []).length === 0);
-
-  // Helper to get score color
-  const getScoreColor = (score: number | null) => {
-    if (score == null) return "text-slate-400";
-    if (score >= 70) return "text-emerald-300";
-    if (score >= 50) return "text-amber-300";
-    return "text-rose-300";
-  };
-
-  // Helper to get score pill classes
-  const getScorePill = (score: number | null) => {
-    if (score == null) return "bg-slate-700/40 text-slate-300";
-    if (score >= 70) return "bg-emerald-500/20 text-emerald-200 border border-emerald-500/40";
-    if (score >= 50) return "bg-amber-500/20 text-amber-200 border border-amber-500/40";
-    return "bg-rose-500/20 text-rose-200 border border-rose-500/40";
-  };
-
+  // Redirect to new comprehensive exams panel
   return (
-    <PanelWrapper
-      status={state.status}
-      error={state.error}
-      empty={empty}
-      label="los indicadores de exámenes"
-      onRetry={state.reload}
-    >
-      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <div className="flex flex-col gap-6">
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
-            <StatCard
-              title={data?.firstAttemptRate?.label ?? "1er intento"}
-              value={formatPercentValue(data?.firstAttemptRate?.value ?? null)}
-              caption="Tasa de aprobación"
-              size="large"
-              benchmark={calculatePercentBenchmark(data?.firstAttemptRate?.value ?? null)}
-            />
-            <StatCard
-              title={data?.overallRate?.label ?? "Global"}
-              value={formatPercentValue(data?.overallRate?.value ?? null)}
-              caption="Tasa acumulada"
-              accent="text-sky-300"
-              size="large"
-              benchmark={calculatePercentBenchmark(data?.overallRate?.value ?? null)}
-            />
-            <StatCard
-              title={data?.averageScore?.label ?? "Puntaje promedio"}
-              value={data?.averageScore?.value == null ? "—" : decimalFormatter.format(data.averageScore.value)}
-              caption="Sobre 100"
-              accent="text-emerald-300"
-              size="large"
-              benchmark={data?.averageScore?.value ?? undefined}
-            />
-            <StatCard
-              title={data?.instructiveCompletion?.label ?? "Instructivo"}
-              value={formatPercentValue(data?.instructiveCompletion?.value ?? null)}
-              caption="Cumplimiento"
-              accent="text-amber-300"
-              size="large"
-              benchmark={calculatePercentBenchmark(data?.instructiveCompletion?.value ?? null)}
-            />
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Próximos exámenes (30 días)" description="Fechas y candidatos programados." />
-            <div className="mt-4 max-h-[240px] overflow-y-auto pr-2">
-              <SimpleTable
-                headers={["Examen", "Fecha", "Candidatos"]}
-                rows={(data?.upcoming ?? []).map((exam) => [
-                  <span key="exam" className="font-medium text-slate-100">{exam.exam}</span>,
-                  <span key="date" className="text-slate-300">{exam.date}</span>,
-                  <span key="count" className="inline-flex items-center justify-center rounded-full bg-sky-500/20 px-2 py-1 text-xs font-semibold text-sky-200">
-                    {formatIntegerValue(exam.candidates ?? null)}
-                  </span>,
-                ])}
-                getKey={(index) => `row-${index}`}
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Alumnos con dificultad" description="Prioriza refuerzos y tutorías." />
-            <div className="mt-4 max-h-[280px] overflow-y-auto pr-2">
-              <SimpleTable
-                headers={["Estudiante", "Examen", "Intentos", "Puntaje"]}
-                rows={(data?.strugglingStudents ?? []).map((student, index) => [
-                  <span key="student" className="font-medium text-slate-100">{student.student}</span>,
-                  <span key="exam" className="text-slate-300">{student.exam}</span>,
-                  <span key="attempts" className="text-slate-200">
-                    {formatIntegerValue(student.attempts ?? null)}
-                  </span>,
-                  <span key="score" className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${getScorePill(student.score)}`}>
-                    {student.score == null ? "—" : decimalFormatter.format(student.score)}
-                  </span>,
-                ])}
-                getKey={(index) => `row-${index}`}
-              />
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Instructivo post-evaluación" description="Seguimiento después de reprobar." />
-            <div className="mt-4 grid gap-3">
-              <StatCard
-                title={data?.instructiveDays?.label ?? "Días promedio"}
-                value={data?.instructiveDays?.value == null ? "—" : decimalFormatter.format(data.instructiveDays.value)}
-                caption="Para completar instructivo"
-                accent="text-emerald-300"
-              />
-              <StatCard
-                title={data?.failToInstructiveLink?.label ?? "Vinculación"}
-                value={formatPercentValue(data?.failToInstructiveLink?.value ?? null)}
-                caption="Alumnos reprobados con instructivo asignado"
-                accent="text-sky-300"
-              />
-            </div>
-          </div>
+    <div className="flex flex-col gap-6">
+      <div className="rounded-3xl border border-emerald-500/40 bg-emerald-500/10 p-8 text-center">
+        <h3 className="mb-3 text-xl font-semibold text-emerald-100">
+          Panel de Exámenes Mejorado
+        </h3>
+        <p className="mb-6 text-sm text-emerald-200/80">
+          El panel de exámenes ha sido actualizado con 17 módulos completos, incluyendo KPIs mejorados, 
+          gráficos interactivos con Recharts, tablas de análisis y capacidades de drill-down.
+        </p>
+        <Link
+          href="/reports/examenes"
+          className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg transition hover:-translate-y-[1px] hover:bg-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        >
+          Ver Panel Completo de Exámenes →
+        </Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-2 text-xs text-emerald-200/60">
+          <span>• Tendencias semanales</span>
+          <span>• Distribución de puntajes</span>
+          <span>• Heatmap Nivel×Tipo</span>
+          <span>• Análisis de reintentos</span>
+          <span>• Estudiantes en riesgo</span>
+          <span>• Agenda 30 días</span>
         </div>
       </div>
-    </PanelWrapper>
+    </div>
   );
 }
 

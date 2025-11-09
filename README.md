@@ -110,3 +110,33 @@ Los datos se tipan en `types/reports.resumen.ts` y se reutilizan tanto en la API
 - `components/reports/resumen/LevelKpiMatrix.tsx`
 
 Para ver el tablero completo de un vistazo, visita `/reports/resumen-general`.
+
+## Panel "Exámenes"
+
+El panel **Exámenes** ofrece análisis integral de resultados de exámenes con 17 módulos especializados que cubren KPIs, tendencias, distribuciones y seguimiento de estudiantes.
+
+**URL**: `/reports/examenes`
+
+### Características principales
+
+- **4 KPIs clave**: Pass Rate (90d), Average Score (90d), First-Attempt Pass Rate, Instructive Compliance
+- **4 gráficos interactivos**: Tendencia semanal, Distribución de puntajes, Heatmap Nivel×Tipo, Volumen semanal
+- **3 tablas de análisis**: Retakes overview, Estudiantes requiriendo atención (180d), Agenda de próximos exámenes (30d)
+- **Drill-down drawer**: Vista detallada al hacer clic en gráficos
+- **Ventanas de tiempo**: 90 días (principal), 180 días (análisis de riesgo), 30 días (próximos)
+
+### Stack tecnológico
+
+- **Recharts**: Biblioteca de gráficos interactivos (ComposedChart, BarChart, LineChart)
+- **date-fns**: Formateo de fechas en zona horaria America/Guayaquil
+- **Tailwind CSS**: Diseño con sistema de grilla de 8pt, rounded-2xl cards
+- **TypeScript**: Tipos completos para toda la capa de datos
+
+### Estructura de datos
+
+Los datos provienen de vistas materializadas en el esquema `mgmt`:
+
+- `/api/reports/exams` → Panel completo (KPIs + Charts + Tables)
+- `/api/reports/exams/drilldown` → Detalle de exámenes por semana o celda del heatmap
+
+Consulta la documentación completa en [`docs/EXAMS_PANEL.md`](./docs/EXAMS_PANEL.md) para detalles de arquitectura, tipos, componentes y criterios de aceptación.
