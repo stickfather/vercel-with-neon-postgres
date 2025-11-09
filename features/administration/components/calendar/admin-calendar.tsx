@@ -282,6 +282,28 @@ function formatTime(value: string): string {
   return formatLocalTime(value, { hour12: false });
 }
 
+function getExamTypeDisplay(event: CalendarEvent): string {
+  // Prefer the status field if it contains Speaking/Writing
+  if (event.status) {
+    const status = event.status.trim();
+    if (status === "Speaking" || status === "Writing") {
+      return status;
+    }
+  }
+  
+  // Fallback: extract from notes
+  if (event.notes) {
+    if (event.notes.toLowerCase().includes("speaking")) {
+      return "Speaking";
+    }
+    if (event.notes.toLowerCase().includes("writing")) {
+      return "Writing";
+    }
+  }
+  
+  return "—";
+}
+
 function getEventTooltip(event: CalendarEvent): string {
   if (event.kind === "exam") {
     const base = [
@@ -316,7 +338,21 @@ function getEventTooltip(event: CalendarEvent): string {
     .join(" · ");
 }
 
-function translateStatus(status: string | null, passed?: boolean | null): string {
+function translateStatus(
+  status: string | null, 
+  passed?: boolean | null,
+  timeScheduled?: string | null
+): string {
+  // If timeScheduled is provided and exam is in the future, always return "Programado"
+  if (timeScheduled) {
+    const now = new Date();
+    const examTime = new Date(timeScheduled);
+    if (examTime > now) {
+      return "Programado";
+    }
+  }
+  
+  // For past exams or when no timeScheduled provided
   if (passed === true) {
     return "Aprobado";
   }
@@ -1443,8 +1479,20 @@ function getEventStyle(event: CalendarEvent): {
   accentClassName: string;
 } {
   if (event.kind === "exam") {
+    // Check if exam is in the future
+    const now = new Date();
+    const examTime = new Date(event.startTime);
+    const isFuture = examTime > now;
+    
     const status = event.status?.trim().toLowerCase() ?? "scheduled";
 
+    // If exam is in the future, always show as scheduled (blue)
+    if (isFuture) {
+      const style = EXAM_EVENT_STYLES.scheduled;
+      return { className: style.container, accentClassName: style.accent };
+    }
+
+    // For past exams, check status
     if (["cancelled", "cancelado", "cancelada"].includes(status)) {
       const style = EXAM_EVENT_STYLES.cancelled;
       return { className: style.container, accentClassName: style.accent };
@@ -1471,6 +1519,7 @@ function getEventStyle(event: CalendarEvent): {
       return { className: style.container, accentClassName: style.accent };
     }
 
+    // Default to scheduled if no clear status
     const style = EXAM_EVENT_STYLES.scheduled;
     return { className: style.container, accentClassName: style.accent };
   }
@@ -1797,6 +1846,7 @@ export function AdminCalendarDashboard() {
                 <div className="flex flex-col gap-1">
                   {dayEvents.map((event) => {
                     const style = getEventStyle(event);
+                    const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
                     return (
                       <button
                         key={event.id}
@@ -1806,13 +1856,21 @@ export function AdminCalendarDashboard() {
                           handleEventSelection(event);
                         }}
                         title={getEventTooltip(event)}
-                        className={`group relative flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-xs font-semibold transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
+                        className={`group relative flex flex-col gap-0.5 rounded-2xl px-3 py-2 text-left text-xs transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
                       >
-                        <span className={`h-2 w-2 rounded-full ${style.accentClassName}`} />
-                        <span className="flex-1 truncate">{event.title}</span>
-                        <span className="text-[10px] font-normal text-current">
-                          {formatTime(event.startTime)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2 w-2 flex-shrink-0 rounded-full ${style.accentClassName}`} />
+                          <span className="flex-1 truncate font-semibold">{event.title}</span>
+                        </div>
+                        <div className="ml-4 flex items-center gap-2 text-[10px] font-normal text-current/80">
+                          <span>{formatTime(event.startTime)}</span>
+                          {examType && (
+                            <>
+                              <span>•</span>
+                              <span className="truncate">{examType}</span>
+                            </>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
@@ -1861,21 +1919,28 @@ export function AdminCalendarDashboard() {
                   )}
                   {dayEvents.map((event) => {
                     const style = getEventStyle(event);
+                    const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
                     return (
                       <button
                         key={event.id}
                         type="button"
                         onClick={() => handleEventSelection(event)}
                         title={getEventTooltip(event)}
-                        className={`group flex flex-col gap-1 rounded-2xl px-3 py-2 text-left text-xs font-semibold transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
+                        className={`group flex flex-col gap-1 rounded-2xl px-3 py-2 text-left text-xs transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`inline-flex h-2 w-2 rounded-full ${style.accentClassName}`} />
-                          <span className="text-[10px] font-normal text-current">
-                            {formatTime(event.startTime)}
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex h-2 w-2 flex-shrink-0 rounded-full ${style.accentClassName}`} />
+                          <span className="flex-1 truncate font-semibold">{event.title}</span>
                         </div>
-                        <span className="truncate text-sm">{event.title}</span>
+                        <div className="ml-4 flex items-center gap-2 text-[10px] font-normal text-current/80">
+                          <span>{formatTime(event.startTime)}</span>
+                          {examType && (
+                            <>
+                              <span>•</span>
+                              <span className="truncate">{examType}</span>
+                            </>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
@@ -1916,6 +1981,7 @@ export function AdminCalendarDashboard() {
           )}
           {dayEvents.map((event) => {
             const style = getEventStyle(event);
+            const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
             return (
               <button
                 key={event.id}
@@ -1924,9 +1990,19 @@ export function AdminCalendarDashboard() {
                 title={getEventTooltip(event)}
                 className={`group flex flex-col gap-2 rounded-3xl px-4 py-3 text-left transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
               >
-                <div className="flex items-center justify-between gap-2 text-sm font-semibold">
-                  <span>{event.title}</span>
-                  <span className="text-xs font-normal text-current">{formatTime(event.startTime)}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold">{event.title}</span>
+                    <div className="flex items-center gap-2 text-xs font-normal text-current/80">
+                      <span>{formatTime(event.startTime)}</span>
+                      {examType && (
+                        <>
+                          <span>•</span>
+                          <span>{examType}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 {event.notes && (
                   <p className="text-xs font-normal text-brand-ink/80 line-clamp-3">{event.notes}</p>
