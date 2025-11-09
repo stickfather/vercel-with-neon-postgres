@@ -18,21 +18,21 @@ function getStatusChip(status: string, ratio: number, staff: number): {
 } {
   if (staff === 0) {
     return {
-      label: "No Coverage",
+      label: "Sin Cobertura",
       colorClass: "bg-rose-600 text-white border-rose-700",
       severity: 4,
     };
   }
   if (ratio > 4.0) {
     return {
-      label: "High Risk",
+      label: "Alto Riesgo",
       colorClass: "bg-rose-100 text-rose-700 border-rose-300",
       severity: 3,
     };
   }
   if (ratio > 2.0) {
     return {
-      label: "Attention",
+      label: "Atención",
       colorClass: "bg-amber-100 text-amber-700 border-amber-300",
       severity: 2,
     };
@@ -77,20 +77,20 @@ export function RiskTable({ data }: RiskTableProps) {
       <figure className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <figcaption className="mb-4 flex flex-col gap-1">
           <h2 className="text-base font-semibold text-slate-900 md:text-lg">
-            Risk & Coverage Analysis
+            Análisis de Riesgo y Cobertura
           </h2>
           <p className="text-sm text-slate-600">
-            Hours requiring attention (excluding OK status)
+            Horas que requieren atención (excluyendo estado OK)
           </p>
         </figcaption>
         <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <div className="flex flex-col gap-2">
             <span className="text-2xl">✓</span>
             <p className="text-sm font-semibold text-slate-900">
-              All hours have adequate coverage
+              Todas las horas tienen cobertura adecuada
             </p>
             <p className="text-xs text-slate-600">
-              No hours require attention at this time
+              Ninguna hora requiere atención en este momento
             </p>
           </div>
         </div>
@@ -102,11 +102,11 @@ export function RiskTable({ data }: RiskTableProps) {
     <figure className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <figcaption className="mb-4 flex flex-col gap-1">
         <h2 className="text-base font-semibold text-slate-900 md:text-lg">
-          Risk & Coverage Analysis
+          Análisis de Riesgo y Cobertura
         </h2>
         <p className="text-sm text-slate-600">
-          Hours requiring attention (excluding OK status) • Showing{" "}
-          {filteredData.length} hour{filteredData.length === 1 ? "" : "s"}
+          Horas que requieren atención (excluyendo estado OK) • Mostrando{" "}
+          {filteredData.length} hora{filteredData.length === 1 ? "" : "s"}
         </p>
       </figcaption>
 
@@ -114,18 +114,18 @@ export function RiskTable({ data }: RiskTableProps) {
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50">
             <tr>
-              <th className="px-4 py-3 font-semibold text-slate-700">Hour</th>
+              <th className="px-4 py-3 font-semibold text-slate-700">Hora</th>
               <th className="px-4 py-3 text-right font-semibold text-slate-700">
-                Students (min)
+                Estudiantes (min)
               </th>
               <th className="px-4 py-3 text-right font-semibold text-slate-700">
-                Staff (min)
+                Personal (min)
               </th>
               <th className="px-4 py-3 text-right font-semibold text-slate-700">
-                Load Ratio
+                Ratio de Carga
               </th>
               <th className="px-4 py-3 font-semibold text-slate-700">
-                Coverage Status
+                Estado de Cobertura
               </th>
             </tr>
           </thead>
@@ -139,10 +139,10 @@ export function RiskTable({ data }: RiskTableProps) {
                   {formatHour(row.hour_of_day)}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                  {row.minutos_estudiantes.toLocaleString("en-US")}
+                  {row.minutos_estudiantes.toLocaleString("es-EC")}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                  {row.minutos_personal.toLocaleString("en-US")}
+                  {row.minutos_personal.toLocaleString("es-EC")}
                 </td>
                 <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">
                   {row.carga_relativa.toFixed(2)}×
@@ -163,7 +163,7 @@ export function RiskTable({ data }: RiskTableProps) {
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4">
           <p className="text-xs text-slate-600">
-            Page {currentPage} of {totalPages}
+            Página {currentPage} de {totalPages}
           </p>
           <div className="flex gap-2">
             <button
@@ -171,14 +171,14 @@ export function RiskTable({ data }: RiskTableProps) {
               disabled={currentPage === 1}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Previous
+              Anterior
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Next
+              Siguiente
             </button>
           </div>
         </div>

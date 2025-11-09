@@ -18,14 +18,14 @@ export function KpiStrip({ kpiSnapshot }: KpiStripProps) {
   return (
     <figure>
       <figcaption className="sr-only">
-        At a glance snapshot showing best covered hour, worst load hour, and
-        hours at risk with load ratio above 3.0×
+        Vista rápida que muestra la mejor hora cubierta, la peor hora de carga y las
+        horas en riesgo con ratio de carga superior a 3.0×
       </figcaption>
       <div className="grid gap-4 sm:grid-cols-3">
         {/* Best Covered Hour */}
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Best Covered Hour
+            Mejor Hora Cubierta
           </span>
           <div className="flex items-baseline gap-2">
             {bestCoveredHour ? (
@@ -42,14 +42,14 @@ export function KpiStrip({ kpiSnapshot }: KpiStripProps) {
             )}
           </div>
           <p className="text-xs text-slate-600">
-            Hour with the lowest teacher load ratio
+            Hora con el ratio de carga docente más bajo
           </p>
         </div>
 
         {/* Worst Load Hour */}
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Worst Load Hour
+            Peor Hora de Carga
           </span>
           <div className="flex items-baseline gap-2">
             {worstLoadHour ? (
@@ -66,18 +66,18 @@ export function KpiStrip({ kpiSnapshot }: KpiStripProps) {
             )}
           </div>
           <p className="text-xs text-slate-600">
-            Hour with the highest teacher load ratio
+            Hora con el ratio de carga docente más alto
           </p>
         </div>
 
         {/* Hours at Risk */}
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Hours at Risk (&gt;3×)
+            Horas en Riesgo (&gt;3×)
           </span>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900">
-              {hoursAtRisk.toLocaleString("en-US")}
+              {hoursAtRisk.toLocaleString("es-EC")}
             </span>
             <span
               className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${
@@ -89,14 +89,14 @@ export function KpiStrip({ kpiSnapshot }: KpiStripProps) {
               }`}
             >
               {hoursAtRisk === 0
-                ? "None"
+                ? "Ninguna"
                 : hoursAtRisk === 1
-                  ? "1 hour"
-                  : `${hoursAtRisk} hours`}
+                  ? "1 hora"
+                  : `${hoursAtRisk} horas`}
             </span>
           </div>
           <p className="text-xs text-slate-600">
-            Hours with load ratio above 3.0×
+            Horas con ratio de carga superior a 3.0×
           </p>
         </div>
       </div>
