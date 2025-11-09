@@ -6,6 +6,7 @@ type RequestPayload = {
   studentId?: number;
   timeScheduled?: string;
   status?: string | null;
+  level?: string | null;
   score?: number | null;
   passed?: boolean | null;
   notes?: string | null;
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
       studentId: Number(payload.studentId),
       timeScheduled: payload.timeScheduled ?? "",
       status: payload.status ?? undefined,
+      level: payload.level ?? undefined,
       score:
         payload.score === undefined || payload.score === null
           ? null

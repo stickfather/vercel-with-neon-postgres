@@ -353,6 +353,12 @@ export function ExamsPanel({
                   {editingExam.status || "Sin tipo"}
                 </span>
               </div>
+              <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
+                Nivel
+                <span className="text-sm font-semibold text-brand-deep">
+                  {editingExam.level || "—"}
+                </span>
+              </div>
             </div>
             <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
               Calificación (opcional)

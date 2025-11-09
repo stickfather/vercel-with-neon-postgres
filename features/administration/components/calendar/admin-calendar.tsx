@@ -644,6 +644,8 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
   const [dateTime, setDateTime] = useState(() =>
     event ? toLocalInputValue(event.startTime) : defaultDate ?? "",
   );
+  const [examType, setExamType] = useState(() => event?.status ?? "");
+  const [level, setLevel] = useState(() => event?.level ?? "");
   const [status, setStatus] = useState<StatusFilter>(() => {
     const parsed = event ? parseStatusParam(event.status ?? "scheduled") : "scheduled";
     return parsed === "all" ? "scheduled" : parsed;
@@ -691,6 +693,14 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
       setError("Debes indicar la fecha y hora del examen.");
       return;
     }
+    if (!examType) {
+      setError("Debes seleccionar el tipo de examen.");
+      return;
+    }
+    if (!level) {
+      setError("Debes seleccionar el nivel.");
+      return;
+    }
 
     const timeScheduled = convertInputToIso(dateTime);
     if (!timeScheduled) {
@@ -728,7 +738,8 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
       const payload = {
         studentId: student.id,
         timeScheduled,
-        status: status === "all" ? "scheduled" : status,
+        status: examType,
+        level,
         score: nextScore,
         passed: nextPassed,
         notes: notes.trim() ? notes.trim() : null,
@@ -789,6 +800,41 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
             required
             className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
           />
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-semibold text-brand-deep">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+            Tipo de examen *
+          </span>
+          <select
+            value={examType}
+            onChange={(event) => setExamType(event.target.value)}
+            disabled={submitting}
+            required
+            className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <option value="">Selecciona tipo</option>
+            <option value="Speaking">Speaking</option>
+            <option value="Writing">Writing</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-semibold text-brand-deep">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+            Nivel *
+          </span>
+          <select
+            value={level}
+            onChange={(event) => setLevel(event.target.value)}
+            disabled={submitting}
+            required
+            className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <option value="">Selecciona nivel</option>
+            <option value="A1">A1</option>
+            <option value="A2">A2</option>
+            <option value="B1">B1</option>
+            <option value="B2">B2</option>
+            <option value="C1">C1</option>
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-sm font-semibold text-brand-deep">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">

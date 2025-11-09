@@ -42,6 +42,24 @@ export async function POST(request: Request, context: any) {
       );
     }
 
+    const status = typeof payload.status === "string" ? (payload.status as string) : null;
+    const validTypes = ["Speaking", "Writing"];
+    if (status && !validTypes.includes(status)) {
+      return NextResponse.json(
+        { error: "El tipo de examen debe ser Speaking o Writing." },
+        { status: 400 },
+      );
+    }
+
+    const level = typeof payload.level === "string" ? (payload.level as string) : null;
+    const validLevels = ["A1", "A2", "B1", "B2", "C1"];
+    if (level && !validLevels.includes(level)) {
+      return NextResponse.json(
+        { error: `El nivel debe ser uno de: ${validLevels.join(", ")}.` },
+        { status: 400 },
+      );
+    }
+
     const scoreValue = payload.score;
     const score =
       scoreValue == null || scoreValue === ""
@@ -57,7 +75,6 @@ export async function POST(request: Request, context: any) {
       );
     }
 
-    const status = typeof payload.status === "string" ? (payload.status as string) : null;
     const passed = Boolean(payload.passed);
     const notes =
       typeof payload.notes === "string"
@@ -67,6 +84,7 @@ export async function POST(request: Request, context: any) {
     const exam = await createStudentExam(studentId, {
       timeScheduled,
       status,
+      level,
       score,
       passed,
       notes,

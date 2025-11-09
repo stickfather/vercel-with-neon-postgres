@@ -9,6 +9,7 @@ import type { StudentExam } from "@/features/administration/data/student-profile
 const INITIAL_STATE = {
   scheduledAt: "",
   examType: "",
+  level: "",
   grade: "",
   note: "",
 };
@@ -59,6 +60,11 @@ export function AddExamModal({ open, studentId, onClose, onCreated }: AddExamMod
       return;
     }
 
+    if (!form.level.trim()) {
+      setError("Selecciona el nivel.");
+      return;
+    }
+
     const scoreNumber = parseScore(form.grade);
     if (form.grade.trim() && scoreNumber == null) {
       setError("La calificación debe ser numérica.");
@@ -76,6 +82,7 @@ export function AddExamModal({ open, studentId, onClose, onCreated }: AddExamMod
             body: JSON.stringify({
               timeScheduled: form.scheduledAt.trim(),
               status: form.examType.trim(),
+              level: form.level.trim(),
               score: scoreNumber,
               passed: false,
               notes: form.note.trim() || null,
@@ -147,16 +154,36 @@ export function AddExamModal({ open, studentId, onClose, onCreated }: AddExamMod
         </label>
         <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
           Tipo de examen
-          <input
-            type="text"
+          <select
             value={form.examType}
             onChange={(event) =>
               setForm((previous) => ({ ...previous, examType: event.target.value }))
             }
             className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
-            placeholder="Ej. Placement, Final, Nivel"
             required
-          />
+          >
+            <option value="">Selecciona tipo</option>
+            <option value="Speaking">Speaking</option>
+            <option value="Writing">Writing</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+          Nivel
+          <select
+            value={form.level}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, level: event.target.value }))
+            }
+            className="w-full rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+            required
+          >
+            <option value="">Selecciona nivel</option>
+            <option value="A1">A1</option>
+            <option value="A2">A2</option>
+            <option value="B1">B1</option>
+            <option value="B2">B2</option>
+            <option value="C1">C1</option>
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
           Calificación (opcional)

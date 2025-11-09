@@ -54,6 +54,22 @@ export async function PUT(
     }
 
     const status = typeof payload.status === "string" ? (payload.status as string) : null;
+    const level = typeof payload.level === "string" ? (payload.level as string) : null;
+    const validTypes = ["Speaking", "Writing"];
+    if (status && !validTypes.includes(status)) {
+      return NextResponse.json(
+        { error: "El tipo de examen debe ser Speaking o Writing." },
+        { status: 400 },
+      );
+    }
+    const validLevels = ["A1", "A2", "B1", "B2", "C1"];
+    if (level && !validLevels.includes(level)) {
+      return NextResponse.json(
+        { error: `El nivel debe ser uno de: ${validLevels.join(", ")}.` },
+        { status: 400 },
+      );
+    }
+
     const passed = Boolean(payload.passed);
     const notes =
       typeof payload.notes === "string"
@@ -63,6 +79,7 @@ export async function PUT(
     const updated = await updateStudentExam(examId, {
       timeScheduled,
       status,
+      level,
       score,
       passed,
       notes,
