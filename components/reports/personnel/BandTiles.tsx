@@ -18,18 +18,18 @@ function getStatusNote(ratio: number): {
 } {
   if (ratio <= 2.0) {
     return {
-      text: "Well staffed",
+      text: "Bien cubierto",
       colorClass: "bg-emerald-100 text-emerald-700",
     };
   }
   if (ratio <= 3.0) {
     return {
-      text: "Tight coverage",
+      text: "Cobertura ajustada",
       colorClass: "bg-amber-100 text-amber-700",
     };
   }
   return {
-    text: "Needs reinforcement",
+    text: "Requiere refuerzo",
     colorClass: "bg-rose-100 text-rose-700",
   };
 }
@@ -59,10 +59,10 @@ export function BandTiles({ data }: BandTilesProps) {
     <figure className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <figcaption className="mb-4 flex flex-col gap-1">
         <h2 className="text-base font-semibold text-slate-900 md:text-lg">
-          Coverage by Time Blocks
+          Cobertura por Bloques de Tiempo
         </h2>
         <p className="text-sm text-slate-600">
-          Operational blocks summary with staffing ratios
+          Resumen de bloques operativos con ratios de personal
         </p>
       </figcaption>
 
@@ -75,7 +75,7 @@ export function BandTiles({ data }: BandTilesProps) {
             <div
               key={block.bloque}
               className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:shadow-md"
-              title={`${blockLabel} — Students: ${block.minutos_estudiantes.toLocaleString("en-US")} min • Staff: ${block.minutos_personal.toLocaleString("en-US")} min • Ratio: ${block.ratio_estudiantes_personal.toFixed(2)}×`}
+              title={`${blockLabel} — Estudiantes: ${block.minutos_estudiantes.toLocaleString("es-EC")} min • Personal: ${block.minutos_personal.toLocaleString("es-EC")} min • Ratio: ${block.ratio_estudiantes_personal.toFixed(2)}×`}
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-slate-900">
@@ -90,15 +90,15 @@ export function BandTiles({ data }: BandTilesProps) {
 
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="flex flex-col gap-1">
-                  <span className="text-slate-500">Student minutes</span>
+                  <span className="text-slate-500">Minutos estudiantes</span>
                   <span className="font-semibold text-slate-900">
-                    {block.minutos_estudiantes.toLocaleString("en-US")}
+                    {block.minutos_estudiantes.toLocaleString("es-EC")}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-slate-500">Staff minutes</span>
+                  <span className="text-slate-500">Minutos personal</span>
                   <span className="font-semibold text-slate-900">
-                    {block.minutos_personal.toLocaleString("en-US")}
+                    {block.minutos_personal.toLocaleString("es-EC")}
                   </span>
                 </div>
               </div>
