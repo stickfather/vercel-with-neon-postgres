@@ -91,7 +91,7 @@ export function ExportActionsCard({ data }: Props) {
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <header className="mb-4">
         <h3 className="text-lg font-semibold text-slate-900">
-          Export + Manager Action Notes
+          Exportar + Notas de Gestión
         </h3>
         <p className="mt-1 text-xs text-slate-500">
           Exportar datos para seguimiento y acciones de gestión
@@ -103,12 +103,12 @@ export function ExportActionsCard({ data }: Props) {
           onClick={handleExport}
           className="rounded-lg bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
         >
-          📥 Export CSV (All Tables)
+          📥 Exportar CSV (Todas las Tablas)
         </button>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs text-slate-600">
-            El CSV incluirá: Inactive Roster, At-Risk Students, y Dual-Risk Students.
+            El CSV incluirá: Roster Inactivos, Estudiantes en Riesgo, y Estudiantes de Riesgo Dual.
             Los archivos se descargarán automáticamente.
           </p>
         </div>

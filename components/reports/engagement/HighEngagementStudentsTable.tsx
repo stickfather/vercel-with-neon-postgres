@@ -18,7 +18,7 @@ export function HighEngagementStudentsTable({ data }: Props) {
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <header className="mb-6">
         <h3 className="text-lg font-semibold text-slate-900">
-          High-Engagement Consistency Students (Top 10%)
+          Estudiantes con Alta Consistencia de Engagement (Top 10%)
         </h3>
         <p className="mt-1 text-xs text-slate-500">
           Alumnos con alta consistencia que pueden impulsar la comunidad

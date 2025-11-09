@@ -21,7 +21,7 @@ export function MauRollingTrend({ data }: Props) {
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <header className="mb-6">
         <h3 className="text-lg font-semibold text-slate-900">
-          Rolling 30-Day Active User Trend
+          Tendencia de Usuarios Activos en 30 Días (Rolling)
         </h3>
         <p className="mt-1 text-xs text-slate-500">
           Activos 30d evaluados diariamente (últimos 90 días)
