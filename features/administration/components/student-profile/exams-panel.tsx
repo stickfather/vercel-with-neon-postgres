@@ -61,6 +61,71 @@ function parseScore(value: string): number | null {
   return parsed;
 }
 
+function extractExamTypeFromNotes(notes: string | null): string {
+  if (!notes) return "—";
+  const normalized = notes.toLowerCase();
+  if (normalized.includes("speaking")) return "Speaking";
+  if (normalized.includes("writing")) return "Writing";
+  return "—";
+}
+
+function formatScore(score: number | null): string {
+  if (score == null) return "";
+  const rounded = Math.round(score * 100) / 100;
+  if (rounded === Math.floor(rounded)) return String(Math.floor(rounded));
+  return String(rounded);
+}
+
+function getStatusBadgeClass(status: string | null): string {
+  const normalized = status?.trim().toLowerCase();
+  switch (normalized) {
+    case "programado":
+    case "scheduled":
+      return "bg-[#e6f0ff] text-[#0f3f86] border border-[#b9cdf3]";
+    case "aprobado":
+    case "approved":
+    case "passed":
+      return "bg-emerald-50 text-emerald-700 border border-emerald-200";
+    case "reprobado":
+    case "failed":
+      return "bg-rose-50 text-rose-700 border border-rose-200";
+    case "cancelado":
+    case "cancelled":
+    case "canceled":
+      return "bg-gray-100 text-gray-700 border border-gray-300";
+    default:
+      return "bg-brand-ink-muted/15 text-brand-ink border border-brand-ink-muted/20";
+  }
+}
+
+function getStatusLabel(status: string | null): string {
+  const normalized = status?.trim().toLowerCase();
+  switch (normalized) {
+    case "programado":
+    case "scheduled":
+      return "Programado";
+    case "aprobado":
+    case "approved":
+    case "passed":
+      return "Aprobado";
+    case "reprobado":
+    case "failed":
+      return "Reprobado";
+    case "cancelado":
+    case "cancelled":
+    case "canceled":
+      return "Cancelado";
+    default:
+      return status || "—";
+  }
+}
+
+function shouldHideScore(status: string | null): boolean {
+  const normalized = status?.trim().toLowerCase();
+  return normalized === "programado" || normalized === "scheduled" || 
+         normalized === "cancelado" || normalized === "cancelled" || normalized === "canceled";
+}
+
 function Modal({ title, description, onClose, children }: ModalProps) {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(15,23,42,0.35)] px-4 py-6 backdrop-blur-sm">
@@ -268,9 +333,9 @@ export function ExamsPanel({
             <tr>
               <th className="px-4 py-3 font-semibold text-brand-deep">Fecha y hora</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Tipo de examen</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Nivel</th>
-              <th className="px-4 py-3 font-semibold text-brand-deep">Calificación</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Estado</th>
+              <th className="px-4 py-3 font-semibold text-brand-deep">Nivel</th>
+              <th className="px-4 py-3 text-right font-semibold text-brand-deep">Calificación</th>
               <th className="px-4 py-3 font-semibold text-brand-deep">Nota</th>
               <th className="px-4 py-3 text-right font-semibold text-brand-deep">Acciones</th>
             </tr>
@@ -283,32 +348,35 @@ export function ExamsPanel({
                 </td>
               </tr>
             ) : (
-              sortedExams.map((exam) => (
+              sortedExams.map((exam) => {
+                const examType = extractExamTypeFromNotes(exam.notes);
+                const statusLabel = getStatusLabel(exam.status);
+                const statusBadgeClass = getStatusBadgeClass(exam.status);
+                const hideScore = shouldHideScore(exam.status);
+                const isAutoCancelled = exam.notes?.toLowerCase().includes("auto-cancelado por inasistencia");
+                
+                return (
                 <tr key={exam.id} className="divide-x divide-brand-ink-muted/10">
                   <td className="px-4 py-3 align-top font-semibold text-brand-deep">
                     {formatExamDateTime(exam.timeScheduled)}
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
-                    {exam.status ? exam.status : "Sin tipo"}
+                    {examType}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <span
+                      className={`inline-flex min-w-[100px] items-center justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusBadgeClass}`}
+                    >
+                      {statusLabel}
+                    </span>
                   </td>
                   <td className="px-4 py-3 align-top text-brand-ink">
                     {exam.level ? exam.level : "—"}
                   </td>
-                  <td className="px-4 py-3 align-top text-brand-ink">
-                    {exam.score == null ? "—" : exam.score}
+                  <td className="px-4 py-3 align-top text-right text-brand-ink">
+                    {hideScore ? "—" : exam.score == null ? "—" : formatScore(exam.score)}
                   </td>
-                  <td className="px-4 py-3 align-top">
-                    <span
-                      className={`inline-flex min-w-[80px] items-center justify-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                        exam.passed
-                          ? "bg-brand-teal-soft text-brand-teal"
-                          : "bg-brand-ink-muted/15 text-brand-ink"
-                      }`}
-                    >
-                      {exam.passed ? "Completado" : "Pendiente"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 align-top text-brand-ink">
+                  <td className={`px-4 py-3 align-top ${isAutoCancelled ? "text-brand-ink-muted/70 italic" : "text-brand-ink"}`}>
                     {exam.notes ? exam.notes : "—"}
                   </td>
                   <td className="px-4 py-3 align-top">
@@ -316,7 +384,7 @@ export function ExamsPanel({
                       <button
                         type="button"
                         onClick={() => openEditModal(exam)}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
+                        className="inline-flex items-center justify-center rounded-full border border-brand-ink-muted/30 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-ink shadow-sm transition hover:border-brand-teal hover:bg-brand-teal-soft/20 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                       >
                         Editar
                       </button>
@@ -324,14 +392,14 @@ export function ExamsPanel({
                         type="button"
                         onClick={() => void handleDelete(exam.id)}
                         disabled={activeRequest === "delete" && isPending}
-                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-orange px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow transition hover:-translate-y-0.5 hover:bg-[#e06820] disabled:cursor-not-allowed disabled:opacity-70"
+                        className="inline-flex items-center justify-center rounded-full border border-brand-orange/30 bg-white px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-orange shadow-sm transition hover:border-brand-orange hover:bg-brand-orange/10 disabled:cursor-not-allowed disabled:opacity-70"
                       >
                         Eliminar
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))
+              )})
             )}
           </tbody>
         </table>
@@ -354,7 +422,7 @@ export function ExamsPanel({
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                 Tipo de examen
                 <span className="text-sm font-semibold text-brand-deep">
-                  {editingExam.status || "Sin tipo"}
+                  {extractExamTypeFromNotes(editingExam.notes)}
                 </span>
               </div>
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
