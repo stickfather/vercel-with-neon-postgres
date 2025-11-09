@@ -116,27 +116,27 @@ export function DrillDownDrawer({
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex h-64 items-center justify-center">
-              <div className="text-sm text-slate-500">Loading...</div>
+              <div className="text-sm text-slate-500">Cargando...</div>
             </div>
           ) : exams.length === 0 ? (
             <div className="flex h-64 items-center justify-center">
-              <div className="text-sm text-slate-500">No exams found.</div>
+              <div className="text-sm text-slate-500">No se encontraron exámenes.</div>
             </div>
           ) : (
             <>
               <p className="mb-4 text-sm text-slate-600">
-                Showing {startIdx + 1}–{Math.min(endIdx, exams.length)} of{" "}
-                {exams.length} exams
+                Mostrando {startIdx + 1}–{Math.min(endIdx, exams.length)} de{" "}
+                {exams.length} exámenes
               </p>
 
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200">
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">
-                      Student
+                      Estudiante
                     </th>
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">
-                      Type
+                      Tipo
                     </th>
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">
                       Nivel

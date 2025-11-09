@@ -124,11 +124,11 @@ export function DrillDownDrawer({ slice, onClose }: Props) {
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex h-full items-center justify-center">
-              <div className="text-sm text-slate-500">Loading...</div>
+              <div className="text-sm text-slate-500">Cargando...</div>
             </div>
           ) : data.length === 0 ? (
             <div className="flex h-full items-center justify-center">
-              <div className="text-sm text-slate-500">No data found.</div>
+              <div className="text-sm text-slate-500">No se encontraron datos.</div>
             </div>
           ) : slice.type === "stuck_heatmap" ? (
             <div className="space-y-4">
