@@ -841,107 +841,35 @@ function PersonnelPanel({ state }: { state: PanelState<{
   coverage: PersonnelCoverage[];
   studentLoad: PersonnelLoadPoint[];
 }> }) {
-  const data = state.data;
-  const empty = !data ||
-    (data.staffingMix.length === 0 && data.coverage.length === 0 && data.studentLoad.length === 0);
-
+  // Redirect to new comprehensive personnel panel
   return (
-    <PanelWrapper
-      status={state.status}
-      error={state.error}
-      empty={empty}
-      label="los indicadores de personal"
-      onRetry={state.reload}
-    >
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Mix de cobertura" description="Minutos de estudiantes vs staff por hora." />
-            {(data?.staffingMix ?? []).length > 0 ? (
-              <div className="mt-4 flex flex-col gap-3">
-                {(data?.staffingMix ?? []).map((mix) => {
-                  const ratio = (mix.staff ?? 0) > 0 
-                    ? ((mix.students ?? 0) / (mix.staff ?? 0)).toFixed(1)
-                    : "—";
-                  return (
-                    <div key={mix.hour} className="flex items-center gap-4">
-                      <span className="w-16 text-sm text-slate-200">{mix.hour}</span>
-                      <div className="flex h-3 flex-1 overflow-hidden rounded-full border border-slate-800/60">
-                        <div
-                          className="h-full bg-emerald-400/80"
-                          style={{
-                            width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
-                              ? `${((mix.students ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
-                              : "0%",
-                          }}
-                          aria-label="Minutos estudiantes"
-                          title={`Estudiantes: ${Math.round(mix.students ?? 0)} min`}
-                        />
-                        <div
-                          className="h-full bg-sky-400/80"
-                          style={{
-                            width: (mix.students ?? 0) + (mix.staff ?? 0) > 0
-                              ? `${((mix.staff ?? 0) / Math.max((mix.students ?? 0) + (mix.staff ?? 0), 1)) * 100}%`
-                              : "0%",
-                          }}
-                          aria-label="Minutos staff"
-                          title={`Personal: ${Math.round(mix.staff ?? 0)} min`}
-                        />
-                      </div>
-                      <span className="inline-flex items-center rounded-full bg-slate-700/60 px-2 py-1 text-xs font-semibold tabular-nums text-slate-200">
-                        {ratio}×
-                      </span>
-                    </div>
-                  );
-                })}
-                <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400/80" />
-                    <span>Estudiantes</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-sky-400/80" />
-                    <span>Personal</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
-                Sin datos de staffing mix
-              </div>
-            )}
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Carga por docente" description="Estudiantes promedio por hora." />
-            <div className="mt-4">
-              <LineAreaChart points={data?.studentLoad ?? []} />
-            </div>
-          </div>
-        </div>
-        <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-          <SectionTitle title="Cobertura en picos" description="Zonas de riesgo operativo." />
-          {(data?.coverage ?? []).length > 0 ? (
-            <div className="mt-4 flex flex-col gap-3">
-              {(data?.coverage ?? []).map((coverage) => (
-                <div key={coverage.area} className="flex flex-col gap-2 rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-100">{coverage.area}</span>
-                    <span className={classNames("rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide", mapRiskChip(coverage.riskLevel))}>
-                      {coverage.riskLevel}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300">{coverage.status}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 text-sm text-slate-400">
-              Sin datos de cobertura
-            </div>
-          )}
+    <div className="flex flex-col gap-6">
+      <div className="rounded-3xl border border-emerald-500/40 bg-emerald-500/10 p-8 text-center">
+        <h3 className="mb-3 text-xl font-semibold text-emerald-100">
+          Teacher Coverage & Load Panel
+        </h3>
+        <p className="mb-6 text-sm text-emerald-200/80">
+          The personnel panel has been updated with comprehensive modules including at-a-glance KPIs,
+          staffing load curves, hourly teacher burden analysis, time block coverage tiles,
+          risk & coverage tables, and AI-generated manager notes with actionable recommendations.
+        </p>
+        <Link
+          href="/reports/personal"
+          className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg transition hover:-translate-y-[1px] hover:bg-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        >
+          View Complete Personnel Panel →
+        </Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-2 text-xs text-emerald-200/60">
+          <span>• Best/Worst Coverage Hours</span>
+          <span>• Hours at Risk (&gt;3×)</span>
+          <span>• Load Curve Charts</span>
+          <span>• Student Load per Teacher</span>
+          <span>• Time Block Tiles</span>
+          <span>• Risk Analysis Table</span>
+          <span>• AI Manager Notes</span>
         </div>
       </div>
-    </PanelWrapper>
+    </div>
   );
 }
 
