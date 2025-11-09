@@ -24,10 +24,10 @@ export function WeeklyTrendChart({ data, onBarClick }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Weekly Pass/Fail Trend + Pass Rate
+          Tendencia Semanal de Aprobación/Reprobación + Tasa
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
-          No data available for the last 90 days.
+          No hay datos disponibles de los últimos 90 días.
         </div>
       </section>
     );
@@ -52,32 +52,32 @@ export function WeeklyTrendChart({ data, onBarClick }: Props) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
         <p className="mb-2 text-xs font-semibold text-slate-700">
-          Week of Mon, {formattedDate}
+          Semana del Lun, {formattedDate}
         </p>
         <div className="flex flex-col gap-1 text-xs">
           <div className="flex items-center gap-2">
             <div className="h-3 w-3 rounded-sm bg-emerald-500" />
-            <span className="text-slate-600">Passed:</span>
+            <span className="text-slate-600">Aprobados:</span>
             <span className="font-semibold text-slate-900">
               {data.passed_count}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="h-3 w-3 rounded-sm bg-rose-500" />
-            <span className="text-slate-600">Failed:</span>
+            <span className="text-slate-600">Reprobados:</span>
             <span className="font-semibold text-slate-900">
               {data.failed_count}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-slate-600">Completed:</span>
+            <span className="text-slate-600">Completados:</span>
             <span className="font-semibold text-slate-900">
               {data.completed_count}
             </span>
           </div>
           {data.pass_rate !== null && (
             <div className="mt-1 flex items-center gap-2 border-t pt-1">
-              <span className="text-slate-600">Pass Rate:</span>
+              <span className="text-slate-600">Tasa de Aprobación:</span>
               <span className="font-semibold text-slate-900">
                 {data.pass_rate.toFixed(1)}%
               </span>
@@ -102,9 +102,9 @@ export function WeeklyTrendChart({ data, onBarClick }: Props) {
   return (
     <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <figcaption className="mb-4 text-lg font-semibold text-slate-900">
-        Weekly Pass/Fail Trend + Pass Rate
+        Tendencia Semanal de Aprobación/Reprobación + Tasa
         <span className="ml-2 text-xs font-normal text-slate-500">
-          (last 90 days)
+          (últimos 90 días)
         </span>
       </figcaption>
       <ResponsiveContainer width="100%" height={320}>

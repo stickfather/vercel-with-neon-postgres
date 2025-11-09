@@ -11,7 +11,7 @@ export function AverageScoreCard({ data }: Props) {
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">
       <header className="mb-3">
         <h3 className="text-sm font-semibold text-slate-900">
-          Average Score (90d)
+          Puntuación Promedio (90d)
         </h3>
       </header>
       <div className="flex flex-col gap-2">
@@ -26,7 +26,7 @@ export function AverageScoreCard({ data }: Props) {
             />
           </div>
         )}
-        <p className="text-xs text-slate-500">Out of 100</p>
+        <p className="text-xs text-slate-500">De 100</p>
       </div>
     </section>
   );

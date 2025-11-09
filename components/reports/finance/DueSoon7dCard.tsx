@@ -38,31 +38,31 @@ export function DueSoon7dCard({ summary, series }: Props) {
   return (
     <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
       <h2 className="text-base font-semibold text-slate-900">
-        Due Soon (7 Days)
+        Vencimientos Próximos (7 Días)
       </h2>
 
       {/* Mini-KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
-          <span className="text-xs font-medium text-slate-500">Invoices (7d)</span>
+          <span className="text-xs font-medium text-slate-500">Facturas (7d)</span>
           <span className="text-2xl font-bold text-slate-900">
             {invoicesDue}
           </span>
         </div>
         <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
-          <span className="text-xs font-medium text-slate-500">Students (7d)</span>
+          <span className="text-xs font-medium text-slate-500">Estudiantes (7d)</span>
           <span className="text-2xl font-bold text-slate-900">
             {studentsDue}
           </span>
         </div>
         <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
-          <span className="text-xs font-medium text-slate-500">Amount (7d)</span>
+          <span className="text-xs font-medium text-slate-500">Monto (7d)</span>
           <span className="text-lg font-bold text-slate-900">
             {formatCurrency(amountDue)}
           </span>
         </div>
         <div className="flex flex-col gap-1 rounded-lg bg-amber-50 p-3">
-          <span className="text-xs font-medium text-amber-700">Due Today</span>
+          <span className="text-xs font-medium text-amber-700">Vence Hoy</span>
           <span className="text-lg font-bold text-amber-900">
             {formatCurrency(amountToday)}
           </span>
@@ -72,7 +72,7 @@ export function DueSoon7dCard({ summary, series }: Props) {
       {/* Bar Chart */}
       <figure>
         <figcaption className="mb-3 text-sm font-medium text-slate-600">
-          Daily Due Amounts (Next 7 Days)
+          Montos Diarios por Vencer (Próximos 7 Días)
         </figcaption>
         <div className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -98,10 +98,10 @@ export function DueSoon7dCard({ summary, series }: Props) {
                     <div className="rounded-lg bg-slate-900 px-3 py-2 text-white shadow-lg">
                       <p className="text-sm font-medium">
                         {formatFullDate(data.date)}
-                        {isToday && " (Today)"}
+                        {isToday && " (Hoy)"}
                       </p>
                       <p className="text-sm">
-                        {formatCurrency(data.amount)} ({data.invoices} invoices)
+                        {formatCurrency(data.amount)} ({data.invoices} facturas)
                       </p>
                     </div>
                   );

@@ -45,13 +45,13 @@ export function AgingBucketsCard({ data }: Props) {
   return (
     <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
       <h2 className="text-base font-semibold text-slate-900">
-        Aging Buckets
+        Antigüedad de Deuda
       </h2>
 
       {/* Amounts by Aging Bucket */}
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium text-slate-600">
-          Amounts by Days Overdue
+          Montos por Días Vencidos
         </h3>
         <div className="flex flex-col gap-2">
           {buckets.map((bucket) => {
