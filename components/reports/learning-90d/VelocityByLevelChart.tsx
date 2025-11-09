@@ -29,10 +29,10 @@ export function VelocityByLevelChart({ data }: Props) {
     return (
       <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Lesson Completion Velocity per Level (90d)
+          Velocidad de Completación por Nivel (90d)
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
-          No data available.
+          No hay datos disponibles.
         </div>
       </figure>
     );
@@ -44,10 +44,10 @@ export function VelocityByLevelChart({ data }: Props) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
         <p className="text-xs font-semibold text-slate-900">
-          Level {data.level}
+          Nivel {data.level}
         </p>
         <p className="mt-1 text-xs text-slate-600">
-          {data.lessons_per_week.toFixed(1)} lessons/week
+          {data.lessons_per_week.toFixed(1)} lecciones/semana
         </p>
       </div>
     );
@@ -56,7 +56,7 @@ export function VelocityByLevelChart({ data }: Props) {
   return (
     <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold text-slate-900">
-        Lesson Completion Velocity per Level (90d)
+        Velocidad de Completación por Nivel (90d)
       </h3>
       <ResponsiveContainer width="100%" height={280}>
         <BarChart

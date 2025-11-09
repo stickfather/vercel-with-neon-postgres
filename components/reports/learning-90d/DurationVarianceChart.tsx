@@ -21,10 +21,10 @@ export function DurationVarianceChart({ data, onBarClick }: Props) {
     return (
       <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Lesson Duration Variance (Top 20, 90d)
+          Varianza de Duración por Lección (Top 20, 90d)
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
-          No data available.
+          No hay datos disponibles.
         </div>
       </figure>
     );
@@ -45,10 +45,10 @@ export function DurationVarianceChart({ data, onBarClick }: Props) {
         </p>
         <div className="flex flex-col gap-1 text-xs text-slate-600">
           <p>
-            Variance: <span className="font-semibold text-slate-900">{data.variance_minutes.toFixed(1)} min²</span>
+            Varianza: <span className="font-semibold text-slate-900">{data.variance_minutes.toFixed(1)} min²</span>
           </p>
           <p>
-            Avg: <span className="font-semibold">{data.avg_minutes.toFixed(1)} min</span>
+            Promedio: <span className="font-semibold">{data.avg_minutes.toFixed(1)} min</span>
           </p>
           <p>
             n = <span className="font-semibold">{data.n_sessions}</span>
@@ -71,7 +71,7 @@ export function DurationVarianceChart({ data, onBarClick }: Props) {
   return (
     <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold text-slate-900">
-        Lesson Duration Variance (Top 20, 90d)
+        Varianza de Duración por Lección (Top 20, 90d)
       </h3>
       <ResponsiveContainer width="100%" height={280}>
         <BarChart
