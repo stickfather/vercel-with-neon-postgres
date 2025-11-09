@@ -12,7 +12,7 @@ export function LeiKpiCard({ data }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">
         <header className="mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">LEI (7-day avg)</h3>
+          <h3 className="text-sm font-semibold text-slate-900">LEI (promedio 7 días)</h3>
         </header>
         <div className="flex flex-col gap-1">
           <div className="text-3xl font-bold text-slate-900">—</div>
@@ -42,13 +42,13 @@ export function LeiKpiCard({ data }: Props) {
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">
       <header className="mb-3">
-        <h3 className="text-sm font-semibold text-slate-900">LEI (7-day avg)</h3>
+        <h3 className="text-sm font-semibold text-slate-900">LEI (promedio 7 días)</h3>
       </header>
       <div className="flex flex-col gap-2">
         <div className="text-3xl font-bold text-emerald-600">
           {lei_7d_avg.toFixed(2)}
         </div>
-        <p className="text-xs text-slate-500">Lessons/hour (last 7 days)</p>
+        <p className="text-xs text-slate-500">Lecciones/hora (últimos 7 días)</p>
         
         {/* Sparkline */}
         <div className="mt-2">

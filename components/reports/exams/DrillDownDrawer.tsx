@@ -139,16 +139,16 @@ export function DrillDownDrawer({
                       Type
                     </th>
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">
-                      Level
+                      Nivel
                     </th>
                     <th className="px-2 py-2 text-left font-semibold text-slate-700">
-                      Time
+                      Hora
                     </th>
                     <th className="px-2 py-2 text-right font-semibold text-slate-700">
-                      Score
+                      Puntuación
                     </th>
                     <th className="px-2 py-2 text-center font-semibold text-slate-700">
-                      Pass
+                      Aprobado
                     </th>
                   </tr>
                 </thead>
