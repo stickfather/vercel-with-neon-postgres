@@ -289,9 +289,8 @@ function getEventTooltip(event: CalendarEvent): string {
       event.title,
       formatDateTime(event.startTime),
     ].filter(Boolean);
-    const status = event.status
-      ? `Estado: ${translateStatus(event.status, event.passed)}`
-      : null;
+    const examType = event.status ? `Tipo: ${event.status}` : null;
+    const level = event.level ? `Nivel: ${event.level}` : null;
     const score = event.score != null ? `Nota: ${event.score}%` : null;
     const passedLabel =
       event.passed == null
@@ -299,7 +298,8 @@ function getEventTooltip(event: CalendarEvent): string {
         : `¿Aprobó?: ${event.passed ? "Sí" : "No"}`;
     return [
       base.join(" · "),
-      status,
+      examType,
+      level,
       score,
       passedLabel,
     ]
@@ -1289,9 +1289,17 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
         {event.kind === "exam" && event.status && (
           <div className="flex flex-col gap-1">
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
-              Estado
+              Tipo de examen
             </dt>
-            <dd>{translateStatus(event.status, event.passed)}</dd>
+            <dd>{event.status}</dd>
+          </div>
+        )}
+        {event.kind === "exam" && event.level && (
+          <div className="flex flex-col gap-1">
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+              Nivel
+            </dt>
+            <dd>{event.level}</dd>
           </div>
         )}
         {event.kind === "exam" && event.score != null && (
