@@ -100,8 +100,8 @@ const EXAM_EVENT_STYLES: Record<
     accent: "bg-[#9ca3af]",
   },
   activity: {
-    container: "border border-[#a8dec6] bg-[#def7ed] text-[#0d6b50]",
-    accent: "bg-[#0d6b50]",
+    container: "border border-[#fed7aa] bg-[#ffedd5] text-[#c2410c]",
+    accent: "bg-[#ea580c]",
   },
 };
 
@@ -236,18 +236,28 @@ function getRange(view: CalendarView, start: Date): DateRange {
 }
 
 function buildMonthDays(monthStart: Date): Date[] {
-  const firstVisibleDay = startOfWeek(monthStart);
+  const firstVisibleDay = startOfWeek(monthStart); // This returns Monday
   const nextMonth = addMonths(monthStart, 1);
   const days: Date[] = [];
   let cursor = firstVisibleDay;
-  while (cursor < nextMonth || days.length % 6 !== 0) {
+  
+  // Build days for up to 6 weeks, skipping Sundays
+  while (days.length < 42) { // 6 weeks * 7 days = 42 potential slots
+    const dayOfWeek = cursor.getUTCDay();
+    
     // Skip Sundays (day 0)
-    if (cursor.getUTCDay() !== 0) {
+    if (dayOfWeek !== 0) {
       days.push(cursor);
     }
+    
     cursor = addDays(cursor, 1);
-    if (days.length > 36) break; // 6 weeks * 6 days = 36
+    
+    // Stop if we've covered the month and completed full weeks
+    if (cursor >= nextMonth && days.length % 6 === 0 && days.length >= 6) {
+      break;
+    }
   }
+  
   return days;
 }
 
@@ -458,6 +468,12 @@ const EXAM_STATUS_LEGEND_ITEMS: Array<{
     label: "Cancelado",
     className: EXAM_EVENT_STYLES.cancelled.container,
     accentClassName: EXAM_EVENT_STYLES.cancelled.accent,
+  },
+  {
+    key: "activity" as ExamLegendKey,
+    label: "Actividades u Otros",
+    className: EXAM_EVENT_STYLES.activity.container,
+    accentClassName: EXAM_EVENT_STYLES.activity.accent,
   },
 ];
 
