@@ -379,6 +379,25 @@ export async function getMicroKpi7dData(): Promise<MicroKpi7d> {
   };
 }
 
+// Helper to handle missing views gracefully
+async function safeQuery<T>(
+  queryFn: () => Promise<T>,
+  fallback: T,
+  errorLabel: string
+): Promise<T> {
+  try {
+    return await queryFn();
+  } catch (error: any) {
+    // Check if it's a "relation does not exist" error (view not created yet)
+    if (error?.code === '42P01' || error?.message?.includes('does not exist')) {
+      console.warn(`View not found for ${errorLabel}, using fallback data`);
+      return fallback;
+    }
+    // Re-throw other errors
+    throw error;
+  }
+}
+
 // Main function to fetch all data
 export async function getLearningPanelData(): Promise<LearningPanelData> {
   const [
@@ -393,16 +412,56 @@ export async function getLearningPanelData(): Promise<LearningPanelData> {
     at_risk_learners,
     micro_kpi_7d,
   ] = await Promise.all([
-    getLeiKpiData(),
-    getSpeedBucketsData(),
-    getDaysInLevelData(),
-    getDaysSinceProgressData(),
-    getStuckHeatmapData(),
-    getDurationVarianceData(),
-    getVelocityByLevelData(),
-    getLeiWeeklyTrendData(),
-    getAtRiskLearnersData(),
-    getMicroKpi7dData(),
+    safeQuery(
+      getLeiKpiData,
+      { lei_7d_avg: 0, sparkline_90d: [] },
+      'LEI KPI'
+    ),
+    safeQuery(
+      getSpeedBucketsData,
+      { fast: 0, typical: 0, slow: 0, fast_pct: 0, typical_pct: 0, slow_pct: 0 },
+      'Speed Buckets'
+    ),
+    safeQuery(
+      getDaysInLevelData,
+      { overall_median: 0, by_level: [] },
+      'Days in Level'
+    ),
+    safeQuery(
+      getDaysSinceProgressData,
+      { median_days: 0 },
+      'Days Since Progress'
+    ),
+    safeQuery(
+      getStuckHeatmapData,
+      [],
+      'Stuck Heatmap'
+    ),
+    safeQuery(
+      getDurationVarianceData,
+      [],
+      'Duration Variance'
+    ),
+    safeQuery(
+      getVelocityByLevelData,
+      [],
+      'Velocity by Level'
+    ),
+    safeQuery(
+      getLeiWeeklyTrendData,
+      [],
+      'LEI Weekly Trend'
+    ),
+    safeQuery(
+      getAtRiskLearnersData,
+      [],
+      'At-Risk Learners'
+    ),
+    safeQuery(
+      getMicroKpi7dData,
+      { active_learners: 0, avg_minutes_per_active: 0, completions: 0 },
+      'Micro KPI 7d'
+    ),
   ]);
 
   return {

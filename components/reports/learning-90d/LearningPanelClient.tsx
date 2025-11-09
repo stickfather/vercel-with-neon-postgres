@@ -25,11 +25,16 @@ export function LearningPanelClient() {
       try {
         const response = await fetch("/api/reports/learning-90d");
         if (!response.ok) {
-          throw new Error("Failed to fetch learning data");
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData.error || "Failed to fetch learning data"
+          );
         }
         const result = await response.json();
         setData(result);
+        setError(null);
       } catch (err) {
+        console.error("Error fetching learning panel data:", err);
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setLoading(false);
@@ -84,16 +89,31 @@ export function LearningPanelClient() {
 
   if (error || !data) {
     return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
-        <p className="text-sm text-rose-800">
-          We couldn't load this data. Try again.
-        </p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-3 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700"
-        >
-          Reintentar
-        </button>
+      <div className="flex flex-col gap-4">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
+          <h3 className="mb-2 text-lg font-semibold text-rose-900">
+            No pudimos cargar los datos
+          </h3>
+          <p className="mb-4 text-sm text-rose-800">
+            {error || "No se recibieron datos del servidor."}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700"
+          >
+            Reintentar
+          </button>
+        </div>
+        
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h3 className="mb-2 text-sm font-semibold text-amber-900">
+            ℹ️ Nota para administradores
+          </h3>
+          <p className="text-xs text-amber-800">
+            Este panel requiere que las vistas de base de datos mgmt.learning_* estén creadas y pobladas con datos. 
+            Si acabas de desplegar, es posible que necesites ejecutar las migraciones de base de datos primero.
+          </p>
+        </div>
       </div>
     );
   }
