@@ -105,7 +105,7 @@ const EXAM_EVENT_STYLES: Record<
   },
 };
 
-const WEEKDAY_ORDER = Array.from({ length: 7 }, (_, index) => index);
+const WEEKDAY_ORDER = Array.from({ length: 6 }, (_, index) => index + 1); // Monday (1) to Saturday (6)
 
 function parseViewParam(value: string | null): CalendarView {
   const normalized = (value ?? "").trim().toLowerCase();
@@ -240,10 +240,13 @@ function buildMonthDays(monthStart: Date): Date[] {
   const nextMonth = addMonths(monthStart, 1);
   const days: Date[] = [];
   let cursor = firstVisibleDay;
-  while (cursor < nextMonth || days.length % 7 !== 0) {
-    days.push(cursor);
+  while (cursor < nextMonth || days.length % 6 !== 0) {
+    // Skip Sundays (day 0)
+    if (cursor.getUTCDay() !== 0) {
+      days.push(cursor);
+    }
     cursor = addDays(cursor, 1);
-    if (days.length > 42) break;
+    if (days.length > 36) break; // 6 weeks * 6 days = 36
   }
   return days;
 }
@@ -282,6 +285,28 @@ function formatTime(value: string): string {
   return formatLocalTime(value, { hour12: false });
 }
 
+function getExamTypeDisplay(event: CalendarEvent): string {
+  // Prefer the status field if it contains Speaking/Writing
+  if (event.status) {
+    const status = event.status.trim();
+    if (status === "Speaking" || status === "Writing") {
+      return status;
+    }
+  }
+  
+  // Fallback: extract from notes
+  if (event.notes) {
+    if (event.notes.toLowerCase().includes("speaking")) {
+      return "Speaking";
+    }
+    if (event.notes.toLowerCase().includes("writing")) {
+      return "Writing";
+    }
+  }
+  
+  return "—";
+}
+
 function getEventTooltip(event: CalendarEvent): string {
   if (event.kind === "exam") {
     const base = [
@@ -289,9 +314,8 @@ function getEventTooltip(event: CalendarEvent): string {
       event.title,
       formatDateTime(event.startTime),
     ].filter(Boolean);
-    const status = event.status
-      ? `Estado: ${translateStatus(event.status, event.passed)}`
-      : null;
+    const examType = event.status ? `Tipo: ${event.status}` : null;
+    const level = event.level ? `Nivel: ${event.level}` : null;
     const score = event.score != null ? `Nota: ${event.score}%` : null;
     const passedLabel =
       event.passed == null
@@ -299,7 +323,8 @@ function getEventTooltip(event: CalendarEvent): string {
         : `¿Aprobó?: ${event.passed ? "Sí" : "No"}`;
     return [
       base.join(" · "),
-      status,
+      examType,
+      level,
       score,
       passedLabel,
     ]
@@ -316,7 +341,21 @@ function getEventTooltip(event: CalendarEvent): string {
     .join(" · ");
 }
 
-function translateStatus(status: string | null, passed?: boolean | null): string {
+function translateStatus(
+  status: string | null, 
+  passed?: boolean | null,
+  timeScheduled?: string | null
+): string {
+  // If timeScheduled is provided and exam is in the future, always return "Programado"
+  if (timeScheduled) {
+    const now = new Date();
+    const examTime = new Date(timeScheduled);
+    if (examTime > now) {
+      return "Programado";
+    }
+  }
+  
+  // For past exams or when no timeScheduled provided
   if (passed === true) {
     return "Aprobado";
   }
@@ -644,6 +683,8 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
   const [dateTime, setDateTime] = useState(() =>
     event ? toLocalInputValue(event.startTime) : defaultDate ?? "",
   );
+  const [examType, setExamType] = useState(() => event?.status ?? "");
+  const [level, setLevel] = useState(() => event?.level ?? "");
   const [status, setStatus] = useState<StatusFilter>(() => {
     const parsed = event ? parseStatusParam(event.status ?? "scheduled") : "scheduled";
     return parsed === "all" ? "scheduled" : parsed;
@@ -691,6 +732,14 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
       setError("Debes indicar la fecha y hora del examen.");
       return;
     }
+    if (!examType) {
+      setError("Debes seleccionar el tipo de examen.");
+      return;
+    }
+    if (!level) {
+      setError("Debes seleccionar el nivel.");
+      return;
+    }
 
     const timeScheduled = convertInputToIso(dateTime);
     if (!timeScheduled) {
@@ -728,7 +777,8 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
       const payload = {
         studentId: student.id,
         timeScheduled,
-        status: status === "all" ? "scheduled" : status,
+        status: examType,
+        level,
         score: nextScore,
         passed: nextPassed,
         notes: notes.trim() ? notes.trim() : null,
@@ -789,6 +839,41 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
             required
             className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
           />
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-semibold text-brand-deep">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+            Tipo de examen *
+          </span>
+          <select
+            value={examType}
+            onChange={(event) => setExamType(event.target.value)}
+            disabled={submitting}
+            required
+            className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <option value="">Selecciona tipo</option>
+            <option value="Speaking">Speaking</option>
+            <option value="Writing">Writing</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-semibold text-brand-deep">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+            Nivel *
+          </span>
+          <select
+            value={level}
+            onChange={(event) => setLevel(event.target.value)}
+            disabled={submitting}
+            required
+            className="w-full rounded-2xl border border-brand-ink-muted/20 bg-white px-4 py-2 text-sm shadow-inner focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal-soft disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <option value="">Selecciona nivel</option>
+            <option value="A1">A1</option>
+            <option value="A2">A2</option>
+            <option value="B1">B1</option>
+            <option value="B2">B2</option>
+            <option value="C1">C1</option>
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-sm font-semibold text-brand-deep">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
@@ -1223,7 +1308,7 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
                     name={studentName}
                     photoUrl={studentProfile?.photoUrl ?? null}
                     updatedAt={studentProfile?.photoUpdatedAt ?? null}
-                    size={64}
+                    size={96}
                     className="shadow-none"
                   />
                 </div>
@@ -1243,9 +1328,17 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
         {event.kind === "exam" && event.status && (
           <div className="flex flex-col gap-1">
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
-              Estado
+              Tipo de examen
             </dt>
-            <dd>{translateStatus(event.status, event.passed)}</dd>
+            <dd>{event.status}</dd>
+          </div>
+        )}
+        {event.kind === "exam" && event.level && (
+          <div className="flex flex-col gap-1">
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+              Nivel
+            </dt>
+            <dd>{event.level}</dd>
           </div>
         )}
         {event.kind === "exam" && event.score != null && (
@@ -1389,8 +1482,20 @@ function getEventStyle(event: CalendarEvent): {
   accentClassName: string;
 } {
   if (event.kind === "exam") {
+    // Check if exam is in the future
+    const now = new Date();
+    const examTime = new Date(event.startTime);
+    const isFuture = examTime > now;
+    
     const status = event.status?.trim().toLowerCase() ?? "scheduled";
 
+    // If exam is in the future, always show as scheduled (blue)
+    if (isFuture) {
+      const style = EXAM_EVENT_STYLES.scheduled;
+      return { className: style.container, accentClassName: style.accent };
+    }
+
+    // For past exams, check status
     if (["cancelled", "cancelado", "cancelada"].includes(status)) {
       const style = EXAM_EVENT_STYLES.cancelled;
       return { className: style.container, accentClassName: style.accent };
@@ -1417,6 +1522,7 @@ function getEventStyle(event: CalendarEvent): {
       return { className: style.container, accentClassName: style.accent };
     }
 
+    // Default to scheduled if no clear status
     const style = EXAM_EVENT_STYLES.scheduled;
     return { className: style.container, accentClassName: style.accent };
   }
@@ -1579,10 +1685,6 @@ export function AdminCalendarDashboard() {
   }, []);
 
   useEffect(() => {
-    if (typeFilter !== "exam") {
-      setStudentFilterSelection(null);
-      return;
-    }
     if (!studentIdFilter) {
       setStudentFilterSelection(null);
       return;
@@ -1596,7 +1698,7 @@ export function AdminCalendarDashboard() {
         fullName: `Estudiante #${studentIdFilter}`,
       };
     });
-  }, [studentIdFilter, typeFilter]);
+  }, [studentIdFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1607,15 +1709,11 @@ export function AdminCalendarDashboard() {
       start: range.start.toISOString(),
       end: range.end.toISOString(),
     });
-    if (typeFilter === "exam") {
-      params.set("kind", "exam");
-    } else if (typeFilter === "activity") {
-      params.set("kind", "activity");
-    }
-    if (typeFilter === "exam" && statusFilter !== "all") {
+    // Always fetch both exams and activities
+    if (statusFilter !== "all") {
       params.set("status", statusFilter);
     }
-    if (typeFilter === "exam" && studentIdFilter) {
+    if (studentIdFilter) {
       params.set("studentId", String(studentIdFilter));
     }
 
@@ -1645,7 +1743,7 @@ export function AdminCalendarDashboard() {
       });
 
     return () => controller.abort();
-  }, [range.start, range.end, typeFilter, statusFilter, studentIdFilter, refreshCounter]);
+  }, [range.start, range.end, statusFilter, studentIdFilter, refreshCounter]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(events), [events]);
 
@@ -1710,12 +1808,12 @@ export function AdminCalendarDashboard() {
     const days = buildMonthDays(range.start);
     return (
       <div className="rounded-[36px] border border-white/70 bg-white/95 p-4 shadow-[0_32px_64px_rgba(15,23,42,0.12)]">
-        <div className="grid grid-cols-7 gap-2 pb-4 text-center text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
+        <div className="grid grid-cols-6 gap-2 pb-4 text-center text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-ink-muted">
           {WEEKDAY_ORDER.map((index) => (
             <div key={index}>{formatDayHeader(index)}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-6 gap-2">
           {days.map((day) => {
             const key = getDateKey(day);
             const dayEvents = groupedEvents.get(key) ?? [];
@@ -1733,16 +1831,15 @@ export function AdminCalendarDashboard() {
                 }`}
               >
                 <div className="flex items-center justify-between text-xs font-semibold text-brand-ink">
-                  <span className={`${isToday ? "inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-teal text-white" : "text-brand-ink"}`}>
+                  <span className={`${isToday ? "inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-teal text-white" : "inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-ink-muted/15 text-brand-ink"}`}>
                     {getDayNumber(day)}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-[0.28em] text-brand-ink-muted">
-                    {DAY_NAME_FULL_FORMATTER.format(day).slice(0, 3)}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1">
                   {dayEvents.map((event) => {
                     const style = getEventStyle(event);
+                    const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
+                    const examLevel = event.kind === "exam" ? event.level : null;
                     return (
                       <button
                         key={event.id}
@@ -1752,13 +1849,19 @@ export function AdminCalendarDashboard() {
                           handleEventSelection(event);
                         }}
                         title={getEventTooltip(event)}
-                        className={`group relative flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-xs font-semibold transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
+                        className={`group relative flex flex-col gap-1 rounded-2xl px-2 py-1.5 text-left text-[10px] transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
                       >
-                        <span className={`h-2 w-2 rounded-full ${style.accentClassName}`} />
-                        <span className="flex-1 truncate">{event.title}</span>
-                        <span className="text-[10px] font-normal text-current">
-                          {formatTime(event.startTime)}
-                        </span>
+                        <div className="flex items-start gap-1.5">
+                          <span className={`mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full ${style.accentClassName}`} />
+                          <div className="flex-1 min-w-0 space-y-0.5">
+                            <div className="font-medium text-[10px] leading-tight break-words">{formatTime(event.startTime)}</div>
+                            <div className="font-semibold text-[11px] leading-tight break-words">{event.title}</div>
+                            <div className="flex flex-wrap gap-x-1.5 text-[9px] font-normal text-current/70">
+                              {examType && <span>{examType}</span>}
+                              {examLevel && <span>{examLevel}</span>}
+                            </div>
+                          </div>
+                        </div>
                       </button>
                     );
                   })}
@@ -1772,10 +1875,11 @@ export function AdminCalendarDashboard() {
   };
 
   const renderWeekView = () => {
-    const days = Array.from({ length: 7 }, (_, index) => addDays(range.start, index));
+    const allDays = Array.from({ length: 7 }, (_, index) => addDays(range.start, index));
+    const days = allDays.filter((day) => day.getUTCDay() !== 0); // Exclude Sundays
     return (
       <div className="rounded-[36px] border border-white/70 bg-white/95 p-4 shadow-[0_32px_64px_rgba(15,23,42,0.12)]">
-        <div className="grid grid-cols-7 gap-4">
+        <div className="grid grid-cols-6 gap-4">
           {days.map((day) => {
             const key = getDateKey(day);
             const dayEvents = groupedEvents.get(key) ?? [];
@@ -1807,21 +1911,27 @@ export function AdminCalendarDashboard() {
                   )}
                   {dayEvents.map((event) => {
                     const style = getEventStyle(event);
+                    const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
+                    const examLevel = event.kind === "exam" ? event.level : null;
                     return (
                       <button
                         key={event.id}
                         type="button"
                         onClick={() => handleEventSelection(event)}
                         title={getEventTooltip(event)}
-                        className={`group flex flex-col gap-1 rounded-2xl px-3 py-2 text-left text-xs font-semibold transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
+                        className={`group flex flex-col gap-1 rounded-2xl px-3 py-2 text-left text-xs transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`inline-flex h-2 w-2 rounded-full ${style.accentClassName}`} />
-                          <span className="text-[10px] font-normal text-current">
-                            {formatTime(event.startTime)}
-                          </span>
+                        <div className="flex items-start gap-2">
+                          <span className={`mt-0.5 inline-flex h-2 w-2 flex-shrink-0 rounded-full ${style.accentClassName}`} />
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="font-medium text-[11px] leading-tight">{formatTime(event.startTime)}</div>
+                            <div className="font-semibold text-xs leading-tight break-words">{event.title}</div>
+                            <div className="flex flex-wrap gap-x-2 text-[10px] font-normal text-current/70">
+                              {examType && <span>{examType}</span>}
+                              {examLevel && <span>{examLevel}</span>}
+                            </div>
+                          </div>
                         </div>
-                        <span className="truncate text-sm">{event.title}</span>
                       </button>
                     );
                   })}
@@ -1862,6 +1972,8 @@ export function AdminCalendarDashboard() {
           )}
           {dayEvents.map((event) => {
             const style = getEventStyle(event);
+            const examType = event.kind === "exam" ? getExamTypeDisplay(event) : null;
+            const examLevel = event.kind === "exam" ? event.level : null;
             return (
               <button
                 key={event.id}
@@ -1870,9 +1982,15 @@ export function AdminCalendarDashboard() {
                 title={getEventTooltip(event)}
                 className={`group flex flex-col gap-2 rounded-3xl px-4 py-3 text-left transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${style.className}`}
               >
-                <div className="flex items-center justify-between gap-2 text-sm font-semibold">
-                  <span>{event.title}</span>
-                  <span className="text-xs font-normal text-current">{formatTime(event.startTime)}</span>
+                <div className="flex items-start gap-2">
+                  <div className="flex flex-col gap-1.5 flex-1">
+                    <div className="font-medium text-xs">{formatTime(event.startTime)}</div>
+                    <div className="text-sm font-semibold break-words">{event.title}</div>
+                    <div className="flex flex-wrap gap-x-2 text-xs font-normal text-current/70">
+                      {examType && <span>{examType}</span>}
+                      {examLevel && <span>{examLevel}</span>}
+                    </div>
+                  </div>
                 </div>
                 {event.notes && (
                   <p className="text-xs font-normal text-brand-ink/80 line-clamp-3">{event.notes}</p>
@@ -1888,7 +2006,7 @@ export function AdminCalendarDashboard() {
   const currentView = view === "month" ? renderMonthView() : view === "week" ? renderWeekView() : renderDayView();
 
   const activeStatusBadge =
-    typeFilter === "exam" && statusFilter !== "all"
+    statusFilter !== "all"
       ? STATUS_BADGES[statusFilter] ?? null
       : null;
 
@@ -2006,59 +2124,47 @@ export function AdminCalendarDashboard() {
                     Siguiente ›
                   </button>
                 </div>
-                {typeFilter === "exam" && (
-                  <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                    <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
-                    {STATUS_OPTIONS.map((option) => {
-                      if (option.value === "all") {
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => updateStatusFilter(option.value)}
-                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                              statusFilter === option.value
-                                ? "bg-brand-teal text-white"
-                                : "bg-transparent text-brand-ink"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      }
-                      const isActive = statusFilter === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => updateStatusFilter(option.value)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                            isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-3 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
+                <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estudiante</span>
+                <StudentSelector
+                  label="Buscar estudiante"
+                  value={studentFilterSelection}
+                  onChange={updateStudentFilter}
+                  placeholder="Buscar"
+                />
+              </div>
+
               <div className="flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Tipo</span>
-                {TYPE_OPTIONS.map((option) => {
-                  const isActive = option.value === typeFilter;
+                <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estado</span>
+                {STATUS_OPTIONS.map((option) => {
+                  if (option.value === "all") {
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => updateStatusFilter(option.value)}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
+                          statusFilter === option.value
+                            ? "bg-brand-teal text-white"
+                            : "bg-transparent text-brand-ink"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  }
+                  const isActive = statusFilter === option.value;
                   return (
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => updateTypeFilter(option.value)}
+                      onClick={() => updateStatusFilter(option.value)}
                       className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6] ${
-                        isActive
-                          ? "bg-brand-teal text-white"
-                          : "bg-transparent text-brand-ink"
+                        isActive ? "bg-brand-teal text-white" : "bg-transparent text-brand-ink"
                       }`}
                     >
                       {option.label}
@@ -2066,24 +2172,6 @@ export function AdminCalendarDashboard() {
                   );
                 })}
               </div>
-
-              {typeFilter === "exam" && (
-                <div className="flex items-center gap-3 rounded-full border border-brand-ink-muted/20 bg-white px-4 py-1.5 text-sm font-semibold text-brand-ink shadow">
-                  <span className="text-[11px] uppercase tracking-[0.28em] text-brand-ink-muted">Estudiante</span>
-                  <StudentSelector
-                    label="Buscar estudiante"
-                    value={studentFilterSelection}
-                    onChange={updateStudentFilter}
-                    placeholder="Buscar"
-                  />
-                </div>
-              )}
-
-              {activeStatusBadge && (
-                <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${activeStatusBadge.className}`}>
-                  {activeStatusBadge.label}
-                </span>
-              )}
             </div>
           </div>
 

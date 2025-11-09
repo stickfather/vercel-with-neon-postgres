@@ -13,6 +13,7 @@ export type CalendarEvent = {
   status: string | null;
   notes: string | null;
   studentId: number | null;
+  level: string | null;
   score: number | null;
   passed: boolean | null;
 };
@@ -92,6 +93,7 @@ function mapCalendarRow(row: SqlRow): CalendarEvent | null {
     status: coerceString(row.status),
     notes: coerceString(row.notes),
     studentId: coerceNumber(row.student_id),
+    level: coerceString(row.level),
     score: coerceNumber(row.score),
     passed: coerceBoolean(row.passed),
   };
@@ -129,7 +131,7 @@ export async function listCalendarEvents({
 
   if (kind) {
     parameterIndex += 1;
-    whereClauses.push(`kind = $${parameterIndex}`);
+    whereClauses.push(`v.kind = $${parameterIndex}`);
     values.push(kind);
     if (kind === "exam") {
       ensuresExamFilter = true;
@@ -138,39 +140,41 @@ export async function listCalendarEvents({
 
   if (status && status.trim().length) {
     if (!ensuresExamFilter) {
-      whereClauses.push("kind = 'exam'");
+      whereClauses.push("v.kind = 'exam'");
       ensuresExamFilter = true;
     }
     parameterIndex += 1;
-    whereClauses.push(`status = $${parameterIndex}`);
+    whereClauses.push(`v.status = $${parameterIndex}`);
     values.push(status);
   }
 
   if (studentId != null) {
     if (!ensuresExamFilter) {
-      whereClauses.push("kind = 'exam'");
+      whereClauses.push("v.kind = 'exam'");
       ensuresExamFilter = true;
     }
     parameterIndex += 1;
-    whereClauses.push(`student_id = $${parameterIndex}::bigint`);
+    whereClauses.push(`v.student_id = $${parameterIndex}::bigint`);
     values.push(studentId);
   }
 
   const query = `
     SELECT
-      kind,
-      id,
-      title,
-      start_time,
-      end_time,
-      status,
-      notes,
-      student_id,
-      score,
-      passed
-    FROM public.calendar_events_v
+      v.kind,
+      v.id,
+      v.title,
+      v.start_time,
+      v.end_time,
+      v.status,
+      v.notes,
+      v.student_id,
+      v.score,
+      v.passed,
+      CASE WHEN v.kind = 'exam' THEN e.level ELSE NULL END AS level
+    FROM public.calendar_events_v v
+    LEFT JOIN public.exam_appointments e ON v.kind = 'exam' AND v.id = e.id
     WHERE ${whereClauses.join(" AND ")}
-    ORDER BY start_time ASC, id ASC
+    ORDER BY v.start_time ASC, v.id ASC
   `;
 
   const rows = normalizeRows<SqlRow>(await sql.query(query, values));
@@ -184,6 +188,7 @@ type ExamMutationBase = {
   studentId: number;
   timeScheduled: string;
   status?: string | null;
+  level?: string | null;
   score?: number | null;
   passed?: boolean | null;
   notes?: string | null;
@@ -195,6 +200,14 @@ function assertExamPayload(payload: ExamMutationBase) {
   }
   if (!payload.timeScheduled) {
     throw new Error("La fecha y hora del examen son obligatorias.");
+  }
+  const validTypes = ["Speaking", "Writing"];
+  if (payload.status && !validTypes.includes(payload.status)) {
+    throw new Error(`El tipo de examen debe ser Speaking o Writing.`);
+  }
+  const validLevels = ["A1", "A2", "B1", "B2", "C1"];
+  if (payload.level && !validLevels.includes(payload.level)) {
+    throw new Error(`El nivel debe ser uno de: ${validLevels.join(", ")}.`);
   }
   const normalizedStatus = payload.status?.trim().toLowerCase() ?? "scheduled";
   if (normalizedStatus === "completed" && payload.score != null) {
@@ -213,11 +226,12 @@ export async function createExam(payload: ExamMutationBase): Promise<{ id: numbe
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.exam_appointments (student_id, time_scheduled, status, score, passed, notes)
+    INSERT INTO public.exam_appointments (student_id, time_scheduled, status, level, score, passed, notes)
     VALUES (
       ${payload.studentId}::bigint,
       ${payload.timeScheduled},
       ${payload.status ?? "scheduled"},
+      ${payload.level ?? null},
       ${payload.score ?? null},
       ${payload.passed ?? null},
       ${payload.notes ?? null}
@@ -235,6 +249,7 @@ export async function createExam(payload: ExamMutationBase): Promise<{ id: numbe
 export type UpdateExamPayload = {
   timeScheduled?: string | null;
   status?: string | null;
+  level?: string | null;
   score?: number | null;
   passed?: boolean | null;
   notes?: string | null;
@@ -261,6 +276,10 @@ export async function updateExam(
     addUpdate("time_scheduled", payload.timeScheduled ?? null);
   }
   if ("status" in payload) {
+    const validTypes = ["Speaking", "Writing"];
+    if (payload.status && !validTypes.includes(payload.status)) {
+      throw new Error(`El tipo de examen debe ser Speaking o Writing.`);
+    }
     const normalizedStatus = payload.status?.trim().toLowerCase() ?? null;
     if (
       normalizedStatus === "completed" &&
@@ -273,6 +292,13 @@ export async function updateExam(
       );
     }
     addUpdate("status", payload.status ?? null);
+  }
+  if ("level" in payload) {
+    const validLevels = ["A1", "A2", "B1", "B2", "C1"];
+    if (payload.level && !validLevels.includes(payload.level)) {
+      throw new Error(`El nivel debe ser uno de: ${validLevels.join(", ")}.`);
+    }
+    addUpdate("level", payload.level ?? null);
   }
   if ("score" in payload) {
     addUpdate("score", payload.score ?? null);

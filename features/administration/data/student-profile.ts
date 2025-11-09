@@ -684,6 +684,7 @@ export type StudentExam = {
   studentId: number;
   timeScheduled: string | null;
   status: string | null;
+  level: string | null;
   score: number | null;
   passed: boolean;
   notes: string | null;
@@ -696,6 +697,7 @@ function mapExamRow(row: SqlRow, fallbackStudentId: number): StudentExam {
     studentId: Number(row.student_id ?? fallbackStudentId),
     timeScheduled: normalizeIsoString(row.time_scheduled),
     status: normalizeFieldValue(row.status, "text"),
+    level: normalizeFieldValue(row.level, "text"),
     score:
       row.score == null
         ? null
@@ -712,7 +714,7 @@ export async function listStudentExams(studentId: number): Promise<StudentExam[]
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, student_id, time_scheduled, status, score, passed, notes
+    SELECT id, student_id, time_scheduled, status, level, score, passed, notes
     FROM public.exam_appointments
     WHERE student_id = ${studentId}::bigint
     ORDER BY time_scheduled DESC NULLS LAST, id DESC
@@ -726,6 +728,7 @@ export async function createStudentExam(
   data: {
     timeScheduled: string | null;
     status: string | null;
+    level: string | null;
     score: number | null;
     passed: boolean;
     notes: string | null;
@@ -735,16 +738,17 @@ export async function createStudentExam(
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.exam_appointments (student_id, time_scheduled, status, score, passed, notes)
+    INSERT INTO public.exam_appointments (student_id, time_scheduled, status, level, score, passed, notes)
     VALUES (
       ${studentId}::bigint,
       ${data.timeScheduled},
       ${data.status ?? "scheduled"},
+      ${data.level},
       ${data.score},
       ${data.passed},
       ${data.notes}
     )
-    RETURNING id, student_id, time_scheduled, status, score, passed, notes
+    RETURNING id, student_id, time_scheduled, status, level, score, passed, notes
   `);
 
   if (!rows.length) {
@@ -759,6 +763,7 @@ export async function updateStudentExam(
   data: {
     timeScheduled: string | null;
     status: string | null;
+    level: string | null;
     score: number | null;
     passed: boolean;
     notes: string | null;
@@ -771,11 +776,12 @@ export async function updateStudentExam(
     UPDATE public.exam_appointments
     SET time_scheduled = ${data.timeScheduled},
       status = ${data.status},
+      level = ${data.level},
       score = ${data.score},
       passed = ${data.passed},
       notes = ${data.notes}
     WHERE id = ${examId}::bigint
-    RETURNING id, student_id, time_scheduled, status, score, passed, notes
+    RETURNING id, student_id, time_scheduled, status, level, score, passed, notes
   `);
 
   if (!rows.length) {
@@ -791,7 +797,7 @@ export async function deleteStudentExam(examId: number): Promise<StudentExam | n
   const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.exam_appointments
     WHERE id = ${examId}::bigint
-    RETURNING id, student_id, time_scheduled, status, score, passed, notes
+    RETURNING id, student_id, time_scheduled, status, level, score, passed, notes
   `);
 
   if (!rows.length) {
