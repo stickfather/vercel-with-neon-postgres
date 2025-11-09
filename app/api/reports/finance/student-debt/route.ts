@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getOverdueItems } from "@/src/features/reports/finance/data";
 
 export const revalidate = 300; // 5 minutes cache
+export const dynamic = "force-dynamic";
 
 const successHeaders = {
   "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
