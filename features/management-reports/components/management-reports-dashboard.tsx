@@ -739,134 +739,36 @@ function LearningPanel({
 }
 
 function EngagementPanel({ state }: { state: PanelState<EngagementReport> }) {
-  const data = state.data;
-  const empty = !data ||
-    (data.active.length === 0 &&
-      data.inactive.length === 0 &&
-      data.roster.length === 0 &&
-      data.visitPace.length === 0 &&
-      data.declineIndex.length === 0);
-
-  // Helper to determine risk color based on inactive days
-  const getRiskColor = (range: string) => {
-    if (range.includes("180+") || range.includes("90+")) return "text-rose-300";
-    if (range.includes("30+") || range.includes("60+")) return "text-orange-300";
-    if (range.includes("14+")) return "text-amber-300";
-    return "text-slate-300";
-  };
-
-  // Helper to get initials from student name
-  const getInitials = (name: string) => {
-    const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
-
+  // Redirect to new comprehensive engagement panel
   return (
-    <PanelWrapper
-      status={state.status}
-      error={state.error}
-      empty={empty}
-      label="los indicadores de engagement"
-      onRetry={state.reload}
-    >
-      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <StudyShiftChart shift={data?.studyShift} />
-          </div>
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
-            <SectionTitle title="Activos recientes" description="Estudiantes activos en los últimos días." />
-            {(data?.active ?? []).map((bucket) => (
-              <StatCard
-                key={bucket.range}
-                title={bucket.range}
-                value={formatIntegerValue(bucket.count ?? null)}
-                caption="Estudiantes activos"
-              />
-            ))}
-          </div>
-          <div className="grid gap-4 rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6 sm:grid-cols-2">
-            <SectionTitle title="Inactivos / Riesgo" description="Alumnos que necesitan reactivación." />
-            {(data?.inactive ?? []).map((bucket) => (
-              <StatCard
-                key={bucket.range}
-                title={bucket.range}
-                value={formatIntegerValue(bucket.count ?? null)}
-                caption="Estudiantes"
-                accent={getRiskColor(bucket.range)}
-              />
-            ))}
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Días promedio entre visitas" description="Promedio de días por segmento." />
-            <div className="mt-4">
-              <HorizontalBarList data={data?.visitPace ?? []} unit=" d" accent="bg-amber-400" />
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle title="Índice de declive" description="Tendencia semanal del engagement." />
-            <div className="mt-4">
-              <Sparkline points={data?.declineIndex ?? []} />
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col gap-6">
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle
-              title="Horario de visitas"
-              description="Distribución de estudiantes por bloques horarios."
-            />
-            <div className="mt-4 flex flex-col gap-3">
-              {(data?.hourSplit ?? []).map((split) => (
-                <StackedHourBar key={split.hour} split={split} />
-              ))}
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-sky-400/80" />
-                  <span>Mañana (08–12)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-400/80" />
-                  <span>Tarde (12–17)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-fuchsia-500/80" />
-                  <span>Noche (17–20)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-3xl border border-slate-800/60 bg-slate-900/70 p-5 md:p-6">
-            <SectionTitle
-              title="Alumnos inactivos"
-              description="Lista prioritaria para llamadas de seguimiento."
-            />
-            <div className="mt-4 max-h-[300px] overflow-y-auto pr-2">
-              <SimpleTable
-                headers={["Estudiante", "Estado", "Última visita", "Días"]}
-                rows={(data?.roster ?? []).map((row) => [
-                  <div key="student" className="flex items-center gap-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[10px] font-semibold text-slate-200">
-                      {getInitials(row.student)}
-                    </span>
-                    <span className="font-medium text-slate-100">{row.student}</span>
-                  </div>,
-                  <span key="status" className="text-slate-300">{row.status}</span>,
-                  <span key="visit" className="text-slate-400">{row.lastVisit}</span>,
-                  <span key="days" className="font-semibold text-rose-200">
-                    {formatIntegerValue(row.daysInactive ?? null)}
-                  </span>,
-                ])}
-                getKey={(index) => `row-${index}`}
-              />
-            </div>
-          </div>
+    <div className="flex flex-col gap-6">
+      <div className="rounded-3xl border border-emerald-500/40 bg-emerald-500/10 p-8 text-center">
+        <h3 className="mb-3 text-xl font-semibold text-emerald-100">
+          Panel de Engagement MD-Clean
+        </h3>
+        <p className="mb-6 text-sm text-emerald-200/80">
+          El panel de engagement ha sido actualizado con 20 módulos completos, incluyendo KPIs en tiempo real 
+          (Activos 7d/14d/30d/6m, WAU/MAU, ratios de retención), análisis de estudiantes inactivos con 
+          drill-down, heatmaps de tráfico por hora/día, tendencias semanales, distribución de sesiones, 
+          y análisis cross-panel con aprendizaje.
+        </p>
+        <Link
+          href="/reports/engagement"
+          className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg transition hover:-translate-y-[1px] hover:bg-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+        >
+          Ver Panel Completo de Engagement →
+        </Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-2 text-xs text-emerald-200/60">
+          <span>• Activos 7d/14d/30d/6m</span>
+          <span>• WAU/MAU/Ratio</span>
+          <span>• Heatmap horario</span>
+          <span>• Tendencia semanal</span>
+          <span>• Roster inactivos</span>
+          <span>• Análisis cross-panel</span>
+          <span>• CSV Export</span>
         </div>
       </div>
-    </PanelWrapper>
+    </div>
   );
 }
 
