@@ -54,7 +54,7 @@ export function SpeedBucketsCard({ data }: Props) {
         ))}
       </div>
       <figcaption className="sr-only">
-        Speed buckets showing distribution of students by learning pace over the last 90 days
+        Ritmos de aprendizaje: distribución de estudiantes por velocidad (90 días)
       </figcaption>
     </section>
   );

@@ -74,7 +74,7 @@ export function InactiveRosterTable({ data }: Props) {
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <header className="mb-6">
         <h3 className="text-lg font-semibold text-slate-900">
-          Inactive Roster
+          Lista de inactivos
         </h3>
         <p className="mt-1 text-xs text-slate-500">
           Alumnos inactivos por días sin visitar (total: {data.length})

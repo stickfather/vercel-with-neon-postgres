@@ -12,7 +12,7 @@ export default function LearningPage() {
               Informes de gestión
             </span>
             <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">
-              Panel de aprendizaje
+              Reporte de Aprendizaje
             </h1>
             <p className="max-w-2xl text-sm text-slate-600">
               Análisis integral de eficiencia, velocidad y progreso de aprendizaje. Datos de los últimos 90 días.

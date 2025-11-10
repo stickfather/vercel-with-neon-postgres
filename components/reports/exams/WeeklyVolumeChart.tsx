@@ -21,7 +21,7 @@ export function WeeklyVolumeChart({ data }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Weekly Exam Volume (90d)
+          Volumen semanal de exámenes (90 días)
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
           No data available.
@@ -58,7 +58,7 @@ export function WeeklyVolumeChart({ data }: Props) {
   return (
     <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <figcaption className="mb-4 text-lg font-semibold text-slate-900">
-        Weekly Exam Volume (90d)
+        Volumen semanal de exámenes (90 días)
       </figcaption>
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={chartData}>

@@ -69,7 +69,7 @@ export function LevelExamTypeHeatmap({ data, onCellClick }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Level × Exam Type Heatmap (90d)
+          Mapa de calor: Nivel × Tipo de examen (90 días)
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
           No exam data available.
@@ -95,9 +95,9 @@ export function LevelExamTypeHeatmap({ data, onCellClick }: Props) {
   return (
     <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <figcaption className="mb-4 text-lg font-semibold text-slate-900">
-        Level × Exam Type Heatmap (90d)
+        Mapa de calor: Nivel × Tipo de examen (90 días)
         <span className="ml-2 text-xs font-normal text-slate-500">
-          • Average scores by level and type
+          • Promedio de puntuaciones por nivel y tipo
         </span>
       </figcaption>
 
