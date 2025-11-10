@@ -281,7 +281,7 @@ function formatMonthTitle(date: Date): string {
 }
 
 function formatDayHeader(index: number): string {
-  const reference = addDays(startOfWeek(new Date(Date.UTC(2024, 0, 1))), index);
+  const reference = addDays(startOfWeek(new Date(Date.UTC(2024, 0, 1))), index - 1);
   return DAY_HEADER_FORMATTER.format(reference).replace(/\n/g, "").replace(/\.$/, "");
 }
 
