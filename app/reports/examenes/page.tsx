@@ -12,7 +12,7 @@ export default function ExamenesPage() {
               Informes de gestión
             </span>
             <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">
-              Exámenes
+              Reporte de Exámenes
             </h1>
             <p className="max-w-2xl text-sm text-slate-600">
               Análisis integral de resultados de exámenes, tendencias de aprobación y seguimiento de estudiantes. Datos de los últimos 90 días.

@@ -22,10 +22,10 @@ export function ScoreDistributionChart({ data, completedExams }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Score Distribution (90d)
+          Distribución de Puntuaciones (90d)
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
-          No score data available.
+          No hay datos de puntuaciones disponibles.
         </div>
       </section>
     );
@@ -73,10 +73,10 @@ export function ScoreDistributionChart({ data, completedExams }: Props) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
         <p className="text-xs text-slate-600">
-          Score Range: <span className="font-semibold text-slate-900">{data.bin}</span>
+          Rango de Puntuación: <span className="font-semibold text-slate-900">{data.bin}</span>
         </p>
         <p className="text-xs text-slate-600">
-          Count: <span className="font-semibold text-slate-900">{data.n}</span>
+          Cantidad: <span className="font-semibold text-slate-900">{data.n}</span>
         </p>
       </div>
     );
@@ -85,7 +85,7 @@ export function ScoreDistributionChart({ data, completedExams }: Props) {
   return (
     <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <figcaption className="mb-4 text-lg font-semibold text-slate-900">
-        Score Distribution (90d)
+        Distribución de Puntuaciones (90d)
         {median !== null && (
           <span className="ml-2 text-xs font-normal text-slate-500">
             • Median: {median.toFixed(1)}

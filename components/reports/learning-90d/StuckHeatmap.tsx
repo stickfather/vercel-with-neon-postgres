@@ -12,10 +12,10 @@ export function StuckHeatmap({ data, onCellClick }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Stuck Students by Lesson (90d)
+          Estudiantes Estancados por Lección (90d)
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
-          No stuck students found.
+          No se encontraron estudiantes estancados.
         </div>
       </section>
     );
@@ -51,7 +51,7 @@ export function StuckHeatmap({ data, onCellClick }: Props) {
   return (
     <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold text-slate-900">
-        Stuck Students by Lesson (90d)
+        Estudiantes Estancados por Lección (90d)
       </h3>
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse text-sm">

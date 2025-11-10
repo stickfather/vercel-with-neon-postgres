@@ -21,7 +21,7 @@ export function DualRiskStudentsTable({ data }: Props) {
     <section className="rounded-2xl border border-rose-200/70 bg-rose-50/30 p-6 shadow-sm">
       <header className="mb-6">
         <h3 className="text-lg font-semibold text-rose-900">
-          Students Needing Both Engagement &amp; Learning Support
+          Estudiantes que Necesitan Apoyo en Engagement y Aprendizaje
         </h3>
         <p className="mt-1 text-xs text-rose-700">
           Alumnos con riesgo dual: compromiso bajo + aprendizaje lento/estancado
@@ -41,10 +41,10 @@ export function DualRiskStudentsTable({ data }: Props) {
                   Alumno
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-rose-900">
-                  Engagement issue
+                  Problema de engagement
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-rose-900">
-                  Learning issue
+                  Problema de aprendizaje
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-rose-900">
                   Último nivel

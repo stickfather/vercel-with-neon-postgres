@@ -1,3 +1,5 @@
+"use client";
+
 import type { StudentStatusKey } from "@/features/administration/constants/student-status";
 import type { FlagKey } from "./student-management-table";
 

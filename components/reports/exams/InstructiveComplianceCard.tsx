@@ -16,7 +16,7 @@ export function InstructiveComplianceCard({ data }: Props) {
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">
       <header className="mb-3">
         <h3 className="text-sm font-semibold text-slate-900">
-          Instructive (90d)
+          Instructivos (90d)
         </h3>
       </header>
       <div className="flex flex-col gap-2">
@@ -25,17 +25,17 @@ export function InstructiveComplianceCard({ data }: Props) {
             <span className="text-2xl font-bold text-slate-900">
               {assignedPct !== null ? `${assignedPct.toFixed(1)}%` : "—"}
             </span>
-            <span className="text-xs text-slate-500">Assigned</span>
+            <span className="text-xs text-slate-500">Asignados</span>
           </div>
           <div className="h-12 w-px bg-slate-200" />
           <div className="flex flex-col">
             <span className="text-2xl font-bold text-slate-900">
               {completedPct !== null ? `${completedPct.toFixed(1)}%` : "—"}
             </span>
-            <span className="text-xs text-slate-500">Completed</span>
+            <span className="text-xs text-slate-500">Completados</span>
           </div>
         </div>
-        <p className="text-xs text-slate-500">On failed exams only</p>
+        <p className="text-xs text-slate-500">Solo en exámenes reprobados</p>
       </div>
     </section>
   );

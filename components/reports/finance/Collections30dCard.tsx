@@ -35,7 +35,7 @@ export function Collections30dCard({ summary, series }: Props) {
       {/* KPI Card */}
       <div className="flex flex-col gap-2 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          Collected (30d)
+          Recaudado (30d)
         </span>
         <div className="flex items-baseline gap-2">
           <span className="text-4xl font-black text-slate-900">
@@ -43,14 +43,14 @@ export function Collections30dCard({ summary, series }: Props) {
           </span>
         </div>
         <span className="text-sm text-slate-600">
-          Payments: {paymentsCount.toLocaleString("en-US")}
+          Pagos: {paymentsCount.toLocaleString("es-EC")}
         </span>
       </div>
 
       {/* Daily Trend Chart */}
       <figure className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
         <figcaption className="mb-4 text-base font-semibold text-slate-900">
-          Daily Collections (30d)
+          Recaudaciones Diarias (30d)
         </figcaption>
         <div className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">

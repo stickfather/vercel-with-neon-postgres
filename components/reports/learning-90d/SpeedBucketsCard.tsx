@@ -12,26 +12,26 @@ export function SpeedBucketsCard({ data }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">
         <header className="mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">Speed Buckets (90d)</h3>
+          <h3 className="text-sm font-semibold text-slate-900">Categorías de Velocidad (90d)</h3>
         </header>
         <div className="flex flex-col gap-1">
           <div className="text-3xl font-bold text-slate-900">—</div>
-          <p className="text-xs text-slate-500">No data available</p>
+          <p className="text-xs text-slate-500">No hay datos disponibles</p>
         </div>
       </section>
     );
   }
 
   const buckets = [
-    { label: "Fast", count: fast, pct: fast_pct, color: "bg-emerald-600" },
-    { label: "Typical", count: typical, pct: typical_pct, color: "bg-slate-600" },
-    { label: "Slow", count: slow, pct: slow_pct, color: "bg-rose-600" },
+    { label: "Rápido", count: fast, pct: fast_pct, color: "bg-emerald-600" },
+    { label: "Típico", count: typical, pct: typical_pct, color: "bg-slate-600" },
+    { label: "Lento", count: slow, pct: slow_pct, color: "bg-rose-600" },
   ];
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">
       <header className="mb-3">
-        <h3 className="text-sm font-semibold text-slate-900">Speed Buckets (90d)</h3>
+        <h3 className="text-sm font-semibold text-slate-900">Categorías de Velocidad (90d)</h3>
       </header>
       <div className="flex flex-col gap-3">
         {buckets.map((bucket) => (

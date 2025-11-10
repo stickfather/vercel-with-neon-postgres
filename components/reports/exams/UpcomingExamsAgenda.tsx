@@ -13,10 +13,10 @@ export function UpcomingExamsAgenda({ count, list }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Upcoming (30 days)
+          Próximos Exámenes (30 días)
         </h3>
         <div className="flex h-32 items-center justify-center text-slate-500">
-          No upcoming exams in the next 30 days.
+          No hay exámenes programados en los próximos 30 días.
         </div>
       </section>
     );
@@ -59,9 +59,9 @@ export function UpcomingExamsAgenda({ count, list }: Props) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const days = differenceInDays(examDate, today);
-      if (days === 0) return "today";
-      if (days === 1) return "in 1 day";
-      return `in ${days} days`;
+      if (days === 0) return "hoy";
+      if (days === 1) return "en 1 día";
+      return `en ${days} días`;
     } catch {
       return "";
     }
@@ -87,7 +87,7 @@ export function UpcomingExamsAgenda({ count, list }: Props) {
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <header className="mb-4 flex items-center gap-3">
         <h3 className="text-lg font-semibold text-slate-900">
-          Upcoming (30 days)
+          Próximos Exámenes (30 días)
         </h3>
         <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-sky-100 px-2 text-xs font-semibold text-sky-700">
           {totalCount}

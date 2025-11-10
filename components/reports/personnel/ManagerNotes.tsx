@@ -8,10 +8,10 @@ export function ManagerNotes({ summary, bullets }: ManagerNotesProps) {
     <figure className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <figcaption className="mb-4 flex flex-col gap-1">
         <h2 className="text-base font-semibold text-slate-900 md:text-lg">
-          AI Manager Notes
+          Notas de Gestión IA
         </h2>
         <p className="text-sm text-slate-600">
-          Executive summary and recommended actions
+          Resumen ejecutivo y acciones recomendadas
         </p>
       </figcaption>
 
@@ -24,7 +24,7 @@ export function ManagerNotes({ summary, bullets }: ManagerNotesProps) {
         {/* Action bullets */}
         <div className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Recommended Actions
+            Acciones Recomendadas
           </h3>
           <ul className="space-y-2">
             {bullets.map((bullet, index) => (

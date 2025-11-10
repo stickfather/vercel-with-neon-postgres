@@ -20,27 +20,27 @@ export function OutstandingKpiCards({ studentsData, balanceData }: Props) {
       {/* Students with Debt */}
       <div className="flex flex-col gap-2 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          Students with Debt
+          Estudiantes con Deuda
         </span>
         <div className="flex items-baseline gap-2">
           <span className="text-4xl font-black text-slate-900">
-            {studentsCount.toLocaleString("en-US")}
+            {studentsCount.toLocaleString("es-EC")}
           </span>
         </div>
-        <span className="text-xs text-slate-500">as of today</span>
+        <span className="text-xs text-slate-500">al día de hoy</span>
       </div>
 
       {/* Outstanding Balance */}
       <div className="flex flex-col gap-2 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
         <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          Outstanding Balance
+          Saldo Pendiente
         </span>
         <div className="flex items-baseline gap-2">
           <span className="text-4xl font-black text-slate-900">
             {formatCurrency(balance)}
           </span>
         </div>
-        <span className="text-xs text-slate-500">as of today</span>
+        <span className="text-xs text-slate-500">al día de hoy</span>
       </div>
     </div>
   );

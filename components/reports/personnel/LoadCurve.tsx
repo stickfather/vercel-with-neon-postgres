@@ -33,10 +33,10 @@ export function LoadCurve({ data }: LoadCurveProps) {
     <figure className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <figcaption className="mb-4 flex flex-col gap-1">
         <h2 className="text-base font-semibold text-slate-900 md:text-lg">
-          Staffing Load Curve
+          Curva de Carga del Personal
         </h2>
         <p className="text-sm text-slate-600">
-          Student demand vs staff supply across the day (08:00–20:00)
+          Demanda de estudiantes vs oferta de personal a lo largo del día (08:00–20:00)
         </p>
       </figcaption>
 
@@ -87,16 +87,16 @@ export function LoadCurve({ data }: LoadCurveProps) {
                     <div className="space-y-1 text-xs">
                       <p className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-rose-400" />
-                        <span className="text-slate-600">Students:</span>
+                        <span className="text-slate-600">Estudiantes:</span>
                         <span className="font-semibold text-slate-900">
-                          {data.students.toLocaleString("en-US")} min
+                          {data.students.toLocaleString("es-EC")} min
                         </span>
                       </p>
                       <p className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-blue-400" />
-                        <span className="text-slate-600">Staff:</span>
+                        <span className="text-slate-600">Personal:</span>
                         <span className="font-semibold text-slate-900">
-                          {data.staff.toLocaleString("en-US")} min
+                          {data.staff.toLocaleString("es-EC")} min
                         </span>
                       </p>
                       <p className="flex items-center gap-2">
@@ -119,7 +119,7 @@ export function LoadCurve({ data }: LoadCurveProps) {
               stroke="#f87171"
               strokeWidth={2}
               fill="url(#studentsGradient)"
-              name="Students"
+              name="Estudiantes"
             />
             
             <Line
@@ -128,7 +128,7 @@ export function LoadCurve({ data }: LoadCurveProps) {
               stroke="#60a5fa"
               strokeWidth={2}
               dot={false}
-              name="Staff"
+              name="Personal"
             />
           </AreaChart>
         </ResponsiveContainer>

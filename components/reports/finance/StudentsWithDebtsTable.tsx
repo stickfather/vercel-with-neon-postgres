@@ -61,7 +61,7 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
   return (
     <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
       <h2 className="text-base font-semibold text-slate-900">
-        Students with Debt ({data.length})
+        Estudiantes con Deuda ({data.length})
       </h2>
 
       {/* Table */}
@@ -73,37 +73,37 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
                 className="cursor-pointer px-3 py-3 text-left font-semibold text-slate-700 hover:bg-slate-50"
                 onClick={() => handleSort("full_name")}
               >
-                Student {sortField === "full_name" && (sortDirection === "asc" ? "↑" : "↓")}
+                Estudiante {sortField === "full_name" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
                 onClick={() => handleSort("total_overdue_amount")}
               >
-                Overdue Amount {sortField === "total_overdue_amount" && (sortDirection === "asc" ? "↑" : "↓")}
+                Monto Vencido {sortField === "total_overdue_amount" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
                 onClick={() => handleSort("max_days_overdue")}
               >
-                Max Days {sortField === "max_days_overdue" && (sortDirection === "asc" ? "↑" : "↓")}
+                Días Máx. {sortField === "max_days_overdue" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-left font-semibold text-slate-700 hover:bg-slate-50"
                 onClick={() => handleSort("oldest_due_date")}
               >
-                First Debt {sortField === "oldest_due_date" && (sortDirection === "asc" ? "↑" : "↓")}
+                Primera Deuda {sortField === "oldest_due_date" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-left font-semibold text-slate-700 hover:bg-slate-50"
                 onClick={() => handleSort("most_recent_missed_due_date")}
               >
-                Latest Missed {sortField === "most_recent_missed_due_date" && (sortDirection === "asc" ? "↑" : "↓")}
+                Última Pendiente {sortField === "most_recent_missed_due_date" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
                 onClick={() => handleSort("open_invoices")}
               >
-                Invoices {sortField === "open_invoices" && (sortDirection === "asc" ? "↑" : "↓")}
+                Facturas {sortField === "open_invoices" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
             </tr>
           </thead>
@@ -144,7 +144,7 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-slate-600">
-            Page {currentPage} of {totalPages} ({data.length} total)
+            Página {currentPage} de {totalPages} ({data.length} total)
           </span>
           <div className="flex gap-2">
             <button
@@ -152,14 +152,14 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
               disabled={currentPage === 1}
               className="rounded-lg bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Previous
+              Anterior
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="rounded-lg bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Next
+              Siguiente
             </button>
           </div>
         </div>

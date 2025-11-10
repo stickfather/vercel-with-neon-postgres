@@ -65,9 +65,9 @@ export function DrillDownDrawer({ slice, onClose }: Props) {
 
   const getTitle = () => {
     if (slice.type === "stuck_heatmap") {
-      return `${slice.level} • ${slice.lesson_name} — Stuck Students`;
+      return `${slice.level} • ${slice.lesson_name} — Estudiantes Estancados`;
     } else if (slice.type === "duration_variance") {
-      return `${slice.level} • ${slice.lesson_name} — Session Details`;
+      return `${slice.level} • ${slice.lesson_name} — Detalles de Sesión`;
     }
     return "";
   };
@@ -124,11 +124,11 @@ export function DrillDownDrawer({ slice, onClose }: Props) {
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex h-full items-center justify-center">
-              <div className="text-sm text-slate-500">Loading...</div>
+              <div className="text-sm text-slate-500">Cargando...</div>
             </div>
           ) : data.length === 0 ? (
             <div className="flex h-full items-center justify-center">
-              <div className="text-sm text-slate-500">No data found.</div>
+              <div className="text-sm text-slate-500">No se encontraron datos.</div>
             </div>
           ) : slice.type === "stuck_heatmap" ? (
             <div className="space-y-4">
@@ -141,20 +141,20 @@ export function DrillDownDrawer({ slice, onClose }: Props) {
                     <div>
                       <p className="font-medium text-slate-900">{student.full_name}</p>
                       <p className="text-sm text-slate-600">
-                        {student.level} • Lesson {student.current_seq}
+                        {student.level} • Lección {student.current_seq}
                       </p>
                     </div>
                     {student.inactive_14d && (
                       <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-medium text-rose-800">
-                        Inactive 14d+
+                        Inactivo 14d+
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-4 text-xs text-slate-600">
-                    <span>Last seen: {formatDate(student.last_seen_date)}</span>
+                    <span>Última visita: {formatDate(student.last_seen_date)}</span>
                     {student.stall && (
                       <span className="rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
-                        Stall
+                        Estancado
                       </span>
                     )}
                   </div>
@@ -171,7 +171,7 @@ export function DrillDownDrawer({ slice, onClose }: Props) {
                   <div className="mb-2">
                     <p className="font-medium text-slate-900">{session.full_name}</p>
                     <p className="text-sm text-slate-600">
-                      {session.level} • Lesson {session.lesson_seq}
+                      {session.level} • Lección {session.lesson_seq}
                     </p>
                   </div>
                   <div className="flex items-center gap-4 text-xs text-slate-600">

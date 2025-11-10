@@ -2080,9 +2080,9 @@ export function AdminCalendarDashboard() {
             </Link>
           </div>
           <div className="flex flex-col gap-2 text-brand-deep">
-            <h1 className="text-3xl font-black sm:text-4xl">Calendario administrativo</h1>
+            <h1 className="text-3xl font-black sm:text-4xl">Calendario de Exámenes y Actividades</h1>
             <p className="max-w-3xl text-sm text-brand-ink-muted sm:text-base">
-              Coordina exámenes y actividades de la sede. Filtra por tipo, estado o estudiante y gestiona los eventos directamente desde la vista mensual, semanal o diaria.
+              Programación de exámenes, actividades y registro de resultados. Gestiona eventos directamente desde la vista mensual, semanal o diaria.
             </p>
           </div>
           <div className="flex flex-wrap gap-3 pt-1">

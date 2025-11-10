@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { AdminCalendarDashboard } from "@/features/administration/components/calendar/admin-calendar";
 
 export const metadata: Metadata = {
-  title: "Calendario · Inglés Rápido Manta",
+  title: "Calendario de Exámenes y Actividades · Inglés Rápido Manta",
 };
 
 export default function CalendarioPage() {

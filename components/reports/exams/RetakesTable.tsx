@@ -10,10 +10,10 @@ export function RetakesTable({ data }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Retakes Overview (90d)
+          Resumen de Repitencias (90d)
         </h3>
         <div className="flex h-32 items-center justify-center text-slate-500">
-          No retake data available for the last 90 days.
+          No hay datos de repitencias en los últimos 90 días.
         </div>
       </section>
     );
@@ -38,9 +38,9 @@ export function RetakesTable({ data }: Props) {
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold text-slate-900">
-        Retakes Overview (90d)
+        Resumen de Repitencias (90d)
         <span className="ml-2 text-xs font-normal text-slate-500">
-          • Showing fails from last 90 days and their retakes
+          • Muestra reprobados de los últimos 90 días y sus repitencias
         </span>
       </h3>
 
@@ -49,31 +49,31 @@ export function RetakesTable({ data }: Props) {
           <thead>
             <tr className="border-b border-slate-200">
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Student
+                Estudiante
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Exam Type
+                Tipo de Examen
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Level
+                Nivel
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                First Fail
+                Primer Intento
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Retake
+                Repitencia
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                ΔDays
+                ΔDías
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                First Score
+                Puntuación 1ra
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Retake Score
+                Puntuación Rep.
               </th>
               <th className="px-3 py-2 text-center font-semibold text-slate-700">
-                Retake Passed
+                Aprobó Rep.
               </th>
             </tr>
           </thead>

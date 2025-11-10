@@ -39,10 +39,10 @@ export function LoadRatioBars({ data }: LoadRatioBarsProps) {
     <figure className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <figcaption className="mb-4 flex flex-col gap-1">
         <h2 className="text-base font-semibold text-slate-900 md:text-lg">
-          Student Load per Teacher
+          Carga de Estudiantes por Docente
         </h2>
         <p className="text-sm text-slate-600">
-          Hourly teacher burden with 2.0× target reference line
+          Carga horaria del docente con línea de referencia objetivo de 2.0×
         </p>
       </figcaption>
 
@@ -68,7 +68,7 @@ export function LoadRatioBars({ data }: LoadRatioBarsProps) {
               tickLine={false}
               axisLine={false}
               label={{
-                value: "Load Ratio",
+                value: "Ratio de Carga",
                 angle: -90,
                 position: "insideLeft",
                 style: { fontSize: 12, fill: "#64748b" },
@@ -87,7 +87,7 @@ export function LoadRatioBars({ data }: LoadRatioBarsProps) {
                         {d.hourLabel}:00
                       </p>
                       <p className="text-xs font-semibold text-rose-600">
-                        No staff coverage
+                        Sin cobertura de personal
                       </p>
                     </div>
                   );
@@ -100,19 +100,19 @@ export function LoadRatioBars({ data }: LoadRatioBarsProps) {
                     </p>
                     <div className="space-y-1 text-xs">
                       <p className="flex items-center gap-2">
-                        <span className="text-slate-600">Students:</span>
+                        <span className="text-slate-600">Estudiantes:</span>
                         <span className="font-semibold text-slate-900">
-                          {d.students.toLocaleString("en-US")} min
+                          {d.students.toLocaleString("es-EC")} min
                         </span>
                       </p>
                       <p className="flex items-center gap-2">
-                        <span className="text-slate-600">Staff:</span>
+                        <span className="text-slate-600">Personal:</span>
                         <span className="font-semibold text-slate-900">
-                          {d.staff.toLocaleString("en-US")} min
+                          {d.staff.toLocaleString("es-EC")} min
                         </span>
                       </p>
                       <p className="flex items-center gap-2">
-                        <span className="text-slate-600">Load:</span>
+                        <span className="text-slate-600">Carga:</span>
                         <span className="font-semibold text-slate-900">
                           {d.ratio.toFixed(2)}×
                         </span>
