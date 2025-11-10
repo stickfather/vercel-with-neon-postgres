@@ -93,7 +93,7 @@ export function WeeklyTrendChart({ data, onBarClick }: Props) {
       const weekDate = parseISO(data.week_start);
       const formattedDate = format(weekDate, "dd MMM");
       onBarClick({
-        title: `Week of ${formattedDate}`,
+        title: `Semana del ${formattedDate}`,
         weekStart: data.week_start,
       });
     }

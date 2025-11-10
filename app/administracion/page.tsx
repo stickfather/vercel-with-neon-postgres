@@ -7,44 +7,44 @@ const allTiles = [
   {
     href: "/registro",
     title: "Check-in Estudiantes",
-    subtitle: "Registro de asistencias",
+    subtitle: "Registro de asistencias de alumnos.",
     emoji: "🧍‍♂️",
   },
   {
     href: "/administracion/registro-personal",
     title: "Check-in Personal",
-    subtitle: "Entradas y salidas del staff",
+    subtitle: "Entradas y salidas del personal.",
     emoji: "🧑‍🏫",
   },
   {
     href: "/administracion/gestion-estudiantes",
     title: "Gestión de Estudiantes",
-    subtitle: "Datos, progreso y seguimiento",
+    subtitle: "Gestión completa del alumno: datos de contacto, coach panel, historial de asistencia, historial de exámenes, instructivos y observaciones.",
     emoji: "📚",
   },
   {
     href: "/administracion/calendario",
-    title: "Calendario de Exámenes",
-    subtitle: "Turnos, fechas y resultados",
+    title: "Calendario de Exámenes y Actividades",
+    subtitle: "Programación de exámenes, actividades y registro de resultados.",
     emoji: "🗓️",
   },
   // Row 2 - 3 tiles (Management)
   {
     href: "/admin/reportes",
     title: "Reportes Gerenciales",
-    subtitle: "KPIs de aprendizaje, engagement y finanzas",
+    subtitle: "Indicadores estratégicos del centro (5 reportes): • Aprendizaje • Engagement • Finanzas • Exámenes • Personal",
     emoji: "📊",
   },
   {
     href: "/administracion/reportes-nomina",
     title: "Reportes de Nómina",
-    subtitle: "Nómina, bonos y asistencia",
+    subtitle: "Consulta de ingresos del personal (mes a la fecha), aprobaciones de gerencia y bonos.",
     emoji: "💵",
   },
   {
     href: "/administracion/configuracion",
     title: "Configuración",
-    subtitle: "Ajustes del centro y accesos",
+    subtitle: "Ajustes del centro, accesos y preferencias generales.",
     emoji: "⚙️",
   },
 ];

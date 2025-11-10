@@ -9,10 +9,10 @@ export function StrugglingStudentsTable({ data }: Props) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          Students Requiring Attention (last 180 days)
+          Estudiantes que Requieren Atención (últimos 180 días)
         </h3>
         <div className="flex h-32 items-center justify-center text-slate-500">
-          No students requiring attention at this time.
+          No hay estudiantes que requieran atención en este momento.
         </div>
       </section>
     );
@@ -24,19 +24,19 @@ export function StrugglingStudentsTable({ data }: Props) {
       { label: string; className: string }
     > = {
       consecutive_fails: {
-        label: "Consecutive Fails",
+        label: "Reprobaciones Consecutivas",
         className: "bg-rose-100 text-rose-700 border-rose-200",
       },
       multiple_failed_exams: {
-        label: "Multiple Failures",
+        label: "Múltiples Reprobaciones",
         className: "bg-amber-100 text-amber-700 border-amber-200",
       },
       low_scores: {
-        label: "Low Scores",
+        label: "Puntuaciones Bajas",
         className: "bg-slate-100 text-slate-700 border-slate-200",
       },
       unresolved_instructivo: {
-        label: "Unresolved Instructive",
+        label: "Instructivo Sin Resolver",
         className: "bg-sky-100 text-sky-700 border-sky-200",
       },
     };
@@ -58,9 +58,9 @@ export function StrugglingStudentsTable({ data }: Props) {
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold text-slate-900">
-        Students Requiring Attention (last 180 days)
+        Estudiantes que Requieren Atención (últimos 180 días)
         <span className="ml-2 text-xs font-normal text-slate-500">
-          • Top 20 by risk factors
+          • Top 20 por factores de riesgo
         </span>
       </h3>
 
@@ -69,22 +69,22 @@ export function StrugglingStudentsTable({ data }: Props) {
           <thead>
             <tr className="border-b border-slate-200">
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Student
+                Estudiante
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Failed (180d)
+                Reprobados (180d)
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Max Consecutive
+                Máx. Consecutivos
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Min Score (180d)
+                Puntuación Mín. (180d)
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Open Instructivos
+                Instructivos Abiertos
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Reason
+                Razón
               </th>
             </tr>
           </thead>
