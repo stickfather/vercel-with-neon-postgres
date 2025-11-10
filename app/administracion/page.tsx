@@ -19,7 +19,7 @@ const allTiles = [
   {
     href: "/administracion/gestion-estudiantes",
     title: "Gestión de Estudiantes",
-    subtitle: "Gestión completa del alumno: datos de contacto, coach panel, historial de asistencia, historial de exámenes, instructivos y observaciones.",
+    subtitle: "Datos, progreso, historial y seguimiento completo del alumno.",
     emoji: "📚",
   },
   {
@@ -32,7 +32,7 @@ const allTiles = [
   {
     href: "/admin/reportes",
     title: "Reportes Gerenciales",
-    subtitle: "Indicadores estratégicos del centro (5 reportes): • Aprendizaje • Engagement • Finanzas • Exámenes • Personal",
+    subtitle: "Aprendizaje, Engagement, Finanzas, Exámenes y Personal.",
     emoji: "📊",
   },
   {
