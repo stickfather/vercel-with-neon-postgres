@@ -16,7 +16,7 @@ export function LeiKpiCard({ data }: Props) {
         </header>
         <div className="flex flex-col gap-1">
           <div className="text-3xl font-bold text-slate-900">—</div>
-          <p className="text-xs text-slate-500">Lessons/hour (last 7 days)</p>
+          <p className="text-xs text-slate-500">Lecciones por hora (7 días)</p>
         </div>
       </section>
     );
@@ -48,7 +48,7 @@ export function LeiKpiCard({ data }: Props) {
         <div className="text-3xl font-bold text-emerald-600">
           {lei_7d_avg.toFixed(2)}
         </div>
-        <p className="text-xs text-slate-500">Lecciones/hora (últimos 7 días)</p>
+        <p className="text-xs text-slate-500">Lecciones por hora (7 días)</p>
         
         {/* Sparkline */}
         <div className="mt-2">
@@ -84,7 +84,7 @@ export function LeiKpiCard({ data }: Props) {
         </div>
       </div>
       <figcaption className="sr-only">
-        LEI 7-day average sparkline showing weekly trends over the last 90 days
+        Tendencia semanal del LEI (promedio móvil 7 días, últimos 90 días)
       </figcaption>
     </section>
   );

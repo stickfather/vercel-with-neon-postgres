@@ -13,7 +13,7 @@ const reports = [
   },
   {
     href: "/reports/engagement",
-    title: "Reporte de Engagement",
+    title: "Reporte de Compromiso",
     description: "Actividad, retención y minutos.",
     requiresPin: false,
   },
@@ -31,7 +31,7 @@ const reports = [
   },
   {
     href: "/reports/personal",
-    title: "Reporte de Personal",
+    title: "Reporte de Cobertura y Carga de Personal",
     description: "Asistencia, cargas y nómina.",
     requiresPin: false,
   },

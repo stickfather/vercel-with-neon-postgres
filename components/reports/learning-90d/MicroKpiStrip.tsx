@@ -19,17 +19,17 @@ export function MicroKpiStrip({ data }: Props) {
 
   const kpis = [
     {
-      label: "Active (7d)",
+      label: "Activos (7 días)",
       value: numberFormatter.format(active_learners),
       color: "text-sky-600",
     },
     {
-      label: "Avg min/active (7d)",
+      label: "Promedio min/activo (7 días)",
       value: decimalFormatter.format(avg_minutes_per_active),
       color: "text-emerald-600",
     },
     {
-      label: "Completions (7d)",
+      label: "Lecciones completadas (7 días)",
       value: numberFormatter.format(completions),
       color: "text-slate-900",
     },

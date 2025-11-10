@@ -29,7 +29,7 @@ export function LeiWeeklyTrendChart({ data }: Props) {
     return (
       <figure className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
         <h3 className="mb-4 text-lg font-semibold text-slate-900">
-          LEI Weekly Trend (90d)
+          Tendencia semanal del LEI (90 días)
         </h3>
         <div className="flex h-64 items-center justify-center text-slate-500">
           No data available for the last 90 days.
@@ -97,7 +97,7 @@ export function LeiWeeklyTrendChart({ data }: Props) {
         </ComposedChart>
       </ResponsiveContainer>
       <figcaption className="mt-2 text-xs text-slate-500">
-        Learning Efficiency Index (lessons/hour) by week. Last 90 days.
+        Índice de eficiencia de aprendizaje (lecciones/hora) por semana. Últimos 90 días.
       </figcaption>
     </figure>
   );

@@ -12,7 +12,7 @@ export default function PersonnelPage() {
               Informes de gestión
             </span>
             <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">
-              Cobertura y Carga de Personal
+              Reporte de Cobertura y Carga de Personal
             </h1>
             <p className="max-w-2xl text-sm text-slate-600">
               Análisis integral de cobertura de personal, ratios de carga docente y capacidad operativa en todas las horas.
