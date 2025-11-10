@@ -238,27 +238,30 @@ function getRange(view: CalendarView, start: Date): DateRange {
 function buildMonthDays(monthStart: Date): Date[] {
   const firstVisibleDay = startOfWeek(monthStart); // This returns Monday
   const nextMonth = addMonths(monthStart, 1);
-  const days: Date[] = [];
+  const allDays: Date[] = [];
   let cursor = firstVisibleDay;
   
-  // Build days for up to 6 weeks, skipping Sundays
-  while (days.length < 42) { // 6 weeks * 7 days = 42 potential slots
-    const dayOfWeek = cursor.getUTCDay();
-    
-    // Skip Sundays (day 0)
-    if (dayOfWeek !== 0) {
-      days.push(cursor);
-    }
-    
+  // Build days for up to 6 weeks with all 7 days
+  while (allDays.length < 42) { // 6 weeks * 7 days = 42
+    allDays.push(cursor);
     cursor = addDays(cursor, 1);
     
-    // Stop if we've covered the month and completed full weeks
-    if (cursor >= nextMonth && days.length % 6 === 0 && days.length >= 6) {
+    // Stop if we've covered the month and have at least 4 full weeks
+    if (cursor >= nextMonth && allDays.length >= 28) {
+      // Check if we should add another week
+      const lastDay = allDays[allDays.length - 1];
+      if (lastDay.getUTCMonth() === monthStart.getUTCMonth()) {
+        // Continue to complete the week
+        continue;
+      }
       break;
     }
   }
   
-  return days;
+  // Filter out Sundays (day 0) from the generated days
+  const daysWithoutSunday = allDays.filter((day) => day.getUTCDay() !== 0);
+  
+  return daysWithoutSunday;
 }
 
 function getDateKey(date: Date): string {
