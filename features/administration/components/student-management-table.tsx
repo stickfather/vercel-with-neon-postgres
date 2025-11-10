@@ -11,8 +11,6 @@ import {
   type StudentStatusKey,
 } from "@/features/administration/constants/student-status";
 import { StudentManagementGraphs } from "./student-management-graphs";
-import { queueableFetch } from "@/lib/offline/fetch";
-import { useOfflineStatus } from "@/components/offline/offline-provider";
 import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
 type Props = {
@@ -110,7 +108,6 @@ function StudentManagementTable({ students }: Props) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const { lastSyncAt } = useOfflineStatus();
   const [studentList, setStudentList] = useState<ManagedStudent[]>(students);
   const [statusFilters, setStatusFilters] = useState<StudentStatusKey[]>([]);
   const [flagFilters, setFlagFilters] = useState<FlagKey[]>([]);
@@ -156,12 +153,6 @@ function StudentManagementTable({ students }: Props) {
       setLevelFilter(paramLevel);
     }
   }, [searchParams, debouncedSearchTerm, levelFilter]);
-
-  useEffect(() => {
-    if (lastSyncAt) {
-      router.refresh();
-    }
-  }, [lastSyncAt, router]);
 
   const updateQueryParams = useCallback(
     (nextSearch: string, nextLevel: LevelFilterValue) => {
@@ -311,7 +302,7 @@ function StudentManagementTable({ students }: Props) {
 
       setIsSubmittingStudent(true);
       try {
-        const response = await queueableFetch("/api/students", {
+        const response = await fetch("/api/students", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -319,12 +310,10 @@ function StudentManagementTable({ students }: Props) {
             plannedLevelMin: minLevel,
             plannedLevelMax: maxLevel,
           }),
-          offlineLabel: "student-create",
         });
 
         const payload = (await response.json().catch(() => ({}))) as {
           student?: StudentManagementEntry;
-          queued?: boolean;
           error?: string;
         };
 
@@ -339,30 +328,7 @@ function StudentManagementTable({ students }: Props) {
             message: `${payload.student.fullName} fue agregado correctamente.`,
           });
         } else {
-          const pendingEntry: ManagedStudent = {
-            id: -Date.now(),
-            fullName: name,
-            level: null,
-            lesson: null,
-            lastSeenAt: null,
-            status: null,
-            contractEnd: null,
-            graduationDate: null,
-            isNewStudent: true,
-            isExamPreparation: false,
-            hasSpecialNeeds: false,
-            isAbsent7Days: false,
-            isSlowProgress14Days: false,
-            hasActiveInstructive: false,
-            hasOverdueInstructive: false,
-            archived: false,
-            isPending: true,
-          };
-          addStudentToList(pendingEntry);
-          setToast({
-            tone: "success",
-            message: `${name} se agregó sin conexión. Sincronizaremos el registro automáticamente.`,
-          });
+          throw new Error("No se recibió información del estudiante creado.");
         }
 
         setCurrentPage(1);
