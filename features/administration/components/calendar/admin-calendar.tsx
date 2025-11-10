@@ -148,11 +148,13 @@ function parseStudentIdParam(value: string | null): number | null {
 }
 
 function startOfDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  // Use noon UTC to avoid timezone conversion issues
+  // Ecuador is UTC-5, so midnight UTC becomes previous day
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12, 0, 0));
 }
 
 function startOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 12, 0, 0));
 }
 
 function startOfWeek(date: Date): Date {
