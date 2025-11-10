@@ -281,7 +281,13 @@ function formatMonthTitle(date: Date): string {
 }
 
 function formatDayHeader(index: number): string {
-  const reference = addDays(startOfWeek(new Date(Date.UTC(2024, 0, 1))), index - 1);
+  // Create reference dates at noon UTC to avoid timezone shifts when formatting
+  // Ecuador is UTC-5, so midnight UTC would become previous day at 7PM
+  // Start from Monday (index 1) corresponds to Jan 1, 2024 at noon
+  const baseDate = new Date(Date.UTC(2024, 0, 1, 12, 0, 0)); // Monday at noon
+  const daysToAdd = index - 1; // index 1 = Monday (0 days), index 2 = Tuesday (1 day), etc.
+  const reference = new Date(baseDate);
+  reference.setUTCDate(baseDate.getUTCDate() + daysToAdd);
   return DAY_HEADER_FORMATTER.format(reference).replace(/\n/g, "").replace(/\.$/, "");
 }
 
