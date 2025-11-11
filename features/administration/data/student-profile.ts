@@ -742,7 +742,7 @@ export async function createStudentExam(
     VALUES (
       ${studentId}::bigint,
       ${data.timeScheduled},
-      ${data.status ?? "scheduled"},
+      ${data.status ?? "Programado"},
       ${data.level},
       ${data.score},
       ${data.passed},

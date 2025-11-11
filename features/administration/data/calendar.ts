@@ -201,16 +201,17 @@ function assertExamPayload(payload: ExamMutationBase) {
   if (!payload.timeScheduled) {
     throw new Error("La fecha y hora del examen son obligatorias.");
   }
-  const validTypes = ["Speaking", "Writing"];
-  if (payload.status && !validTypes.includes(payload.status)) {
-    throw new Error(`El tipo de examen debe ser Speaking o Writing.`);
+  // Status should be one of the valid exam statuses
+  const validStatuses = ["Programado", "Aprobado", "Reprobado", "Cancelado"];
+  if (payload.status && !validStatuses.includes(payload.status)) {
+    throw new Error(`El estado debe ser uno de: ${validStatuses.join(", ")}.`);
   }
   const validLevels = ["A1", "A2", "B1", "B2", "C1"];
   if (payload.level && !validLevels.includes(payload.level)) {
     throw new Error(`El nivel debe ser uno de: ${validLevels.join(", ")}.`);
   }
-  const normalizedStatus = payload.status?.trim().toLowerCase() ?? "scheduled";
-  if (normalizedStatus === "completed" && payload.score != null) {
+  const normalizedStatus = payload.status?.trim().toLowerCase() ?? "programado";
+  if ((normalizedStatus === "aprobado" || normalizedStatus === "reprobado") && payload.score != null) {
     if (payload.passed == null) {
       throw new Error(
         "Debe indicar si el estudiante aprobó cuando registra una nota para un examen completado.",
@@ -230,7 +231,7 @@ export async function createExam(payload: ExamMutationBase): Promise<{ id: numbe
     VALUES (
       ${payload.studentId}::bigint,
       ${payload.timeScheduled},
-      ${payload.status ?? "scheduled"},
+      ${payload.status ?? "Programado"},
       ${payload.level ?? null},
       ${payload.score ?? null},
       ${payload.passed ?? null},
@@ -276,13 +277,13 @@ export async function updateExam(
     addUpdate("time_scheduled", payload.timeScheduled ?? null);
   }
   if ("status" in payload) {
-    const validTypes = ["Speaking", "Writing"];
-    if (payload.status && !validTypes.includes(payload.status)) {
-      throw new Error(`El tipo de examen debe ser Speaking o Writing.`);
+    const validStatuses = ["Programado", "Aprobado", "Reprobado", "Cancelado"];
+    if (payload.status && !validStatuses.includes(payload.status)) {
+      throw new Error(`El estado debe ser uno de: ${validStatuses.join(", ")}.`);
     }
     const normalizedStatus = payload.status?.trim().toLowerCase() ?? null;
     if (
-      normalizedStatus === "completed" &&
+      (normalizedStatus === "aprobado" || normalizedStatus === "reprobado") &&
       "score" in payload &&
       payload.score != null &&
       payload.passed == null

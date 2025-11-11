@@ -43,10 +43,10 @@ export async function POST(request: Request, context: any) {
     }
 
     const status = typeof payload.status === "string" ? (payload.status as string) : null;
-    const validTypes = ["Speaking", "Writing"];
-    if (status && !validTypes.includes(status)) {
+    const validStatuses = ["Programado", "Aprobado", "Reprobado", "Cancelado"];
+    if (status && !validStatuses.includes(status)) {
       return NextResponse.json(
-        { error: "El tipo de examen debe ser Speaking o Writing." },
+        { error: `El estado debe ser uno de: ${validStatuses.join(", ")}.` },
         { status: 400 },
       );
     }
