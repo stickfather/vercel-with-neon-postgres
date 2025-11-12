@@ -4,50 +4,63 @@ import { runScheduledAutoCheckout } from "@/features/session-maintenance/auto-ch
 
 export const runtime = "edge";
 
+async function checkAutoCheckoutLogTable() {
+  const sql = neon(process.env.DATABASE_URL!);
+
+  try {
+    // Check if the auto_checkout_log table exists
+    const result = await sql`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'auto_checkout_log'
+      ) as table_exists;
+    `;
+
+    const tableExists = result[0]?.table_exists;
+
+    if (!tableExists) {
+      console.warn("⚠️ auto_checkout_log table not found.");
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("❌ Error checking auto_checkout_log table:", error);
+    return false;
+  }
+}
+
 async function refreshMaterializedViewsPhased() {
   const sql = neon(process.env.DATABASE_URL!);
 
-  console.log("🔄 Starting phased MV refresh...");
+  console.log("🔄 Starting MV refresh using mart.refresh_all_mvs()...");
 
-  // Phase 1: Base MVs (run in parallel)
-  console.log("⏳ Phase 1: Refreshing base MVs...");
-  await Promise.all([
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_activity_30d_mv`,
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_hourly_30d_mv`,
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_daypart_30d_mv`,
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_lesson_effort_mv`,
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.staff_hourly_30d_mv`,
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.mv_kpi_active_students_mtd`,
-    sql`REFRESH MATERIALIZED VIEW mart.mv_kpi_avg_daily_checkins`,
-  ]);
-  console.log("✅ Phase 1 complete");
+  try {
+    // Run the database function that handles all MV refreshes
+    await sql`SELECT mart.refresh_all_mvs();`;
 
-  // Phase 2: Dependent MVs (run in parallel after Phase 1)
-  console.log("⏳ Phase 2: Refreshing dependent MVs...");
-  await Promise.all([
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.lei_speed_benchmarks_30d_mv`,
-    sql`REFRESH MATERIALIZED VIEW CONCURRENTLY mart.student_lei_rank_30d_mv`,
-  ]);
-  console.log("✅ Phase 2 complete");
+    const timestamp = new Date().toISOString();
+    console.log(`✅ MV refresh completed at ${timestamp}`);
 
-  // Log the refresh completion
-  const rows = (await sql`
-    INSERT INTO mgmt.data_refresh_log (refreshed_at)
-    VALUES (now())
-    RETURNING refreshed_at;
-  `) as { refreshed_at: string }[];
-
-  const refreshedAt = rows[0]?.refreshed_at;
-  console.log("✅ Full MV refresh complete at", refreshedAt);
-
-  return refreshedAt;
+    return timestamp;
+  } catch (error) {
+    console.error("❌ Error during MV refresh:", error);
+    throw error;
+  }
 }
 
 export async function GET() {
   try {
     console.log("🌙 Starting nightly maintenance...");
 
-    // Step 1: Run auto-checkout for students and staff
+    // Step 1: Check if auto_checkout_log table exists
+    const tableExists = await checkAutoCheckoutLogTable();
+    if (!tableExists) {
+      console.warn("⚠️ Continuing without auto_checkout_log table.");
+    }
+
+    // Step 2: Run auto-checkout for students and staff
     const autoCheckoutResult = await runScheduledAutoCheckout({ force: false });
     console.log("✅ Auto-checkout complete:", {
       studentsClosed: autoCheckoutResult.studentsClosed,
@@ -56,11 +69,12 @@ export async function GET() {
       alreadyRan: autoCheckoutResult.alreadyRan,
     });
 
-    // Step 2: Refresh all materialized views
+    // Step 3: Refresh all materialized views
     const refreshedAt = await refreshMaterializedViewsPhased();
 
     return NextResponse.json({
       success: true,
+      autoCheckoutLogExists: tableExists,
       autoCheckout: {
         studentsClosed: autoCheckoutResult.studentsClosed,
         staffClosed: autoCheckoutResult.staffClosed,
