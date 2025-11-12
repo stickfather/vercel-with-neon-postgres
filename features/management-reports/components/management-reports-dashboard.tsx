@@ -71,7 +71,7 @@ export function ManagementReportsDashboard() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
 
-      const response = await fetch("/api/refresh-mvs", {
+      const response = await fetch("/api/cron/refresh-mvs", {
         method: "POST",
         signal: controller.signal,
       });
