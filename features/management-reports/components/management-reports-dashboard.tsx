@@ -67,22 +67,43 @@ export function ManagementReportsDashboard() {
   const handleRefreshNow = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      // Set a longer timeout for the refresh operation (5 minutes)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
       const response = await fetch("/api/refresh-mvs", {
         method: "POST",
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error("Failed to refresh data");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to refresh data");
       }
 
+      const result = await response.json();
+      
       setToastMessage({
-        message: "✅ Management data refreshed successfully.",
+        message: "✅ Datos gerenciales actualizados exitosamente.",
         tone: "success",
       });
     } catch (error) {
       console.error("Error refreshing MVs:", error);
+      
+      let errorMessage = "❌ Error al actualizar — por favor intenta de nuevo más tarde.";
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMessage = "❌ La actualización está tomando más tiempo del esperado. Por favor espera unos minutos.";
+        } else if (error.message) {
+          console.error("Detailed error:", error.message);
+        }
+      }
+      
       setToastMessage({
-        message: "❌ Refresh failed — please try again later.",
+        message: errorMessage,
         tone: "error",
       });
     } finally {
@@ -117,10 +138,10 @@ export function ManagementReportsDashboard() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium text-blue-900">
-                Management data automatically refreshes every day at 8:10 PM.
+                Los datos gerenciales se actualizan automáticamente todos los días a las 8:10 PM.
               </p>
               <p className="text-sm text-blue-700">
-                Click "Refresh Now" to update all management data immediately.
+                Haz clic en "Actualizar Ahora" para actualizar todos los datos gerenciales inmediatamente.
               </p>
             </div>
             <button
@@ -129,7 +150,7 @@ export function ManagementReportsDashboard() {
               disabled={isRefreshing}
               className="inline-flex w-fit items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-[1px] hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isRefreshing ? "Refreshing..." : "Refresh Now"}
+              {isRefreshing ? "Actualizando..." : "Actualizar Ahora"}
             </button>
           </div>
         </div>

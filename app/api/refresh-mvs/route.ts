@@ -43,15 +43,25 @@ async function refreshMaterializedViews() {
 
 async function handleRequest(method: "GET" | "POST") {
   try {
+    console.log(`[refresh-mvs] Starting ${method} request...`);
+    
     if (method === "POST") {
       // TODO: enforce admin-only POST access when called from the browser.
+      console.log("[refresh-mvs] Processing POST request from browser");
     }
 
     const refreshedAt = await refreshMaterializedViews();
+    
+    console.log(`[refresh-mvs] Successfully completed at ${refreshedAt}`);
 
     return NextResponse.json({ ok: true, refreshed_at: refreshedAt });
   } catch (error) {
     console.error("❌ Error refreshing MVs:", error);
+    console.error("[refresh-mvs] Error details:", {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : String(error) },
       { status: 500 },

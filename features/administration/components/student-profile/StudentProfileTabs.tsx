@@ -165,10 +165,10 @@ export function StudentProfileTabs({
                 🔒
               </span>
               <h3 className="text-xl font-bold text-slate-900">
-                Management PIN Required
+                PIN Gerencial Requerido
               </h3>
               <p className="max-w-md text-sm text-slate-600">
-                Please enter the management PIN to view this payment schedule.
+                Por favor ingresa el PIN gerencial para ver este cronograma de pagos.
               </p>
             </div>
             <button
@@ -176,7 +176,7 @@ export function StudentProfileTabs({
               onClick={() => setShowPaymentPinPrompt(true)}
               className="inline-flex items-center justify-center rounded-full bg-brand-orange px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-orange"
             >
-              Unlock Payment Schedule
+              Desbloquear Cronograma de Pagos
             </button>
           </div>
         ),
@@ -345,14 +345,14 @@ export function StudentProfileTabs({
           <div className="flex w-full max-w-sm flex-col items-center gap-4">
             <PinPrompt
               scope="manager"
-              title="🔐 Management PIN Required"
-              description="Please enter the management PIN to view this payment schedule."
-              ctaLabel="Confirm"
+              title="🔐 PIN Gerencial Requerido"
+              description="Por favor ingresa el PIN gerencial para ver este cronograma de pagos."
+              ctaLabel="Confirmar"
               onSuccess={() => {
                 setShowPaymentPinPrompt(false);
                 setIsPaymentScheduleUnlocked(true);
                 setToastMessage({
-                  message: "✅ Payment schedule unlocked",
+                  message: "✅ Cronograma de pagos desbloqueado",
                   tone: "success",
                 });
               }}
@@ -363,7 +363,7 @@ export function StudentProfileTabs({
               onClick={() => {
                 setShowPaymentPinPrompt(false);
                 setToastMessage({
-                  message: "Invalid PIN",
+                  message: "PIN inválido",
                   tone: "error",
                 });
               }}
