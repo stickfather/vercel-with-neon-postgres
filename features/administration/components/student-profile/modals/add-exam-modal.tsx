@@ -82,10 +82,11 @@ export function AddExamModal({ open, studentId, onClose, onCreated }: AddExamMod
             body: JSON.stringify({
               timeScheduled: form.scheduledAt.trim(),
               status: "Programado",  // Default status for new exams
+              examType: form.examType.trim(),
               level: form.level.trim(),
               score: scoreNumber,
               passed: false,
-              notes: [form.examType.trim() || null, form.note.trim() || null].filter(Boolean).join(" - ") || null,
+              notes: form.note.trim() || null,
             }),
           });
           const payload = await response.json().catch(() => ({}));

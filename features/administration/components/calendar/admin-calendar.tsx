@@ -307,23 +307,11 @@ function formatTime(value: string): string {
 }
 
 function getExamTypeDisplay(event: CalendarEvent): string {
-  // Extract exam type from notes first (new behavior)
-  if (event.notes) {
-    const normalized = event.notes.toLowerCase();
-    if (normalized.includes("speaking")) {
-      return "Speaking";
-    }
-    if (normalized.includes("writing")) {
-      return "Writing";
-    }
-  }
-  
-  // Legacy fallback: check status field (for old data)
-  if (event.status) {
-    const status = event.status.trim();
-    if (status === "Speaking" || status === "Writing") {
-      return status;
-    }
+  // Read from examType field directly
+  if (event.examType) {
+    const type = event.examType.toLowerCase();
+    // Capitalize for display
+    return type.charAt(0).toUpperCase() + type.slice(1);
   }
   
   return "—";
@@ -715,11 +703,11 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
     event ? toLocalInputValue(event.startTime) : defaultDate ?? "",
   );
   const [examType, setExamType] = useState(() => {
-    // Extract exam type from notes
-    if (event?.notes) {
-      const normalized = event.notes.toLowerCase();
-      if (normalized.includes("speaking")) return "Speaking";
-      if (normalized.includes("writing")) return "Writing";
+    // Read from examType field directly
+    if (event?.examType) {
+      // Capitalize first letter for display
+      const type = event.examType.toLowerCase();
+      return type.charAt(0).toUpperCase() + type.slice(1);
     }
     return "";
   });
@@ -819,21 +807,16 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
         status === "approved" ? "Aprobado" :
         status === "failed" ? "Reprobado" :
         status === "cancelled" ? "Cancelado" : "Programado";
-      
-      // Combine exam type with notes, placing exam type first
-      const combinedNotes = [
-        examType.trim() || null,
-        notes.trim() || null
-      ].filter(Boolean).join(" - ");
 
       const payload = {
         studentId: student.id,
         timeScheduled,
         status: actualStatus,
+        examType: examType.trim() || null,
         level,
         score: nextScore,
         passed: nextPassed,
-        notes: combinedNotes || null,
+        notes: notes.trim() || null,
       };
 
       const endpoint =
