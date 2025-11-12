@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useCallback } from "react";
 import { PinPrompt } from "@/features/security/components/PinPrompt";
+import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
 const reports = [
   {
@@ -40,6 +41,8 @@ const reports = [
 export function ManagementReportsDashboard() {
   const [showPinPrompt, setShowPinPrompt] = useState(false);
   const [targetHref, setTargetHref] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ message: string; tone: "success" | "error" } | null>(null);
 
   const handleReportClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>, report: typeof reports[0]) => {
     if (report.requiresPin) {
@@ -59,6 +62,32 @@ export function ManagementReportsDashboard() {
   const handlePinClose = useCallback(() => {
     setShowPinPrompt(false);
     setTargetHref(null);
+  }, []);
+
+  const handleRefreshNow = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const response = await fetch("/api/refresh-mvs", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to refresh data");
+      }
+
+      setToastMessage({
+        message: "✅ Management data refreshed successfully.",
+        tone: "success",
+      });
+    } catch (error) {
+      console.error("Error refreshing MVs:", error);
+      setToastMessage({
+        message: "❌ Refresh failed — please try again later.",
+        tone: "error",
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
   }, []);
 
   return (
@@ -83,6 +112,27 @@ export function ManagementReportsDashboard() {
             ← Volver al panel
           </Link>
         </header>
+
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-medium text-blue-900">
+                Management data automatically refreshes every day at 8:10 PM.
+              </p>
+              <p className="text-sm text-blue-700">
+                Click "Refresh Now" to update all management data immediately.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleRefreshNow}
+              disabled={isRefreshing}
+              className="inline-flex w-fit items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-[1px] hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isRefreshing ? "Refreshing..." : "Refresh Now"}
+            </button>
+          </div>
+        </div>
 
         <section className="flex flex-col gap-4">
           {reports.map((report) => (
@@ -131,6 +181,15 @@ export function ManagementReportsDashboard() {
             </button>
           </div>
         </div>
+      )}
+
+      {toastMessage && (
+        <EphemeralToast
+          message={toastMessage.message}
+          tone={toastMessage.tone}
+          duration={3000}
+          onDismiss={() => setToastMessage(null)}
+        />
       )}
     </div>
   );
