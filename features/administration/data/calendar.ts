@@ -11,6 +11,7 @@ export type CalendarEvent = {
   startTime: string;
   endTime: string;
   status: string | null;
+  examType: string | null;
   notes: string | null;
   studentId: number | null;
   level: string | null;
@@ -91,6 +92,7 @@ function mapCalendarRow(row: SqlRow): CalendarEvent | null {
     startTime: new Date(start).toISOString(),
     endTime: new Date(end).toISOString(),
     status: coerceString(row.status),
+    examType: coerceString(row.exam_type),
     notes: coerceString(row.notes),
     studentId: coerceNumber(row.student_id),
     level: coerceString(row.level),
@@ -170,7 +172,8 @@ export async function listCalendarEvents({
       v.student_id,
       v.score,
       v.passed,
-      CASE WHEN v.kind = 'exam' THEN e.level ELSE NULL END AS level
+      CASE WHEN v.kind = 'exam' THEN e.level ELSE NULL END AS level,
+      CASE WHEN v.kind = 'exam' THEN e.exam_type ELSE NULL END AS exam_type
     FROM public.calendar_events_v v
     LEFT JOIN public.exam_appointments e ON v.kind = 'exam' AND v.id = e.id
     WHERE ${whereClauses.join(" AND ")}
@@ -188,6 +191,7 @@ type ExamMutationBase = {
   studentId: number;
   timeScheduled: string;
   status?: string | null;
+  examType?: string | null;
   level?: string | null;
   score?: number | null;
   passed?: boolean | null;
@@ -201,16 +205,22 @@ function assertExamPayload(payload: ExamMutationBase) {
   if (!payload.timeScheduled) {
     throw new Error("La fecha y hora del examen son obligatorias.");
   }
-  const validTypes = ["Speaking", "Writing"];
-  if (payload.status && !validTypes.includes(payload.status)) {
-    throw new Error(`El tipo de examen debe ser Speaking o Writing.`);
+  // Status should be one of the valid exam statuses
+  const validStatuses = ["Programado", "Aprobado", "Reprobado", "Cancelado"];
+  if (payload.status && !validStatuses.includes(payload.status)) {
+    throw new Error(`El estado debe ser uno de: ${validStatuses.join(", ")}.`);
+  }
+  // Exam type should be speaking or writing (lowercase)
+  const validExamTypes = ["speaking", "writing"];
+  if (payload.examType && !validExamTypes.includes(payload.examType.toLowerCase())) {
+    throw new Error(`El tipo de examen debe ser: speaking o writing.`);
   }
   const validLevels = ["A1", "A2", "B1", "B2", "C1"];
   if (payload.level && !validLevels.includes(payload.level)) {
     throw new Error(`El nivel debe ser uno de: ${validLevels.join(", ")}.`);
   }
-  const normalizedStatus = payload.status?.trim().toLowerCase() ?? "scheduled";
-  if (normalizedStatus === "completed" && payload.score != null) {
+  const normalizedStatus = payload.status?.trim().toLowerCase() ?? "programado";
+  if ((normalizedStatus === "aprobado" || normalizedStatus === "reprobado") && payload.score != null) {
     if (payload.passed == null) {
       throw new Error(
         "Debe indicar si el estudiante aprobó cuando registra una nota para un examen completado.",
@@ -226,11 +236,12 @@ export async function createExam(payload: ExamMutationBase): Promise<{ id: numbe
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.exam_appointments (student_id, time_scheduled, status, level, score, passed, notes)
+    INSERT INTO public.exam_appointments (student_id, time_scheduled, status, exam_type, level, score, passed, notes)
     VALUES (
       ${payload.studentId}::bigint,
       ${payload.timeScheduled},
-      ${payload.status ?? "scheduled"},
+      ${payload.status ?? "Programado"},
+      ${payload.examType ? payload.examType.toLowerCase() : null},
       ${payload.level ?? null},
       ${payload.score ?? null},
       ${payload.passed ?? null},
@@ -249,6 +260,7 @@ export async function createExam(payload: ExamMutationBase): Promise<{ id: numbe
 export type UpdateExamPayload = {
   timeScheduled?: string | null;
   status?: string | null;
+  examType?: string | null;
   level?: string | null;
   score?: number | null;
   passed?: boolean | null;
@@ -276,13 +288,13 @@ export async function updateExam(
     addUpdate("time_scheduled", payload.timeScheduled ?? null);
   }
   if ("status" in payload) {
-    const validTypes = ["Speaking", "Writing"];
-    if (payload.status && !validTypes.includes(payload.status)) {
-      throw new Error(`El tipo de examen debe ser Speaking o Writing.`);
+    const validStatuses = ["Programado", "Aprobado", "Reprobado", "Cancelado"];
+    if (payload.status && !validStatuses.includes(payload.status)) {
+      throw new Error(`El estado debe ser uno de: ${validStatuses.join(", ")}.`);
     }
     const normalizedStatus = payload.status?.trim().toLowerCase() ?? null;
     if (
-      normalizedStatus === "completed" &&
+      (normalizedStatus === "aprobado" || normalizedStatus === "reprobado") &&
       "score" in payload &&
       payload.score != null &&
       payload.passed == null
@@ -292,6 +304,13 @@ export async function updateExam(
       );
     }
     addUpdate("status", payload.status ?? null);
+  }
+  if ("examType" in payload) {
+    const validExamTypes = ["speaking", "writing"];
+    if (payload.examType && !validExamTypes.includes(payload.examType.toLowerCase())) {
+      throw new Error(`El tipo de examen debe ser: speaking o writing.`);
+    }
+    addUpdate("exam_type", payload.examType ? payload.examType.toLowerCase() : null);
   }
   if ("level" in payload) {
     const validLevels = ["A1", "A2", "B1", "B2", "C1"];

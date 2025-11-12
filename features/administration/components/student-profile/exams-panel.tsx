@@ -61,12 +61,11 @@ function parseScore(value: string): number | null {
   return parsed;
 }
 
-function extractExamTypeFromNotes(notes: string | null): string {
-  if (!notes) return "—";
-  const normalized = notes.toLowerCase();
-  if (normalized.includes("speaking")) return "Speaking";
-  if (normalized.includes("writing")) return "Writing";
-  return "—";
+function getExamTypeDisplay(examType: string | null): string {
+  if (!examType) return "—";
+  const normalized = examType.toLowerCase();
+  // Capitalize for display
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 function formatScore(score: number | null): string {
@@ -227,6 +226,8 @@ export function ExamsPanel({
               body: JSON.stringify({
                 timeScheduled: editingExam.timeScheduled,
                 status: editingExam.status,
+                examType: editingExam.examType,
+                level: editingExam.level,
                 score: scoreNumber,
                 passed: editForm.isCompleted,
                 notes: editForm.note.trim() || null,
@@ -349,7 +350,7 @@ export function ExamsPanel({
               </tr>
             ) : (
               sortedExams.map((exam) => {
-                const examType = extractExamTypeFromNotes(exam.notes);
+                const examType = getExamTypeDisplay(exam.examType);
                 const statusLabel = getStatusLabel(exam.status);
                 const statusBadgeClass = getStatusBadgeClass(exam.status);
                 const hideScore = shouldHideScore(exam.status);
@@ -422,7 +423,7 @@ export function ExamsPanel({
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">
                 Tipo de examen
                 <span className="text-sm font-semibold text-brand-deep">
-                  {extractExamTypeFromNotes(editingExam.notes)}
+                  {getExamTypeDisplay(editingExam.examType)}
                 </span>
               </div>
               <div className="flex flex-col gap-1 text-left text-xs font-semibold uppercase tracking-wide text-brand-ink-muted">

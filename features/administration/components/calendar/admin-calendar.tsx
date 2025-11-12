@@ -307,22 +307,11 @@ function formatTime(value: string): string {
 }
 
 function getExamTypeDisplay(event: CalendarEvent): string {
-  // Prefer the status field if it contains Speaking/Writing
-  if (event.status) {
-    const status = event.status.trim();
-    if (status === "Speaking" || status === "Writing") {
-      return status;
-    }
-  }
-  
-  // Fallback: extract from notes
-  if (event.notes) {
-    if (event.notes.toLowerCase().includes("speaking")) {
-      return "Speaking";
-    }
-    if (event.notes.toLowerCase().includes("writing")) {
-      return "Writing";
-    }
+  // Read from examType field directly
+  if (event.examType) {
+    const type = event.examType.toLowerCase();
+    // Capitalize for display
+    return type.charAt(0).toUpperCase() + type.slice(1);
   }
   
   return "—";
@@ -335,7 +324,9 @@ function getEventTooltip(event: CalendarEvent): string {
       event.title,
       formatDateTime(event.startTime),
     ].filter(Boolean);
-    const examType = event.status ? `Tipo: ${event.status}` : null;
+    const examType = getExamTypeDisplay(event);
+    const examTypeLabel = examType !== "—" ? `Tipo: ${examType}` : null;
+    const statusLabel = event.status ? `Estado: ${translateStatus(event.status, event.passed, event.startTime)}` : null;
     const level = event.level ? `Nivel: ${event.level}` : null;
     const score = event.score != null ? `Nota: ${event.score}%` : null;
     const passedLabel =
@@ -344,7 +335,8 @@ function getEventTooltip(event: CalendarEvent): string {
         : `¿Aprobó?: ${event.passed ? "Sí" : "No"}`;
     return [
       base.join(" · "),
-      examType,
+      examTypeLabel,
+      statusLabel,
       level,
       score,
       passedLabel,
@@ -710,7 +702,15 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
   const [dateTime, setDateTime] = useState(() =>
     event ? toLocalInputValue(event.startTime) : defaultDate ?? "",
   );
-  const [examType, setExamType] = useState(() => event?.status ?? "");
+  const [examType, setExamType] = useState(() => {
+    // Read from examType field directly
+    if (event?.examType) {
+      // Capitalize first letter for display
+      const type = event.examType.toLowerCase();
+      return type.charAt(0).toUpperCase() + type.slice(1);
+    }
+    return "";
+  });
   const [level, setLevel] = useState(() => event?.level ?? "");
   const [status, setStatus] = useState<StatusFilter>(() => {
     const parsed = event ? parseStatusParam(event.status ?? "scheduled") : "scheduled";
@@ -801,14 +801,22 @@ function ExamForm({ mode, event, defaultDate, onCancel, onCompleted }: ExamFormP
         status === "approved" ? true : status === "failed" ? false : passed;
       const nextScore = requiresResult ? normalizedScore : null;
 
+      // Prepare the actual status value (Programado, Aprobado, Reprobado, Cancelado)
+      const actualStatus = 
+        status === "scheduled" ? "Programado" :
+        status === "approved" ? "Aprobado" :
+        status === "failed" ? "Reprobado" :
+        status === "cancelled" ? "Cancelado" : "Programado";
+
       const payload = {
         studentId: student.id,
         timeScheduled,
-        status: examType,
+        status: actualStatus,
+        examType: examType.trim() || null,
         level,
         score: nextScore,
         passed: nextPassed,
-        notes: notes.trim() ? notes.trim() : null,
+        notes: notes.trim() || null,
       };
 
       const endpoint =
@@ -1352,12 +1360,20 @@ function EventDetail({ event, onEdit, onDelete, onClose }: EventDetailProps) {
             </dd>
           </div>
         )}
-        {event.kind === "exam" && event.status && (
+        {event.kind === "exam" && (
           <div className="flex flex-col gap-1">
             <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
               Tipo de examen
             </dt>
-            <dd>{event.status}</dd>
+            <dd>{getExamTypeDisplay(event)}</dd>
+          </div>
+        )}
+        {event.kind === "exam" && event.status && (
+          <div className="flex flex-col gap-1">
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink-muted">
+              Estado
+            </dt>
+            <dd>{translateStatus(event.status, event.passed, event.startTime)}</dd>
           </div>
         )}
         {event.kind === "exam" && event.level && (

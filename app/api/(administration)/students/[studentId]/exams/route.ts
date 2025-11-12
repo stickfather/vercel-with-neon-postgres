@@ -43,10 +43,19 @@ export async function POST(request: Request, context: any) {
     }
 
     const status = typeof payload.status === "string" ? (payload.status as string) : null;
-    const validTypes = ["Speaking", "Writing"];
-    if (status && !validTypes.includes(status)) {
+    const validStatuses = ["Programado", "Aprobado", "Reprobado", "Cancelado"];
+    if (status && !validStatuses.includes(status)) {
       return NextResponse.json(
-        { error: "El tipo de examen debe ser Speaking o Writing." },
+        { error: `El estado debe ser uno de: ${validStatuses.join(", ")}.` },
+        { status: 400 },
+      );
+    }
+
+    const examType = typeof payload.examType === "string" ? (payload.examType as string) : null;
+    const validExamTypes = ["speaking", "writing"];
+    if (examType && !validExamTypes.includes(examType.toLowerCase())) {
+      return NextResponse.json(
+        { error: "El tipo de examen debe ser: speaking o writing." },
         { status: 400 },
       );
     }
@@ -84,6 +93,7 @@ export async function POST(request: Request, context: any) {
     const exam = await createStudentExam(studentId, {
       timeScheduled,
       status,
+      examType,
       level,
       score,
       passed,
