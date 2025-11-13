@@ -193,11 +193,20 @@ export async function getLearningReport(): Promise<LearningReport> {
   }));
 
   // Speed buckets
-  const bucketRows = normalizeRows<Partial<SpeedBucketRow>>(await sql`
-    SELECT student_id, full_name, level::text AS level, current_seq, lei_30d_plan,
-           percentile_lei, speed_bucket
-    FROM mgmt.learning_speed_buckets_v
-  `);
+  let bucketRows: Partial<SpeedBucketRow>[] = [];
+  try {
+    bucketRows = normalizeRows<Partial<SpeedBucketRow>>(await sql`
+      SELECT student_id, full_name, level::text AS level, current_seq, lei_30d_plan,
+             percentile_lei, speed_bucket
+      FROM mgmt.learning_speed_buckets_v
+    `);
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn("View not found for Speed Buckets, using fallback data");
+    } else {
+      throw error;
+    }
+  }
   const speedBuckets: SpeedBucketRow[] = bucketRows.map((row) => {
     const bucket = normalizeBucket(row.speed_bucket);
     return {
@@ -280,11 +289,20 @@ export async function getLearningReport(): Promise<LearningReport> {
   }));
 
   // Days in level (mgmt)
-  const daysInLevelRows = normalizeRows<Partial<DaysInLevelRow>>(await sql`
-    SELECT level::text AS level, student_count, avg_days_in_level, median_days_in_level
-    FROM mgmt.learning_days_in_level_v
-    ORDER BY level
-  `);
+  let daysInLevelRows: Partial<DaysInLevelRow>[] = [];
+  try {
+    daysInLevelRows = normalizeRows<Partial<DaysInLevelRow>>(await sql`
+      SELECT level::text AS level, student_count, avg_days_in_level, median_days_in_level
+      FROM mgmt.learning_days_in_level_v
+      ORDER BY level
+    `);
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn("View not found for Days in Level, using fallback data");
+    } else {
+      throw error;
+    }
+  }
   const daysInLevel = daysInLevelRows.map((row) => ({
     level: normalizeString(row.level),
     student_count: toNumber(row.student_count),
