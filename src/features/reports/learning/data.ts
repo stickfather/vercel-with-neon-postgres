@@ -70,11 +70,20 @@ export async function getLearningReport(): Promise<LearningReport> {
   const sql = getSqlClient();
 
   // LEI trend (90d daily series)
-  const leiTrendRows = normalizeRows<Partial<TrendPoint>>(await sql`
-    SELECT snapshot_date, median_lei
-    FROM mgmt.learning_lei_trend_v
-    ORDER BY snapshot_date
-  `);
+  let leiTrendRows: Partial<TrendPoint>[] = [];
+  try {
+    leiTrendRows = normalizeRows<Partial<TrendPoint>>(await sql`
+      SELECT snapshot_date, median_lei
+      FROM mgmt.learning_lei_trend_v
+      ORDER BY snapshot_date
+    `);
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn("View not found for LEI trend, using fallback data");
+    } else {
+      throw error;
+    }
+  }
   const leiTrend: TrendPoint[] = leiTrendRows.map((row) => ({
     snapshot_date: normalizeString(row.snapshot_date),
     median_lei: row.median_lei === null || row.median_lei === undefined ? null : toNullableNumber(row.median_lei),
@@ -86,12 +95,21 @@ export async function getLearningReport(): Promise<LearningReport> {
   const leiPct = pctChange(avg(last30), avg(prev30));
 
   // Transitions (tile + sparkline)
-  const transitionsRows = normalizeRows<Partial<TransitionPoint>>(await sql`
-    SELECT d::text AS d, COUNT(*)::int AS n
-    FROM mgmt.learning_level_transitions_30d_v
-    GROUP BY d
-    ORDER BY d
-  `);
+  let transitionsRows: Partial<TransitionPoint>[] = [];
+  try {
+    transitionsRows = normalizeRows<Partial<TransitionPoint>>(await sql`
+      SELECT d::text AS d, COUNT(*)::int AS n
+      FROM mgmt.learning_level_transitions_30d_v
+      GROUP BY d
+      ORDER BY d
+    `);
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn("View not found for Transitions, using fallback data");
+    } else {
+      throw error;
+    }
+  }
   const transitionsSeries: TransitionPoint[] = transitionsRows.map((row) => ({
     d: normalizeString(row.d),
     n: toNumber(row.n),
