@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { PinPrompt } from "@/features/security/components/PinPrompt";
-import { EphemeralToast } from "@/components/ui/ephemeral-toast";
 
 import {
   BasicDetailsPanel,
@@ -115,10 +113,6 @@ export function StudentProfileTabs({
     "payment" | "exam" | "instructivo" | "note" | null
   >(null);
 
-  const [isPaymentScheduleUnlocked, setIsPaymentScheduleUnlocked] = useState(false);
-  const [showPaymentPinPrompt, setShowPaymentPinPrompt] = useState(false);
-  const [toastMessage, setToastMessage] = useState<{ message: string; tone: "success" | "error" } | null>(null);
-
   const tabConfigs = useMemo<TabContentConfig[]>(
     () => [
       {
@@ -151,34 +145,13 @@ export function StudentProfileTabs({
       {
         value: "cronograma-de-pagos",
         label: TAB_LABELS["cronograma-de-pagos"],
-        content: isPaymentScheduleUnlocked ? (
+        content: (
           <PaymentSchedulePanel
             studentId={studentId}
             entries={paymentEntries}
             onEntriesChange={setPaymentEntries}
             onRequestAdd={() => setActiveModal("payment")}
           />
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-12 text-center">
-            <div className="flex flex-col gap-3">
-              <span className="text-5xl" aria-hidden="true">
-                🔒
-              </span>
-              <h3 className="text-xl font-bold text-slate-900">
-                PIN Gerencial Requerido
-              </h3>
-              <p className="max-w-md text-sm text-slate-600">
-                Por favor ingresa el PIN gerencial para ver este cronograma de pagos.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowPaymentPinPrompt(true)}
-              className="inline-flex items-center justify-center rounded-full bg-brand-orange px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-lg transition hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-orange"
-            >
-              Desbloquear Cronograma de Pagos
-            </button>
-          </div>
         ),
       },
       {
@@ -230,7 +203,6 @@ export function StudentProfileTabs({
       attendanceHistory,
       lessonCatalog,
       studentId,
-      isPaymentScheduleUnlocked,
     ],
   );
 
@@ -339,50 +311,6 @@ export function StudentProfileTabs({
           setNoteEntries((previous) => [entry, ...previous])
         }
       />
-
-      {showPaymentPinPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-8">
-          <div className="flex w-full max-w-sm flex-col items-center gap-4">
-            <PinPrompt
-              scope="manager"
-              title="🔐 PIN Gerencial Requerido"
-              description="Por favor ingresa el PIN gerencial para ver este cronograma de pagos."
-              ctaLabel="Confirmar"
-              onSuccess={() => {
-                setShowPaymentPinPrompt(false);
-                setIsPaymentScheduleUnlocked(true);
-                setToastMessage({
-                  message: "✅ Cronograma de pagos desbloqueado",
-                  tone: "success",
-                });
-              }}
-              className="bg-white"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setShowPaymentPinPrompt(false);
-                setToastMessage({
-                  message: "PIN inválido",
-                  tone: "error",
-                });
-              }}
-              className="inline-flex items-center rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700 hover:-translate-y-[1px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {toastMessage && (
-        <EphemeralToast
-          message={toastMessage.message}
-          tone={toastMessage.tone}
-          duration={3000}
-          onDismiss={() => setToastMessage(null)}
-        />
-      )}
     </div>
   );
 }
