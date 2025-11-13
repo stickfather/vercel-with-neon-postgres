@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { listStudentManagementEntries } from "@/features/administration/data/students";
 import { StudentManagementTable } from "@/features/administration/components/student-management-table";
 import { StudentManagementHeader } from "@/features/administration/components/student-management-header";
-import { neon } from "@neondatabase/serverless";
 
 export const metadata: Metadata = {
   title: "Gestión de estudiantes · Inglés Rápido Manta",
@@ -10,30 +9,13 @@ export const metadata: Metadata = {
 
 export const revalidate = 0;
 
-async function getLastRefreshTime(): Promise<string | null> {
-  try {
-    const sql = neon(process.env.DATABASE_URL!);
-    const rows = (await sql`
-      SELECT refreshed_at
-      FROM mgmt.last_refresh_v;
-    `) as { refreshed_at: string }[];
-    return rows[0]?.refreshed_at ?? null;
-  } catch (error) {
-    console.error("Error loading last refresh time:", error);
-    return null;
-  }
-}
-
 export default async function GestionEstudiantesPage() {
   let students = [] as Awaited<ReturnType<typeof listStudentManagementEntries>>;
   let dataError: string | null = null;
   let lastRefreshedAt: string | null = null;
 
   try {
-    [students, lastRefreshedAt] = await Promise.all([
-      listStudentManagementEntries(),
-      getLastRefreshTime(),
-    ]);
+    students = await listStudentManagementEntries();
   } catch (error) {
     console.error("No se pudieron cargar los estudiantes", error);
     dataError =
