@@ -7,7 +7,6 @@ const WEEKDAYS: { index: number; label: string }[] = [
   { index: 4, label: "Jue" },
   { index: 5, label: "Vie" },
   { index: 6, label: "Sáb" },
-  { index: 7, label: "Dom" },
 ];
 
 const HOURS = Array.from({ length: 13 }, (_, idx) => idx + 8);
@@ -49,13 +48,13 @@ export function HourlyTrafficHeatmap({ data }: { data: HourHeatmapByDay }) {
       <h3 className="mt-2 text-2xl font-semibold text-slate-900">Tráfico por Hora — Heatmap (últimos 90 días)</h3>
       <p className="mt-1 text-sm text-slate-500">Demanda por día de semana y hora (08h00 - 20h00).</p>
 
-      <div className="mt-6 overflow-x-auto">
-        <table className="w-full min-w-[640px] border-separate border-spacing-1">
+      <div className="mt-6">
+        <table className="w-full border-separate border-spacing-[2px] text-[11px]">
           <thead>
             <tr>
-              <th className="w-16 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Día</th>
+              <th className="w-12 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Día</th>
               {HOURS.map((hour) => (
-                <th key={hour} className="px-2 py-1 text-center text-[11px] font-semibold text-slate-500">
+                <th key={hour} className="px-1 py-1 text-center text-[10px] font-semibold text-slate-500">
                   {formatHourLabel(hour)}
                 </th>
               ))}
@@ -64,14 +63,14 @@ export function HourlyTrafficHeatmap({ data }: { data: HourHeatmapByDay }) {
           <tbody>
             {WEEKDAYS.map((day) => (
               <tr key={day.index}>
-                <th className="pr-2 text-left text-sm font-semibold text-slate-700">{day.label}</th>
+                <th className="pr-1 text-left text-xs font-semibold text-slate-700">{day.label}</th>
                 {HOURS.map((hour) => {
                   const value = getCellValue(data, day.index, hour);
                   const color = resolveCellColor(value, maxValue);
                   return (
                     <td key={hour} className="text-center">
                       <div
-                        className={`rounded-md px-2 py-2 text-[11px] font-semibold transition-colors ${color}`}
+                        className={`rounded-md px-1 py-1 text-[10px] font-semibold transition-colors ${color}`}
                         title={`${day.label} ${formatHourLabel(hour)} · ${value.toLocaleString("es-EC")} minutos (90d)`}
                       >
                         {value > 0 ? numberFormatter.format(value) : hasData ? "—" : ""}

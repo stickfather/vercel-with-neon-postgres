@@ -11,7 +11,7 @@ export default function EngagementPage() {
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">
             Informes de gestión
           </span>
-          <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">Panel de engagement</h1>
+          <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">Reporte de compromiso</h1>
           <p className="max-w-2xl text-sm text-slate-600">
             Seguimiento operativo de asistencia, estudiantes en riesgo y horas efectivas por horario.
           </p>
