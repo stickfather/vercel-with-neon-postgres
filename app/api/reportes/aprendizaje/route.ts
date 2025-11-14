@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getLearningReport } from "@/src/features/reports/learning/data";
 import { hasAccess } from "src/features/management-reports/data/access";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 120;
 
 const successHeaders = {

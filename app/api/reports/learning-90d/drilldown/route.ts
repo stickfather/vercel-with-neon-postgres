@@ -4,6 +4,7 @@ import {
   getDurationSessionsDrilldown,
 } from "@/src/features/reports/learning-90d/data";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 300;
 
 const successHeaders = {

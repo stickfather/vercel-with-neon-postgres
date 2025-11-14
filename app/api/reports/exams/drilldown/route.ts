@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDrillDownExams } from "@/src/features/reports/exams/data";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 180; // 3 minutes cache
 
 const successHeaders = {
