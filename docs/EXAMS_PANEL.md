@@ -1,9 +1,8 @@
 # Exámenes y Instructivos Panel - Management Reports
 
 > **Nota histórica:** Este documento recopila la especificación original del panel de exámenes. Desde la migración a
-> **Exámenes y Instructivos**, la ruta oficial es `/reports/examenes-y-instructivos` y el origen de datos se reescribe en
-> `src/features/reports/examenes-instructivos/report.ts` apuntando a las vistas `final.*`. Las referencias al esquema `mgmt.*`
-> se mantienen únicamente como contexto legado.
+> **Exámenes y Instructivos**, la ruta oficial es `/reports/examenes-y-instructivos` y el origen de datos proviene de las vistas
+> `final.*` detalladas abajo.
 
 ## Overview
 
@@ -26,22 +25,22 @@ All data queries follow a strict window-based approach:
 - **180-day window**: Struggling students analysis
 - **30-day window**: Upcoming exams
 
-#### Database Views Required
+#### Final Analytics Views (source of truth)
 
-The following `mgmt.*` views must exist in your Neon Postgres database:
+| Métrica | Vista `final.*` | Columnas clave |
+| --- | --- | --- |
+| Tasa de aprobación / Puntaje promedio / Primer intento (90d) | `final.exams_90d_summary_mv` | `pass_rate_pct`, `avg_score`, `first_attempt_pass_rate_pct` |
+| Tendencia semanal y volumen (90d) | `final.exams_weekly_trend_90d_mv` | `week_start`, `pass_count`, `fail_count`, `exams_count`, `avg_score`, `pass_rate_pct` |
+| Distribución de puntajes (90d) | `final.exams_score_distribution_90d_mv` | `bin_label`, `count` |
+| Mapa Nivel × Tipo (90d) | `final.exams_level_type_heatmap_mv` | `level`, `exam_type`, `avg_score`, `exams_count`, `pass_rate_pct` |
+| Repitencias (90d) | `final.exams_repeat_summary_90d_mv` | `student_name`, `level`, `exam_type`, `retake_count`, `days_to_retake_avg`, `score_delta` |
+| Estudiantes en riesgo (180d) | `final.exams_students_attention_180d_mv` | `student_name`, `fails_90d`, `pending_instructivos`, `overdue_instructivos`, `last_exam_date` |
+| Próximos exámenes (30d) | `final.exams_upcoming_30d_mv` | `scheduled_at`, `scheduled_local`, `student_name`, `level`, `exam_type`, `status` |
+| Resumen de instructivos (90d) | `final.instructivos_90d_summary_mv` | `assigned_90d`, `completion_rate_pct`, `median_completion_days` |
+| Histograma instructivos (90d) | `final.student_instructivos_enriched_v` | `completion_days` |
+| Estado instructivos | `final.instructivos_status_mv` | `student_name`, `status_label`, `assigned_at`, `due_date`, `days_overdue` |
 
-1. `mgmt.exam_overall_pass_rate_90d_v` - Pass rate for last 90 days
-2. `mgmt.exam_average_score_90d_v` - Average score for last 90 days
-3. `mgmt.exam_completed_exams_v` - All completed exam records
-4. `mgmt.exam_instructivo_followup_v` - Instructive follow-up tracking
-5. `mgmt.exam_weekly_kpis_v` - Weekly aggregated metrics
-6. `mgmt.exam_score_dist_90d_v` - Score distribution by 5-point bins
-7. `mgmt.exam_retakes_v` - Retake outcomes and timing
-8. `mgmt.exam_students_struggling_v` - At-risk students (180d)
-9. `mgmt.exam_upcoming_30d_v` - Upcoming exam count
-10. `mgmt.exam_upcoming_30d_list_v` - Upcoming exam details
-
-**Note**: If a view doesn't exist, the data layer falls back to computing the metric from `mgmt.exam_completed_exams_v`.
+Cada consulta del endpoint `/api/reports/examenes-y-instructivos` lee estas vistas en paralelo y, si alguna falta, entrega datos vacíos + `fallback: true`.
 
 ### API Endpoints
 

@@ -1,12 +1,9 @@
-import type { ExamPassRate90d } from "@/types/exams";
-
 type Props = {
-  data: ExamPassRate90d | null;
+  valuePct: number | null;
 };
 
-export function PassRateCard({ data }: Props) {
-  const passRate = data?.pass_rate_90d ?? null;
-  const percentage = passRate !== null ? passRate * 100 : null;
+export function PassRateCard({ valuePct }: Props) {
+  const percentage = valuePct;
 
   // Color logic: >=70% emerald, 50-69% amber, <50% rose
   let valueColorClass = "text-slate-600";

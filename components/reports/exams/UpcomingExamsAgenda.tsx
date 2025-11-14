@@ -1,13 +1,12 @@
 import { format, parseISO, differenceInDays } from "date-fns";
-import type { ExamUpcoming30dCount, ExamUpcoming30dEntry } from "@/types/exams";
+import type { UpcomingExamRow } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  count: ExamUpcoming30dCount | null;
-  list: ExamUpcoming30dEntry[];
+  list: UpcomingExamRow[];
 };
 
-export function UpcomingExamsAgenda({ count, list }: Props) {
-  const totalCount = count?.upcoming_exams_30d ?? list.length;
+export function UpcomingExamsAgenda({ list }: Props) {
+  const totalCount = list.length;
 
   if (!list || list.length === 0) {
     return (
@@ -25,13 +24,14 @@ export function UpcomingExamsAgenda({ count, list }: Props) {
   // Group by exam_date
   const groupedByDate = list.reduce(
     (acc, exam) => {
-      if (!acc[exam.exam_date]) {
-        acc[exam.exam_date] = [];
+      const dateKey = (exam.scheduledLocal ?? exam.scheduledAt).split("T")[0] ?? "sin-fecha";
+      if (!acc[dateKey]) {
+        acc[dateKey] = [];
       }
-      acc[exam.exam_date].push(exam);
+      acc[dateKey].push(exam);
       return acc;
     },
-    {} as Record<string, ExamUpcoming30dEntry[]>,
+    {} as Record<string, UpcomingExamRow[]>,
   );
 
   const sortedDates = Object.keys(groupedByDate).sort();
@@ -110,20 +110,23 @@ export function UpcomingExamsAgenda({ count, list }: Props) {
               </div>
 
               {/* Exam Items */}
-              {exams.map((exam, idx) => (
-                <div
-                  key={`${exam.student_id}-${exam.exam_type}-${idx}`}
+              {exams.map((exam, idx) => {
+                const localDate = exam.scheduledLocal ?? exam.scheduledAt;
+                const isoDate = localDate.split("T")[0];
+                return (
+                  <div
+                  key={`${exam.studentId}-${exam.examType}-${idx}`}
                   className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 hover:bg-slate-50"
                 >
                   <div className="flex items-center gap-4">
                     <span className="min-w-[48px] text-sm font-medium text-slate-900">
-                      {formatTime(exam.time_scheduled_local)}
+                      {formatTime(localDate)}
                     </span>
                     <span className="text-sm text-slate-700">
-                      {exam.full_name}
+                      {exam.studentName}
                     </span>
                     <div className="flex items-center gap-2">
-                      {getExamTypeBadge(exam.exam_type)}
+                      {getExamTypeBadge(exam.examType)}
                       {getLevelPill(exam.level)}
                     </div>
                     <span className="text-xs text-slate-500">
@@ -131,10 +134,11 @@ export function UpcomingExamsAgenda({ count, list }: Props) {
                     </span>
                   </div>
                   <span className="text-xs text-slate-500">
-                    {getDaysUntil(exam.exam_date)}
+                    {getDaysUntil(isoDate)}
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           );
         })}

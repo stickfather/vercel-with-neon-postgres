@@ -1,7 +1,7 @@
-import type { ExamStrugglingStudentDetail } from "@/types/exams";
+import type { AttentionStudentRow } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  data: ExamStrugglingStudentDetail[];
+  data: AttentionStudentRow[];
 };
 
 export function StrugglingStudentsTable({ data }: Props) {
@@ -18,39 +18,35 @@ export function StrugglingStudentsTable({ data }: Props) {
     );
   }
 
-  const getSeverityChip = (reason: string) => {
-    const reasonMap: Record<
-      string,
-      { label: string; className: string }
-    > = {
-      consecutive_fails: {
-        label: "Reprobaciones Consecutivas",
-        className: "bg-rose-100 text-rose-700 border-rose-200",
-      },
-      multiple_failed_exams: {
-        label: "Múltiples Reprobaciones",
-        className: "bg-amber-100 text-amber-700 border-amber-200",
-      },
-      low_scores: {
-        label: "Puntuaciones Bajas",
-        className: "bg-slate-100 text-slate-700 border-slate-200",
-      },
-      unresolved_instructivo: {
-        label: "Instructivo Sin Resolver",
-        className: "bg-sky-100 text-sky-700 border-sky-200",
-      },
-    };
+  const getSeverityChip = (row: AttentionStudentRow) => {
+    const overdue = row.overdueInstructivos > 0;
+    const pending = row.pendingInstructivos > 0;
+    const fails = row.fails90d >= 2;
 
-    const config = reasonMap[reason] || {
-      label: reason,
-      className: "bg-slate-100 text-slate-600 border-slate-200",
-    };
-
+    if (overdue) {
+      return (
+        <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+          Instructivo vencido
+        </span>
+      );
+    }
+    if (pending && fails) {
+      return (
+        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+          Reprobaciones + instructivos
+        </span>
+      );
+    }
+    if (fails) {
+      return (
+        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
+          Múltiples reprobaciones
+        </span>
+      );
+    }
     return (
-      <span
-        className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${config.className}`}
-      >
-        {config.label}
+      <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700">
+        Seguimiento
       </span>
     );
   };
@@ -65,53 +61,62 @@ export function StrugglingStudentsTable({ data }: Props) {
       </h3>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[700px] text-sm">
+        <table className="w-full min-w-[760px] text-sm">
           <thead>
             <tr className="border-b border-slate-200">
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
                 Estudiante
               </th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Reprobados (180d)
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                Nivel × Examen
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Máx. Consecutivos
+                Reprobados (90d)
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Puntuación Mín. (180d)
+                Instructivos pendientes
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Instructivos Abiertos
+                Instructivos vencidos
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Razón
+                Último examen
+              </th>
+              <th className="px-3 py-2 text-left font-semibold text-slate-700">
+                Riesgo
               </th>
             </tr>
           </thead>
           <tbody>
             {data.map((student, idx) => (
               <tr
-                key={`${student.student_id}-${idx}`}
+                key={`${student.studentId ?? idx}`}
                 className="border-b border-slate-100 hover:bg-slate-50"
               >
                 <td className="px-3 py-3 font-medium text-slate-900">
-                  {student.full_name || `Student #${student.student_id}`}
+                  {student.studentName || `Student #${student.studentId}`}
+                </td>
+                <td className="px-3 py-3 text-slate-700">
+                  {student.level || "—"} · {student.examType || "General"}
                 </td>
                 <td className="px-3 py-3 text-right text-slate-700">
-                  {student.failed_exam_count}
-                </td>
-                <td className="px-3 py-3 text-right font-medium text-slate-900">
-                  {student.max_consecutive_fails}
+                  {student.fails90d}
                 </td>
                 <td className="px-3 py-3 text-right text-slate-700">
-                  {student.min_score_180d !== null
-                    ? student.min_score_180d.toFixed(0)
+                  {student.pendingInstructivos}
+                </td>
+                <td className="px-3 py-3 text-right font-semibold text-rose-600">
+                  {student.overdueInstructivos}
+                </td>
+                <td className="px-3 py-3 text-slate-700">
+                  {student.lastExamDate
+                    ? new Date(student.lastExamDate).toLocaleDateString("es-EC", {
+                        month: "short",
+                        day: "numeric",
+                      })
                     : "—"}
                 </td>
-                <td className="px-3 py-3 text-right text-slate-700">
-                  {student.open_instructivos}
-                </td>
-                <td className="px-3 py-3">{getSeverityChip(student.reason)}</td>
+                <td className="px-3 py-3">{getSeverityChip(student)}</td>
               </tr>
             ))}
           </tbody>

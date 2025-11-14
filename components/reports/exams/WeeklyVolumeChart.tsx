@@ -10,10 +10,10 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import type { ExamWeeklyKpi } from "@/types/exams";
+import type { WeeklyTrendPoint } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  data: ExamWeeklyKpi[];
+  data: WeeklyTrendPoint[];
 };
 
 export function WeeklyVolumeChart({ data }: Props) {
@@ -31,9 +31,9 @@ export function WeeklyVolumeChart({ data }: Props) {
   }
 
   const chartData = data.map((item) => ({
-    week_start: item.week_start,
-    weekLabel: format(parseISO(item.week_start), "dd MMM"),
-    completed_count: item.completed_count,
+    week_start: item.weekStart,
+    weekLabel: format(parseISO(item.weekStart), "dd MMM"),
+    completed_count: item.examsCount,
   }));
 
   const CustomTooltip = ({ active, payload }: any) => {

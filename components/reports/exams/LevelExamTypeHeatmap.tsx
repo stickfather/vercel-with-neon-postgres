@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import type { ExamCompletedExam } from "@/types/exams";
+import type { HeatmapCell } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  data: ExamCompletedExam[];
+  data: HeatmapCell[];
   onCellClick?: (params: {
     title: string;
     level: string;
@@ -12,58 +12,10 @@ type Props = {
   }) => void;
 };
 
-type HeatmapCell = {
-  level: string;
-  exam_type: string;
-  avg_score: number;
-  n: number;
-  pass_pct: number;
-};
-
 const LEVELS = ["A1", "A2", "B1", "B2", "C1"];
 
 export function LevelExamTypeHeatmap({ data, onCellClick }: Props) {
-  const { heatmapData, examTypes } = useMemo(() => {
-    // Group by (level, exam_type)
-    const groups = new Map<string, ExamCompletedExam[]>();
-
-    data.forEach((exam) => {
-      const key = `${exam.level}|${exam.exam_type}`;
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key)!.push(exam);
-    });
-
-    // Compute aggregates
-    const cells: HeatmapCell[] = [];
-    const typesSet = new Set<string>();
-
-    groups.forEach((exams, key) => {
-      const [level, exam_type] = key.split("|");
-      typesSet.add(exam_type);
-
-      const scores = exams.map((e) => e.score).filter((s): s is number => s !== null);
-      const avg_score = scores.length > 0
-        ? scores.reduce((sum, s) => sum + s, 0) / scores.length
-        : 0;
-
-      const passCount = exams.filter((e) => e.is_passed).length;
-      const pass_pct = exams.length > 0 ? passCount / exams.length : 0;
-
-      cells.push({
-        level,
-        exam_type,
-        avg_score: Math.round(avg_score),
-        n: exams.length,
-        pass_pct,
-      });
-    });
-
-    const examTypes = Array.from(typesSet).sort();
-
-    return { heatmapData: cells, examTypes };
-  }, [data]);
+  const examTypes = useMemo(() => Array.from(new Set(data.map((row) => row.examType))).sort(), [data]);
 
   if (examTypes.length === 0) {
     return (
@@ -89,7 +41,7 @@ export function LevelExamTypeHeatmap({ data, onCellClick }: Props) {
   };
 
   const getCellData = (level: string, examType: string): HeatmapCell | null => {
-    return heatmapData.find((cell) => cell.level === level && cell.exam_type === examType) || null;
+    return data.find((cell) => cell.level === level && cell.examType === examType) || null;
   };
 
   return (
@@ -130,6 +82,12 @@ export function LevelExamTypeHeatmap({ data, onCellClick }: Props) {
               </div>
               {examTypes.map((type) => {
                 const cellData = getCellData(level, type);
+                const tooltip = cellData
+                  ? `${type} / ${level} — Avg ${cellData.avgScore ?? "—"} (n=${cellData.examsCount}${
+                      cellData.passRatePct !== null ? `, Pass ${cellData.passRatePct.toFixed(1)}%` : ""
+                    })`
+                  : "No data";
+
                 return (
                   <button
                     key={`${level}-${type}`}
@@ -144,20 +102,16 @@ export function LevelExamTypeHeatmap({ data, onCellClick }: Props) {
                     }}
                     className={`flex flex-col items-center justify-center rounded-lg p-3 text-center transition-transform hover:scale-105 ${
                       cellData
-                        ? getColorClass(cellData.avg_score) + " cursor-pointer"
+                        ? getColorClass(cellData.avgScore ?? null) + " cursor-pointer"
                         : "bg-slate-100 text-slate-400 cursor-default"
                     }`}
                     disabled={!cellData}
-                    title={
-                      cellData
-                        ? `${type} / ${level} — Avg ${cellData.avg_score} (n=${cellData.n}, Pass ${(cellData.pass_pct * 100).toFixed(1)}%)`
-                        : "No data"
-                    }
+                    title={tooltip}
                   >
                     {cellData ? (
                       <>
-                        <span className="text-xl font-bold">{cellData.avg_score}</span>
-                        <span className="text-xs opacity-80">n={cellData.n}</span>
+                        <span className="text-xl font-bold">{cellData.avgScore ?? "—"}</span>
+                        <span className="text-xs opacity-80">n={cellData.examsCount}</span>
                       </>
                     ) : (
                       <span className="text-lg">–</span>

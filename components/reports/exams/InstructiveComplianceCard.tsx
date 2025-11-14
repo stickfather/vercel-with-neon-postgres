@@ -1,41 +1,44 @@
-import type { ExamInstructiveCompliance } from "@/types/exams";
+import type { InstructivosSummary } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  data: ExamInstructiveCompliance | null;
+  summary: InstructivosSummary;
 };
 
-export function InstructiveComplianceCard({ data }: Props) {
-  const assignedPct = data?.assigned_pct !== null && data?.assigned_pct !== undefined
-    ? data.assigned_pct * 100
-    : null;
-  const completedPct = data?.completed_pct !== null && data?.completed_pct !== undefined
-    ? data.completed_pct * 100
-    : null;
+export function InstructiveComplianceCard({ summary }: Props) {
+  const assigned = summary.assigned90d ?? null;
+  const completionRate = summary.completionRate90d ?? null;
+  const medianDays = summary.medianCompletionDays ?? null;
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">
       <header className="mb-3">
         <h3 className="text-sm font-semibold text-slate-900">
-          Instructivos (90d)
+          Instructivos (últimos 90 días)
         </h3>
       </header>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-4">
-          <div className="flex flex-col">
-            <span className="text-2xl font-bold text-slate-900">
-              {assignedPct !== null ? `${assignedPct.toFixed(1)}%` : "—"}
-            </span>
-            <span className="text-xs text-slate-500">Asignados</span>
-          </div>
-          <div className="h-12 w-px bg-slate-200" />
-          <div className="flex flex-col">
-            <span className="text-2xl font-bold text-slate-900">
-              {completedPct !== null ? `${completedPct.toFixed(1)}%` : "—"}
-            </span>
-            <span className="text-xs text-slate-500">Completados</span>
-          </div>
-        </div>
-        <p className="text-xs text-slate-500">Solo en exámenes reprobados</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <article className="rounded-xl border border-slate-100/80 bg-slate-50/60 p-3">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Asignados</p>
+          <p className="text-2xl font-semibold text-slate-900">
+            {assigned !== null ? assigned.toLocaleString("es-EC") : "—"}
+          </p>
+          <p className="text-[11px] text-slate-500">Tras exámenes reprobados</p>
+        </article>
+        <article className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-emerald-600">Tasa de cumplimiento</p>
+          <p className="text-2xl font-semibold text-emerald-700">
+            {completionRate !== null ? `${completionRate.toFixed(1)}%` : "—"}
+          </p>
+          <p className="text-[11px] text-emerald-700/80">Dentro de 90 días</p>
+        </article>
+        <article className="rounded-xl border border-sky-100 bg-sky-50/70 p-3">
+          <p className="text-xs uppercase tracking-wide text-sky-600">Mediana de días</p>
+          <p className="text-2xl font-semibold text-sky-700">
+            {medianDays !== null ? Math.round(medianDays) : "—"}
+            <span className="ml-1 text-xs font-medium text-slate-500">días</span>
+          </p>
+          <p className="text-[11px] text-slate-500">De asignación a cierre</p>
+        </article>
       </div>
     </section>
   );
