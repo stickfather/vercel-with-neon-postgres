@@ -10,7 +10,7 @@ import type {
   DeclinePoint,
   EngagementReportResponse,
   FrequencyScore,
-  HourSplitBucket,
+  HourHeatmapByDay,
   InactivityTables,
   ZeroAttendanceRow,
 } from "@/types/reports.engagement";
@@ -194,18 +194,16 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
       ),
   );
 
-  const hourSplitRows = await safeQuery<SqlRow[]>(
-    "final.engagement_hour_split_mv",
+  const hourlyHeatmapRows = await safeQuery<SqlRow[]>(
+    "final.engagement_hour_heatmap_mv",
     [],
     async () =>
       normalizeRows(
         await sql`
-          WITH latest AS (
-            SELECT MAX(as_of_date) AS as_of_date FROM final.engagement_hour_split_mv
-          )
-          SELECT hour_of_day, student_minutes, sessions_count
-          FROM final.engagement_hour_split_mv
-          WHERE as_of_date = (SELECT as_of_date FROM latest)
+          SELECT weekday_index, hour_24, total_minutes_90d
+          FROM final.engagement_hour_heatmap_mv
+          WHERE hour_24 BETWEEN 8 AND 20
+          ORDER BY weekday_index, hour_24
         `,
       ),
   );
@@ -303,39 +301,38 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     }))
     .filter((point) => point.weekStart.length > 0);
 
-  const hourSplit = (() => {
-    if (!hourSplitRows.length) {
-      return [
-        { bucket: "Morning", studentMinutes: 0, sessionsCount: null },
-        { bucket: "Afternoon", studentMinutes: 0, sessionsCount: null },
-        { bucket: "Evening", studentMinutes: 0, sessionsCount: null },
-      ] satisfies HourSplitBucket[];
+  const hourlyHeatmap: HourHeatmapByDay = (() => {
+    if (!hourlyHeatmapRows.length) {
+      return {};
     }
 
-    const base: Record<HourSplitBucket["bucket"], HourSplitBucket> = {
-      Morning: { bucket: "Morning", studentMinutes: 0, sessionsCount: null },
-      Afternoon: { bucket: "Afternoon", studentMinutes: 0, sessionsCount: null },
-      Evening: { bucket: "Evening", studentMinutes: 0, sessionsCount: null },
-    };
+    const byDay: HourHeatmapByDay = {};
 
-    hourSplitRows.forEach((row) => {
-      const hour = toNumber(row.hour_of_day, NaN);
-      if (!Number.isFinite(hour)) return;
-      const minutes = toNumber(row.student_minutes);
-      const sessions = toNullableNumber(row.sessions_count);
-      const bucket: HourSplitBucket["bucket"] = hour < 12
-        ? "Morning"
-        : hour < 17
-          ? "Afternoon"
-          : "Evening";
-
-      base[bucket].studentMinutes += minutes;
-      if (sessions !== null) {
-        base[bucket].sessionsCount = (base[bucket].sessionsCount ?? 0) + sessions;
+    hourlyHeatmapRows.forEach((row) => {
+      const weekdayIndex = toNumber(row.weekday_index, NaN);
+      const hour24 = toNumber(row.hour_24, NaN);
+      if (!Number.isFinite(weekdayIndex) || !Number.isFinite(hour24)) {
+        return;
       }
+
+      const minutes = toNumber(row.total_minutes_90d);
+      if (!byDay[weekdayIndex]) {
+        byDay[weekdayIndex] = [];
+      }
+
+      byDay[weekdayIndex].push({
+        weekdayIndex,
+        hour24,
+        totalMinutes90d: minutes,
+      });
     });
 
-    return Object.values(base);
+    Object.keys(byDay).forEach((key) => {
+      const index = Number(key);
+      byDay[index] = byDay[index].sort((a, b) => a.hour24 - b.hour24);
+    });
+
+    return byDay;
   })();
 
   const zeroAttendance: ZeroAttendanceRow[] = zeroAttendanceRows.map((row) => ({
@@ -363,7 +360,7 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     inactivityTables,
     avgDaysBetweenVisits: avgGap,
     declineIndex,
-    hourSplit,
+    hourlyHeatmap,
     zeroAttendance,
     frequencyScore,
   };

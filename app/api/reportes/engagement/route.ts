@@ -16,16 +16,30 @@ const errorHeaders = {
   "Cache-Control": "no-store",
 } as const;
 
+type HourBucketKey = "Morning" | "Afternoon" | "Evening";
+
 function adaptHourSplit(data: EngagementReportResponse): LegacyEngagementReport["hourSplit"] {
-  const morning = data.hourSplit.find((bucket) => bucket.bucket === "Morning");
-  const afternoon = data.hourSplit.find((bucket) => bucket.bucket === "Afternoon");
-  const evening = data.hourSplit.find((bucket) => bucket.bucket === "Evening");
+  const totals: Record<HourBucketKey, number> = {
+    Morning: 0,
+    Afternoon: 0,
+    Evening: 0,
+  };
+
+  Object.values(data.hourlyHeatmap ?? {}).forEach((day) => {
+    day.forEach((cell) => {
+      const hour = cell.hour24;
+      if (!Number.isFinite(hour)) return;
+      const bucket: HourBucketKey = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
+      totals[bucket] += cell.totalMinutes90d ?? 0;
+    });
+  });
+
   return [
     {
       hour: "08:00-20:00",
-      morning: morning?.studentMinutes ?? 0,
-      afternoon: afternoon?.studentMinutes ?? 0,
-      evening: evening?.studentMinutes ?? 0,
+      morning: totals.Morning,
+      afternoon: totals.Afternoon,
+      evening: totals.Evening,
     },
   ];
 }

@@ -35,11 +35,13 @@ export type DeclinePoint = {
   declineIndex: number | null;
 };
 
-export type HourSplitBucket = {
-  bucket: 'Morning' | 'Afternoon' | 'Evening';
-  studentMinutes: number;
-  sessionsCount: number | null;
+export type HourHeatmapCell = {
+  weekdayIndex: number;
+  hour24: number;
+  totalMinutes90d: number;
 };
+
+export type HourHeatmapByDay = Record<number, HourHeatmapCell[]>;
 
 export type ZeroAttendanceRow = {
   studentId: number;
@@ -62,7 +64,7 @@ export type EngagementReportResponse = {
   inactivityTables: InactivityTables;
   avgDaysBetweenVisits: AvgDaysBetweenVisits;
   declineIndex: DeclinePoint[];
-  hourSplit: HourSplitBucket[];
+  hourlyHeatmap: HourHeatmapByDay;
   zeroAttendance: ZeroAttendanceRow[];
   frequencyScore: FrequencyScore;
 };

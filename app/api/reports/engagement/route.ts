@@ -25,11 +25,7 @@ function fallbackResponse(reason: string): EngagementReportResponse {
     },
     avgDaysBetweenVisits: { value: null },
     declineIndex: [],
-    hourSplit: [
-      { bucket: "Morning", studentMinutes: 0, sessionsCount: null },
-      { bucket: "Afternoon", studentMinutes: 0, sessionsCount: null },
-      { bucket: "Evening", studentMinutes: 0, sessionsCount: null },
-    ],
+    hourlyHeatmap: {},
     zeroAttendance: [],
     frequencyScore: { sessionsPerWeek: null, targetSessionsPerWeek: null, sparkline: [] },
   };

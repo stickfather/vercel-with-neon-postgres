@@ -8,7 +8,7 @@ import { ActiveSummaryCards } from "./ActiveSummaryCards";
 import { AvgDaysBetweenVisitsCard } from "./AvgDaysBetweenVisitsCard";
 import { DeclineIndexChart } from "./DeclineIndexChart";
 import { FrequencyScoreCard } from "./FrequencyScoreCard";
-import { HourSplitCard } from "./HourSplitCard";
+import { HourlyTrafficHeatmap } from "./HourlyTrafficHeatmap";
 import { InactivityTables } from "./InactivityTables";
 import { ZeroAttendanceTable } from "./ZeroAttendanceTable";
 
@@ -105,7 +105,7 @@ export function EngagementPanelClient() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <DeclineIndexChart points={data.declineIndex} />
-        <HourSplitCard buckets={data.hourSplit} />
+        <HourlyTrafficHeatmap data={data.hourlyHeatmap} />
       </div>
 
       <ZeroAttendanceTable rows={data.zeroAttendance} />
