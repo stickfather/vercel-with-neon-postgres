@@ -214,10 +214,21 @@ async function runStudentManagementQuery(
   studentId?: number,
   limitOne = false,
   includeArchivedColumn = true,
+  includeCoachPanelColumns = true,
 ): Promise<SqlRow[]> {
   const archivedSelection = includeArchivedColumn
     ? sql`COALESCE(s.archived, false) AS archived,`
     : sql`false AS archived,`;
+
+  const coachPanelSelection = includeCoachPanelColumns
+    ? sql`
+          COALESCE(cp.level::text, s.planned_level_max::text, s.planned_level_min::text) AS level,
+          cp.level::text AS current_level,
+          cp.current_seq AS current_seq,`
+    : sql`
+          COALESCE(s.planned_level_max::text, s.planned_level_min::text) AS level,
+          NULL::text AS current_level,
+          NULL::integer AS current_seq,`;
 
   try {
     return normalizeRows<SqlRow>(
@@ -229,22 +240,20 @@ async function runStudentManagementQuery(
           latest.lesson_name AS latest_lesson_name,
           latest.lesson_seq AS latest_lesson_seq,
           latest.last_seen_at::text AS latest_last_seen_at,
-          COALESCE(cp.level::text, s.planned_level_max::text, s.planned_level_min::text) AS level,
-          cp.level::text AS current_level,
-          cp.current_seq AS current_seq,
+          ${coachPanelSelection}
           s.status AS status,
           s.contract_end::text AS contract_end,
           s.graduation_date::text AS graduation_date,
           ${archivedSelection}
           COALESCE(flags.is_new_student, false) AS is_new_student,
           COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
-          COALESCE(flags.has_special_needs, false) AS has_special_needs,
+          COALESCE(flags.has_special_needs, false) AS is_special_needs,
           COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
           COALESCE(flags.is_slow_progress_14d, false) AS is_slow_progress_14d,
           COALESCE(flags.instructivo_active, false) AS instructivo_active,
           COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
         FROM public.students AS s
-        LEFT JOIN mart.coach_panel_v AS cp ON cp.student_id = s.id
+        ${includeCoachPanelColumns ? sql`LEFT JOIN mart.coach_panel_v AS cp ON cp.student_id = s.id` : sql``}
         LEFT JOIN LATERAL (
           SELECT
             sa.lesson_id,
@@ -276,6 +285,21 @@ async function runStudentManagementQuery(
         relation,
         studentId,
         limitOne,
+        false,
+        includeCoachPanelColumns,
+      );
+    }
+    if (includeCoachPanelColumns && (isMissingColumnError(error, "level") || isMissingColumnError(error, "cp.level"))) {
+      console.warn(
+        "Las columnas de mart.coach_panel_v no están disponibles. Continuaremos sin esos campos hasta que la base de datos se actualice.",
+        error,
+      );
+      return runStudentManagementQuery(
+        sql,
+        relation,
+        studentId,
+        limitOne,
+        includeArchivedColumn,
         false,
       );
     }

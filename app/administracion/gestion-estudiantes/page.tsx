@@ -14,7 +14,8 @@ async function getLastRefreshTime(): Promise<string | null> {
   try {
     const sql = neon(process.env.DATABASE_URL!);
     const rows = (await sql`
-      SELECT refreshed_at
+      SELECT 
+        COALESCE(refreshed_at, last_refreshed_at) AS refreshed_at
       FROM mgmt.last_refresh_v;
     `) as { refreshed_at: string }[];
     console.log("✅ Last refresh time loaded successfully:", rows[0]?.refreshed_at);
