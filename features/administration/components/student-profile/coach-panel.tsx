@@ -33,11 +33,63 @@ const HABIT_TONE: Record<string, string> = {
   inconstante: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
-const QUADRANT_COLORS: Record<string, string> = {
-  A: "bg-emerald-600",
-  B: "bg-sky-600",
-  C: "bg-amber-600",
-  D: "bg-rose-600",
+type QuadrantLabel = "A" | "B" | "C" | "D";
+
+const QUADRANT_KEYS: QuadrantLabel[] = ["A", "B", "C", "D"];
+
+const DEFAULT_QUADRANT_STYLE = {
+  badgeText: "Quadrant – N/A",
+  badgeClass: "bg-slate-200",
+  textClass: "text-slate-600",
+  dotClass: "bg-slate-400",
+  description: "Perfil sin descripción",
+} as const;
+
+const QUADRANT_STYLE: Record<
+  QuadrantLabel,
+  {
+    badgeText: string;
+    badgeClass: string;
+    textClass: string;
+    dotClass: string;
+    description: string;
+  }
+> = {
+  A: {
+    badgeText: "A – Efficient & Active",
+    badgeClass: "bg-emerald-600",
+    textClass: "text-white",
+    dotClass: "bg-emerald-500",
+    description: "Eficiente y activo",
+  },
+  B: {
+    badgeText: "B – Efficient / Low Pace",
+    badgeClass: "bg-amber-300",
+    textClass: "text-slate-900",
+    dotClass: "bg-amber-400",
+    description: "Eficiente con ritmo bajo",
+  },
+  C: {
+    badgeText: "C – Inefficient / High Pace",
+    badgeClass: "bg-orange-500",
+    textClass: "text-white",
+    dotClass: "bg-orange-500",
+    description: "Necesita mayor eficiencia",
+  },
+  D: {
+    badgeText: "D – Inefficient & Inactive",
+    badgeClass: "bg-rose-600",
+    textClass: "text-white",
+    dotClass: "bg-rose-500",
+    description: "Bajo ritmo y eficiencia",
+  },
+};
+
+const QUADRANT_DOT_POSITION: Record<QuadrantLabel, { x: number; y: number }> = {
+  A: { x: 0.25, y: 0.75 },
+  C: { x: 0.75, y: 0.75 },
+  B: { x: 0.25, y: 0.25 },
+  D: { x: 0.75, y: 0.25 },
 };
 
 type CoachPanelProps = {
@@ -332,20 +384,79 @@ function habitTone(label: string | null | undefined): string {
   return HABIT_TONE[normalized as keyof typeof HABIT_TONE] ?? "bg-slate-50 text-slate-600 border-slate-200";
 }
 
+function normalizeQuadrantLabel(label: string | undefined): QuadrantLabel | undefined {
+  if (!label) return undefined;
+  const candidate = label.toUpperCase() as QuadrantLabel;
+  return QUADRANT_KEYS.includes(candidate) ? candidate : undefined;
+}
+
 function quadrantDescription(label: string | undefined): string | null {
   if (!label) return null;
-  switch (label.toUpperCase()) {
-    case "A":
-      return "Eficiente y activo";
-    case "B":
-      return "Activo con oportunidades de eficiencia";
-    case "C":
-      return "Eficiente pero necesita más ritmo";
-    case "D":
-      return "Bajo ritmo y eficiencia";
-    default:
-      return null;
-  }
+  const normalized = normalizeQuadrantLabel(label);
+  if (!normalized) return DEFAULT_QUADRANT_STYLE.description;
+  return QUADRANT_STYLE[normalized].description;
+}
+
+function QuadrantBadge({ quadrantLabel }: { quadrantLabel: string | undefined }) {
+  const normalized = normalizeQuadrantLabel(quadrantLabel);
+  const config = normalized ? QUADRANT_STYLE[normalized] : DEFAULT_QUADRANT_STYLE;
+
+  return (
+    <span
+      className={`inline-flex h-7 items-center rounded-full px-4 text-[13px] font-semibold ${config.badgeClass} ${config.textClass}`}
+    >
+      {config.badgeText}
+    </span>
+  );
+}
+
+function QuadrantMetricChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex w-[110px] flex-col rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-center">
+      <span className="text-base font-semibold text-slate-900">{value}</span>
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</span>
+    </div>
+  );
+}
+
+function QuadrantMatrix({ quadrantLabel }: { quadrantLabel: string | undefined }) {
+  const normalized = normalizeQuadrantLabel(quadrantLabel);
+  const dotPosition = normalized ? QUADRANT_DOT_POSITION[normalized] : { x: 0.5, y: 0.5 };
+  const dotClass = normalized ? QUADRANT_STYLE[normalized].dotClass : DEFAULT_QUADRANT_STYLE.dotClass;
+
+  const dotStyle: CSSProperties = {
+    left: `calc(${dotPosition.x * 100}% - 5px)`,
+    top: `calc(${(1 - dotPosition.y) * 100}% - 5px)`,
+  };
+
+  const cells = [
+    { key: "A", title: "A", subtitle: "Efficient & Active" },
+    { key: "C", title: "C", subtitle: "Inefficient / High Pace" },
+    { key: "B", title: "B", subtitle: "Efficient / Low Pace" },
+    { key: "D", title: "D", subtitle: "Inefficient & Inactive" },
+  ];
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <span className="text-[11px] uppercase tracking-wide text-slate-500">LEI (Efficiency) ↑</span>
+      <div className="relative w-full max-w-xs rounded-2xl border border-slate-200 bg-white px-3 py-3">
+        <div className="grid h-40 w-full grid-cols-2 grid-rows-2 text-xs font-semibold text-slate-600">
+          {cells.map((cell) => (
+            <div key={cell.key} className="flex flex-col items-center justify-center gap-1 text-center">
+              <span className="text-lg font-bold text-slate-700">{cell.title}</span>
+              <span className="text-[10px] font-medium text-slate-400">{cell.subtitle}</span>
+            </div>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute left-1/2 top-0 h-full w-px bg-slate-200" />
+          <div className="absolute left-0 top-1/2 h-px w-full bg-slate-200" />
+        </div>
+        <span className={`pointer-events-none absolute h-2.5 w-2.5 rounded-full ${dotClass}`} style={dotStyle} />
+      </div>
+      <span className="text-[11px] uppercase tracking-wide text-slate-500">Velocity (Pace) →</span>
+    </div>
+  );
 }
 
 function useCoachPanelReport(studentId: number) {
@@ -834,38 +945,49 @@ export function CoachPanel({ studentId, data }: CoachPanelProps) {
             <p className="text-sm text-brand-ink-muted">Ubicación del estudiante en el cuadrante de rendimiento.</p>
           </div>
           {report?.quadrantProfile ? (
-            <div className="mt-8 space-y-6">
-              <div className="flex flex-col items-center gap-6 lg:flex-row lg:items-center">
-                <div className={`flex h-24 w-24 items-center justify-center rounded-[32px] text-4xl font-black text-white ${
-                  QUADRANT_COLORS[report.quadrantProfile.quadrantLabel] ?? "bg-slate-400"
-                }`}>
-                  {report.quadrantProfile.quadrantLabel || "?"}
-                </div>
-                <div className="flex-1 rounded-3xl border border-brand-ink-muted/10 bg-slate-50/70 p-4">
-                  <dl className="grid gap-4 text-sm text-brand-ink-muted sm:grid-cols-3">
-                    <div>
-                      <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">LEI</dt>
-                      <dd className="mt-1 text-2xl font-semibold text-brand-deep">
-                        {report.quadrantProfile.leiValue != null ? report.quadrantProfile.leiValue.toFixed(2) : "—"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/hora</dt>
-                      <dd className="mt-1 text-2xl font-semibold text-brand-deep">
-                        {report.quadrantProfile.lessonsPerHour != null ? report.quadrantProfile.lessonsPerHour.toFixed(2) : "—"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/semana</dt>
-                      <dd className="mt-1 text-2xl font-semibold text-brand-deep">
-                        {report.quadrantProfile.lessonsPerWeek != null ? report.quadrantProfile.lessonsPerWeek.toFixed(1) : "—"}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
+            <div className="mt-8 space-y-8 pb-6">
+              <div className="flex flex-wrap items-center gap-3">
+                <QuadrantBadge quadrantLabel={report.quadrantProfile.quadrantLabel} />
+                <QuadrantMetricChip
+                  label="LEI"
+                  value={
+                    report.quadrantProfile.leiValue != null
+                      ? report.quadrantProfile.leiValue.toFixed(2)
+                      : "—"
+                  }
+                />
+                <QuadrantMetricChip
+                  label="Velocity"
+                  value={
+                    report.quadrantProfile.lessonsPerWeek != null
+                      ? `${report.quadrantProfile.lessonsPerWeek.toFixed(1)}/sem`
+                      : "—"
+                  }
+                />
               </div>
+              <QuadrantMatrix quadrantLabel={report.quadrantProfile.quadrantLabel} />
+              <dl className="grid gap-6 text-sm text-brand-ink-muted sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/hora</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                    {report.quadrantProfile.lessonsPerHour != null
+                      ? report.quadrantProfile.lessonsPerHour.toFixed(2)
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/semana</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                    {report.quadrantProfile.lessonsPerWeek != null
+                      ? report.quadrantProfile.lessonsPerWeek.toFixed(1)
+                      : "—"}
+                  </dd>
+                </div>
+              </dl>
               <p className="text-sm text-brand-deep">
-                {report.quadrantProfile.description ?? quadrantDescription(report.quadrantProfile.quadrantLabel) ?? "Perfil sin descripción"}
+                {report.quadrantProfile.description ??
+                  quadrantDescription(report.quadrantProfile.quadrantLabel) ??
+                  "Perfil sin descripción"}
               </p>
             </div>
           ) : (
