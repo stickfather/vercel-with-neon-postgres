@@ -14,12 +14,14 @@ async function getLastRefreshTime(): Promise<string | null> {
   try {
     const sql = neon(process.env.DATABASE_URL!);
     const rows = (await sql`
-      SELECT refreshed_at
+      SELECT 
+        COALESCE(refreshed_at, last_refreshed_at) AS refreshed_at
       FROM mgmt.last_refresh_v;
     `) as { refreshed_at: string }[];
+    console.log("✅ Last refresh time loaded successfully:", rows[0]?.refreshed_at);
     return rows[0]?.refreshed_at ?? null;
   } catch (error) {
-    console.error("Error loading last refresh time:", error);
+    console.error("❌ Error loading last refresh time:", error);
     return null;
   }
 }
@@ -30,12 +32,34 @@ export default async function GestionEstudiantesPage() {
   let lastRefreshedAt: string | null = null;
 
   try {
-    [students, lastRefreshedAt] = await Promise.all([
+    const [studentsResult, refreshTimeResult] = await Promise.allSettled([
       listStudentManagementEntries(),
       getLastRefreshTime(),
     ]);
+
+    console.log("📊 Students query result:", studentsResult.status);
+    console.log("⏰ Refresh time query result:", refreshTimeResult.status);
+
+    if (studentsResult.status === "fulfilled") {
+      students = studentsResult.value;
+      console.log(`✅ Loaded ${students.length} students successfully`);
+    } else {
+      console.error("❌ Failed to load students:", studentsResult.reason);
+      console.error("❌ Error details:", {
+        message: studentsResult.reason instanceof Error ? studentsResult.reason.message : String(studentsResult.reason),
+        stack: studentsResult.reason instanceof Error ? studentsResult.reason.stack : undefined,
+      });
+      dataError =
+        "No pudimos cargar la lista de estudiantes. Inténtalo nuevamente en unos minutos o contacta al equipo técnico.";
+    }
+
+    if (refreshTimeResult.status === "fulfilled") {
+      lastRefreshedAt = refreshTimeResult.value;
+    } else {
+      console.error("❌ Failed to load refresh time:", refreshTimeResult.reason);
+    }
   } catch (error) {
-    console.error("No se pudieron cargar los estudiantes", error);
+    console.error("❌ Unexpected error in student management page:", error);
     dataError =
       "No pudimos cargar la lista de estudiantes. Inténtalo nuevamente en unos minutos o contacta al equipo técnico.";
   }
