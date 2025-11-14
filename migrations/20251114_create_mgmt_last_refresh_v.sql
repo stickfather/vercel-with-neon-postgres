@@ -3,5 +3,6 @@
 CREATE SCHEMA IF NOT EXISTS mgmt;
 
 CREATE OR REPLACE VIEW mgmt.last_refresh_v AS
-SELECT max(refreshed_at) AT TIME ZONE 'UTC' AS refreshed_at
-FROM mart.mv_refresh_log;
+SELECT max(finished_at) AS refreshed_at
+FROM mart.mv_refresh_log
+WHERE ok = true;
