@@ -1,4 +1,4 @@
-# Exams Panel - Implementation Summary
+# Exámenes y Instructivos Panel - Implementation Summary
 
 ## ✅ Implementation Complete
 
@@ -10,14 +10,13 @@ The Exams Panel for Management Reports has been fully implemented according to t
 
 **Types & Data Layer (3 files)**
 - `types/exams.ts` - 15 TypeScript type definitions
-- `src/features/reports/exams/data.ts` - 14 data query functions (16,495 chars)
-- Database fallback logic for all views
+- `types/reports.examenes-instructivos.ts` - Canonical API response types
+- `src/features/reports/examenes-instructivos/report.ts` - Report builder + fallback logic
 
-**API Endpoints (2 files)**
-- `app/api/reports/exams/route.ts` - Main panel data endpoint
-- `app/api/reports/exams/drilldown/route.ts` - Interactive drill-down endpoint
+**API Endpoint (1 file)**
+- `app/api/reports/examenes-y-instructivos/route.ts` - Canonical panel data endpoint
 
-**UI Components (13 files)**
+**UI Components (12 files)**
 - `components/reports/exams/ExamsPanelClient.tsx` - Main orchestrator
 - `components/reports/exams/PassRateCard.tsx` - KPI card
 - `components/reports/exams/AverageScoreCard.tsx` - KPI card
@@ -30,12 +29,11 @@ The Exams Panel for Management Reports has been fully implemented according to t
 - `components/reports/exams/RetakesTable.tsx` - Data table
 - `components/reports/exams/StrugglingStudentsTable.tsx` - Data table
 - `components/reports/exams/UpcomingExamsAgenda.tsx` - Grouped agenda
-- `components/reports/exams/DrillDownDrawer.tsx` - Paginated drawer
 
 **Page Routes (3 files)**
-- `app/reports/examenes/page.tsx` - Main page
-- `app/reports/examenes/loading.tsx` - Loading skeleton
-- `app/reports/examenes/error.tsx` - Error boundary
+- `app/reports/examenes-y-instructivos/page.tsx` - Main page
+- `app/reports/examenes-y-instructivos/loading.tsx` - Loading skeleton
+- `app/reports/examenes-y-instructivos/error.tsx` - Error boundary
 
 **Documentation (3 files)**
 - `docs/EXAMS_PANEL.md` - Complete technical documentation (8,808 chars)
@@ -69,18 +67,18 @@ The Exams Panel for Management Reports has been fully implemented according to t
 
 ## 📊 Data Architecture
 
-### Database Views Required (10 views)
+### Final Analytics Views (10 vistas)
 ```
-mgmt.exam_overall_pass_rate_90d_v          → Pass rate KPI
-mgmt.exam_average_score_90d_v              → Average score KPI
-mgmt.exam_completed_exams_v                → Base view (all modules use this)
-mgmt.exam_instructivo_followup_v           → Instructive compliance
-mgmt.exam_weekly_kpis_v                    → Weekly trend chart
-mgmt.exam_score_dist_90d_v                 → Score histogram
-mgmt.exam_retakes_v                        → Retakes table
-mgmt.exam_students_struggling_v            → Students at risk (180d)
-mgmt.exam_upcoming_30d_v                   → Upcoming count
-mgmt.exam_upcoming_30d_list_v              → Upcoming details
+final.exams_90d_summary_mv                 → Pass rate, avg score, primer intento
+final.exams_weekly_trend_90d_mv            → Tendencia semanal + volumen y sparkline
+final.exams_score_distribution_90d_mv      → Histograma de puntajes
+final.exams_level_type_heatmap_mv          → Promedios por nivel × tipo
+final.exams_repeat_summary_90d_mv          → Resumen de repitencias
+final.exams_students_attention_180d_mv     → Estudiantes con riesgo (180d)
+final.exams_upcoming_30d_mv                → Lista de exámenes próximos (30d)
+final.instructivos_90d_summary_mv          → KPIs de instructivos (asignados, tasa, mediana)
+final.student_instructivos_enriched_v      → Histograma de días para completar
+final.instructivos_status_mv               → Tablas de pendientes/vencidos
 ```
 
 ### Time Windows Enforced
@@ -248,8 +246,8 @@ All dates displayed in **America/Guayaquil** timezone:
 ## 🚀 Deployment Checklist
 
 ### Database Setup Required
-1. **Create schema**: Ensure `mgmt` schema exists
-2. **Create views**: Run SQL from `docs/exams-panel-views.sql` (adapted to your schema)
+1. **Create schema**: Ensure `final` schema exists (or adjust SQL accordingly)
+2. **Create views**: Run SQL from `docs/exams-panel-views.sql` (adaptado a `final.*`)
 3. **Add indexes**: On (exam_date, student_id, exam_type, level) for performance
 4. **Verify data**: Check that views return data for 90d/180d/30d windows
 
@@ -262,7 +260,7 @@ All dates displayed in **America/Guayaquil** timezone:
 1. Push code to GitHub (already done)
 2. Verify Vercel auto-deploys from branch
 3. Check build logs for errors
-4. Navigate to `/reports/examenes`
+4. Navigate to `/reports/examenes-y-instructivos`
 5. Verify all components load
 6. Test drill-down interactions
 7. Check API responses in Network tab
@@ -343,4 +341,4 @@ All dates displayed in **America/Guayaquil** timezone:
 
 The Exams Panel implementation is **complete and ready for testing** once the database views are set up. All code follows best practices, is fully typed, secure, and documented. The panel provides comprehensive insights into exam performance with an intuitive, interactive interface.
 
-**Next step**: Set up the required database views using the examples in `docs/exams-panel-views.sql`, then deploy and test the panel at `/reports/examenes`.
+**Next step**: Set up the required database views using the examples in `docs/exams-panel-views.sql`, then deploy and test the panel at `/reports/examenes-y-instructivos`.

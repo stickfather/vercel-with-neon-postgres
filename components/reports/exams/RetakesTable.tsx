@@ -1,8 +1,7 @@
-import { format, parseISO, differenceInDays } from "date-fns";
-import type { ExamRetake } from "@/types/exams";
+import type { RepeatExamRow } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  data: ExamRetake[];
+  data: RepeatExamRow[];
 };
 
 export function RetakesTable({ data }: Props) {
@@ -19,22 +18,6 @@ export function RetakesTable({ data }: Props) {
     );
   }
 
-  const formatDate = (dateStr: string) => {
-    try {
-      return format(parseISO(dateStr), "dd MMM");
-    } catch {
-      return "—";
-    }
-  };
-
-  const getRowAccentColor = (firstScore: number | null, retakeScore: number | null) => {
-    if (firstScore === null || retakeScore === null) return "";
-    const delta = retakeScore - firstScore;
-    if (delta >= 10) return "border-l-4 border-l-emerald-500";
-    if (delta < 0) return "border-l-4 border-l-rose-500";
-    return "";
-  };
-
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold text-slate-900">
@@ -45,7 +28,7 @@ export function RetakesTable({ data }: Props) {
       </h3>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[800px] text-sm">
+        <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-slate-200">
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
@@ -58,68 +41,41 @@ export function RetakesTable({ data }: Props) {
                 Nivel
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Primer Intento
+                Repitencias
               </th>
               <th className="px-3 py-2 text-left font-semibold text-slate-700">
-                Repitencia
+                ΔPromedio Puntaje
               </th>
               <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                ΔDías
-              </th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Puntuación 1ra
-              </th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-700">
-                Puntuación Rep.
-              </th>
-              <th className="px-3 py-2 text-center font-semibold text-slate-700">
-                Aprobó Rep.
+                Días promedio a repetir
               </th>
             </tr>
           </thead>
           <tbody>
             {data.map((row, idx) => (
               <tr
-                key={`${row.student_id}-${row.exam_type}-${row.level}-${idx}`}
-                className={`border-b border-slate-100 hover:bg-slate-50 ${getRowAccentColor(
-                  row.first_score,
-                  row.retake_score,
-                )}`}
+                key={`${row.studentId ?? idx}-${row.examType}-${row.level}-${idx}`}
+                className="border-b border-slate-100 hover:bg-slate-50"
               >
                 <td className="px-3 py-3 text-slate-900">
-                  Student #{row.student_id}
+                  {row.studentName || `ID ${row.studentId}`}
                 </td>
-                <td className="px-3 py-3 text-slate-700">{row.exam_type}</td>
+                <td className="px-3 py-3 text-slate-700">{row.examType}</td>
                 <td className="px-3 py-3 text-slate-700">{row.level}</td>
                 <td className="px-3 py-3 text-slate-700">
-                  {formatDate(row.first_fail_at)}
+                  {row.retakeCount}
                 </td>
-                <td className="px-3 py-3 text-slate-700">
-                  {row.retake_at ? formatDate(row.retake_at) : "—"}
+                <td className={`px-3 py-3 text-slate-700 ${
+                  row.scoreDelta !== null && row.scoreDelta >= 5
+                    ? "text-emerald-600"
+                    : row.scoreDelta !== null && row.scoreDelta < 0
+                      ? "text-rose-600"
+                      : ""
+                }`}>
+                  {row.scoreDelta !== null ? `${row.scoreDelta.toFixed(1)} pts` : "—"}
                 </td>
                 <td className="px-3 py-3 text-right text-slate-700">
-                  {row.days_to_retake !== null ? row.days_to_retake : "—"}
-                </td>
-                <td className="px-3 py-3 text-right font-medium text-slate-900">
-                  {row.first_score !== null ? row.first_score.toFixed(0) : "—"}
-                </td>
-                <td className="px-3 py-3 text-right font-medium text-slate-900">
-                  {row.retake_score !== null
-                    ? row.retake_score.toFixed(0)
-                    : "—"}
-                </td>
-                <td className="px-3 py-3 text-center">
-                  {row.retake_passed === null ? (
-                    <span className="text-slate-400">—</span>
-                  ) : row.retake_passed ? (
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                      ✓
-                    </span>
-                  ) : (
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-700">
-                      ✗
-                    </span>
-                  )}
+                  {row.daysToRetakeAvg !== null ? `${row.daysToRetakeAvg.toFixed(1)} días` : "—"}
                 </td>
               </tr>
             ))}

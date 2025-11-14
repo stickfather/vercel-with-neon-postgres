@@ -15,7 +15,7 @@ export default function Error({
             Informes de gestión
           </span>
           <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">
-            Exámenes
+            Exámenes y Instructivos
           </h1>
         </header>
 
@@ -24,7 +24,7 @@ export default function Error({
             Error al cargar los datos
           </h2>
           <p className="mb-4 text-sm text-rose-700">
-            No pudimos cargar los indicadores de exámenes. Intenta nuevamente.
+            No pudimos cargar los indicadores de exámenes e instructivos. Intenta nuevamente.
           </p>
           <button
             onClick={reset}

@@ -12,61 +12,24 @@ import { WeeklyVolumeChart } from "./WeeklyVolumeChart";
 import { RetakesTable } from "./RetakesTable";
 import { StrugglingStudentsTable } from "./StrugglingStudentsTable";
 import { UpcomingExamsAgenda } from "./UpcomingExamsAgenda";
-import { DrillDownDrawer } from "./DrillDownDrawer";
-import type {
-  ExamPassRate90d,
-  ExamAverageScore90d,
-  ExamFirstAttemptPassRate,
-  ExamInstructiveCompliance,
-  ExamWeeklyKpi,
-  ExamScoreDistribution,
-  ExamCompletedExam,
-  ExamRetake,
-  ExamStrugglingStudentDetail,
-  ExamUpcoming30dCount,
-  ExamUpcoming30dEntry,
-} from "@/types/exams";
-
-type ExamsPanelData = {
-  passRate90d: ExamPassRate90d | null;
-  averageScore90d: ExamAverageScore90d | null;
-  firstAttemptPassRate: ExamFirstAttemptPassRate;
-  instructiveCompliance: ExamInstructiveCompliance | null;
-  weeklyKpis: ExamWeeklyKpi[];
-  scoreDistribution: ExamScoreDistribution[];
-  completedExams: ExamCompletedExam[];
-  retakes: ExamRetake[];
-  strugglingStudents: ExamStrugglingStudentDetail[];
-  upcomingCount: ExamUpcoming30dCount | null;
-  upcomingList: ExamUpcoming30dEntry[];
-};
-
-type DrillDownState = {
-  isOpen: boolean;
-  title: string;
-  weekStart?: string;
-  level?: string;
-  examType?: string;
-};
+import { InstructivosCompletionHistogram } from "./InstructivosCompletionHistogram";
+import { InstructivosStatusTable } from "./InstructivosStatusTable";
+import type { ExamenesInstructivosReportResponse } from "@/types/reports.examenes-instructivos";
 
 export function ExamsPanelClient() {
-  const [data, setData] = useState<ExamsPanelData | null>(null);
+  const [report, setReport] = useState<ExamenesInstructivosReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [drillDown, setDrillDown] = useState<DrillDownState>({
-    isOpen: false,
-    title: "",
-  });
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch("/api/reports/exams");
+        const response = await fetch("/api/reports/examenes-y-instructivos");
         if (!response.ok) {
-          throw new Error("Failed to fetch exams data");
+          throw new Error("Failed to fetch Exámenes y Instructivos data");
         }
-        const result = await response.json();
-        setData(result);
+        const result: ExamenesInstructivosReportResponse = await response.json();
+        setReport(result);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
@@ -76,32 +39,6 @@ export function ExamsPanelClient() {
 
     fetchData();
   }, []);
-
-  const handleOpenDrillDown = (params: {
-    title: string;
-    weekStart?: string;
-    level?: string;
-    examType?: string;
-  }) => {
-    setDrillDown({
-      isOpen: true,
-      ...params,
-    });
-  };
-
-  const handleCloseDrillDown = () => {
-    setDrillDown({ isOpen: false, title: "" });
-  };
-
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && drillDown.isOpen) {
-        handleCloseDrillDown();
-      }
-    };
-    window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
-  }, [drillDown.isOpen]);
 
   if (loading) {
     return (
@@ -122,11 +59,11 @@ export function ExamsPanelClient() {
     );
   }
 
-  if (error || !data) {
+  if (error || !report) {
     return (
       <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
         <p className="text-sm text-rose-800">
-          We couldn't load this data. Try again.
+          No pudimos cargar los datos de exámenes e instructivos. Intenta nuevamente.
         </p>
         <button
           onClick={() => window.location.reload()}
@@ -138,56 +75,66 @@ export function ExamsPanelClient() {
     );
   }
 
+  const {
+    summary,
+    instructivosSummary,
+    weeklyTrend,
+    scoreDistribution,
+    heatmap,
+    repeatExams,
+    studentsNeedingAttention,
+    upcomingExams,
+    instructivosStatus,
+  } = report;
+
   return (
     <div className="flex flex-col gap-6">
+      {report.fallback && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Algunos datos están en modo seguro mientras las vistas `final.*` se recalculan.
+        </div>
+      )}
       {/* KPI Cards Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <PassRateCard data={data.passRate90d} />
-        <AverageScoreCard data={data.averageScore90d} />
-        <FirstAttemptPassCard data={data.firstAttemptPassRate} />
-        <InstructiveComplianceCard data={data.instructiveCompliance} />
+        <PassRateCard valuePct={summary.passRatePct} />
+        <AverageScoreCard avgScore={summary.avgScore} sparkline={summary.avgScoreSparkline} />
+        <FirstAttemptPassCard valuePct={summary.firstAttemptPassRatePct} />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+        <InstructiveComplianceCard summary={instructivosSummary} />
+        <InstructivosCompletionHistogram bins={instructivosSummary.completionHistogram} />
       </div>
 
-      {/* Weekly Trend Chart */}
-      <WeeklyTrendChart
-        data={data.weeklyKpis}
-        onBarClick={handleOpenDrillDown}
-      />
-
-      {/* Score Distribution & Volume */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <ScoreDistributionChart
-          data={data.scoreDistribution}
-          completedExams={data.completedExams}
+        <InstructivosStatusTable
+          title="Instructivos vencidos"
+          subtitle="Zona de penalización"
+          rows={instructivosStatus.overdue}
+          accent="rose"
         />
-        <WeeklyVolumeChart data={data.weeklyKpis} />
+        <InstructivosStatusTable
+          title="Instructivos pendientes"
+          subtitle="Asignados sin completar"
+          rows={instructivosStatus.pending}
+          accent="amber"
+        />
       </div>
 
-      {/* Level × Exam Type Heatmap */}
-      <LevelExamTypeHeatmap
-        data={data.completedExams}
-        onCellClick={handleOpenDrillDown}
-      />
+      <WeeklyTrendChart data={weeklyTrend} />
 
-      {/* Tables */}
-      <RetakesTable data={data.retakes} />
-      <StrugglingStudentsTable data={data.strugglingStudents} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ScoreDistributionChart data={scoreDistribution} />
+        <WeeklyVolumeChart data={weeklyTrend} />
+      </div>
 
-      {/* Upcoming Exams Agenda */}
-      <UpcomingExamsAgenda
-        count={data.upcomingCount}
-        list={data.upcomingList}
-      />
+      <LevelExamTypeHeatmap data={heatmap} />
 
-      {/* Drill-Down Drawer */}
-      <DrillDownDrawer
-        isOpen={drillDown.isOpen}
-        title={drillDown.title}
-        weekStart={drillDown.weekStart}
-        level={drillDown.level}
-        examType={drillDown.examType}
-        onClose={handleCloseDrillDown}
-      />
+      <RetakesTable data={repeatExams} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <StrugglingStudentsTable data={studentsNeedingAttention} />
+        <UpcomingExamsAgenda list={upcomingExams} />
+      </div>
     </div>
   );
 }

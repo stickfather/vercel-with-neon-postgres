@@ -1,12 +1,9 @@
-import type { ExamFirstAttemptPassRate } from "@/types/exams";
-
 type Props = {
-  data: ExamFirstAttemptPassRate;
+  valuePct: number | null;
 };
 
-export function FirstAttemptPassCard({ data }: Props) {
-  const rate = data.first_attempt_pass_rate;
-  const percentage = rate !== null ? rate * 100 : null;
+export function FirstAttemptPassCard({ valuePct }: Props) {
+  const percentage = valuePct;
 
   return (
     <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm">

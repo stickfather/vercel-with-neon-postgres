@@ -10,14 +10,35 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import type { ExamScoreDistribution, ExamCompletedExam } from "@/types/exams";
+import type { ScoreDistributionBin } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  data: ExamScoreDistribution[];
-  completedExams: ExamCompletedExam[];
+  data: ScoreDistributionBin[];
 };
 
-export function ScoreDistributionChart({ data, completedExams }: Props) {
+function parseBinStart(label: string): number {
+  const match = label.match(/^(\d{1,3})/);
+  return match ? Number(match[1]) : 0;
+}
+
+function estimateMedian(bins: { bin: string; count: number }[]): number | null {
+  const total = bins.reduce((sum, bin) => sum + bin.count, 0);
+  if (!total) return null;
+  const midpoint = total / 2;
+  let running = 0;
+  for (const bin of bins) {
+    running += bin.count;
+    if (running >= midpoint) {
+      const [start, end] = bin.bin.split(/-|–/);
+      const startNum = Number(start ?? 0);
+      const endNum = Number(end ?? startNum + 5);
+      return (startNum + endNum) / 2;
+    }
+  }
+  return null;
+}
+
+export function ScoreDistributionChart({ data }: Props) {
   if (!data || data.length === 0) {
     return (
       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-6 shadow-sm">
@@ -31,40 +52,15 @@ export function ScoreDistributionChart({ data, completedExams }: Props) {
     );
   }
 
-  // Compute median from completed exams
-  const scores = completedExams
-    .map((e) => e.score)
-    .filter((s): s is number => s !== null)
-    .sort((a, b) => a - b);
+  const chartData = data
+    .map((item) => ({
+      bin: item.binLabel,
+      count: item.count,
+      binStart: parseBinStart(item.binLabel),
+    }))
+    .sort((a, b) => a.binStart - b.binStart);
 
-  let median: number | null = null;
-  if (scores.length > 0) {
-    const mid = Math.floor(scores.length / 2);
-    median =
-      scores.length % 2 === 0
-        ? (scores[mid - 1] + scores[mid]) / 2
-        : scores[mid];
-  }
-
-  // Ensure we have all 20 bins (0-5, 5-10, ..., 95-100)
-  const bins = new Map<string, number>();
-  for (let i = 0; i < 20; i++) {
-    const start = i * 5;
-    const end = start + 5;
-    bins.set(`${start}-${end}`, 0);
-  }
-
-  data.forEach((item) => {
-    bins.set(item.bin_5pt, item.n);
-  });
-
-  const chartData = Array.from(bins.entries()).map(([bin, n]) => ({
-    bin,
-    n,
-    binStart: parseInt(bin.split("-")[0]),
-  }));
-
-  chartData.sort((a, b) => a.binStart - b.binStart);
+  const median = estimateMedian(chartData);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (!active || !payload || !payload.length) return null;
@@ -76,7 +72,7 @@ export function ScoreDistributionChart({ data, completedExams }: Props) {
           Rango de Puntuación: <span className="font-semibold text-slate-900">{data.bin}</span>
         </p>
         <p className="text-xs text-slate-600">
-          Cantidad: <span className="font-semibold text-slate-900">{data.n}</span>
+          Cantidad: <span className="font-semibold text-slate-900">{data.count}</span>
         </p>
       </div>
     );
@@ -129,7 +125,7 @@ export function ScoreDistributionChart({ data, completedExams }: Props) {
               }}
             />
           )}
-          <Bar dataKey="n" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="count" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </figure>

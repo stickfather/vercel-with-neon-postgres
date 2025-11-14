@@ -12,11 +12,11 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import type { ExamWeeklyKpi } from "@/types/exams";
+import type { WeeklyTrendPoint } from "@/types/reports.examenes-instructivos";
 
 type Props = {
-  data: ExamWeeklyKpi[];
-  onBarClick: (params: { title: string; weekStart: string }) => void;
+  data: WeeklyTrendPoint[];
+  onBarClick?: (params: { title: string; weekStart: string }) => void;
 };
 
 export function WeeklyTrendChart({ data, onBarClick }: Props) {
@@ -34,12 +34,12 @@ export function WeeklyTrendChart({ data, onBarClick }: Props) {
   }
 
   const chartData = data.map((item) => ({
-    week_start: item.week_start,
-    weekLabel: format(parseISO(item.week_start), "dd MMM"),
-    passed_count: item.passed_count,
-    failed_count: item.failed_count,
-    completed_count: item.completed_count,
-    pass_rate: item.pass_rate !== null ? item.pass_rate * 100 : null,
+    week_start: item.weekStart,
+    weekLabel: format(parseISO(item.weekStart), "dd MMM"),
+    passed_count: item.passCount,
+    failed_count: item.failCount,
+    completed_count: item.examsCount,
+    pass_rate: item.passRatePct,
   }));
 
   const CustomTooltip = ({ active, payload }: any) => {
@@ -89,6 +89,7 @@ export function WeeklyTrendChart({ data, onBarClick }: Props) {
   };
 
   const handleClick = (data: any) => {
+    if (!onBarClick) return;
     if (data && data.week_start) {
       const weekDate = parseISO(data.week_start);
       const formattedDate = format(weekDate, "dd MMM");

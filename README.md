@@ -111,11 +111,11 @@ Los datos se tipan en `types/reports.resumen.ts` y se reutilizan tanto en la API
 
 Para ver el tablero completo de un vistazo, visita `/reports/resumen-general`.
 
-## Panel "Exámenes"
+## Panel "Exámenes y Instructivos"
 
-El panel **Exámenes** ofrece análisis integral de resultados de exámenes con 17 módulos especializados que cubren KPIs, tendencias, distribuciones y seguimiento de estudiantes.
+El panel **Exámenes y Instructivos** unifica el seguimiento de resultados de exámenes y los instructivos generados tras cada intento. Centraliza KPIs, tendencias y tablas de seguimiento para los próximos módulos del panel.
 
-**URL**: `/reports/examenes`
+**URL**: `/reports/examenes-y-instructivos`
 
 ### Características principales
 
@@ -136,7 +136,6 @@ El panel **Exámenes** ofrece análisis integral de resultados de exámenes con 
 
 Los datos provienen de vistas materializadas en el esquema `mgmt`:
 
-- `/api/reports/exams` → Panel completo (KPIs + Charts + Tables)
-- `/api/reports/exams/drilldown` → Detalle de exámenes por semana o celda del heatmap
+- `/api/reports/examenes-y-instructivos` → Endpoint canónico con todos los KPIs consolidados
 
 Consulta la documentación completa en [`docs/EXAMS_PANEL.md`](./docs/EXAMS_PANEL.md) para detalles de arquitectura, tipos, componentes y criterios de aceptación.
