@@ -86,10 +86,10 @@ const QUADRANT_STYLE: Record<
 };
 
 const QUADRANT_DOT_POSITION: Record<QuadrantLabel, { x: number; y: number }> = {
-  A: { x: 0.25, y: 0.75 },
-  C: { x: 0.75, y: 0.75 },
-  B: { x: 0.25, y: 0.25 },
-  D: { x: 0.75, y: 0.25 },
+  A: { x: 0.75, y: 0.75 },
+  B: { x: 0.25, y: 0.75 },
+  C: { x: 0.75, y: 0.25 },
+  D: { x: 0.25, y: 0.25 },
 };
 
 type CoachPanelProps = {
@@ -430,10 +430,10 @@ function QuadrantMatrix({ quadrantLabel }: { quadrantLabel: string | undefined }
   };
 
   const cells = [
-    { key: "A", title: "A", subtitle: "Efficient & Active" },
-    { key: "C", title: "C", subtitle: "Inefficient / High Pace" },
     { key: "B", title: "B", subtitle: "Efficient / Low Pace" },
+    { key: "A", title: "A", subtitle: "Efficient & Active" },
     { key: "D", title: "D", subtitle: "Inefficient & Inactive" },
+    { key: "C", title: "C", subtitle: "Inefficient / High Pace" },
   ];
 
   return (

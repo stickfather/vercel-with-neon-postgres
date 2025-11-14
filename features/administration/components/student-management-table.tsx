@@ -466,106 +466,108 @@ function StudentManagementTable({ students }: Props) {
             </div>
           </div>
         </div>
-        <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left">
-          <thead className="bg-white text-[11px] uppercase tracking-wide text-brand-ink">
-            <tr>
-              <th scope="col" className="px-5 py-3 text-left font-semibold text-brand-deep whitespace-normal leading-snug">
-                Nombre
-              </th>
-              <th scope="col" className="px-3 py-3 text-left font-semibold text-brand-deep whitespace-normal leading-snug">
-                Estado
-              </th>
-              {FLAG_COLUMNS.map((flag) => (
-                <th
-                  key={flag.key}
-                  scope="col"
-                  className="px-2 py-3 text-center font-semibold text-brand-deep-soft whitespace-normal leading-snug"
-                >
-                  {flag.label}
+        <div className="max-h-[calc(100vh-28rem)] overflow-y-auto">
+          <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left">
+            <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-brand-ink z-10">
+              <tr>
+                <th scope="col" className="px-5 py-3 text-left font-semibold text-brand-deep whitespace-normal leading-snug">
+                  Nombre
                 </th>
-              ))}
-              <th scope="col" className="px-3 py-3 text-right font-semibold text-brand-deep whitespace-normal leading-snug">
-                Perfil
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
-            {paginatedStudents.map((student) => {
-              const statusDisplay = getStudentStatusDisplay(student.status);
-              const statusDateSource = statusDisplay.showEndDate
-                ? statusDisplay.dateField === "graduationDate"
-                  ? student.graduationDate
-                  : student.contractEnd
-                : null;
-              const statusDate = statusDateSource
-                ? formatStatusDate(statusDateSource)
-                : null;
-              const positionLabel = formatStudentPosition(student.level, student.lesson);
-              return (
-                <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
-                  <td className="px-5 py-3 align-top">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold text-brand-deep whitespace-pre-wrap break-words leading-snug">
-                        {student.fullName}
-                      </span>
-                      {student.isPending ? (
-                        <span className="inline-flex w-fit items-center rounded-full bg-brand-orange/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-orange">
-                          Sincronizando…
+                <th scope="col" className="px-3 py-3 text-left font-semibold text-brand-deep whitespace-normal leading-snug">
+                  Estado
+                </th>
+                {FLAG_COLUMNS.map((flag) => (
+                  <th
+                    key={flag.key}
+                    scope="col"
+                    className="px-2 py-3 text-center font-semibold text-brand-deep-soft whitespace-normal leading-snug"
+                  >
+                    {flag.label}
+                  </th>
+                ))}
+                <th scope="col" className="px-3 py-3 text-right font-semibold text-brand-deep whitespace-normal leading-snug">
+                  Perfil
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-brand-ink-muted/15 text-sm text-brand-ink">
+              {paginatedStudents.map((student) => {
+                const statusDisplay = getStudentStatusDisplay(student.status);
+                const statusDateSource = statusDisplay.showEndDate
+                  ? statusDisplay.dateField === "graduationDate"
+                    ? student.graduationDate
+                    : student.contractEnd
+                  : null;
+                const statusDate = statusDateSource
+                  ? formatStatusDate(statusDateSource)
+                  : null;
+                const positionLabel = formatStudentPosition(student.level, student.lesson);
+                return (
+                  <tr key={student.id} className="align-top transition hover:bg-brand-teal-soft/20">
+                    <td className="px-5 py-3 align-top">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-semibold text-brand-deep whitespace-pre-wrap break-words leading-snug">
+                          {student.fullName}
                         </span>
-                      ) : null}
-                      {positionLabel ? (
-                        <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
-                          {positionLabel}
+                        {student.isPending ? (
+                          <span className="inline-flex w-fit items-center rounded-full bg-brand-orange/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-orange">
+                            Sincronizando…
+                          </span>
+                        ) : null}
+                        {positionLabel ? (
+                          <span className="text-xs uppercase tracking-wide text-brand-ink-muted">
+                            {positionLabel}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      <div className="flex flex-col gap-1">
+                        <span
+                          className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${statusDisplay.badgeClassName}`}
+                        >
+                          {statusDisplay.label}
                         </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 align-top">
-                    <div className="flex flex-col gap-1">
-                      <span
-                        className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${statusDisplay.badgeClassName}`}
+                        {statusDate ? (
+                          <span className="text-xs text-brand-ink-muted">
+                            {(statusDisplay.endDateLabel ?? "Finalización") + ": "}
+                            {statusDate}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    {FLAG_COLUMNS.map((flag) => {
+                      const isActive = Boolean(student[flag.key]);
+                      return (
+                        <td key={`${student.id}-${flag.key}`} className="px-2 py-3 text-center align-top">
+                          <FlagIndicator active={isActive} label={flag.label} />
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-3 text-right align-top">
+                      <Link
+                        href={`/administracion/gestion-estudiantes/${student.id}`}
+                        className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
                       >
-                        {statusDisplay.label}
-                      </span>
-                      {statusDate ? (
-                        <span className="text-xs text-brand-ink-muted">
-                          {(statusDisplay.endDateLabel ?? "Finalización") + ": "}
-                          {statusDate}
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  {FLAG_COLUMNS.map((flag) => {
-                    const isActive = Boolean(student[flag.key]);
-                    return (
-                      <td key={`${student.id}-${flag.key}`} className="px-2 py-3 text-center align-top">
-                        <FlagIndicator active={isActive} label={flag.label} />
-                      </td>
-                    );
-                  })}
-                  <td className="px-3 py-3 text-right align-top">
-                    <Link
-                      href={`/administracion/gestion-estudiantes/${student.id}`}
-                      className="inline-flex items-center justify-center rounded-full border border-transparent bg-brand-teal-soft px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-brand-teal transition hover:-translate-y-[1px] hover:bg-brand-teal-soft/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#00bfa6]"
-                    >
-                      Ver perfil
-                    </Link>
+                        Ver perfil
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!filteredStudents.length && (
+                <tr>
+                  <td colSpan={FLAG_COLUMNS.length + 3} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
+                    {hasActiveFilters || hasSearch
+                      ? "No encontramos estudiantes que coincidan con los filtros o búsqueda seleccionados."
+                      : "No encontramos estudiantes en la vista de gestión. Revisa la configuración de la base de datos."}
                   </td>
                 </tr>
-              );
-            })}
-
-            {!filteredStudents.length && (
-              <tr>
-                <td colSpan={FLAG_COLUMNS.length + 3} className="px-6 py-6 text-center text-sm text-brand-ink-muted">
-                  {hasActiveFilters || hasSearch
-                    ? "No encontramos estudiantes que coincidan con los filtros o búsqueda seleccionados."
-                    : "No encontramos estudiantes en la vista de gestión. Revisa la configuración de la base de datos."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
         <div className="flex flex-col gap-3 border-t border-brand-ink-muted/10 bg-white/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-sm text-brand-ink-muted">
             {filteredStudents.length
