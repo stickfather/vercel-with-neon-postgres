@@ -12,7 +12,6 @@ import { WeeklyVolumeChart } from "./WeeklyVolumeChart";
 import { RetakesTable } from "./RetakesTable";
 import { StrugglingStudentsTable } from "./StrugglingStudentsTable";
 import { UpcomingExamsAgenda } from "./UpcomingExamsAgenda";
-import { DrillDownDrawer } from "./DrillDownDrawer";
 import type {
   ExamPassRate90d,
   ExamAverageScore90d,
@@ -26,6 +25,7 @@ import type {
   ExamUpcoming30dCount,
   ExamUpcoming30dEntry,
 } from "@/types/exams";
+import type { ExamenesInstructivosReportResponse } from "@/types/reports.examenes-instructivos";
 
 type ExamsPanelData = {
   passRate90d: ExamPassRate90d | null;
@@ -41,32 +41,109 @@ type ExamsPanelData = {
   upcomingList: ExamUpcoming30dEntry[];
 };
 
-type DrillDownState = {
-  isOpen: boolean;
-  title: string;
-  weekStart?: string;
-  level?: string;
-  examType?: string;
-};
+function toRatio(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return null;
+  }
+  return normalized / 100;
+}
+
+function adaptReportResponse(report: ExamenesInstructivosReportResponse): ExamsPanelData {
+  const passRate = toRatio(report.summary.passRatePct);
+  const avgScore = report.summary.avgScore;
+  const firstAttemptRatio = toRatio(report.summary.firstAttemptPassRatePct);
+  const completionRatio = toRatio(report.instructivosSummary.completionRate90d);
+
+  const weeklyKpis: ExamWeeklyKpi[] = report.weeklyTrend.map((point) => ({
+    week_start: point.weekStart,
+    passed_count: point.passCount,
+    failed_count: point.failCount,
+    completed_count: point.examsCount,
+    pass_rate: toRatio(point.passRatePct) ?? null,
+  }));
+
+  const scoreDistribution: ExamScoreDistribution[] = report.scoreDistribution.map((bin) => ({
+    bin_5pt: bin.binLabel,
+    n: bin.count,
+  }));
+
+  const retakes: ExamRetake[] = report.repeatExams.map((row) => ({
+    student_id: row.studentId ?? 0,
+    exam_type: row.examType,
+    level: row.level,
+    first_fail_at: "",
+    first_score: null,
+    retake_at: null,
+    retake_score: null,
+    retake_passed: null,
+    days_to_retake: row.daysToRetakeAvg,
+  }));
+
+  const strugglingStudents: ExamStrugglingStudentDetail[] = report.studentsNeedingAttention.map((row) => ({
+    student_id: row.studentId ?? 0,
+    full_name: row.studentName,
+    failed_exam_count: row.fails90d,
+    max_consecutive_fails: row.fails90d,
+    min_score_180d: null,
+    open_instructivos: row.pendingInstructivos + row.overdueInstructivos,
+    reason: row.overdueInstructivos > 0 ? "instructivo_overdue" : "multiple_failed_exams",
+  }));
+
+  const upcomingList: ExamUpcoming30dEntry[] = report.upcomingExams.map((row) => {
+    const timeScheduled = row.scheduledAt;
+    const local = row.scheduledLocal ?? timeScheduled;
+    const examDate = local?.split("T")[0] ?? "";
+    return {
+      student_id: row.studentId ?? 0,
+      full_name: row.studentName,
+      time_scheduled: timeScheduled,
+      time_scheduled_local: row.scheduledLocal ?? "",
+      exam_date: examDate,
+      exam_type: row.examType,
+      level: row.level,
+      status: row.status,
+    };
+  });
+
+  return {
+    passRate90d: passRate === null ? null : { pass_rate_90d: passRate },
+    averageScore90d: avgScore === null || avgScore === undefined ? null : { average_score_90d: avgScore },
+    firstAttemptPassRate: { first_attempt_pass_rate: firstAttemptRatio },
+    instructiveCompliance:
+      completionRatio === null
+        ? null
+        : {
+            assigned_pct: null,
+            completed_pct: completionRatio,
+          },
+    weeklyKpis,
+    scoreDistribution,
+    completedExams: [],
+    retakes,
+    strugglingStudents,
+    upcomingCount: { upcoming_exams_30d: report.upcomingExams.length },
+    upcomingList,
+  };
+}
 
 export function ExamsPanelClient() {
   const [data, setData] = useState<ExamsPanelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [drillDown, setDrillDown] = useState<DrillDownState>({
-    isOpen: false,
-    title: "",
-  });
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch("/api/reports/exams");
+        const response = await fetch("/api/reports/examenes-y-instructivos");
         if (!response.ok) {
-          throw new Error("Failed to fetch exams data");
+          throw new Error("Failed to fetch Exámenes y Instructivos data");
         }
-        const result = await response.json();
-        setData(result);
+        const result: ExamenesInstructivosReportResponse = await response.json();
+        setData(adaptReportResponse(result));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
@@ -76,32 +153,6 @@ export function ExamsPanelClient() {
 
     fetchData();
   }, []);
-
-  const handleOpenDrillDown = (params: {
-    title: string;
-    weekStart?: string;
-    level?: string;
-    examType?: string;
-  }) => {
-    setDrillDown({
-      isOpen: true,
-      ...params,
-    });
-  };
-
-  const handleCloseDrillDown = () => {
-    setDrillDown({ isOpen: false, title: "" });
-  };
-
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && drillDown.isOpen) {
-        handleCloseDrillDown();
-      }
-    };
-    window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
-  }, [drillDown.isOpen]);
 
   if (loading) {
     return (
@@ -126,7 +177,7 @@ export function ExamsPanelClient() {
     return (
       <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6">
         <p className="text-sm text-rose-800">
-          We couldn't load this data. Try again.
+          No pudimos cargar los datos de exámenes e instructivos. Intenta nuevamente.
         </p>
         <button
           onClick={() => window.location.reload()}
@@ -149,10 +200,7 @@ export function ExamsPanelClient() {
       </div>
 
       {/* Weekly Trend Chart */}
-      <WeeklyTrendChart
-        data={data.weeklyKpis}
-        onBarClick={handleOpenDrillDown}
-      />
+      <WeeklyTrendChart data={data.weeklyKpis} />
 
       {/* Score Distribution & Volume */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -164,10 +212,7 @@ export function ExamsPanelClient() {
       </div>
 
       {/* Level × Exam Type Heatmap */}
-      <LevelExamTypeHeatmap
-        data={data.completedExams}
-        onCellClick={handleOpenDrillDown}
-      />
+      <LevelExamTypeHeatmap data={data.completedExams} />
 
       {/* Tables */}
       <RetakesTable data={data.retakes} />
@@ -177,16 +222,6 @@ export function ExamsPanelClient() {
       <UpcomingExamsAgenda
         count={data.upcomingCount}
         list={data.upcomingList}
-      />
-
-      {/* Drill-Down Drawer */}
-      <DrillDownDrawer
-        isOpen={drillDown.isOpen}
-        title={drillDown.title}
-        weekStart={drillDown.weekStart}
-        level={drillDown.level}
-        examType={drillDown.examType}
-        onClose={handleCloseDrillDown}
       />
     </div>
   );

@@ -5,7 +5,7 @@ import type { ExamCompletedExam } from "@/types/exams";
 
 type Props = {
   data: ExamCompletedExam[];
-  onCellClick: (params: {
+  onCellClick?: (params: {
     title: string;
     level: string;
     examType: string;
@@ -134,7 +134,7 @@ export function LevelExamTypeHeatmap({ data, onCellClick }: Props) {
                   <button
                     key={`${level}-${type}`}
                     onClick={() => {
-                      if (cellData) {
+                      if (cellData && onCellClick) {
                         onCellClick({
                           title: `${type} / ${level}`,
                           level,

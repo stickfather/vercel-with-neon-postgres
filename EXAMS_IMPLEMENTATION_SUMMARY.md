@@ -1,4 +1,4 @@
-# Exams Panel - Implementation Summary
+# Exámenes y Instructivos Panel - Implementation Summary
 
 ## ✅ Implementation Complete
 
@@ -10,14 +10,13 @@ The Exams Panel for Management Reports has been fully implemented according to t
 
 **Types & Data Layer (3 files)**
 - `types/exams.ts` - 15 TypeScript type definitions
-- `src/features/reports/exams/data.ts` - 14 data query functions (16,495 chars)
-- Database fallback logic for all views
+- `types/reports.examenes-instructivos.ts` - Canonical API response types
+- `src/features/reports/examenes-instructivos/report.ts` - Report builder + fallback logic
 
-**API Endpoints (2 files)**
-- `app/api/reports/exams/route.ts` - Main panel data endpoint
-- `app/api/reports/exams/drilldown/route.ts` - Interactive drill-down endpoint
+**API Endpoint (1 file)**
+- `app/api/reports/examenes-y-instructivos/route.ts` - Canonical panel data endpoint
 
-**UI Components (13 files)**
+**UI Components (12 files)**
 - `components/reports/exams/ExamsPanelClient.tsx` - Main orchestrator
 - `components/reports/exams/PassRateCard.tsx` - KPI card
 - `components/reports/exams/AverageScoreCard.tsx` - KPI card
@@ -30,12 +29,11 @@ The Exams Panel for Management Reports has been fully implemented according to t
 - `components/reports/exams/RetakesTable.tsx` - Data table
 - `components/reports/exams/StrugglingStudentsTable.tsx` - Data table
 - `components/reports/exams/UpcomingExamsAgenda.tsx` - Grouped agenda
-- `components/reports/exams/DrillDownDrawer.tsx` - Paginated drawer
 
 **Page Routes (3 files)**
-- `app/reports/examenes/page.tsx` - Main page
-- `app/reports/examenes/loading.tsx` - Loading skeleton
-- `app/reports/examenes/error.tsx` - Error boundary
+- `app/reports/examenes-y-instructivos/page.tsx` - Main page
+- `app/reports/examenes-y-instructivos/loading.tsx` - Loading skeleton
+- `app/reports/examenes-y-instructivos/error.tsx` - Error boundary
 
 **Documentation (3 files)**
 - `docs/EXAMS_PANEL.md` - Complete technical documentation (8,808 chars)
@@ -262,7 +260,7 @@ All dates displayed in **America/Guayaquil** timezone:
 1. Push code to GitHub (already done)
 2. Verify Vercel auto-deploys from branch
 3. Check build logs for errors
-4. Navigate to `/reports/examenes`
+4. Navigate to `/reports/examenes-y-instructivos`
 5. Verify all components load
 6. Test drill-down interactions
 7. Check API responses in Network tab
@@ -343,4 +341,4 @@ All dates displayed in **America/Guayaquil** timezone:
 
 The Exams Panel implementation is **complete and ready for testing** once the database views are set up. All code follows best practices, is fully typed, secure, and documented. The panel provides comprehensive insights into exam performance with an intuitive, interactive interface.
 
-**Next step**: Set up the required database views using the examples in `docs/exams-panel-views.sql`, then deploy and test the panel at `/reports/examenes`.
+**Next step**: Set up the required database views using the examples in `docs/exams-panel-views.sql`, then deploy and test the panel at `/reports/examenes-y-instructivos`.

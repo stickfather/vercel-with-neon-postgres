@@ -16,7 +16,7 @@ import type { ExamWeeklyKpi } from "@/types/exams";
 
 type Props = {
   data: ExamWeeklyKpi[];
-  onBarClick: (params: { title: string; weekStart: string }) => void;
+  onBarClick?: (params: { title: string; weekStart: string }) => void;
 };
 
 export function WeeklyTrendChart({ data, onBarClick }: Props) {
@@ -89,6 +89,7 @@ export function WeeklyTrendChart({ data, onBarClick }: Props) {
   };
 
   const handleClick = (data: any) => {
+    if (!onBarClick) return;
     if (data && data.week_start) {
       const weekDate = parseISO(data.week_start);
       const formattedDate = format(weekDate, "dd MMM");

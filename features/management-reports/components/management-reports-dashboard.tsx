@@ -19,9 +19,9 @@ const reports = [
     requiresPin: false,
   },
   {
-    href: "/reports/examenes",
-    title: "Reporte de Exámenes",
-    description: "Resultados, citas y logística.",
+    href: "/reports/examenes-y-instructivos",
+    title: "Reporte de Exámenes y Instructivos",
+    description: "Resultados, cumplimiento y seguimiento integral.",
     requiresPin: false,
   },
   {

@@ -1,4 +1,9 @@
-# Exams Panel - Management Reports
+# Exámenes y Instructivos Panel - Management Reports
+
+> **Nota histórica:** Este documento recopila la especificación original del panel de exámenes. Desde la migración a
+> **Exámenes y Instructivos**, la ruta oficial es `/reports/examenes-y-instructivos` y el origen de datos se reescribe en
+> `src/features/reports/examenes-instructivos/report.ts` apuntando a las vistas `final.*`. Las referencias al esquema `mgmt.*`
+> se mantienen únicamente como contexto legado.
 
 ## Overview
 
@@ -6,15 +11,15 @@ The **Exams Panel** provides comprehensive insights into exam results, pass rate
 
 ## Access
 
-- **URL**: `/reports/examenes`
-- **Route**: `app/reports/examenes/page.tsx`
+- **URL**: `/reports/examenes-y-instructivos`
+- **Route**: `app/reports/examenes-y-instructivos/page.tsx`
 - **Stack**: React 19, Next.js 15, Tailwind CSS 4, Recharts 2.x
 
 ## Architecture
 
 ### Data Layer
 
-**Location**: `src/features/reports/exams/data.ts`
+**Location**: `src/features/reports/examenes-instructivos/report.ts`
 
 All data queries follow a strict window-based approach:
 - **90-day window**: Most KPIs and charts
@@ -40,15 +45,13 @@ The following `mgmt.*` views must exist in your Neon Postgres database:
 
 ### API Endpoints
 
-1. **Main Data Endpoint**: `/api/reports/exams`
-   - Fetches all panel data in a single request
-   - Returns: KPIs, charts data, tables data, upcoming exams
-   - Cache: 5 minutes (300s)
+1. **Main Data Endpoint**: `/api/reports/examenes-y-instructivos`
+   - Devuelve todos los KPIs consolidados en un único payload estructurado
+   - Incluye: resumen de exámenes, instructivos, tendencias, distribuciones, tablas y agenda de exámenes
+   - Cache: 5 minutos (300s)
 
-2. **Drill-Down Endpoint**: `/api/reports/exams/drilldown`
-   - Parameters: `weekStart`, `level`, `examType`
-   - Returns paginated exam details for chart interactions
-   - Cache: 3 minutes (180s)
+2. **Drill-Down Endpoint**: _pendiente de reimplementación_
+   - El drawer legacy se eliminó durante el Module 0; cualquier nueva interacción deberá apuntar a las vistas `final.*`
 
 ### Type Definitions
 
@@ -224,7 +227,7 @@ To test this panel locally:
 1. Ensure your `.env` file has `DATABASE_URL` pointing to your Neon database
 2. Ensure all required `mgmt.exam_*` views exist
 3. Run `npm run dev`
-4. Navigate to `http://localhost:3000/reports/examenes`
+4. Navigate to `http://localhost:3000/reports/examenes-y-instructivos`
 
 ### Adding New Modules
 
