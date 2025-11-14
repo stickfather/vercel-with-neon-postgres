@@ -4,13 +4,6 @@ import {
   type SqlRow,
 } from "@/lib/db/client";
 import type {
-  EngagementDeclinePoint,
-  EngagementHourSplit,
-  EngagementReport,
-  EngagementRosterEntry,
-  EngagementVisitPace,
-  EngagementShiftPoint,
-  EngagementStudyShift,
   ExamsAverageScore,
   ExamStrugglingStudent,
   ExamsRate,
@@ -149,98 +142,6 @@ function mapRows<T>(rows: SqlRow[], normalizer: Normalizer<T>): T[] {
   return rows
     .map((row) => normalizer(row))
     .filter((value): value is T => value !== null);
-}
-
-export async function getEngagementReport(sql: SqlClient = getSqlClient()): Promise<EngagementReport> {
-  const [
-    activeRows,
-    inactiveRows,
-    rosterRows,
-    paceRows,
-    declineRows,
-    splitRows,
-    shiftRows,
-  ] = await Promise.all([
-    safeRows(() => sql`SELECT * FROM mgmt.engagement_active_counts_v`, "mgmt.engagement_active_counts_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.engagement_inactive_counts_v`, "mgmt.engagement_inactive_counts_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.engagement_inactive_roster_v`, "mgmt.engagement_inactive_roster_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.engagement_avg_days_between_visits_v`, "mgmt.engagement_avg_days_between_visits_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.engagement_decline_index_v`, "mgmt.engagement_decline_index_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.engagement_hour_split_v`, "mgmt.engagement_hour_split_v"),
-    safeRows(() => sql`
-      SELECT hour_of_day, SUM(minutes) AS minutes
-      FROM mart.student_hourly_30d_mv
-      GROUP BY hour_of_day
-      ORDER BY hour_of_day
-    `, "mart.student_hourly_30d_mv"),
-  ]);
-
-  const active = mapRows(activeRows, (row) => {
-    const range = readString(row, ["range", "window", "periodo"], [["day"], ["rango"], ["window"]]);
-    const count = readInteger(row, ["count", "students"], [["count"], ["total"], ["estudiantes"]]);
-    return { range, count };
-  });
-
-  const inactive = mapRows(inactiveRows, (row) => {
-    const range = readString(row, ["range", "bucket", "categoria"], [["inactive"], ["dias"]]);
-    const count = readInteger(row, ["count", "students"], [["count"], ["total"], ["estudiantes"]]);
-    return { range, count };
-  });
-
-  const roster = mapRows(rosterRows, (row) => {
-    const student = readString(row, ["student", "student_name", "nombre"], [["student"], ["nombre"]]);
-    const status = readString(row, ["status", "motivo", "estado"], [["status"], ["motivo"], ["estado"]]);
-    const lastVisit = readString(row, ["last_visit", "ultima_visita"], [["ultima"], ["visit"]]);
-    const daysInactive = readInteger(row, ["days_inactive", "dias_inactivo"], [
-      ["day", "inactive"],
-      ["dias", "inactiv"],
-    ]);
-    return { student, status, lastVisit, daysInactive } satisfies EngagementRosterEntry;
-  });
-
-  const visitPace = mapRows(paceRows, (row) => {
-    const label = readString(row, ["label", "categoria"], [["avg"], ["promedio"]]);
-    const value = readNumber(row, ["avg_days", "promedio_dias"], [["avg"], ["dias"]]);
-    return { label, value } satisfies EngagementVisitPace;
-  });
-
-  const declineIndex = mapRows(declineRows, (row) => {
-    const label = readString(row, ["period", "label", "fecha"], [["sem"], ["week"], ["fecha"]]);
-    const value = readNumber(row, ["index", "decline_index", "valor"], [["index"], ["decl"], ["valor"]]);
-    return { label, value } satisfies EngagementDeclinePoint;
-  });
-
-  const hourSplit = mapRows(splitRows, (row) => {
-    const hour = readString(row, ["hour", "hora"], [["hour"], ["hora"]]);
-    const morning = readNumber(row, ["morning", "manana", "mañana"], [["morning"], ["man"], ["am"]]);
-    const afternoon = readNumber(row, ["afternoon", "tarde"], [["afternoon"], ["tarde"], ["pm"]]);
-    const evening = readNumber(row, ["evening", "noche"], [["evening"], ["noche"]]);
-    return { hour, morning, afternoon, evening } satisfies EngagementHourSplit;
-  });
-
-  // Process study shift data - ensure all 24 hours are present
-  const shiftMap = new Map<number, number>();
-  shiftRows.forEach((row) => {
-    const hour = readInteger(row, ["hour_of_day", "hour"], [["hour"]]);
-    const minutes = readNumber(row, ["minutes", "mins"], [["minutes"], ["mins"]]);
-    if (hour !== null && minutes !== null) {
-      shiftMap.set(hour, minutes);
-    }
-  });
-
-  // Fill in missing hours with 0
-  const points: EngagementShiftPoint[] = [];
-  for (let hour = 0; hour < 24; hour++) {
-    points.push({
-      hour_of_day: hour,
-      minutes: shiftMap.get(hour) ?? 0,
-    });
-  }
-
-  const total_minutes_30d = points.reduce((sum, p) => sum + p.minutes, 0);
-  const studyShift: EngagementStudyShift = { points, total_minutes_30d };
-
-  return { active, inactive, roster, visitPace, declineIndex, hourSplit, studyShift };
 }
 
 export async function getFinancialReport(sql: SqlClient = getSqlClient()): Promise<FinancialReport> {

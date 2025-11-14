@@ -1,6 +1,7 @@
 import { FinancePanelClient } from "@/components/reports/finance/FinancePanelClient";
 
 export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default function FinancePage() {
   return (

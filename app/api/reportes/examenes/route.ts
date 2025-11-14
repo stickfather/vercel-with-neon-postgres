@@ -4,6 +4,7 @@ import { getExamsReport } from "src/features/management-reports/data";
 import { hasAccess } from "src/features/management-reports/data/access";
 
 export const revalidate = 180;
+export const dynamic = "force-dynamic";
 
 const successHeaders = {
   "Cache-Control": "public, s-maxage=180, stale-while-revalidate=60",
