@@ -141,10 +141,28 @@ function normalizeHourRow(row: SqlRow): StaffingMixHourRow {
 }
 
 function normalizeTeacherLoad(row: SqlRow): StudentLoadPerTeacherRow {
-  const teacherId = readString(row, ["teacher_id", "staff_id", "id"], [["teacher"], ["docente"]]) || "unknown";
+  const teacherId =
+    readString(
+      row,
+      ["teacher_id", "staff_id", "id", "docente_id", "profesor_id"],
+      [["teacher"], ["docent"], ["profesor"], ["staff"]],
+    ) || "unknown";
   const teacherName =
-    readString(row, ["teacher_name", "nombre_docente", "teacher"], [["docente"], ["teacher"]]) ||
-    "Profesor sin nombre";
+    readString(
+      row,
+      [
+        "teacher_name",
+        "nombre_docente",
+        "docente_nombre",
+        "staff_name",
+        "nombre_profesor",
+        "profesor_nombre",
+        "full_name",
+        "teacher_full_name",
+        "name",
+      ],
+      [["docent"], ["profesor"], ["teacher"], ["nombre"], ["staff"], ["name"]],
+    ) || "Profesor sin nombre";
   const avgStudentsPerHour = readNumber(
     row,
     ["avg_students_per_hour", "students_per_hour", "estudiantes_por_hora"],
@@ -165,10 +183,28 @@ function normalizeTeacherLoad(row: SqlRow): StudentLoadPerTeacherRow {
 }
 
 function normalizeUtilization(row: SqlRow): TeacherUtilizationRow {
-  const teacherId = readString(row, ["teacher_id", "staff_id", "id"], [["teacher"], ["docente"]]) || "unknown";
+  const teacherId =
+    readString(
+      row,
+      ["teacher_id", "staff_id", "id", "docente_id", "profesor_id"],
+      [["teacher"], ["docent"], ["profesor"], ["staff"]],
+    ) || "unknown";
   const teacherName =
-    readString(row, ["teacher_name", "nombre_docente", "teacher"], [["docente"], ["teacher"]]) ||
-    "Profesor sin nombre";
+    readString(
+      row,
+      [
+        "teacher_name",
+        "nombre_docente",
+        "docente_nombre",
+        "staff_name",
+        "nombre_profesor",
+        "profesor_nombre",
+        "full_name",
+        "teacher_full_name",
+        "name",
+      ],
+      [["docent"], ["profesor"], ["teacher"], ["nombre"], ["staff"], ["name"]],
+    ) || "Profesor sin nombre";
   const utilizationPct = readNumber(
     row,
     ["utilization_pct", "utilization", "porcentaje_utilizacion"],
