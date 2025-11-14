@@ -67,8 +67,8 @@ const COMPLETION_BUCKETS: { label: string; min: number; max: number | null }[] =
 ];
 
 function buildCompletionHistogram(values: number[]): CompletionHistogramBin[] {
-  const buckets = COMPLETION_BUCKETS.map((bucket) => ({
-    label: bucket.label,
+  const buckets: CompletionHistogramBin[] = COMPLETION_BUCKETS.map((bucket) => ({
+    bucketLabel: bucket.label,
     count: 0,
   }));
 
