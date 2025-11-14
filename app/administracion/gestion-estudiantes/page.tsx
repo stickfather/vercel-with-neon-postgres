@@ -30,12 +30,24 @@ export default async function GestionEstudiantesPage() {
   let lastRefreshedAt: string | null = null;
 
   try {
-    [students, lastRefreshedAt] = await Promise.all([
+    const [studentsResult, refreshTimeResult] = await Promise.allSettled([
       listStudentManagementEntries(),
       getLastRefreshTime(),
     ]);
+
+    if (studentsResult.status === "fulfilled") {
+      students = studentsResult.value;
+    } else {
+      console.error("No se pudieron cargar los estudiantes", studentsResult.reason);
+      dataError =
+        "No pudimos cargar la lista de estudiantes. Inténtalo nuevamente en unos minutos o contacta al equipo técnico.";
+    }
+
+    if (refreshTimeResult.status === "fulfilled") {
+      lastRefreshedAt = refreshTimeResult.value;
+    }
   } catch (error) {
-    console.error("No se pudieron cargar los estudiantes", error);
+    console.error("Error inesperado en la página de gestión", error);
     dataError =
       "No pudimos cargar la lista de estudiantes. Inténtalo nuevamente en unos minutos o contacta al equipo técnico.";
   }
