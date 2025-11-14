@@ -12,7 +12,6 @@ import type {
   CoachPanelReportResponse,
   DailyMinutesPoint,
   HourlyMinutesBucket,
-  InstructivosStatus,
 } from "@/src/features/reports/coach-panel/types";
 
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
@@ -21,12 +20,6 @@ const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, i
 const LESSON_NODE_MIN_SIZE = 24;
 const LESSON_NODE_MAX_SIZE = 38;
 const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 2.5;
-
-const READINESS_TONE: Record<string, string> = {
-  listo: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "casi listo": "bg-amber-50 text-amber-700 border-amber-200",
-  "no listo": "bg-rose-50 text-rose-700 border-rose-200",
-};
 
 const CONSISTENCY_TONE = [
   { threshold: 80, className: "bg-emerald-50 text-emerald-700" },
@@ -50,8 +43,6 @@ const QUADRANT_COLORS: Record<string, string> = {
 type CoachPanelProps = {
   studentId: number;
   data: StudentCoachPanelSummary | null;
-  errorMessage?: string | null;
-  onInstructivoStatusChange?: (status: InstructivosStatus | null) => void;
 };
 
 function formatNumber(
@@ -283,24 +274,6 @@ function renderLessonNode(lesson: CoachPanelLessonJourneyEntry) {
   );
 }
 
-function translateReadiness(label: string | null | undefined): string {
-  if (!label) return "Sin datos";
-  const normalized = label.toLowerCase();
-  if (normalized.includes("ready")) return "Listo";
-  if (normalized.includes("almost")) return "Casi listo";
-  if (normalized.includes("not")) return "No listo";
-  return label;
-}
-
-function readinessTone(label: string | null | undefined): string {
-  if (!label) return "bg-slate-50 text-slate-500 border-slate-200";
-  const normalized = label.toLowerCase();
-  if (READINESS_TONE[normalized as keyof typeof READINESS_TONE]) {
-    return READINESS_TONE[normalized as keyof typeof READINESS_TONE];
-  }
-  return "bg-slate-50 text-slate-500 border-slate-200";
-}
-
 function formatMinutesToHours(minutes: number | null | undefined): string {
   if (minutes == null || !Number.isFinite(minutes)) {
     return "—";
@@ -450,19 +423,8 @@ function examAlerts(alerts: CoachPanelReportResponse["examPrepGap"]["alerts"]): 
   );
 }
 
-export function CoachPanel({ studentId, data, errorMessage, onInstructivoStatusChange }: CoachPanelProps) {
+export function CoachPanel({ studentId, data }: CoachPanelProps) {
   const { report, loading: reportLoading, error: reportError } = useCoachPanelReport(studentId);
-
-  useEffect(() => {
-    if (!onInstructivoStatusChange) {
-      return;
-    }
-    if (report?.instructivosStatus) {
-      onInstructivoStatusChange(report.instructivosStatus);
-    } else if (!reportLoading) {
-      onInstructivoStatusChange(null);
-    }
-  }, [onInstructivoStatusChange, report, reportLoading]);
 
   const recentJourney = data?.lessonJourney;
   const profileHeader = data?.profileHeader;
@@ -621,9 +583,6 @@ export function CoachPanel({ studentId, data, errorMessage, onInstructivoStatusC
 
   return (
     <div className="space-y-10">
-      {errorMessage ? (
-        <div className="rounded-3xl border border-red-100 bg-red-50/80 p-8 text-red-700 shadow-sm">{errorMessage}</div>
-      ) : null}
 
       <section className="mx-auto w-full max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -707,21 +666,13 @@ export function CoachPanel({ studentId, data, errorMessage, onInstructivoStatusC
       </section>
 
       <section className="mx-auto w-full max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
-        <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Próximo examen</span>
-              <h4 className="text-xl font-bold text-brand-deep">Preparación para el siguiente examen</h4>
-              <p className="text-sm text-brand-ink-muted">
-                Estado general del estudiante antes de agendar o presentar el examen.
-              </p>
-            </div>
-            <div className={`inline-flex items-center gap-3 rounded-full border px-4 py-2 text-sm font-semibold ${readinessTone(report?.examReadiness.label ?? null)}`}>
-              <span>{translateReadiness(report?.examReadiness.label ?? null)}</span>
-              <span className="text-xs font-medium text-slate-500">
-                {report?.examReadiness.score != null ? `${Math.round(report.examReadiness.score)} pts` : "Sin puntaje"}
-              </span>
-            </div>
+        <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] mb-14">
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Actividad 30d</span>
+            <h4 className="text-xl font-bold text-brand-deep">Actividad de estudio reciente</h4>
+            <p className="text-sm text-brand-ink-muted">
+              Revisa los indicadores principales de constancia antes de ahondar en el resto del panel.
+            </p>
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory/80 p-4">
@@ -861,43 +812,18 @@ export function CoachPanel({ studentId, data, errorMessage, onInstructivoStatusC
             </div>
           </div>
 
-          <div className="space-y-6">
-            <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-              <div className="space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Preparación</span>
-                <h4 className="text-xl font-bold text-brand-deep">Brecha antes del examen</h4>
-                <p className="text-sm text-brand-ink-muted">Días dedicados a preparación antes del próximo examen.</p>
-              </div>
-              <p className="mt-4 text-4xl font-black text-brand-deep">
-                {report?.examPrepGap.gapDaysToNextExam != null
-                  ? `${report.examPrepGap.gapDaysToNextExam} días`
-                  : "Examen no programado"}
-              </p>
-              {examAlerts(report?.examPrepGap.alerts ?? [])}
+          <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Preparación</span>
+              <h4 className="text-xl font-bold text-brand-deep">Brecha antes del examen</h4>
+              <p className="text-sm text-brand-ink-muted">Días dedicados a preparación antes del próximo examen.</p>
             </div>
-
-            <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Instructivos</span>
-                  <h4 className="mt-1 text-lg font-bold text-brand-deep">Pendientes</h4>
-                </div>
-                <span className={`inline-flex items-center rounded-full px-4 py-1.5 text-sm font-semibold ${
-                  report?.instructivosStatus.overdue
-                    ? "bg-rose-50 text-rose-700 border border-rose-200"
-                    : "bg-slate-100 text-slate-600 border border-slate-200"
-                }`}>
-                  Pendientes: {report?.instructivosStatus.pendientes ?? 0}
-                </span>
-              </div>
-              {report?.instructivosStatus.overdue ? (
-                <p className="mt-3 text-sm text-rose-600">
-                  {report.instructivosStatus.overdue} instructivo(s) vencido(s). Prioriza seguimiento.
-                </p>
-              ) : (
-                <p className="mt-3 text-sm text-slate-500">Sin instructivos vencidos.</p>
-              )}
-            </div>
+            <p className="mt-4 text-4xl font-black text-brand-deep">
+              {report?.examPrepGap.gapDaysToNextExam != null
+                ? `${report.examPrepGap.gapDaysToNextExam} días`
+                : "Examen no programado"}
+            </p>
+            {examAlerts(report?.examPrepGap.alerts ?? [])}
           </div>
         </div>
 
@@ -908,24 +834,39 @@ export function CoachPanel({ studentId, data, errorMessage, onInstructivoStatusC
             <p className="text-sm text-brand-ink-muted">Ubicación del estudiante en el cuadrante de rendimiento.</p>
           </div>
           {report?.quadrantProfile ? (
-            <div className="mt-4 flex flex-wrap items-center gap-6">
-              <div className={`flex h-20 w-20 items-center justify-center rounded-3xl text-3xl font-black text-white ${
-                QUADRANT_COLORS[report.quadrantProfile.quadrantLabel] ?? "bg-slate-400"
-              }`}>
-                {report.quadrantProfile.quadrantLabel || "?"}
+            <div className="mt-8 space-y-6">
+              <div className="flex flex-col items-center gap-6 lg:flex-row lg:items-center">
+                <div className={`flex h-24 w-24 items-center justify-center rounded-[32px] text-4xl font-black text-white ${
+                  QUADRANT_COLORS[report.quadrantProfile.quadrantLabel] ?? "bg-slate-400"
+                }`}>
+                  {report.quadrantProfile.quadrantLabel || "?"}
+                </div>
+                <div className="flex-1 rounded-3xl border border-brand-ink-muted/10 bg-slate-50/70 p-4">
+                  <dl className="grid gap-4 text-sm text-brand-ink-muted sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">LEI</dt>
+                      <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                        {report.quadrantProfile.leiValue != null ? report.quadrantProfile.leiValue.toFixed(2) : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/hora</dt>
+                      <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                        {report.quadrantProfile.lessonsPerHour != null ? report.quadrantProfile.lessonsPerHour.toFixed(2) : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/semana</dt>
+                      <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                        {report.quadrantProfile.lessonsPerWeek != null ? report.quadrantProfile.lessonsPerWeek.toFixed(1) : "—"}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
-              <div className="flex flex-col gap-2 text-sm text-brand-ink-muted">
-                <span>LEI: {report.quadrantProfile.leiValue != null ? report.quadrantProfile.leiValue.toFixed(2) : "—"}</span>
-                <span>
-                  Lecciones/hora: {report.quadrantProfile.lessonsPerHour != null ? report.quadrantProfile.lessonsPerHour.toFixed(2) : "—"}
-                </span>
-                <span>
-                  Lecciones/semana: {report.quadrantProfile.lessonsPerWeek != null ? report.quadrantProfile.lessonsPerWeek.toFixed(1) : "—"}
-                </span>
-                <span className="text-brand-deep">
-                  {report.quadrantProfile.description ?? quadrantDescription(report.quadrantProfile.quadrantLabel) ?? "Perfil sin descripción"}
-                </span>
-              </div>
+              <p className="text-sm text-brand-deep">
+                {report.quadrantProfile.description ?? quadrantDescription(report.quadrantProfile.quadrantLabel) ?? "Perfil sin descripción"}
+              </p>
             </div>
           ) : (
             <p className="mt-4 text-sm text-slate-500">Perfil de cuadrante no disponible.</p>

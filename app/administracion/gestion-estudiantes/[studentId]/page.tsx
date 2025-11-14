@@ -30,7 +30,6 @@ type PrimaryProfileData = {
 
 type CoachPanelData = {
   summary: Awaited<ReturnType<typeof getStudentCoachPanelSummary>>;
-  error: string | null;
 };
 
 type AttendanceHistoryData = {
@@ -49,7 +48,6 @@ const PRIMARY_DATA_FALLBACK: PrimaryProfileData = {
 
 const COACH_PANEL_FALLBACK: CoachPanelData = {
   summary: null,
-  error: null,
 };
 
 const ATTENDANCE_HISTORY_FALLBACK: AttendanceHistoryData = {
@@ -141,13 +139,11 @@ async function loadCoachPanelData(studentId: number): Promise<CoachPanelData> {
     const summary = await getStudentCoachPanelSummary(studentId);
     return {
       summary,
-      error: null,
     };
   } catch (error) {
     console.error("Failed to load student coach panel data", error);
     return {
       ...COACH_PANEL_FALLBACK,
-      error: "No se pudo cargar la información del panel del coach. Intenta nuevamente más tarde.",
     };
   }
 }
@@ -323,19 +319,18 @@ export default async function StudentProfilePage({
         </header>
 
         <div className="flex flex-col gap-8 pb-10">
-        <StudentProfileTabs
-          studentId={studentId}
-          basicDetails={basicDetails}
-          paymentSchedule={primaryData.paymentSchedule}
-          exams={primaryData.exams}
-          instructivos={primaryData.instructivos}
-          notes={primaryData.notes}
-          coachSummary={coachPanelData.summary}
-          coachError={coachPanelData.error}
-          attendanceHistory={attendanceData.entries}
-          attendanceError={attendanceData.error}
-          lessonCatalog={attendanceData.lessonCatalog}
-        />
+          <StudentProfileTabs
+            studentId={studentId}
+            basicDetails={basicDetails}
+            paymentSchedule={primaryData.paymentSchedule}
+            exams={primaryData.exams}
+            instructivos={primaryData.instructivos}
+            notes={primaryData.notes}
+            coachSummary={coachPanelData.summary}
+            attendanceHistory={attendanceData.entries}
+            attendanceError={attendanceData.error}
+            lessonCatalog={attendanceData.lessonCatalog}
+          />
         </div>
       </main>
     </div>
