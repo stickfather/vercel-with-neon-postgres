@@ -35,6 +35,7 @@ import type {
   StudentPaymentScheduleEntry,
 } from "@/features/administration/data/student-profile";
 import type { LevelLessons } from "@/features/student-checkin/data/queries";
+import type { InstructivosStatus } from "@/src/features/reports/coach-panel/types";
 
 const TAB_ORDER = [
   "datos-basicos",
@@ -72,7 +73,7 @@ type StudentProfileTabsProps = {
 
 type TabContentConfig = {
   value: (typeof TAB_ORDER)[number];
-  label: string;
+  label: ReactNode;
   content: ReactNode;
 };
 
@@ -94,6 +95,8 @@ export function StudentProfileTabs({
   const [examEntries, setExamEntries] = useState(exams);
   const [instructivoEntries, setInstructivoEntries] = useState(instructivos);
   const [noteEntries, setNoteEntries] = useState(notes);
+  const [coachPanelInstructivoBadge, setCoachPanelInstructivoBadge] =
+    useState<InstructivosStatus | null>(null);
 
   useEffect(() => {
     setPaymentEntries(paymentSchedule);
@@ -134,7 +137,14 @@ export function StudentProfileTabs({
       {
         value: "panel-del-coach",
         label: TAB_LABELS["panel-del-coach"],
-        content: <CoachPanel data={coachSummary} errorMessage={coachError} />,
+        content: (
+          <CoachPanel
+            studentId={studentId}
+            data={coachSummary}
+            errorMessage={coachError}
+            onInstructivoStatusChange={setCoachPanelInstructivoBadge}
+          />
+        ),
       },
       {
         value: "historial-asistencia",
@@ -195,7 +205,22 @@ export function StudentProfileTabs({
       },
       {
         value: "instructivos",
-        label: TAB_LABELS.instructivos,
+        label: (
+          <span className="inline-flex items-center gap-2">
+            {TAB_LABELS.instructivos}
+            {coachPanelInstructivoBadge ? (
+              <span
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  coachPanelInstructivoBadge.overdue
+                    ? "bg-rose-100 text-rose-700"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {coachPanelInstructivoBadge.pendientes}
+              </span>
+            ) : null}
+          </span>
+        ),
         content: (
           <InstructivosPanel
             studentId={studentId}
