@@ -14,10 +14,6 @@ import type {
   FinancialDebtor,
   FinancialOutstandingSummary,
   FinancialReport,
-  PersonnelCoverage,
-  PersonnelLoadPoint,
-  PersonnelMix,
-  PersonnelReport,
 } from "@/types/management-reports";
 
 type SqlClient = ReturnType<typeof getSqlClient>;
@@ -274,32 +270,3 @@ export async function getExamsReport(sql: SqlClient = getSqlClient()): Promise<E
   };
 }
 
-export async function getPersonnelReport(sql: SqlClient = getSqlClient()): Promise<PersonnelReport> {
-  const [mixRows, coverageRows, loadRows] = await Promise.all([
-    safeRows(() => sql`SELECT * FROM mgmt.personnel_staffing_mix_v`, "mgmt.personnel_staffing_mix_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.personnel_peak_load_coverage_v`, "mgmt.personnel_peak_load_coverage_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.personnel_student_load_v`, "mgmt.personnel_student_load_v"),
-  ]);
-
-  const staffingMix = mapRows(mixRows, (row) => {
-    const hour = readString(row, ["hour", "hora", "bloque"], [["hour"], ["hora"], ["bloque"]]);
-    const students = readNumber(row, ["students", "student_minutes", "minutos_estudiantes", "alumnos"], [["minutos", "estudiantes"], ["student", "minutes"]]) ?? 0;
-    const staff = readNumber(row, ["staff", "staff_minutes", "minutos_personal", "personal"], [["minutos", "personal"], ["staff", "minutes"]]) ?? 0;
-    return { hour, students, staff } satisfies PersonnelMix;
-  });
-
-  const coverage = mapRows(coverageRows, (row) => {
-    const area = readString(row, ["area", "zona", "hour_of_day"], [["area"], ["zona"], ["hour"]]);
-    const status = readString(row, ["status", "descripcion", "estado_cobertura"], [["status"], ["desc"], ["estado"], ["cobertura"]]);
-    const riskLevel = readString(row, ["risk_level", "riesgo", "nivel_riesgo"], [["risk"], ["riesgo"], ["nivel"]]);
-    return { area, status, riskLevel } satisfies PersonnelCoverage;
-  });
-
-  const studentLoad = mapRows(loadRows, (row) => {
-    const hour = readString(row, ["hour", "hora", "hour_of_day"], [["hour"], ["hora"]]);
-    const value = readNumber(row, ["load", "students_per_teacher", "estudiantes_por_profesor", "valor"], [["load"], ["students"], ["alumno"], ["profesor"]]) ?? 0;
-    return { hour, value } satisfies PersonnelLoadPoint;
-  });
-
-  return { staffingMix, coverage, studentLoad };
-}
