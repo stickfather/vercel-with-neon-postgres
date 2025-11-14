@@ -54,7 +54,7 @@ function normalizeLevelFilter(value: string | null): LevelFilterValue {
     : "all";
 }
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 50;
 
 type ManagedStudent = StudentManagementEntry & {
   isPending?: boolean;
@@ -466,9 +466,9 @@ function StudentManagementTable({ students }: Props) {
             </div>
           </div>
         </div>
-        <div className="max-h-[calc(100vh-28rem)] overflow-y-auto">
+        <div className="overflow-x-auto">
           <table className="min-w-full table-auto divide-y divide-brand-ink-muted/20 text-left">
-            <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-brand-ink z-10">
+            <thead className="bg-white text-[11px] uppercase tracking-wide text-brand-ink">
               <tr>
                 <th scope="col" className="px-5 py-3 text-left font-semibold text-brand-deep whitespace-normal leading-snug">
                   Nombre

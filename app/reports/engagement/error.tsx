@@ -12,7 +12,7 @@ export default function EngagementError({
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10 md:px-10 lg:px-14">
         <header className="flex flex-col gap-4">
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">Informes de gestión</span>
-          <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">Panel de engagement</h1>
+          <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">Reporte de compromiso</h1>
         </header>
 
         <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-rose-200/70 bg-rose-50 p-12 text-center">
