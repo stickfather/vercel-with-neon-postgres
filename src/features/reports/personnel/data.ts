@@ -1,285 +1,347 @@
-import { getSqlClient, normalizeRows } from "@/lib/db/client";
-import type {
-  PersonnelPanelData,
-  PersonnelCoverageByHour,
-  PersonnelStudentLoad,
-  PersonnelStaffingMix,
-  PersonnelKpiSnapshot,
-  PersonnelManagerNotes,
+import {
+  getSqlClient,
+  isMissingRelationError,
+  normalizeRows,
+  type SqlRow,
+} from "@/lib/db/client";
+import {
+  createEmptyPersonnelReport,
+  type PeakCoveragePoint,
+  type PersonnelReportResponse,
+  type StaffingHeatmapCell,
+  type StaffingMixHourRow,
+  type StudentLoadGauge,
+  type StudentLoadPerTeacherRow,
+  type TeacherUtilizationRow,
+  type UnderOverRow,
 } from "@/types/personnel";
 
-type SqlClient = ReturnType<typeof getSqlClient>;
+const TARGET_STUDENTS_PER_TEACHER = 10;
+const OVERSTAFFED_RATIO_THRESHOLD = 6;
+const HOURS_RANGE = Array.from({ length: 13 }, (_, index) => 8 + index);
 
-/**
- * Fetch personnel panel data from mgmt views
- */
-export async function getPersonnelPanelData(
-  sql: SqlClient = getSqlClient()
-): Promise<PersonnelPanelData> {
-  // Fetch all three views in parallel
-  const [coverageRows, loadRows, mixRows] = await Promise.all([
-    sql`
-      SELECT 
-        hour_of_day, 
-        minutos_estudiantes, 
-        minutos_personal, 
-        carga_relativa, 
-        estado_cobertura
-      FROM mgmt.personnel_peak_load_coverage_v
-      WHERE hour_of_day BETWEEN 8 AND 20
-      ORDER BY hour_of_day
-    `,
-    sql`
-      SELECT 
-        hour_of_day, 
-        minutos_estudiantes, 
-        minutos_personal, 
-        estudiantes_por_profesor
-      FROM mgmt.personnel_student_load_v
-      WHERE hour_of_day BETWEEN 8 AND 20
-      ORDER BY hour_of_day
-    `,
-    sql`
-      SELECT 
-        bloque, 
-        minutos_estudiantes, 
-        minutos_personal, 
-        ratio_estudiantes_personal
-      FROM mgmt.personnel_staffing_mix_v
-      ORDER BY bloque
-    `,
-  ]);
+const hourFormatter = new Intl.NumberFormat("es-EC", {
+  minimumIntegerDigits: 2,
+});
 
-  // Normalize rows
-  const normalizedCoverage = normalizeRows<PersonnelCoverageByHour>(coverageRows);
-  const normalizedLoad = normalizeRows<PersonnelStudentLoad>(loadRows);
-  const normalizedMix = normalizeRows<PersonnelStaffingMix>(mixRows);
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) return null;
+    const parsed = Number(trimmed.replace(/[^0-9.\-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
-  // Ensure all hours 08-20 are present
-  const coverageByHour = fillMissingHours(normalizedCoverage);
-  const studentLoad = fillMissingHoursLoad(normalizedLoad);
-  
-  // Normalize staffing mix to handle null ratios
-  const staffingMixByBand = normalizedMix.map(mix => ({
-    ...mix,
-    minutos_estudiantes: mix.minutos_estudiantes ?? 0,
-    minutos_personal: mix.minutos_personal ?? 0,
-    ratio_estudiantes_personal: mix.ratio_estudiantes_personal ?? 0,
-  }));
+function toStringValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "bigint") {
+    return String(value);
+  }
+  return "";
+}
 
-  // Calculate KPI snapshot
-  const kpiSnapshot = calculateKpiSnapshot(coverageByHour);
+function findKey(row: SqlRow, candidates: string[], includes: string[][] = []): string | null {
+  const keys = Object.keys(row);
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const exact = keys.find((key) => key === candidate);
+    if (exact) return exact;
+    const insensitive = keys.find((key) => key.toLowerCase() === candidate.toLowerCase());
+    if (insensitive) return insensitive;
+  }
+  for (const parts of includes) {
+    const match = keys.find((key) => {
+      const lower = key.toLowerCase();
+      return parts.every((part) => lower.includes(part));
+    });
+    if (match) return match;
+  }
+  return null;
+}
 
-  // Generate manager notes
-  const managerNotes = generateManagerNotes(
-    coverageByHour,
-    studentLoad,
-    staffingMixByBand
+function readNumber(row: SqlRow, candidates: string[], includes: string[][] = []): number | null {
+  const key = findKey(row, candidates, includes);
+  if (!key) return null;
+  return toNumber(row[key]);
+}
+
+function readString(
+  row: SqlRow,
+  candidates: string[],
+  includes: string[][] = [],
+  fallback = "",
+): string {
+  const key = findKey(row, candidates, includes);
+  if (!key) return fallback;
+  const value = toStringValue(row[key]);
+  return value.length ? value : fallback;
+}
+
+function buildHourLabel(hour: number | null): string {
+  if (hour === null || Number.isNaN(hour)) return "—";
+  const clamped = Math.max(0, Math.min(23, Math.round(hour)));
+  return `${hourFormatter.format(clamped)}:00`;
+}
+
+function normalizeHourRow(row: SqlRow): StaffingMixHourRow {
+  const hour = readNumber(row, ["hour_of_day", "hour", "hora"], [["hour"], ["hora"], ["block"]]);
+  const hourLabel = readString(
+    row,
+    ["hour_label", "label", "hora"],
+    [["hour"], ["bloque"], ["slot"]],
+    buildHourLabel(hour),
+  );
+
+  const studentMinutes = readNumber(
+    row,
+    ["student_minutes", "minutos_estudiantes", "student_min"],
+    [["student"], ["estudiante"], ["minutos"]],
+  ) ?? 0;
+  const staffMinutes = readNumber(
+    row,
+    ["staff_minutes", "minutos_personal", "teacher_minutes"],
+    [["staff"], ["teacher"], ["personal"], ["minutos"]],
+  ) ?? 0;
+  const ratio = readNumber(
+    row,
+    [
+      "student_to_staff_minute_ratio",
+      "ratio_estudiantes_personal",
+      "carga_relativa",
+      "student_staff_ratio",
+    ],
+    [["ratio"], ["carga"], ["estudiante", "personal"]],
+  );
+  const studentCount = readNumber(
+    row,
+    ["student_count", "students", "studentas"],
+    [["students"], ["alumnos"], ["estudiantes"]],
+  );
+  const staffCount = readNumber(
+    row,
+    ["staff_count", "teachers", "docentes"],
+    [["staff"], ["docente"], ["profesor"]],
   );
 
   return {
-    coverageByHour,
-    studentLoad,
-    staffingMixByBand,
-    kpiSnapshot,
-    managerNotes,
+    hourOfDay: typeof hour === "number" ? hour : null,
+    hourLabel: hourLabel || buildHourLabel(hour),
+    studentMinutes,
+    staffMinutes,
+    studentToStaffMinuteRatio: ratio,
+    studentCount,
+    staffCount,
   };
 }
 
-/**
- * Fill missing hours (08-20) with zero values for coverage data
- */
-function fillMissingHours(
-  rows: PersonnelCoverageByHour[]
-): PersonnelCoverageByHour[] {
-  const hourMap = new Map<number, PersonnelCoverageByHour>();
-  
-  rows.forEach((row) => {
-    // Ensure numeric fields are never null
-    const normalized = {
-      ...row,
-      minutos_estudiantes: row.minutos_estudiantes ?? 0,
-      minutos_personal: row.minutos_personal ?? 0,
-      carga_relativa: row.carga_relativa ?? 0,
-      estado_cobertura: row.estado_cobertura || "No Coverage",
-    };
-    hourMap.set(normalized.hour_of_day, normalized);
-  });
-
-  const result: PersonnelCoverageByHour[] = [];
-  for (let hour = 8; hour <= 20; hour++) {
-    const existing = hourMap.get(hour);
-    if (existing) {
-      result.push(existing);
-    } else {
-      result.push({
-        hour_of_day: hour,
-        minutos_estudiantes: 0,
-        minutos_personal: 0,
-        carga_relativa: 0,
-        estado_cobertura: "No Coverage",
-      });
-    }
-  }
-
-  return result;
-}
-
-/**
- * Fill missing hours (08-20) with zero values for load data
- */
-function fillMissingHoursLoad(
-  rows: PersonnelStudentLoad[]
-): PersonnelStudentLoad[] {
-  const hourMap = new Map<number, PersonnelStudentLoad>();
-  
-  rows.forEach((row) => {
-    // Ensure numeric fields are never null
-    const normalized = {
-      ...row,
-      minutos_estudiantes: row.minutos_estudiantes ?? 0,
-      minutos_personal: row.minutos_personal ?? 0,
-      estudiantes_por_profesor: row.estudiantes_por_profesor ?? 0,
-    };
-    hourMap.set(normalized.hour_of_day, normalized);
-  });
-
-  const result: PersonnelStudentLoad[] = [];
-  for (let hour = 8; hour <= 20; hour++) {
-    const existing = hourMap.get(hour);
-    if (existing) {
-      result.push(existing);
-    } else {
-      result.push({
-        hour_of_day: hour,
-        minutos_estudiantes: 0,
-        minutos_personal: 0,
-        estudiantes_por_profesor: 0,
-      });
-    }
-  }
-
-  return result;
-}
-
-/**
- * Calculate KPI snapshot from coverage data
- */
-function calculateKpiSnapshot(
-  coverage: PersonnelCoverageByHour[]
-): PersonnelKpiSnapshot {
-  const validHours = coverage.filter((h) => h.minutos_personal > 0);
-
-  // Best covered hour (min ratio with staff > 0)
-  let bestCoveredHour = null;
-  if (validHours.length > 0) {
-    const best = validHours.reduce((min, hour) => 
-      hour.carga_relativa < min.carga_relativa ? hour : min
-    );
-    bestCoveredHour = {
-      hour: best.hour_of_day,
-      ratio: best.carga_relativa,
-    };
-  }
-
-  // Worst load hour (max ratio)
-  let worstLoadHour = null;
-  if (coverage.length > 0) {
-    const worst = coverage.reduce((max, hour) => 
-      hour.carga_relativa > max.carga_relativa ? hour : max
-    );
-    worstLoadHour = {
-      hour: worst.hour_of_day,
-      ratio: worst.carga_relativa,
-    };
-  }
-
-  // Hours at risk (>3.00 ratio)
-  const hoursAtRisk = coverage.filter((h) => h.carga_relativa > 3.0).length;
+function normalizeTeacherLoad(row: SqlRow): StudentLoadPerTeacherRow {
+  const teacherId = readString(row, ["teacher_id", "staff_id", "id"], [["teacher"], ["docente"]]) || "unknown";
+  const teacherName =
+    readString(row, ["teacher_name", "nombre_docente", "teacher"], [["docente"], ["teacher"]]) ||
+    "Profesor sin nombre";
+  const avgStudentsPerHour = readNumber(
+    row,
+    ["avg_students_per_hour", "students_per_hour", "estudiantes_por_hora"],
+    [["promedio"], ["hora"]],
+  );
+  const avgStudentsPerDay = readNumber(
+    row,
+    ["avg_students_per_day", "students_per_day", "estudiantes_por_dia"],
+    [["dia"], ["day"]],
+  );
 
   return {
-    bestCoveredHour,
-    worstLoadHour,
-    hoursAtRisk,
+    teacherId,
+    teacherName,
+    avgStudentsPerHour,
+    avgStudentsPerDay,
   };
 }
 
-/**
- * Generate AI manager notes based on data
- */
-function generateManagerNotes(
-  coverage: PersonnelCoverageByHour[],
-  studentLoad: PersonnelStudentLoad[],
-  staffingMix: PersonnelStaffingMix[]
-): PersonnelManagerNotes {
-  // Safety check for empty data
-  if (coverage.length === 0) {
+function normalizeUtilization(row: SqlRow): TeacherUtilizationRow {
+  const teacherId = readString(row, ["teacher_id", "staff_id", "id"], [["teacher"], ["docente"]]) || "unknown";
+  const teacherName =
+    readString(row, ["teacher_name", "nombre_docente", "teacher"], [["docente"], ["teacher"]]) ||
+    "Profesor sin nombre";
+  const utilizationPct = readNumber(
+    row,
+    ["utilization_pct", "utilization", "porcentaje_utilizacion"],
+    [["util"], ["porcentaje"], ["uso"]],
+  );
+  const minutesWithStudents =
+    readNumber(row, ["minutes_with_students", "minutos_con_estudiantes"], [["student"], ["estudiante"]]) ?? 0;
+  const minutesClockedIn =
+    readNumber(row, ["minutes_clocked_in", "minutos_registrados", "minutos_laborados"], [
+      ["clock"],
+      ["labor"],
+    ]) ?? 0;
+
+  return {
+    teacherId,
+    teacherName,
+    utilizationPct,
+    minutesWithStudents,
+    minutesClockedIn,
+  };
+}
+
+function safeAverage(values: Array<number | null>): number | null {
+  const numeric = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (!numeric.length) return null;
+  const sum = numeric.reduce((acc, value) => acc + value, 0);
+  return sum / numeric.length;
+}
+
+function fillHours(cells: StaffingMixHourRow[]): StaffingMixHourRow[] {
+  return HOURS_RANGE.map((hour) => {
+    const match = cells.find((row) => row.hourOfDay === hour);
+    if (match) return match;
     return {
-      summary: "No coverage data available for analysis.",
-      bullets: [
-        "Ensure staff attendance tracking is active.",
-        "Verify student session data is being recorded.",
-        "Check database views are populated with recent data.",
-      ],
-    };
+      hourOfDay: hour,
+      hourLabel: buildHourLabel(hour),
+      studentMinutes: 0,
+      staffMinutes: 0,
+      studentToStaffMinuteRatio: null,
+      studentCount: null,
+      staffCount: null,
+    } satisfies StaffingMixHourRow;
+  });
+}
+
+function deriveHeatmap(rows: StaffingMixHourRow[]): StaffingHeatmapCell[] {
+  return rows.map((row) => ({
+    hourLabel: row.hourLabel,
+    ratio: row.studentToStaffMinuteRatio,
+    studentMinutes: row.studentMinutes,
+    staffMinutes: row.staffMinutes,
+  }));
+}
+
+function derivePeakCoverage(rows: StaffingMixHourRow[]): PeakCoveragePoint[] {
+  return rows.map((row) => ({
+    hourLabel: row.hourLabel,
+    studentMinutes: row.studentMinutes,
+    staffMinutes: row.staffMinutes,
+  }));
+}
+
+function computeGapRows(rows: StaffingMixHourRow[], direction: "under" | "over"): UnderOverRow[] {
+  const gaps: UnderOverRow[] = [];
+
+  for (const row of rows) {
+    const ratio =
+      row.studentToStaffMinuteRatio ??
+      (row.staffMinutes > 0 ? row.studentMinutes / row.staffMinutes : null);
+    if (ratio === null) continue;
+    if (direction === "under" && ratio <= TARGET_STUDENTS_PER_TEACHER) continue;
+    if (direction === "over" && ratio >= OVERSTAFFED_RATIO_THRESHOLD) continue;
+
+    const gapMetric =
+      direction === "under"
+        ? ratio - TARGET_STUDENTS_PER_TEACHER
+        : Math.max(0, Math.min(TARGET_STUDENTS_PER_TEACHER, TARGET_STUDENTS_PER_TEACHER - ratio));
+
+    gaps.push({
+      hourLabel: row.hourLabel,
+      studentMinutes: row.studentMinutes,
+      staffMinutes: row.staffMinutes,
+      ratio,
+      gapMetric,
+    });
   }
 
-  // Find worst hour
-  const worstHour = coverage.reduce((max, hour) => 
-    hour.carga_relativa > max.carga_relativa ? hour : max
-  );
+  return gaps.sort((a, b) => b.gapMetric - a.gapMetric).slice(0, 6);
+}
 
-  // Find highest pressure block (with safety check)
-  let worstBlock = staffingMix.length > 0 
-    ? staffingMix.reduce((max, block) => 
-        block.ratio_estudiantes_personal > max.ratio_estudiantes_personal ? block : max
-      )
-    : null;
+export async function getPersonnelReport(): Promise<PersonnelReportResponse> {
+  const sql = getSqlClient();
+  let fallback = false;
 
-  // Count hours at risk
-  const atRiskCount = coverage.filter((h) => h.carga_relativa > 3.0).length;
-
-  // Build summary (with null safety)
-  let summary = "";
-  const ratio = worstHour.carga_relativa ?? 0;
-  
-  if (ratio <= 2.0) {
-    summary = "Coverage is well-balanced across the day. All hours are adequately staffed with ratios under 2.0×.";
-  } else if (ratio <= 3.0) {
-    summary = `Coverage is generally adequate with some tight spots. The highest load is ${worstHour.hour_of_day}:00 at ${ratio.toFixed(2)}×, indicating moderate pressure on teachers.`;
-  } else {
-    if (worstHour.minutos_personal === 0) {
-      summary = `Coverage has critical gaps. ${worstHour.hour_of_day}:00 has no staff coverage while students are active. Immediate staffing required.`;
-    } else {
-      summary = `Coverage is under-resourced at peak hours. The highest load is ${worstHour.hour_of_day}:00 at ${ratio.toFixed(2)}×, indicating high pressure on teachers.`;
+  async function safeRows(label: string, runner: () => Promise<SqlRow[]>): Promise<SqlRow[]> {
+    try {
+      return await runner();
+    } catch (error) {
+      fallback = true;
+      if (isMissingRelationError(error, label)) {
+        console.warn(`Vista faltante: ${label}`);
+        return [];
+      }
+      console.error(`Error consultando ${label}`, error);
+      return [];
     }
   }
 
-  // Build action bullets
-  const bullets: string[] = [];
+  try {
+    const staffingRows = await safeRows(
+      "final.personnel_staffing_mix_hour_mv",
+      async () =>
+        normalizeRows(
+          await sql`SELECT * FROM final.personnel_staffing_mix_hour_mv ORDER BY 1`,
+        ),
+    );
 
-  if (atRiskCount > 0) {
-    bullets.push(`Address ${atRiskCount} hour${atRiskCount === 1 ? '' : 's'} with load ratio above 3.0× to prevent teacher burnout.`);
+    const teacherLoadRows = await safeRows(
+      "final.personnel_student_load_per_teacher_mv",
+      async () =>
+        normalizeRows(
+          await sql`SELECT * FROM final.personnel_student_load_per_teacher_mv`,
+        ),
+    );
+
+    const utilizationRows = await safeRows(
+      "final.personnel_teacher_utilization_mv",
+      async () =>
+        normalizeRows(await sql`SELECT * FROM final.personnel_teacher_utilization_mv`),
+    );
+
+    const normalizedHourRows = staffingRows
+      .map((row) => normalizeHourRow(row))
+      .filter((row) => {
+        if (row.hourOfDay === null) return true;
+        return row.hourOfDay >= 8 && row.hourOfDay <= 20;
+      });
+    const hourRows = fillHours(normalizedHourRows);
+
+    const staffingMixByHour = deriveHeatmap(hourRows);
+    const peakCoverage = derivePeakCoverage(hourRows);
+
+    const studentLoadPerTeacher = teacherLoadRows
+      .map((row) => normalizeTeacherLoad(row))
+      .sort((a, b) => (b.avgStudentsPerHour ?? 0) - (a.avgStudentsPerHour ?? 0));
+    const studentLoadGauge: StudentLoadGauge = {
+      avgStudentsPerTeacher: safeAverage(
+        studentLoadPerTeacher.map((row) => row.avgStudentsPerHour),
+      ),
+      targetStudentsPerTeacher: TARGET_STUDENTS_PER_TEACHER,
+      teacherCount: studentLoadPerTeacher.length,
+    };
+
+    const teacherUtilization = utilizationRows
+      .map((row) => normalizeUtilization(row))
+      .sort((a, b) => (b.utilizationPct ?? 0) - (a.utilizationPct ?? 0));
+
+    const understaffedHours = computeGapRows(normalizedHourRows, "under");
+    const overstaffedHours = computeGapRows(normalizedHourRows, "over");
+
+    return {
+      staffingMixByHour,
+      peakCoverage,
+      studentLoadGauge,
+      studentLoadPerTeacher,
+      understaffedHours,
+      overstaffedHours,
+      teacherUtilization,
+      fallback,
+      generatedAt: new Date().toISOString(),
+    } satisfies PersonnelReportResponse;
+  } catch (error) {
+    console.error("Error general al construir el reporte de personal", error);
+    return createEmptyPersonnelReport();
   }
-
-  if (worstBlock && worstBlock.ratio_estudiantes_personal > 3.0) {
-    const blockRatio = worstBlock.ratio_estudiantes_personal ?? 0;
-    bullets.push(`Highest-pressure block is ${worstBlock.bloque} with ${blockRatio.toFixed(2)}× ratio. Consider adding one teacher during this window.`);
-  }
-
-  // Find hours with no coverage
-  const noCoverage = coverage.filter((h) => h.minutos_personal === 0 && h.minutos_estudiantes > 0);
-  if (noCoverage.length > 0) {
-    bullets.push(`${noCoverage.length} hour${noCoverage.length === 1 ? '' : 's'} ha${noCoverage.length === 1 ? 's' : 've'} no staff coverage. Schedule teachers for ${noCoverage.map(h => `${h.hour_of_day}:00`).join(', ')}.`);
-  }
-
-  // Add general recommendation if we have less than 3 bullets
-  if (bullets.length < 3) {
-    bullets.push("Monitor week-over-week trends to identify emerging pressure patterns and adjust schedules proactively.");
-  }
-
-  return {
-    summary,
-    bullets: bullets.slice(0, 3), // Ensure exactly 3 bullets max
-  };
 }

@@ -7,24 +7,23 @@ export default function Loading() {
           <div className="h-10 w-96 animate-pulse rounded bg-slate-200" />
           <div className="h-4 w-full max-w-2xl animate-pulse rounded bg-slate-200" />
         </header>
-        
+
         <div className="flex flex-col gap-6">
-          {/* KPI Strip Skeleton */}
-          <div className="grid gap-4 sm:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-32 animate-pulse rounded-2xl bg-slate-200/60" />
+          <div className="grid gap-6 lg:grid-cols-2">
+            {[1, 2].map((key) => (
+              <div key={key} className="h-72 animate-pulse rounded-2xl bg-slate-200/60" />
             ))}
           </div>
-          
-          {/* Charts Skeleton */}
-          <div className="h-80 animate-pulse rounded-2xl bg-slate-200/60" />
-          
           <div className="grid gap-6 lg:grid-cols-2">
-            <div className="h-80 animate-pulse rounded-2xl bg-slate-200/60" />
-            <div className="h-80 animate-pulse rounded-2xl bg-slate-200/60" />
+            {[1, 2].map((key) => (
+              <div key={key} className="h-64 animate-pulse rounded-2xl bg-slate-200/60" />
+            ))}
           </div>
-          
-          {/* Table Skeleton */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {[1, 2].map((key) => (
+              <div key={key} className="h-72 animate-pulse rounded-2xl bg-slate-200/60" />
+            ))}
+          </div>
           <div className="h-96 animate-pulse rounded-2xl bg-slate-200/60" />
         </div>
       </main>

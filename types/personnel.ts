@@ -1,54 +1,79 @@
-// Types for Teacher Coverage & Load Panel (Personnel)
+// Personnel analytics report types powered by final.* materialized views
 
-// Module 2: At a Glance KPI Strip
-export type PersonnelKpiSnapshot = {
-  bestCoveredHour: {
-    hour: number;
-    ratio: number;
-  } | null;
-  worstLoadHour: {
-    hour: number;
-    ratio: number;
-  } | null;
-  hoursAtRisk: number;
+export type StaffingMixHourRow = {
+  hourOfDay: number | null;
+  hourLabel: string;
+  studentMinutes: number;
+  staffMinutes: number;
+  studentToStaffMinuteRatio: number | null;
+  studentCount: number | null;
+  staffCount: number | null;
 };
 
-// Module 3: Staffing Load Curve
-export type PersonnelCoverageByHour = {
-  hour_of_day: number;
-  minutos_estudiantes: number;
-  minutos_personal: number;
-  carga_relativa: number;
-  estado_cobertura: string;
+export type StaffingHeatmapCell = {
+  hourLabel: string;
+  ratio: number | null;
+  studentMinutes: number;
+  staffMinutes: number;
 };
 
-// Module 4: Student Load per Teacher
-export type PersonnelStudentLoad = {
-  hour_of_day: number;
-  minutos_estudiantes: number;
-  minutos_personal: number;
-  estudiantes_por_profesor: number;
+export type PeakCoveragePoint = {
+  hourLabel: string;
+  studentMinutes: number;
+  staffMinutes: number;
 };
 
-// Module 5: Coverage by Time Blocks
-export type PersonnelStaffingMix = {
-  bloque: string;
-  minutos_estudiantes: number;
-  minutos_personal: number;
-  ratio_estudiantes_personal: number;
+export type UnderOverRow = {
+  hourLabel: string;
+  studentMinutes: number;
+  staffMinutes: number;
+  ratio: number | null;
+  gapMetric: number;
 };
 
-// Module 7: AI Manager Notes
-export type PersonnelManagerNotes = {
-  summary: string;
-  bullets: string[];
+export type StudentLoadPerTeacherRow = {
+  teacherId: string;
+  teacherName: string;
+  avgStudentsPerHour: number | null;
+  avgStudentsPerDay: number | null;
 };
 
-// Full Panel Data
-export type PersonnelPanelData = {
-  coverageByHour: PersonnelCoverageByHour[];
-  studentLoad: PersonnelStudentLoad[];
-  staffingMixByBand: PersonnelStaffingMix[];
-  kpiSnapshot: PersonnelKpiSnapshot;
-  managerNotes: PersonnelManagerNotes;
+export type StudentLoadGauge = {
+  avgStudentsPerTeacher: number | null;
+  targetStudentsPerTeacher: number | null;
+  teacherCount: number;
 };
+
+export type TeacherUtilizationRow = {
+  teacherId: string;
+  teacherName: string;
+  utilizationPct: number | null;
+  minutesWithStudents: number;
+  minutesClockedIn: number;
+};
+
+export type PersonnelReportResponse = {
+  staffingMixByHour: StaffingHeatmapCell[];
+  peakCoverage: PeakCoveragePoint[];
+  studentLoadGauge: StudentLoadGauge;
+  studentLoadPerTeacher: StudentLoadPerTeacherRow[];
+  understaffedHours: UnderOverRow[];
+  overstaffedHours: UnderOverRow[];
+  teacherUtilization: TeacherUtilizationRow[];
+  fallback: boolean;
+  generatedAt: string;
+};
+
+export function createEmptyPersonnelReport(): PersonnelReportResponse {
+  return {
+    staffingMixByHour: [],
+    peakCoverage: [],
+    studentLoadGauge: { avgStudentsPerTeacher: null, targetStudentsPerTeacher: null, teacherCount: 0 },
+    studentLoadPerTeacher: [],
+    understaffedHours: [],
+    overstaffedHours: [],
+    teacherUtilization: [],
+    fallback: true,
+    generatedAt: new Date().toISOString(),
+  };
+}

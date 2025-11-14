@@ -167,25 +167,3 @@ export type ExamsReport = {
   failToInstructiveLink: ExamsRate | null;
 };
 
-export type PersonnelMix = {
-  hour: string;
-  students: number | null;
-  staff: number | null;
-};
-
-export type PersonnelCoverage = {
-  area: string;
-  status: string;
-  riskLevel: string;
-};
-
-export type PersonnelLoadPoint = {
-  hour: string;
-  value: number | null;
-};
-
-export type PersonnelReport = {
-  staffingMix: PersonnelMix[];
-  coverage: PersonnelCoverage[];
-  studentLoad: PersonnelLoadPoint[];
-};
