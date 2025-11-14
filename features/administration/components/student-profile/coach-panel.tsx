@@ -1,29 +1,18 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CSSProperties } from "react";
 
 import type {
-  CoachPanelEngagementHeatmapEntry,
   CoachPanelLessonJourneyEntry,
   CoachPanelLessonJourneyLevel,
   StudentCoachPanelSummary,
 } from "@/features/administration/data/student-profile";
-
-import { formatLocalDate } from "@/lib/datetime/format";
-
-import { StudyHoursHistogram } from "./StudyHoursHistogram";
-
-type CoachPanelProps = {
-  data: StudentCoachPanelSummary | null;
-  errorMessage?: string | null;
-};
-
-const HEATMAP_DAYS = 30;
-const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const LOCAL_DATE_KEY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Guayaquil",
-});
+import type {
+  CoachPanelReportResponse,
+  DailyMinutesPoint,
+  HourlyMinutesBucket,
+} from "@/src/features/reports/coach-panel/types";
 
 const PLAN_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
 const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, index) => [level, index]));
@@ -31,6 +20,82 @@ const LEVEL_ORDER_INDEX = new Map<string, number>(PLAN_LEVEL_ORDER.map((level, i
 const LESSON_NODE_MIN_SIZE = 24;
 const LESSON_NODE_MAX_SIZE = 38;
 const LESSON_NODE_SIZE_VIEWPORT_FACTOR = 2.5;
+
+const CONSISTENCY_TONE = [
+  { threshold: 80, className: "bg-emerald-50 text-emerald-700" },
+  { threshold: 50, className: "bg-amber-50 text-amber-700" },
+  { threshold: 0, className: "bg-rose-50 text-rose-700" },
+];
+
+const HABIT_TONE: Record<string, string> = {
+  consistente: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  intermitente: "bg-amber-50 text-amber-700 border-amber-200",
+  inconstante: "bg-rose-50 text-rose-700 border-rose-200",
+};
+
+type QuadrantLabel = "A" | "B" | "C" | "D";
+
+const QUADRANT_KEYS: QuadrantLabel[] = ["A", "B", "C", "D"];
+
+const DEFAULT_QUADRANT_STYLE = {
+  badgeText: "Quadrant – N/A",
+  badgeClass: "bg-slate-200",
+  textClass: "text-slate-600",
+  dotClass: "bg-slate-400",
+  description: "Perfil sin descripción",
+} as const;
+
+const QUADRANT_STYLE: Record<
+  QuadrantLabel,
+  {
+    badgeText: string;
+    badgeClass: string;
+    textClass: string;
+    dotClass: string;
+    description: string;
+  }
+> = {
+  A: {
+    badgeText: "A – Efficient & Active",
+    badgeClass: "bg-emerald-600",
+    textClass: "text-white",
+    dotClass: "bg-emerald-500",
+    description: "Eficiente y activo",
+  },
+  B: {
+    badgeText: "B – Efficient / Low Pace",
+    badgeClass: "bg-amber-300",
+    textClass: "text-slate-900",
+    dotClass: "bg-amber-400",
+    description: "Eficiente con ritmo bajo",
+  },
+  C: {
+    badgeText: "C – Inefficient / High Pace",
+    badgeClass: "bg-orange-500",
+    textClass: "text-white",
+    dotClass: "bg-orange-500",
+    description: "Necesita mayor eficiencia",
+  },
+  D: {
+    badgeText: "D – Inefficient & Inactive",
+    badgeClass: "bg-rose-600",
+    textClass: "text-white",
+    dotClass: "bg-rose-500",
+    description: "Bajo ritmo y eficiencia",
+  },
+};
+
+const QUADRANT_DOT_POSITION: Record<QuadrantLabel, { x: number; y: number }> = {
+  A: { x: 0.25, y: 0.75 },
+  C: { x: 0.75, y: 0.75 },
+  B: { x: 0.25, y: 0.25 },
+  D: { x: 0.75, y: 0.25 },
+};
+
+type CoachPanelProps = {
+  studentId: number;
+  data: StudentCoachPanelSummary | null;
+};
 
 function formatNumber(
   value: number | null | undefined,
@@ -52,137 +117,6 @@ function formatPercent(value: number | null | undefined, digits = 0): string {
   const normalized = Math.abs(value) <= 1 ? value * 100 : value;
   const safe = Math.min(100, Math.max(0, normalized));
   return `${formatNumber(safe, { maximumFractionDigits: digits })}%`;
-}
-
-function isLeapYear(year: number): boolean {
-  if (year % 400 === 0) return true;
-  if (year % 100 === 0) return false;
-  return year % 4 === 0;
-}
-
-function getDaysInMonth(year: number, month: number): number {
-  if (month === 2) {
-    return isLeapYear(year) ? 29 : 28;
-  }
-  if ([4, 6, 9, 11].includes(month)) {
-    return 30;
-  }
-  return 31;
-}
-
-function shiftDateKey(dateKey: string, offset: number): string | null {
-  const match = DATE_KEY_PATTERN.exec(dateKey);
-  if (!match) {
-    return null;
-  }
-
-  let year = Number(match[1]);
-  let month = Number(match[2]);
-  let day = Number(match[3]);
-
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
-    return null;
-  }
-
-  let remaining = offset;
-  while (remaining !== 0) {
-    if (remaining > 0) {
-      const daysInMonth = getDaysInMonth(year, month);
-      if (day < daysInMonth) {
-        day += 1;
-      } else {
-        day = 1;
-        month += 1;
-        if (month > 12) {
-          month = 1;
-          year += 1;
-        }
-      }
-      remaining -= 1;
-    } else {
-      if (day > 1) {
-        day -= 1;
-      } else {
-        month -= 1;
-        if (month < 1) {
-          month = 12;
-          year -= 1;
-        }
-        day = getDaysInMonth(year, month);
-      }
-      remaining += 1;
-    }
-  }
-
-  const normalizedMonth = String(Math.max(1, Math.min(12, month))).padStart(2, "0");
-  const normalizedDay = String(Math.max(1, Math.min(getDaysInMonth(year, month), day))).padStart(2, "0");
-  return `${year}-${normalizedMonth}-${normalizedDay}`;
-}
-
-function sanitizeMinutes(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return value < 0 ? 0 : value;
-}
-
-function buildHeatmapCells(
-  entries: CoachPanelEngagementHeatmapEntry[],
-  days: number,
-): CoachPanelEngagementHeatmapEntry[] {
-  const totals = new Map<string, number>();
-  for (const entry of entries) {
-    if (!DATE_KEY_PATTERN.test(entry.date)) {
-      continue;
-    }
-    const minutes = sanitizeMinutes(entry.minutes);
-    totals.set(entry.date, minutes);
-  }
-
-  if (days <= 0) {
-    return [];
-  }
-
-  if (totals.size === 0) {
-    const todayKey = LOCAL_DATE_KEY_FORMATTER.format(new Date());
-    const fallback: CoachPanelEngagementHeatmapEntry[] = [];
-    for (let index = days - 1; index >= 0; index -= 1) {
-      const key = shiftDateKey(todayKey, -index);
-      if (!key) {
-        continue;
-      }
-      fallback.push({ date: key, minutes: 0 });
-    }
-    return fallback;
-  }
-
-  const sortedKeys = Array.from(totals.keys()).sort((a, b) => a.localeCompare(b));
-  const latestKey = sortedKeys[sortedKeys.length - 1];
-  const result: CoachPanelEngagementHeatmapEntry[] = [];
-
-  for (let index = days - 1; index >= 0; index -= 1) {
-    const key = shiftDateKey(latestKey, -index);
-    if (!key) {
-      continue;
-    }
-    result.push({ date: key, minutes: totals.get(key) ?? 0 });
-  }
-
-  return result;
-}
-
-function formatHeatmapDate(value: string): string {
-  const formatted = formatLocalDate(value, { day: "2-digit", month: "short" });
-  return formatted ? formatted : "—";
-}
-
-function heatmapColor(minutes: number, maxMinutes: number): string {
-  if (maxMinutes <= 0 || minutes <= 0) {
-    return "rgba(0, 191, 166, 0.08)";
-  }
-  const intensity = Math.min(1, minutes / maxMinutes);
-  const alpha = 0.18 + intensity * 0.55;
-  return `rgba(0, 191, 166, ${alpha.toFixed(2)})`;
 }
 
 function formatHoursValue(value: number | null | undefined): string {
@@ -321,158 +255,310 @@ function resolveLessonNodeAppearance(lesson: CoachPanelLessonJourneyEntry): Less
   };
 }
 
-const SPEED_LABEL_TEXT: Record<"Fast" | "Normal" | "Slow", string> = {
-  Fast: "Rápido",
-  Normal: "Normal",
-  Slow: "Lento",
-};
-
-const SPEED_LABEL_TONE: Record<"Fast" | "Normal" | "Slow", string> = {
-  Fast: "bg-emerald-50 text-emerald-700 border border-emerald-200",
-  Normal: "bg-slate-50 text-slate-700 border border-slate-200",
-  Slow: "bg-rose-50 text-rose-700 border border-rose-200",
-};
-
-function resolveSpeedTone(
-  label: string | null | undefined,
-): string {
-  if (!label) {
-    return "bg-slate-50 text-slate-400 border border-slate-200";
-  }
-  const normalized = label as "Fast" | "Normal" | "Slow";
-  return SPEED_LABEL_TONE[normalized] ?? "bg-slate-50 text-slate-400 border border-slate-200";
-}
-
-function translateSpeedLabel(label: string | null | undefined): string {
-  if (!label) {
-    return "Sin datos suficientes";
-  }
-  const normalized = label as "Fast" | "Normal" | "Slow";
-  return SPEED_LABEL_TEXT[normalized] ?? "Sin datos";
-}
-
-
-export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
-  const recentActivity = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
-
-  const heatmapBase = Array.isArray(data?.engagement?.heatmap) ? data.engagement.heatmap : [];
-  const heatmapSource = useMemo(() => {
-    if (heatmapBase.length) {
-      return heatmapBase;
-    }
-    if (!recentActivity.length) {
-      return [];
-    }
-    const totals = new Map<string, number>();
-    recentActivity.forEach((session) => {
-      const checkIn = session.checkIn;
-      if (!checkIn) {
-        return;
-      }
-      const date = checkIn.slice(0, 10);
-      if (!date) {
-        return;
-      }
-      const minutes =
-        session.sessionMinutes != null && Number.isFinite(session.sessionMinutes)
-          ? Math.max(0, session.sessionMinutes)
-          : 0;
-      totals.set(date, (totals.get(date) ?? 0) + minutes);
-    });
-    return Array.from(totals.entries())
-      .map(([date, minutes]) => ({
-        date,
-        minutes: Math.max(0, Math.trunc(minutes)),
-      }))
-      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  }, [heatmapBase, recentActivity]);
-
-  const heatmapCells = useMemo(() => buildHeatmapCells(heatmapSource, HEATMAP_DAYS), [heatmapSource]);
-  const heatmapMaxMinutes = useMemo(
-    () => heatmapCells.reduce((max, entry) => (entry.minutes > max ? entry.minutes : max), 0),
-    [heatmapCells],
-  );
-  const engagementStats = data?.engagement?.stats ?? {
-    daysActive30d: null,
-    totalMinutes30d: null,
-    totalHours30d: null,
-    avgSessionMinutes30d: null,
+function renderLessonNode(lesson: CoachPanelLessonJourneyEntry) {
+  const displayTitle = resolveLessonBubbleTitle(lesson);
+  const tooltipTitle = resolveLessonTooltipTitle(lesson);
+  const hoursLabel = formatHoursValue(lesson.hoursInLesson);
+  const safeDays =
+    typeof lesson.daysInLesson === "number" && Number.isFinite(lesson.daysInLesson)
+      ? Math.max(0, Math.trunc(lesson.daysInLesson))
+      : 0;
+  const tooltipLines = [
+    `Nivel ${lesson.levelCode}`,
+    tooltipTitle,
+    `⏳ ${hoursLabel}h • 📅 ${safeDays}d`,
+  ];
+  const appearance = resolveLessonNodeAppearance(lesson);
+  const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
+  const baseLabelScale = lesson.isIntro || lesson.isExam ? 0.34 : 0.52;
+  const labelScale = lesson.status === "completed" ? baseLabelScale * 0.92 : baseLabelScale;
+  const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
+  const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
+  const circleStyle: CSSProperties = {
+    width: nodeSizeValue,
+    height: nodeSizeValue,
+    backgroundColor: appearance.fillColor,
+    color: appearance.textColor,
+    borderRadius: "9999px",
+    border: appearance.borderWidth
+      ? `${appearance.borderWidth}px solid ${appearance.borderColor ?? appearance.fillColor}`
+      : appearance.borderColor
+      ? `2px solid ${appearance.borderColor}`
+      : "none",
+    boxShadow: appearance.glowShadow,
+    fontSize: labelFontSize,
+    lineHeight: 1,
+    fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+    letterSpacing: lesson.isIntro || lesson.isExam ? "0.02em" : "0",
   };
-  const lei30dPlan = data?.learnerSpeed?.lei30dPlan ?? null;
 
-  if (errorMessage) {
-    return (
-      <div className="rounded-3xl border border-red-100 bg-red-50/80 p-8 text-red-700 shadow-sm">
-        {errorMessage}
+  const metricsStyle: CSSProperties = {
+    color: "#1F2933",
+    lineHeight: 1.1,
+    fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderRadius: "9999px",
+    padding: "1px 5px",
+    boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
+    border: "1px solid rgba(148,163,184,0.28)",
+    backdropFilter: "blur(4px)",
+  };
+
+  const shouldShowMetrics = lesson.status === "completed" || lesson.status === "current";
+
+  return (
+    <div className="relative flex flex-col items-center text-center font-sans" title={tooltipLines.join("\n")}>
+      <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
+        <span>{displayTitle}</span>
+        {appearance.showCompletionCheck ? (
+          <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#BBF7D0] text-xs font-semibold text-[#166534] shadow-sm">
+            ✓
+          </span>
+        ) : null}
       </div>
-    );
-  }
+      {shouldShowMetrics ? (
+        <div className="pointer-events-none -mt-1.5 flex items-center justify-center -space-x-1" style={{ transform: "translateY(-2px)" }}>
+          <div style={{ ...metricsStyle, fontSize: metricsFontSize }}>📅 {`${safeDays}d`}</div>
+          <div style={{ ...metricsStyle, fontSize: metricsFontSize }}>⏳ {`${hoursLabel}h`}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
-  if (!data) {
-    return (
-      <div className="rounded-3xl border border-brand-ink-muted/10 bg-white/90 p-10 text-center shadow-sm">
-        <p className="text-lg font-semibold text-brand-deep">
-          No hay información del panel del coach para este estudiante.
-        </p>
-        <p className="mt-2 text-sm text-brand-ink-muted">
-          Aún no registramos actividad reciente. ¡Anima al estudiante a retomar sus sesiones!
-        </p>
+function formatMinutesToHours(minutes: number | null | undefined): string {
+  if (minutes == null || !Number.isFinite(minutes)) {
+    return "—";
+  }
+  const hours = minutes / 60;
+  return `${formatNumber(hours, { maximumFractionDigits: 1 })} h`;
+}
+
+function buildHeatmapSeries(points: DailyMinutesPoint[]): DailyMinutesPoint[] {
+  const map = new Map<string, number>();
+  points.forEach((point) => {
+    if (point.date) {
+      map.set(point.date.slice(0, 10), Math.max(0, point.minutes));
+    }
+  });
+
+  const today = new Date();
+  const series: DailyMinutesPoint[] = [];
+  for (let offset = 29; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    const iso = date.toISOString().slice(0, 10);
+    series.push({ date: iso, minutes: map.get(iso) ?? 0 });
+  }
+  return series;
+}
+
+function heatmapColor(minutes: number, maxMinutes: number): string {
+  if (maxMinutes <= 0 || minutes <= 0) {
+    return "rgba(226,232,240,0.65)";
+  }
+  const intensity = Math.min(1, minutes / maxMinutes);
+  const alpha = 0.25 + intensity * 0.6;
+  return `rgba(56,189,248,${alpha.toFixed(2)})`;
+}
+
+function sparklinePoints(values: number[] | undefined): string {
+  if (!values?.length) {
+    return "";
+  }
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+  return values
+    .map((value, index) => {
+      const x = (index / Math.max(1, values.length - 1)) * 100;
+      const y = 100 - ((value - min) / range) * 100;
+      return `${x},${y}`;
+    })
+    .join(" ");
+}
+
+function habitTone(label: string | null | undefined): string {
+  if (!label) return "bg-slate-50 text-slate-600 border-slate-200";
+  const normalized = label.toLowerCase();
+  return HABIT_TONE[normalized as keyof typeof HABIT_TONE] ?? "bg-slate-50 text-slate-600 border-slate-200";
+}
+
+function normalizeQuadrantLabel(label: string | undefined): QuadrantLabel | undefined {
+  if (!label) return undefined;
+  const candidate = label.toUpperCase() as QuadrantLabel;
+  return QUADRANT_KEYS.includes(candidate) ? candidate : undefined;
+}
+
+function quadrantDescription(label: string | undefined): string | null {
+  if (!label) return null;
+  const normalized = normalizeQuadrantLabel(label);
+  if (!normalized) return DEFAULT_QUADRANT_STYLE.description;
+  return QUADRANT_STYLE[normalized].description;
+}
+
+function QuadrantBadge({ quadrantLabel }: { quadrantLabel: string | undefined }) {
+  const normalized = normalizeQuadrantLabel(quadrantLabel);
+  const config = normalized ? QUADRANT_STYLE[normalized] : DEFAULT_QUADRANT_STYLE;
+
+  return (
+    <span
+      className={`inline-flex h-7 items-center rounded-full px-4 text-[13px] font-semibold ${config.badgeClass} ${config.textClass}`}
+    >
+      {config.badgeText}
+    </span>
+  );
+}
+
+function QuadrantMetricChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex w-[110px] flex-col rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-center">
+      <span className="text-base font-semibold text-slate-900">{value}</span>
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</span>
+    </div>
+  );
+}
+
+function QuadrantMatrix({ quadrantLabel }: { quadrantLabel: string | undefined }) {
+  const normalized = normalizeQuadrantLabel(quadrantLabel);
+  const dotPosition = normalized ? QUADRANT_DOT_POSITION[normalized] : { x: 0.5, y: 0.5 };
+  const dotClass = normalized ? QUADRANT_STYLE[normalized].dotClass : DEFAULT_QUADRANT_STYLE.dotClass;
+
+  const dotStyle: CSSProperties = {
+    left: `calc(${dotPosition.x * 100}% - 5px)`,
+    top: `calc(${(1 - dotPosition.y) * 100}% - 5px)`,
+  };
+
+  const cells = [
+    { key: "A", title: "A", subtitle: "Efficient & Active" },
+    { key: "C", title: "C", subtitle: "Inefficient / High Pace" },
+    { key: "B", title: "B", subtitle: "Efficient / Low Pace" },
+    { key: "D", title: "D", subtitle: "Inefficient & Inactive" },
+  ];
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <span className="text-[11px] uppercase tracking-wide text-slate-500">LEI (Efficiency) ↑</span>
+      <div className="relative w-full max-w-xs rounded-2xl border border-slate-200 bg-white px-3 py-3">
+        <div className="grid h-40 w-full grid-cols-2 grid-rows-2 text-xs font-semibold text-slate-600">
+          {cells.map((cell) => (
+            <div key={cell.key} className="flex flex-col items-center justify-center gap-1 text-center">
+              <span className="text-lg font-bold text-slate-700">{cell.title}</span>
+              <span className="text-[10px] font-medium text-slate-400">{cell.subtitle}</span>
+            </div>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute left-1/2 top-0 h-full w-px bg-slate-200" />
+          <div className="absolute left-0 top-1/2 h-px w-full bg-slate-200" />
+        </div>
+        <span className={`pointer-events-none absolute h-2.5 w-2.5 rounded-full ${dotClass}`} style={dotStyle} />
       </div>
-    );
-  }
+      <span className="text-[11px] uppercase tracking-wide text-slate-500">Velocity (Pace) →</span>
+    </div>
+  );
+}
 
-  const { profileHeader, lessonJourney } = data;
+function useCoachPanelReport(studentId: number) {
+  const [report, setReport] = useState<CoachPanelReportResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!Number.isFinite(studentId)) {
+      setReport(null);
+      setLoading(false);
+      setError("ID inválido");
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+
+    fetch(`/api/reports/coach-panel?studentId=${studentId}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("No se pudo cargar el reporte");
+        }
+        return response.json();
+      })
+      .then((payload: CoachPanelReportResponse) => {
+        setReport(payload);
+        setLoading(false);
+      })
+      .catch((fetchError) => {
+        if (fetchError.name === "AbortError") {
+          return;
+        }
+        setReport(null);
+        setLoading(false);
+        setError(fetchError.message ?? "Error desconocido");
+      });
+
+    return () => controller.abort();
+  }, [studentId]);
+
+  return { report, loading, error } as const;
+}
+
+function buildHistogramBuckets(buckets: HourlyMinutesBucket[]): HourlyMinutesBucket[] {
+  return buckets
+    .slice()
+    .sort((a, b) => a.hourLabel.localeCompare(b.hourLabel))
+    .map((bucket) => ({
+      hourLabel: bucket.hourLabel,
+      minutes: Math.max(0, bucket.minutes),
+    }));
+}
+
+function examAlerts(alerts: CoachPanelReportResponse["examPrepGap"]["alerts"]): ReactNode {
+  if (!alerts?.length) return null;
+  return (
+    <ul className="mt-3 space-y-2 text-sm">
+      {alerts.map((alert, index) => (
+        <li
+          key={`${alert.label}-${index}`}
+          className={`rounded-xl px-3 py-2 text-xs font-medium ${
+            alert.severity === "danger"
+              ? "bg-rose-50 text-rose-700"
+              : alert.severity === "warning"
+              ? "bg-amber-50 text-amber-700"
+              : "bg-sky-50 text-sky-700"
+          }`}
+        >
+          {alert.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function CoachPanel({ studentId, data }: CoachPanelProps) {
+  const { report, loading: reportLoading, error: reportError } = useCoachPanelReport(studentId);
+
+  const recentJourney = data?.lessonJourney;
+  const profileHeader = data?.profileHeader;
 
   const journeyLessons = useMemo(() => {
-    const lessons: CoachPanelLessonJourneyEntry[] = [];
-
-    if (Array.isArray(lessonJourney?.lessons)) {
-      lessons.push(...lessonJourney.lessons);
-    } else if (Array.isArray(lessonJourney?.levels)) {
-      lessonJourney.levels.forEach((level) => {
-        if (Array.isArray(level.lessons)) {
-          lessons.push(...level.lessons);
-        }
-      });
+    if (!recentJourney?.lessons?.length) {
+      return [] as CoachPanelLessonJourneyEntry[];
     }
-
-    return lessons
+    return recentJourney.lessons
       .map((lesson) => {
-        const rawGlobalSeq =
-          typeof lesson.lessonGlobalSeq === "number"
-            ? lesson.lessonGlobalSeq
-            : lesson.lessonGlobalSeq == null
-            ? null
-            : Number(lesson.lessonGlobalSeq);
-        if (rawGlobalSeq == null || !Number.isFinite(rawGlobalSeq)) {
-          return null;
-        }
-
-        const normalizedGlobalSeq = Math.trunc(rawGlobalSeq);
-        const rawLevelSeq =
-          lesson.lessonLevelSeq == null
-            ? null
-            : typeof lesson.lessonLevelSeq === "number"
-            ? lesson.lessonLevelSeq
-            : Number(lesson.lessonLevelSeq);
-        const normalizedLevelSeq =
-          rawLevelSeq != null && Number.isFinite(rawLevelSeq)
-            ? Math.trunc(rawLevelSeq)
-            : null;
-
-        const normalizedLevelCode = lesson.levelCode?.trim().toUpperCase() || "OTROS";
-
-        const rawLessonId =
-          lesson.lessonId == null
-            ? null
-            : typeof lesson.lessonId === "number"
-            ? lesson.lessonId
-            : Number(lesson.lessonId);
         const normalizedLessonId =
-          rawLessonId == null || !Number.isFinite(rawLessonId)
-            ? null
-            : Math.trunc(rawLessonId);
-
+          typeof lesson.lessonId === "number" && Number.isFinite(lesson.lessonId)
+            ? Math.trunc(lesson.lessonId)
+            : null;
+        const normalizedLevelSeq =
+          typeof lesson.lessonLevelSeq === "number" && Number.isFinite(lesson.lessonLevelSeq)
+            ? lesson.lessonLevelSeq
+            : null;
+        const normalizedGlobalSeq =
+          typeof lesson.lessonGlobalSeq === "number" && Number.isFinite(lesson.lessonGlobalSeq)
+            ? Math.trunc(lesson.lessonGlobalSeq)
+            : normalizedLessonId ?? normalizedLevelSeq ?? 0;
+        const normalizedLevelCode = lesson.levelCode ?? "OTROS";
         const rawHours =
           typeof lesson.hoursInLesson === "number"
             ? lesson.hoursInLesson
@@ -481,7 +567,6 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           Number.isFinite(rawHours) && rawHours != null
             ? Number(Math.max(0, rawHours).toFixed(1))
             : 0;
-
         const rawDays =
           typeof lesson.daysInLesson === "number"
             ? lesson.daysInLesson
@@ -490,12 +575,10 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
           Number.isFinite(rawDays) && rawDays != null
             ? Math.max(0, Math.trunc(rawDays))
             : 0;
-
         const normalizedStatus: CoachPanelLessonJourneyEntry["status"] =
           lesson.status === "completed" || lesson.status === "current" || lesson.status === "upcoming"
             ? lesson.status
             : "upcoming";
-
         const normalizedTitle =
           typeof lesson.lessonTitle === "string" && lesson.lessonTitle.trim().length
             ? lesson.lessonTitle
@@ -522,7 +605,7 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         } satisfies CoachPanelLessonJourneyEntry;
       })
       .filter((lesson): lesson is CoachPanelLessonJourneyEntry => lesson != null);
-  }, [lessonJourney]);
+  }, [recentJourney]);
 
   const journeyLevels = useMemo(() => {
     if (!journeyLessons.length) {
@@ -580,13 +663,11 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
         }
         if (a.lessons.length && b.lessons.length) {
           const aSeq =
-            typeof a.lessons[0].lessonLevelSeq === "number" &&
-            Number.isFinite(a.lessons[0].lessonLevelSeq)
+            typeof a.lessons[0].lessonLevelSeq === "number" && Number.isFinite(a.lessons[0].lessonLevelSeq)
               ? a.lessons[0].lessonLevelSeq
               : a.lessons[0].lessonGlobalSeq;
           const bSeq =
-            typeof b.lessons[0].lessonLevelSeq === "number" &&
-            Number.isFinite(b.lessons[0].lessonLevelSeq)
+            typeof b.lessons[0].lessonLevelSeq === "number" && Number.isFinite(b.lessons[0].lessonLevelSeq)
               ? b.lessons[0].lessonLevelSeq
               : b.lessons[0].lessonGlobalSeq;
           if (aSeq !== bSeq) {
@@ -598,138 +679,23 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
       });
   }, [journeyLevels]);
 
-  const renderLessonNode = (lesson: CoachPanelLessonJourneyEntry) => {
-    const displayTitle = resolveLessonBubbleTitle(lesson);
-    const tooltipTitle = resolveLessonTooltipTitle(lesson);
-    const hoursLabel = formatHoursValue(lesson.hoursInLesson);
-    const safeDays =
-      typeof lesson.daysInLesson === "number" && Number.isFinite(lesson.daysInLesson)
-        ? Math.max(0, Math.trunc(lesson.daysInLesson))
-        : 0;
-    const tooltipLines = [
-      `Nivel ${lesson.levelCode}`,
-      tooltipTitle,
-      `⏳ ${hoursLabel}h • 📅 ${safeDays}d`,
-    ];
-    const appearance = resolveLessonNodeAppearance(lesson);
-    const nodeSizeValue = `clamp(${LESSON_NODE_MIN_SIZE}px, ${LESSON_NODE_SIZE_VIEWPORT_FACTOR}vw, ${LESSON_NODE_MAX_SIZE}px)`;
-    const baseLabelScale = lesson.isIntro || lesson.isExam ? 0.34 : 0.52;
-    const labelScale =
-      lesson.status === "completed" ? baseLabelScale * 0.92 : baseLabelScale;
-    const labelFontSize = `calc(${nodeSizeValue} * ${labelScale})`;
-    const metricsFontSize = `calc(${nodeSizeValue} * 0.28)`;
-    const circleStyle: CSSProperties = {
-      width: nodeSizeValue,
-      height: nodeSizeValue,
-      backgroundColor: appearance.fillColor,
-      color: appearance.textColor,
-      borderRadius: "9999px",
-      border: appearance.borderWidth
-        ? `${appearance.borderWidth}px solid ${appearance.borderColor ?? appearance.fillColor}`
-        : appearance.borderColor
-        ? `2px solid ${appearance.borderColor}`
-        : "none",
-      boxShadow: appearance.glowShadow,
-      fontSize: labelFontSize,
-      lineHeight: 1,
-      fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
-      letterSpacing: lesson.isIntro || lesson.isExam ? "0.02em" : "0",
-    };
-
-    const metricsStyle: CSSProperties = {
-      color: "#1F2933",
-      lineHeight: 1.1,
-      fontFamily: '"Inter", "Roboto", "Helvetica Neue", sans-serif',
-      backgroundColor: "rgba(255,255,255,0.95)",
-      borderRadius: "9999px",
-      padding: "1px 5px",
-      boxShadow: "0 6px 14px rgba(15,23,42,0.12)",
-      border: "1px solid rgba(148,163,184,0.28)",
-      backdropFilter: "blur(4px)",
-    };
-
-    const shouldShowMetrics = lesson.status === "completed" || lesson.status === "current";
-
-    return (
-      <div className="relative flex flex-col items-center text-center font-sans" title={tooltipLines.join("\n")}>
-        <div className="relative flex items-center justify-center font-bold" style={circleStyle}>
-          <span>{displayTitle}</span>
-          {appearance.showCompletionCheck ? (
-            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#BBF7D0] text-xs font-semibold text-[#166534] shadow-sm">
-              ✓
-            </span>
-          ) : null}
-        </div>
-        {shouldShowMetrics ? (
-          <div
-            className="pointer-events-none -mt-1.5 flex items-center justify-center -space-x-1"
-            style={{ transform: "translateY(-2px)" }}
-          >
-            <div
-              style={{
-                ...metricsStyle,
-                fontSize: metricsFontSize,
-              }}
-            >
-              📅 {`${safeDays}d`}
-            </div>
-            <div
-              style={{
-                ...metricsStyle,
-                fontSize: metricsFontSize,
-              }}
-            >
-              ⏳ {`${hoursLabel}h`}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    );
-  };
-
-  const planLevelMin = lessonJourney?.plannedLevelMin ?? profileHeader.planLevelMin ?? null;
-  const planLevelMax = lessonJourney?.plannedLevelMax ?? profileHeader.planLevelMax ?? null;
+  const planLevelMin = recentJourney?.plannedLevelMin ?? profileHeader?.planLevelMin ?? null;
+  const planLevelMax = recentJourney?.plannedLevelMax ?? profileHeader?.planLevelMax ?? null;
   const planStartLabel = planLevelMin ?? "—";
   const planEndLabel = planLevelMax ?? "—";
-  const planProgressPercent = formatPercent(profileHeader.planProgressPct, 0);
-  const completedLessonsLabel = formatNumber(profileHeader.completedLessonsInPlan);
-  const totalLessonsLabel = formatNumber(profileHeader.totalLessonsInPlan);
+  const planProgressPercent = formatPercent(profileHeader?.planProgressPct, 0);
+  const completedLessonsLabel = formatNumber(profileHeader?.completedLessonsInPlan);
+  const totalLessonsLabel = formatNumber(profileHeader?.totalLessonsInPlan);
 
-
-  const learnerSpeedLabel = data.learnerSpeed.label;
-  const learnerSpeedTone = resolveSpeedTone(learnerSpeedLabel);
-  const learnerSpeedText = translateSpeedLabel(learnerSpeedLabel);
-
-  const rankPosition = data.leiRank.position;
-  const rankCohort = data.leiRank.cohortSize;
-  const rankPercent = data.leiRank.topPercent;
-
-  const rankPieces: string[] = [];
-  if (rankPosition != null) {
-    const base = formatNumber(rankPosition);
-    if (rankCohort != null) {
-      rankPieces.push(`Posición: ${base} de ${formatNumber(rankCohort)}`);
-    } else {
-      rankPieces.push(`Posición: ${base}`);
-    }
-  } else if (rankCohort != null) {
-    rankPieces.push(`Cohorte: ${formatNumber(rankCohort)} estudiantes`);
-  }
-
-  if (rankPercent != null && Number.isFinite(rankPercent)) {
-    const normalizedPercent = formatPercent(rankPercent, 0);
-    rankPieces.push(`Top ${normalizedPercent} del centro`);
-  }
-
-  const rankBadgeText = rankPieces.length ? rankPieces.join(" • ") : "Sin ranking disponible";
-  const rankBadgeTitle =
-    "Calculado usando todos los estudiantes activos (≥120 min/últimos 30 días).";
-
-  const sharedContainerClass = "mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8";
+  const heatmapSeries = useMemo(() => buildHeatmapSeries(report?.consistency.dailyHeatmap ?? []), [report?.consistency.dailyHeatmap]);
+  const heatmapMax = useMemo(() => heatmapSeries.reduce((max, point) => (point.minutes > max ? point.minutes : max), 0), [heatmapSeries]);
+  const consistencyScore = report?.consistency.consistencyScore ?? null;
+  const histogramBuckets = useMemo(() => buildHistogramBuckets(report?.hoursHistogram.byHour ?? []), [report?.hoursHistogram.byHour]);
 
   return (
-    <div className="relative flex flex-col gap-10">
-      <section className={`${sharedContainerClass} space-y-6`}>
+    <div className="space-y-10">
+
+      <section className="mx-auto w-full max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Panel del coach</span>
@@ -767,10 +733,8 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                   ? "flex flex-col gap-4"
                   : "flex flex-col gap-4 border-t border-slate-200/70 pt-4";
 
-              const lessonCount = level.lessons.length;
-
               return (
-                <div key={`journey-level-${level.levelCode}`} className={levelWrapperClasses}>
+                <div key={level.levelCode ?? `level-${levelIndex}`} className={levelWrapperClasses}>
                   <div className="flex flex-col gap-4">
                     <div className="flex items-center gap-3">
                       <h4 className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -778,21 +742,21 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
                       </h4>
                       <div className="h-px flex-1 bg-[#E0E0E0]" />
                     </div>
-                    {lessonCount ? (
+                    {level.lessons.length ? (
                       <div className="flex w-full items-center pb-0.5 md:pb-0">
-        <div className="flex w-full flex-nowrap items-center gap-[1px] md:gap-[2px] lg:gap-[3px]">
-          {level.lessons.map((lesson, lessonIndex) => {
-            const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
-            const isLast = lessonIndex === lessonCount - 1;
-            return (
-              <Fragment key={key}>
-                {renderLessonNode(lesson)}
-                {!isLast ? (
-                  <div className="h-[2px] w-[4px] bg-[#E0E0E0] md:w-[6px] lg:w-[8px]" />
-                ) : null}
-              </Fragment>
-            );
-          })}
+                        <div className="flex w-full flex-nowrap items-center gap-[1px] md:gap-[2px] lg:gap-[3px]">
+                          {level.lessons.map((lesson, lessonIndex) => {
+                            const key = `journey-lesson-${lesson.lessonGlobalSeq}-${lesson.lessonId ?? "na"}`;
+                            const isLast = lessonIndex === level.lessons.length - 1;
+                            return (
+                              <Fragment key={key}>
+                                {renderLessonNode(lesson)}
+                                {!isLast ? (
+                                  <div className="h-[2px] w-[4px] bg-[#E0E0E0] md:w-[6px] lg:w-[8px]" />
+                                ) : null}
+                              </Fragment>
+                            );
+                          })}
                         </div>
                       </div>
                     ) : (
@@ -810,114 +774,227 @@ export function CoachPanel({ data, errorMessage }: CoachPanelProps) {
             </div>
           )}
         </div>
-
       </section>
 
-      <section className={sharedContainerClass}>
+      <section className="mx-auto w-full max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
+        <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] mb-14">
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Actividad 30d</span>
+            <h4 className="text-xl font-bold text-brand-deep">Actividad de estudio reciente</h4>
+            <p className="text-sm text-brand-ink-muted">
+              Revisa los indicadores principales de constancia antes de ahondar en el resto del panel.
+            </p>
+          </div>
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory/80 p-4">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos (30d)</p>
+              <p className="mt-2 text-2xl font-bold text-brand-deep">
+                {formatNumber(report?.studyVolume.diasActivos30d)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory/80 p-4">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales (30d)</p>
+              <p className="mt-2 text-2xl font-bold text-brand-deep">
+                {formatMinutesToHours(report?.studyVolume.minutosTotales30d ?? null)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory/80 p-4">
+              <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio por sesión</p>
+              <p className="mt-2 text-2xl font-bold text-brand-deep">
+                {report?.studyVolume.promedioMinutosPorSesion30d != null
+                  ? `${formatNumber(report.studyVolume.promedioMinutosPorSesion30d)} min`
+                  : "—"}
+              </p>
+            </div>
+          </div>
+          {reportLoading ? (
+            <p className="mt-4 text-sm text-slate-500">Cargando indicadores…</p>
+          ) : null}
+          {reportError ? (
+            <p className="mt-4 text-sm text-rose-600">{reportError}</p>
+          ) : null}
+          {report?.fallback ? (
+            <p className="mt-4 text-xs text-amber-600">Datos en modo seguro: algunas vistas están recalculándose.</p>
+          ) : null}
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Engagement 30 días</span>
-              <h4 className="mt-2 text-xl font-bold text-brand-deep">Tiempo de práctica</h4>
-              <p className="mt-1 text-sm text-brand-ink-muted">
-                Muestra la frecuencia y duración de las sesiones recientes.
-              </p>
+          <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Mapa de color</span>
+              <h4 className="text-xl font-bold text-brand-deep">Minutos por día (30d)</h4>
+              <p className="text-sm text-brand-ink-muted">Intensidad de estudio durante el último mes.</p>
             </div>
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Días activos</p>
-                <p className="mt-2 text-xl font-bold text-brand-deep">
-                  {formatNumber(engagementStats.daysActive30d)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Horas totales</p>
-                <p className="mt-2 text-xl font-bold text-brand-deep">
-                  {formatNumber(
-                    engagementStats.totalHours30d ??
-                      (engagementStats.totalMinutes30d != null
-                        ? engagementStats.totalMinutes30d / 60
-                        : null),
-                    { maximumFractionDigits: 1 },
-                  )}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-4 text-center">
-                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Promedio sesión</p>
-                <p className="mt-2 text-xl font-bold text-brand-deep">
-                  {formatNumber(engagementStats.avgSessionMinutes30d, { maximumFractionDigits: 0 })} min
-                </p>
-              </div>
+            <div className="mt-4 grid grid-cols-10 gap-2">
+              {heatmapSeries.map((cell) => (
+                <div
+                  key={cell.date}
+                  className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
+                  style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMax) }}
+                  title={`${cell.date} · ${cell.minutes} min`}
+                />
+              ))}
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Mapa de calor</p>
-              <div className="mt-3 grid grid-cols-10 gap-2">
-                {heatmapCells.map((cell) => (
-                  <div
-                    key={cell.date}
-                    className="h-8 w-full rounded-xl border border-white/40 shadow-sm"
-                    style={{ backgroundColor: heatmapColor(cell.minutes, heatmapMaxMinutes) }}
-                    title={`${formatHeatmapDate(cell.date)} · ${formatNumber(cell.minutes, { maximumFractionDigits: 0 })} min`}
-                  />
-                ))}
-              </div>
-              <p className="mt-3 text-xs text-brand-ink-muted">
-                Intensidad de minutos estudiados cada día durante los últimos 30 días.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Eficiencia 30 días</span>
-              <h4 className="mt-2 text-xl font-bold text-brand-deep">Eficiencia de aprendizaje</h4>
-              <p className="mt-1 text-sm text-brand-ink-muted">
-                Mide la velocidad (LEI) y el ritmo comparado con el resto del centro.
-              </p>
-            </div>
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory p-5 text-center">
-                <p className="text-xs uppercase tracking-[0.28em] text-brand-ink-muted">Lecciones por hora</p>
-                <p className="mt-2 text-4xl font-black text-brand-deep">
-                  {formatNumber(lei30dPlan, { maximumFractionDigits: 2 })}
-                </p>
-              </div>
-              <div className="h-px w-full bg-brand-ink-muted/10" />
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${learnerSpeedTone}`}
-                  >
-                    Ritmo de aprendizaje: {learnerSpeedText}
-                  </div>
-                  <div
-                    className="inline-flex items-center gap-2 rounded-full border border-brand-ink-muted/20 bg-white/80 px-4 py-1.5 text-sm font-semibold text-brand-deep"
-                    title={rankBadgeTitle}
-                  >
-                    {rankBadgeText}
-                  </div>
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Consistency score</p>
+                  <p className="text-2xl font-bold text-brand-deep">
+                    {consistencyScore != null
+                      ? `${Math.round(consistencyScore)} / 100`
+                      : "—"}
+                  </p>
                 </div>
-                <p className="text-xs text-brand-ink-muted">
-                  Comparado con todos los estudiantes activos del centro en los últimos 30 días.
-                </p>
+                {consistencyScore != null ? (
+                  <span
+                    className={`inline-flex items-center rounded-full px-4 py-1.5 text-sm font-semibold ${
+                      CONSISTENCY_TONE.find((tone) => consistencyScore >= tone.threshold)?.className ??
+                      "bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {consistencyScore >= 80
+                      ? "Muy constante"
+                      : consistencyScore >= 50
+                      ? "Variable"
+                      : "Irregular"}
+                  </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Hábitos</span>
+              <h4 className="text-xl font-bold text-brand-deep">Estabilidad y confiabilidad</h4>
+              <p className="text-sm text-brand-ink-muted">Seguimiento de LEI y patrón de estudio.</p>
+            </div>
+            <div className="mt-4 space-y-4">
+              <div className="rounded-2xl border border-brand-ink-muted/10 bg-brand-ivory/70 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted">Estabilidad de eficiencia</p>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <span className="text-3xl font-black text-brand-deep">
+                    {report?.efficiencyStability.efficiencyStabilityScore != null
+                      ? `${Math.round(report.efficiencyStability.efficiencyStabilityScore)} / 100`
+                      : "—"}
+                  </span>
+                  {report?.efficiencyStability.stabilitySparkline?.length ? (
+                    <svg viewBox="0 0 100 100" className="h-12 w-24 text-sky-500">
+                      <polyline
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        points={sparklinePoints(report.efficiencyStability.stabilitySparkline)}
+                      />
+                    </svg>
+                  ) : (
+                    <span className="text-sm text-slate-500">Sin tendencia</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${habitTone(report?.habitReliability.label ?? null)}`}>
+                  Patrón: {report?.habitReliability.label ?? "No disponible"}
+                </span>
               </div>
             </div>
           </div>
         </div>
-      </section>
 
-      <section className="flex flex-col gap-6 rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-        <div>
-          <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Hábitos</span>
-          <h4 className="mt-2 text-xl font-bold text-brand-deep">Horas de estudio (últimos 30 días)</h4>
-          <p className="mt-1 text-sm text-brand-ink-muted">
-            Indica a qué horas estudia más el estudiante para detectar consistencia y oportunidades.
-          </p>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Horario</span>
+              <h4 className="text-xl font-bold text-brand-deep">Histograma de horas (30d)</h4>
+              <p className="text-sm text-brand-ink-muted">Identifica los momentos preferidos de estudio.</p>
+            </div>
+            <div className="mt-6 grid grid-cols-4 gap-3 text-center text-xs text-slate-500 sm:grid-cols-6">
+              {histogramBuckets.map((bucket) => (
+                <div key={bucket.hourLabel} className="flex flex-col items-center gap-2">
+                  <div className="h-20 w-full rounded-full bg-slate-100">
+                    <div
+                      className="mx-auto h-full w-3 rounded-full bg-brand-teal"
+                      style={{ height: `${Math.min(100, (bucket.minutes / (heatmapMax || 60)) * 100)}%` }}
+                    />
+                  </div>
+                  <span>{bucket.hourLabel}</span>
+                  <span className="text-[10px]">{bucket.minutes} min</span>
+                </div>
+              ))}
+              {!histogramBuckets.length && <p className="col-span-full text-sm text-slate-500">Sin datos de horario.</p>}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Preparación</span>
+              <h4 className="text-xl font-bold text-brand-deep">Brecha antes del examen</h4>
+              <p className="text-sm text-brand-ink-muted">Días dedicados a preparación antes del próximo examen.</p>
+            </div>
+            <p className="mt-4 text-4xl font-black text-brand-deep">
+              {report?.examPrepGap.gapDaysToNextExam != null
+                ? `${report.examPrepGap.gapDaysToNextExam} días`
+                : "Examen no programado"}
+            </p>
+            {examAlerts(report?.examPrepGap.alerts ?? [])}
+          </div>
         </div>
-        <div className="rounded-2xl border border-brand-ink-muted/10 bg-white/80 p-4">
-          <StudyHoursHistogram data={data.studyHistogram.hourly} summary={data.studyHistogram.summary} />
+
+        <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Perfil 30d</span>
+            <h4 className="text-xl font-bold text-brand-deep">LEI vs Velocidad</h4>
+            <p className="text-sm text-brand-ink-muted">Ubicación del estudiante en el cuadrante de rendimiento.</p>
+          </div>
+          {report?.quadrantProfile ? (
+            <div className="mt-8 space-y-8 pb-6">
+              <div className="flex flex-wrap items-center gap-3">
+                <QuadrantBadge quadrantLabel={report.quadrantProfile.quadrantLabel} />
+                <QuadrantMetricChip
+                  label="LEI"
+                  value={
+                    report.quadrantProfile.leiValue != null
+                      ? report.quadrantProfile.leiValue.toFixed(2)
+                      : "—"
+                  }
+                />
+                <QuadrantMetricChip
+                  label="Velocity"
+                  value={
+                    report.quadrantProfile.lessonsPerWeek != null
+                      ? `${report.quadrantProfile.lessonsPerWeek.toFixed(1)}/sem`
+                      : "—"
+                  }
+                />
+              </div>
+              <QuadrantMatrix quadrantLabel={report.quadrantProfile.quadrantLabel} />
+              <dl className="grid gap-6 text-sm text-brand-ink-muted sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/hora</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                    {report.quadrantProfile.lessonsPerHour != null
+                      ? report.quadrantProfile.lessonsPerHour.toFixed(2)
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/semana</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                    {report.quadrantProfile.lessonsPerWeek != null
+                      ? report.quadrantProfile.lessonsPerWeek.toFixed(1)
+                      : "—"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="text-sm text-brand-deep">
+                {report.quadrantProfile.description ??
+                  quadrantDescription(report.quadrantProfile.quadrantLabel) ??
+                  "Perfil sin descripción"}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-500">Perfil de cuadrante no disponible.</p>
+          )}
         </div>
       </section>
-
     </div>
   );
 }

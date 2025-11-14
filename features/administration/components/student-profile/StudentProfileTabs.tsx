@@ -64,7 +64,6 @@ type StudentProfileTabsProps = {
   instructivos: StudentInstructivo[];
   notes: StudentNote[];
   coachSummary: StudentCoachPanelSummary | null;
-  coachError?: string | null;
   attendanceHistory: StudentAttendanceHistoryEntry[];
   attendanceError?: string | null;
   lessonCatalog: LevelLessons[];
@@ -72,7 +71,7 @@ type StudentProfileTabsProps = {
 
 type TabContentConfig = {
   value: (typeof TAB_ORDER)[number];
-  label: string;
+  label: ReactNode;
   content: ReactNode;
 };
 
@@ -84,7 +83,6 @@ export function StudentProfileTabs({
   instructivos,
   notes,
   coachSummary,
-  coachError,
   attendanceHistory,
   attendanceError,
   lessonCatalog,
@@ -134,7 +132,12 @@ export function StudentProfileTabs({
       {
         value: "panel-del-coach",
         label: TAB_LABELS["panel-del-coach"],
-        content: <CoachPanel data={coachSummary} errorMessage={coachError} />,
+        content: (
+          <CoachPanel
+            studentId={studentId}
+            data={coachSummary}
+          />
+        ),
       },
       {
         value: "historial-asistencia",
@@ -195,7 +198,9 @@ export function StudentProfileTabs({
       },
       {
         value: "instructivos",
-        label: TAB_LABELS.instructivos,
+        label: (
+          <span className="inline-flex items-center gap-2">{TAB_LABELS.instructivos}</span>
+        ),
         content: (
           <InstructivosPanel
             studentId={studentId}
@@ -224,7 +229,6 @@ export function StudentProfileTabs({
       instructivoEntries,
       noteEntries,
       basicDetails,
-      coachError,
       coachSummary,
       attendanceError,
       attendanceHistory,
