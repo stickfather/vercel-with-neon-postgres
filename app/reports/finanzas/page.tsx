@@ -1,4 +1,5 @@
 import { FinancePanelClient } from "@/components/reports/finance/FinancePanelClient";
+import Link from "next/link";
 
 export const revalidate = 300;
 export const dynamic = "force-dynamic";
@@ -19,6 +20,12 @@ export default function FinancePage() {
               Análisis financiero integral que incluye deudas pendientes, colecciones y seguimiento de pagos.
             </p>
           </div>
+          <Link
+            href="/admin/reportes"
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+          >
+            ← Volver
+          </Link>
         </header>
         <FinancePanelClient />
       </main>

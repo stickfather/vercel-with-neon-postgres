@@ -1,4 +1,5 @@
 import { LearningPanelClient } from "@/components/reports/learning/LearningPanelClient";
+import Link from "next/link";
 
 export const revalidate = 300;
 
@@ -18,6 +19,12 @@ export default function LearningPage() {
               Análisis integral de eficiencia, velocidad y progreso de aprendizaje. Datos de los últimos 90 días.
             </p>
           </div>
+          <Link
+            href="/admin/reportes"
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+          >
+            ← Volver
+          </Link>
         </header>
         <LearningPanelClient />
       </main>

@@ -5,7 +5,7 @@ export default function EngagementLoading() {
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-2">
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">Informes de gestión</span>
-            <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">Panel de engagement</h1>
+            <h1 className="text-3xl font-black text-slate-900 sm:text-[40px]">Reporte de compromiso</h1>
           </div>
         </header>
 

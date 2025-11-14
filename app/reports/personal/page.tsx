@@ -1,4 +1,5 @@
 import { PersonnelPanelClient } from "@/components/reports/personnel/PersonnelPanelClient";
+import Link from "next/link";
 
 export const revalidate = 300;
 
@@ -18,6 +19,12 @@ export default function PersonnelPage() {
               Análisis integral de cobertura de personal, ratios de carga docente y capacidad operativa en todas las horas.
             </p>
           </div>
+          <Link
+            href="/admin/reportes"
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+          >
+            ← Volver
+          </Link>
         </header>
         <PersonnelPanelClient />
       </main>
