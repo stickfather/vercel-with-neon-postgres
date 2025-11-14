@@ -4,6 +4,7 @@ import { getPersonnelReport } from "src/features/management-reports/data";
 import { hasAccess } from "src/features/management-reports/data/access";
 
 export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 const successHeaders = {
   "Cache-Control": "public, s-maxage=300, stale-while-revalidate=90",
