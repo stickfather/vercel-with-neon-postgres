@@ -1,4 +1,4 @@
-import { LearningPanelClient } from "@/components/reports/learning-90d/LearningPanelClient";
+import { LearningPanelClient } from "@/components/reports/learning/LearningPanelClient";
 
 export const revalidate = 300;
 

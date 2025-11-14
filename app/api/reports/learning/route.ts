@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { getLearningReport } from "@/src/features/reports/learning/data";
+import { buildLearningReport } from "@/src/features/reports/learning/final-report";
 
-export const revalidate = 600; // 10 min
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const data = await getLearningReport();
-  return NextResponse.json(data);
+  const payload = await buildLearningReport();
+  return NextResponse.json(payload);
 }
