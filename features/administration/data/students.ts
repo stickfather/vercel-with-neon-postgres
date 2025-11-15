@@ -229,7 +229,7 @@ async function runStudentManagementQuery(
           scl.lesson_name AS latest_lesson_name,
           scl.seq AS latest_lesson_seq,
           NULL::text AS latest_last_seen_at,
-          scl.level::text AS level,
+          COALESCE(scl.level::text, s.planned_level_max::text, s.planned_level_min::text) AS level,
           scl.level::text AS current_level,
           scl.seq AS current_seq,`
     : sql`
