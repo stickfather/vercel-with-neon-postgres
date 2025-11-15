@@ -217,18 +217,26 @@ async function runStudentManagementQuery(
   studentId?: number,
   limitOne = false,
   includeArchivedColumn = true,
-  includeCoachPanelColumns = true,
+  includeCurrentLessonColumns = true,
 ): Promise<SqlRow[]> {
   const archivedSelection = includeArchivedColumn
     ? sql`COALESCE(s.archived, false) AS archived,`
     : sql`false AS archived,`;
 
-  const coachPanelSelection = includeCoachPanelColumns
+  const currentLessonSelection = includeCurrentLessonColumns
     ? sql`
-          COALESCE(cp.level::text, s.planned_level_max::text, s.planned_level_min::text) AS level,
-          cp.level::text AS current_level,
-          cp.current_seq AS current_seq,`
+          scl.level AS latest_lesson_level,
+          scl.lesson_name AS latest_lesson_name,
+          scl.seq AS latest_lesson_seq,
+          NULL::text AS latest_last_seen_at,
+          scl.level::text AS level,
+          scl.level::text AS current_level,
+          scl.seq AS current_seq,`
     : sql`
+          NULL::text AS latest_lesson_level,
+          NULL::text AS latest_lesson_name,
+          NULL::integer AS latest_lesson_seq,
+          NULL::text AS latest_last_seen_at,
           COALESCE(s.planned_level_max::text, s.planned_level_min::text) AS level,
           NULL::text AS current_level,
           NULL::integer AS current_seq,`;
@@ -239,11 +247,7 @@ async function runStudentManagementQuery(
         SELECT
           s.id AS student_id,
           s.full_name AS full_name,
-          latest.lesson_level AS latest_lesson_level,
-          latest.lesson_name AS latest_lesson_name,
-          latest.lesson_seq AS latest_lesson_seq,
-          latest.last_seen_at::text AS latest_last_seen_at,
-          ${coachPanelSelection}
+          ${currentLessonSelection}
           s.status AS status,
           s.contract_end::text AS contract_end,
           s.graduation_date::text AS graduation_date,
@@ -256,20 +260,7 @@ async function runStudentManagementQuery(
           COALESCE(flags.instructivo_active, false) AS instructivo_active,
           COALESCE(flags.instructivo_overdue, false) AS instructivo_overdue
         FROM public.students AS s
-        ${includeCoachPanelColumns ? sql`LEFT JOIN mart.coach_panel_v AS cp ON cp.student_id = s.id` : sql``}
-        LEFT JOIN LATERAL (
-          SELECT
-            sa.lesson_id,
-            COALESCE(sa.checkout_time, sa.checkin_time) AS last_seen_at,
-            l.level AS lesson_level,
-            l.lesson AS lesson_name,
-            l.seq AS lesson_seq
-          FROM public.student_attendance sa
-          LEFT JOIN public.lessons l ON l.id = sa.lesson_id
-          WHERE sa.student_id = s.id
-          ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
-          LIMIT 1
-        ) AS latest ON TRUE
+        ${includeCurrentLessonColumns ? sql`LEFT JOIN mart.student_current_lesson_v AS scl ON scl.student_id = s.id` : sql``}
         LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
         WHERE TRIM(COALESCE(s.full_name, '')) <> ''
         ${studentId == null ? sql`` : sql`AND s.id = ${studentId}::bigint`}
@@ -289,12 +280,12 @@ async function runStudentManagementQuery(
         studentId,
         limitOne,
         false,
-        includeCoachPanelColumns,
+        includeCurrentLessonColumns,
       );
     }
-    if (includeCoachPanelColumns && (isMissingColumnError(error, "level") || isMissingColumnError(error, "cp.level"))) {
+    if (includeCurrentLessonColumns && (isMissingColumnError(error, "scl") || isMissingColumnError(error, "student_current_lesson_v"))) {
       console.warn(
-        "Las columnas de mart.coach_panel_v no están disponibles. Continuaremos sin esos campos hasta que la base de datos se actualice.",
+        "La vista mart.student_current_lesson_v no está disponible. Continuaremos sin esos campos hasta que la base de datos se actualice.",
         error,
       );
       return runStudentManagementQuery(

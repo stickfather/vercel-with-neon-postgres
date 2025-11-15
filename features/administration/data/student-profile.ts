@@ -1813,11 +1813,11 @@ export async function listStudentLessonJourneyLessons(
       `,
       sql`
         SELECT
-          lc.lesson_id,
-          lc.level,
-          lc.seq,
-          lc.lesson_name
-        FROM mart.lesson_catalog_v lc
+          l.id AS lesson_id,
+          l.level,
+          l.seq,
+          l.lesson AS lesson_name
+        FROM public.lessons l
       `,
       sql`
         SELECT

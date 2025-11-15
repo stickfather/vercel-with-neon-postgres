@@ -331,12 +331,11 @@ export async function getActiveAttendances(): Promise<ActiveAttendance[]> {
       COALESCE(s.full_name, '') AS full_name,
       sa.checkin_time,
       l.lesson,
-      lg.level AS level,
-      lg.seq AS lesson_sequence,
-      lg.lesson_global_seq AS lesson_global_sequence
+      l.level AS level,
+      l.seq AS lesson_sequence,
+      l.seq AS lesson_global_sequence
     FROM public.student_attendance sa
     LEFT JOIN students s ON s.id = sa.student_id
-    LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
     LEFT JOIN public.lessons l ON l.id = sa.lesson_id
     WHERE sa.checkout_time IS NULL
     ORDER BY sa.checkin_time ASC
@@ -400,22 +399,17 @@ export async function validateStudentLessonSelection(
   const [lastLessonResult, selectedLessonResult] = await Promise.all([
     sql`
       SELECT
-        sa.lesson_id,
-        l.lesson,
-        lg.seq,
-        lg.lesson_global_seq
-      FROM public.student_attendance sa
-      LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
-      LEFT JOIN public.lessons l ON l.id = sa.lesson_id
-      WHERE sa.student_id = ${studentId}
-      ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
+        scl.lesson_id,
+        scl.lesson_name,
+        scl.seq
+      FROM mart.student_current_lesson_v scl
+      WHERE scl.student_id = ${studentId}
       LIMIT 1
     `,
     sql`
-      SELECT l.lesson, lg.seq, lg.lesson_global_seq
-      FROM mart.lessons_global_v lg
-      JOIN public.lessons l ON l.id = lg.lesson_id
-      WHERE lg.lesson_id = ${lessonId}
+      SELECT l.lesson, l.seq
+      FROM public.lessons l
+      WHERE l.id = ${lessonId}
       LIMIT 1
     `,
   ]);
@@ -426,12 +420,8 @@ export async function validateStudentLessonSelection(
   const lastLesson = lastLessonRows[0] ?? null;
   const selectedLesson = selectedLessonRows[0] ?? null;
 
-  const lastSequence =
-    toNullableSequence(lastLesson?.seq) ??
-    toNullableSequence(lastLesson?.lesson_global_seq);
-  const selectedSequence =
-    toNullableSequence(selectedLesson?.seq) ??
-    toNullableSequence(selectedLesson?.lesson_global_seq);
+  const lastSequence = toNullableSequence(lastLesson?.seq);
+  const selectedSequence = toNullableSequence(selectedLesson?.seq);
 
   const needsConfirmation =
     lastSequence != null &&
@@ -441,7 +431,7 @@ export async function validateStudentLessonSelection(
 
   return {
     needsConfirmation,
-    lastLessonName: (lastLesson?.lesson as string | null) ?? null,
+    lastLessonName: (lastLesson?.lesson_name as string | null) ?? null,
     lastLessonSequence: lastSequence,
     selectedLessonName: (selectedLesson?.lesson as string | null) ?? null,
     selectedLessonSequence: selectedSequence,
@@ -493,9 +483,9 @@ export async function registerCheckIn({
   }
 
   const lessonRows = normalizeRows<SqlRow>(await sql`
-    SELECT lesson_id, level
-    FROM mart.lessons_global_v
-    WHERE lesson_id = ${lessonId}
+    SELECT id, level
+    FROM public.lessons
+    WHERE id = ${lessonId}
     LIMIT 1
   `);
 
@@ -602,21 +592,16 @@ export async function getStudentLastLesson(
 ): Promise<StudentLastLesson | null> {
   const sql = getSqlClient();
 
+  // Use mart.student_current_lesson_v as the authoritative source for current lesson
   const rows = normalizeRows<SqlRow>(await sql`
     SELECT
-      sa.lesson_id,
-      sa.checkin_time,
-      COALESCE(sa.checkout_time, sa.checkin_time) AS attended_at,
-      l.lesson,
-      lg.level,
-      lg.seq,
-      lg.lesson_global_seq
-    FROM public.student_attendance sa
-    LEFT JOIN mart.lessons_global_v lg ON lg.lesson_id = sa.lesson_id
-    LEFT JOIN public.lessons l ON l.id = sa.lesson_id
-    WHERE sa.student_id = ${studentId}
-      AND sa.lesson_id IS NOT NULL
-    ORDER BY COALESCE(sa.checkout_time, sa.checkin_time) DESC
+      scl.lesson_id,
+      scl.lesson_name,
+      scl.level,
+      scl.seq,
+      NOW() AS attended_at
+    FROM mart.student_current_lesson_v scl
+    WHERE scl.student_id = ${studentId}
     LIMIT 1
   `);
 
@@ -630,7 +615,7 @@ export async function getStudentLastLesson(
     return null;
   }
 
-  const lessonName = ((record.lesson as string | null) ?? "").trim();
+  const lessonName = ((record.lesson_name as string | null) ?? "").trim();
   const level = ((record.level as string | null) ?? "").trim();
 
   if (!lessonName || !level) {
@@ -642,8 +627,7 @@ export async function getStudentLastLesson(
     lessonName,
     level,
     sequence: record.seq == null ? null : Number(record.seq),
-    globalSequence:
-      record.lesson_global_seq == null ? null : Number(record.lesson_global_seq),
-    attendedAt: String(record.attended_at ?? record.checkin_time ?? new Date().toISOString()),
+    globalSequence: record.seq == null ? null : Number(record.seq),
+    attendedAt: String(record.attended_at ?? new Date().toISOString()),
   };
 }
