@@ -28,7 +28,7 @@ export interface Student {
   frozen_end?: string | null;
   planned_level_min?: string | null;
   planned_level_max?: string | null;
-  special_needs?: boolean | null;
+  is_under_management_supervision?: boolean | null;
   is_online?: boolean | null;
   archived?: boolean | null;
   status:
@@ -2337,7 +2337,7 @@ export async function listStudentPlanLessonEffort(
         is_completed_by_position
       FROM mart.student_plan_lesson_effort_v
       WHERE student_id = ${studentId}::bigint
-      ORDER BY level, seq
+      ORDER BY lesson_global_seq
     `,
     "mart.student_plan_lesson_effort_v",
   );
