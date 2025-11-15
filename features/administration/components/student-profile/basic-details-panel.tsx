@@ -16,7 +16,7 @@ const FLAG_VALUE_KEYS: Record<
     StudentBasicDetails,
     | "isNewStudent"
     | "isExamPreparation"
-    | "hasSpecialNeeds"
+    | "isUnderManagementSupervision"
     | "isAbsent7d"
     | "isAbsent7Days"
     | "isSlowProgress14d"
@@ -30,7 +30,7 @@ const FLAG_VALUE_KEYS: Record<
 > = {
   isNewStudent: ["isNewStudent"],
   isExamPreparation: ["isExamPreparation"],
-  hasSpecialNeeds: ["hasSpecialNeeds"],
+  isUnderManagementSupervision: ["isUnderManagementSupervision"],
   isAbsent7d: ["isAbsent7d", "isAbsent7Days"],
   isAbsent7Days: ["isAbsent7Days", "isAbsent7d"],
   isSlowProgress14d: ["isSlowProgress14d", "isSlowProgress14Days"],
@@ -60,7 +60,7 @@ const FLAG_DEFINITIONS: ReadonlyArray<{
     dotClass: "bg-sky-500",
   },
   {
-    key: "hasSpecialNeeds",
+    key: "isUnderManagementSupervision",
     label: "Bajo revisión de gestión",
     className: "bg-violet-100 text-violet-700",
     dotClass: "bg-violet-500",
@@ -119,7 +119,7 @@ type FormState = {
   representativeName: string;
   representativePhone: string;
   representativeEmail: string;
-  hasSpecialNeeds: boolean;
+  isUnderManagementSupervision: boolean;
   isOnline: boolean;
   contractStart: string;
   plannedLevelMin: string;
@@ -219,7 +219,7 @@ function createFormState(details: StudentBasicDetails | null): FormState {
     representativeName: details?.representativeName ?? "",
     representativePhone: details?.representativePhone ?? "",
     representativeEmail: details?.representativeEmail ?? "",
-    hasSpecialNeeds: Boolean(details?.hasSpecialNeeds ?? false),
+    isUnderManagementSupervision: Boolean(details?.isUnderManagementSupervision ?? false),
     isOnline: Boolean(details?.isOnline ?? false),
     contractStart: details?.contractStart ?? "",
     plannedLevelMin: details?.plannedLevelMin ?? "",
@@ -539,7 +539,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
       representativeName: sanitizeText(formState.representativeName),
       representativePhone: sanitizeText(formState.representativePhone),
       representativeEmail: sanitizeText(formState.representativeEmail),
-      hasSpecialNeeds: formState.hasSpecialNeeds,
+      isUnderManagementSupervision: formState.isUnderManagementSupervision,
       isOnline: formState.isOnline,
       contractStart: sanitizeDate(formState.contractStart),
       plannedLevelMin: sanitizeText(formState.plannedLevelMin),
@@ -1054,13 +1054,13 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
           <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
             Bajo revisión de gestión
             <span className="flex items-center justify-between rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm">
-              <span className="text-brand-ink">{formState.hasSpecialNeeds ? "Sí" : "No"}</span>
+              <span className="text-brand-ink">{formState.isUnderManagementSupervision ? "Sí" : "No"}</span>
               <input
                 type="checkbox"
                 className="h-4 w-4 rounded border-brand-deep-soft/40 text-brand-teal focus:ring-brand-teal"
-                checked={formState.hasSpecialNeeds}
+                checked={formState.isUnderManagementSupervision}
                 onChange={(event) =>
-                  setFormState((previous) => ({ ...previous, hasSpecialNeeds: event.target.checked }))
+                  setFormState((previous) => ({ ...previous, isUnderManagementSupervision: event.target.checked }))
                 }
               />
             </span>

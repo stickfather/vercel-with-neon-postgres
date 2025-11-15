@@ -56,7 +56,7 @@ export type StudentBasicDetails = {
   currentLevel: string | null;
   plannedLevelMin: string | null;
   plannedLevelMax: string | null;
-  hasSpecialNeeds: boolean | null;
+  isUnderManagementSupervision: boolean | null;
   isOnline: boolean | null;
   isNewStudent: boolean | null;
   isExamPreparation: boolean | null;
@@ -110,9 +110,9 @@ export const STUDENT_BASIC_DETAIL_FIELDS: ReadonlyArray<StudentBasicDetailFieldC
     editable: true,
   },
   {
-    key: "hasSpecialNeeds",
-    dbColumn: "hasSpecialNeeds",
-    label: "Necesidades especiales",
+    key: "isUnderManagementSupervision",
+    dbColumn: "isUnderManagementSupervision",
+    label: "Bajo supervisión de gerencia",
     type: "boolean",
     editable: true,
   },
@@ -172,7 +172,7 @@ const STUDENT_BASIC_DETAIL_COLUMN_MAP = {
   representativeName: "representative_name",
   representativePhone: "representative_phone",
   representativeEmail: "representative_email",
-  hasSpecialNeeds: "has_special_needs",
+  isUnderManagementSupervision: "is_under_management_supervision",
   contractStart: "contract_start",
   contractEnd: "contract_end",
   frozenStart: "frozen_start",
@@ -190,7 +190,7 @@ type StudentBasicDetailEditableKey = Extract<
   | "representativeName"
   | "representativePhone"
   | "representativeEmail"
-  | "hasSpecialNeeds"
+  | "isUnderManagementSupervision"
   | "isOnline"
   | "contractStart"
   | "plannedLevelMin"
@@ -325,7 +325,7 @@ function mapRowToStudentBasicDetails(row: SqlRow, fallbackId: number): StudentBa
     currentLevel: normalizeFieldValue(row.currentLevel, "text"),
     plannedLevelMin: normalizeFieldValue(row.plannedLevelMin, "text"),
     plannedLevelMax: normalizeFieldValue(row.plannedLevelMax, "text"),
-    hasSpecialNeeds: normalizeFieldValue(row.hasSpecialNeeds, "boolean"),
+    isUnderManagementSupervision: normalizeFieldValue(row.isUnderManagementSupervision ?? row.hasSpecialNeeds, "boolean"),
     isOnline: normalizeFieldValue(row.isOnline, "boolean"),
     isNewStudent: normalizeFieldValue(row.isNewStudent, "boolean"),
     isExamPreparation: normalizeFieldValue(row.isExamPreparation, "boolean"),
@@ -408,7 +408,7 @@ export async function updateStudentBasicDetails(
       s.representative_name                  AS "representativeName",
       s.representative_phone                 AS "representativePhone",
       s.representative_email                 AS "representativeEmail",
-      s.has_special_needs                    AS "hasSpecialNeeds",
+      COALESCE(s.is_under_management_supervision, s.has_special_needs) AS "isUnderManagementSupervision",
       s.contract_start                       AS "contractStart",
       s.contract_end                         AS "contractEnd",
       s.graduation_date                     AS "graduationDate",
@@ -1813,11 +1813,11 @@ export async function listStudentLessonJourneyLessons(
       `,
       sql`
         SELECT
-          lc.lesson_id,
-          lc.level,
-          lc.seq,
-          lc.lesson_name
-        FROM mart.lesson_catalog_v lc
+          l.id AS lesson_id,
+          l.level,
+          l.seq,
+          l.lesson AS lesson_name
+        FROM public.lessons l
       `,
       sql`
         SELECT
@@ -3512,7 +3512,7 @@ async function runBasicDetailsQuery(
       s.representative_name                  AS "representativeName",
       s.representative_phone                 AS "representativePhone",
       s.representative_email                 AS "representativeEmail",
-      s.has_special_needs                    AS "hasSpecialNeeds",
+      COALESCE(s.is_under_management_supervision, s.has_special_needs) AS "isUnderManagementSupervision",
       s.contract_start                       AS "contractStart",
       s.contract_end                         AS "contractEnd",
       s.graduation_date                      AS "graduationDate",
