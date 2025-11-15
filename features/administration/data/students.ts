@@ -15,7 +15,7 @@ export type StudentManagementEntry = {
   graduationDate: string | null;
   isNewStudent: boolean;
   isExamPreparation: boolean;
-  hasSpecialNeeds: boolean;
+  isUnderManagementSupervision: boolean;
   isAbsent7Days: boolean;
   isSlowProgress14Days: boolean;
   hasActiveInstructive: boolean;
@@ -161,9 +161,12 @@ function mapStudentManagementRow(row: SqlRow): StudentManagementEntry | null {
           "preparation",
         ]),
       ) ?? false,
-    hasSpecialNeeds:
+    isUnderManagementSupervision:
       coerceBoolean(
         pick(row, [
+          "is_under_management_supervision",
+          "under_management_supervision",
+          "management_supervision",
           "has_special_needs",
           "special_needs",
           "is_special_needs",
@@ -247,7 +250,7 @@ async function runStudentManagementQuery(
           ${archivedSelection}
           COALESCE(flags.is_new_student, false) AS is_new_student,
           COALESCE(flags.is_exam_preparation, false) AS is_exam_preparation,
-          COALESCE(flags.has_special_needs, false) AS is_special_needs,
+          COALESCE(flags.is_under_management_supervision, COALESCE(flags.has_special_needs, false)) AS is_under_management_supervision,
           COALESCE(flags.is_absent_7d, false) AS is_absent_7d,
           COALESCE(flags.is_slow_progress_14d, false) AS is_slow_progress_14d,
           COALESCE(flags.instructivo_active, false) AS instructivo_active,
