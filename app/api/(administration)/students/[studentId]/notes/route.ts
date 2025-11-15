@@ -27,6 +27,8 @@ export async function POST(request: Request, context: any) {
 
     const body = await request.json().catch(() => null);
     const noteText = body && typeof body === "object" ? (body as Record<string, unknown>).note : null;
+    const noteType = body && typeof body === "object" ? (body as Record<string, unknown>).type : null;
+    const managementAction = body && typeof body === "object" ? (body as Record<string, unknown>).managementAction : null;
 
     if (!noteText || typeof noteText !== "string" || !noteText.trim()) {
       return NextResponse.json(
@@ -37,6 +39,8 @@ export async function POST(request: Request, context: any) {
 
     const note = await createStudentNote(studentId, {
       note: noteText.trim(),
+      type: typeof noteType === "string" ? noteType : null,
+      managementAction: typeof managementAction === "boolean" ? managementAction : false,
     });
 
     revalidatePath(`/administracion/gestion-estudiantes/${studentId}`);

@@ -29,7 +29,7 @@ export type FlagKey =
 const FLAG_COLUMNS: ReadonlyArray<{ key: FlagKey; label: string }> = [
   { key: "isNewStudent", label: "Nuevo" },
   { key: "isExamPreparation", label: "Prep. examen" },
-  { key: "hasSpecialNeeds", label: "Necesidades especiales" },
+  { key: "hasSpecialNeeds", label: "Bajo revisión de gestión" },
   { key: "isAbsent7Days", label: "Ausente 7d" },
   { key: "isSlowProgress14Days", label: "Progreso lento 14d" },
   { key: "hasActiveInstructive", label: "Instructivo activo" },
