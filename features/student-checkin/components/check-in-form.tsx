@@ -718,7 +718,7 @@ export function CheckInForm({
 
       redirectTimeoutRef.current = setTimeout(() => {
         startTransition(() => {
-          router.push("/");
+          router.push("/registro");
         });
       }, 320);
     },

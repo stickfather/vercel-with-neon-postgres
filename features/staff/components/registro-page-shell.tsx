@@ -44,7 +44,7 @@ export function StaffRegistroPageShell({
       clearTimeout(farewellTimeoutRef.current);
     }
     farewellTimeoutRef.current = setTimeout(() => {
-      router.push("/");
+      router.push("/administracion/registro-personal");
     }, 500);
   }, [router]);
 

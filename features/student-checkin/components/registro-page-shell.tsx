@@ -42,7 +42,7 @@ export function StudentRegistroPageShell({
       clearTimeout(farewellTimeoutRef.current);
     }
     farewellTimeoutRef.current = setTimeout(() => {
-      router.push("/");
+      router.push("/registro");
     }, 500);
   }, [router]);
 
