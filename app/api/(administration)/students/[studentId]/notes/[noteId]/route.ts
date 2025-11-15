@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server.js";
 
-import { deleteStudentNote, updateStudentNote } from "@/features/administration/data/student-profile";
+import { deleteStudentNote, updateStudentNote, type StudentNoteType } from "@/features/administration/data/student-profile";
 import {
   readRouteParam,
   resolveRouteParams,
@@ -13,6 +13,21 @@ export const dynamic = "force-dynamic";
 function normalizeId(value: string): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+const VALID_NOTE_TYPES: StudentNoteType[] = [
+  "Académica",
+  "Conducta",
+  "Asistencia",
+  "Finanzas",
+  "Otra",
+];
+
+function normalizeNoteType(value: unknown): StudentNoteType | null {
+  if (typeof value === "string" && VALID_NOTE_TYPES.includes(value as StudentNoteType)) {
+    return value as StudentNoteType;
+  }
+  return null;
 }
 
 export async function PUT(
@@ -41,7 +56,7 @@ export async function PUT(
 
     const updated = await updateStudentNote(noteId, {
       note: noteText.trim(),
-      type: typeof noteType === "string" ? noteType : null,
+      type: normalizeNoteType(noteType),
       managementAction: typeof managementAction === "boolean" ? managementAction : false,
     });
 
