@@ -118,7 +118,7 @@ export function StaffCheckInForm({
 
       redirectTimeoutRef.current = setTimeout(() => {
         startTransition(() => {
-          router.push("/");
+          router.push("/administracion/registro-personal");
         });
       }, 320);
     } catch (error) {
