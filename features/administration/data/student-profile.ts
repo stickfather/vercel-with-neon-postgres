@@ -414,7 +414,7 @@ export async function updateStudentBasicDetails(
       s.graduation_date                     AS "graduationDate",
       s.frozen_start                         AS "frozenStart",
       s.frozen_end                           AS "frozenEnd",
-      s.current_level::text                  AS "currentLevel",
+      NULL::text                             AS "currentLevel",
       s.planned_level_min::text              AS "plannedLevelMin",
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
@@ -1776,7 +1776,6 @@ export async function listStudentLessonJourneyLessons(
   const sql = getSqlClient();
 
   let planRows: SqlRow[] = [];
-  let engagementRows: SqlRow[] = [];
   let catalogRows: SqlRow[] = [];
   let coachPanelRows: SqlRow[] = [];
   let latestLessonRows: SqlRow[] = [];
@@ -1784,8 +1783,7 @@ export async function listStudentLessonJourneyLessons(
 
   try {
     const [
-      planResult,
-      engagementResult,
+      journeyResult,
       catalogResult,
       coachPanelResult,
       latestLessonResult,
@@ -1793,23 +1791,23 @@ export async function listStudentLessonJourneyLessons(
     ] = await Promise.all([
       sql`
         SELECT
-          spls.lesson_id,
-          spls.level,
-          spls.seq,
-          spls.lesson_global_seq,
-          spls.completed
-        FROM mart.student_plan_lessons_with_status_v spls
-        WHERE spls.student_id = ${studentId}::bigint
-        ORDER BY spls.lesson_global_seq
-      `,
-      sql`
-        SELECT
-          sle.lesson_id,
-          sle.start_at,
-          sle.end_at,
-          sle.total_minutes_in_lesson
-        FROM mart.student_lesson_engagement_v sle
-        WHERE sle.student_id = ${studentId}::bigint
+          lesson_id,
+          level,
+          seq,
+          lesson_global_seq,
+          lesson_name,
+          started_on,
+          finished_on,
+          total_hours,
+          calendar_days_between,
+          sessions_count,
+          active_days_for_lesson,
+          is_completed_by_position,
+          is_current_lesson,
+          is_future_lesson
+        FROM mart.student_full_journey_mv
+        WHERE student_id = ${studentId}::bigint
+        ORDER BY lesson_global_seq
       `,
       sql`
         SELECT
@@ -1853,8 +1851,7 @@ export async function listStudentLessonJourneyLessons(
       `,
     ]);
 
-    planRows = normalizeRows<SqlRow>(planResult);
-    engagementRows = normalizeRows<SqlRow>(engagementResult);
+    planRows = normalizeRows<SqlRow>(journeyResult);
     catalogRows = normalizeRows<SqlRow>(catalogResult);
     coachPanelRows = normalizeRows<SqlRow>(coachPanelResult);
     latestLessonRows = normalizeRows<SqlRow>(latestLessonResult);
@@ -1919,7 +1916,16 @@ export async function listStudentLessonJourneyLessons(
     lessonGlobalSeq: number;
     planLevelCode: string | null;
     planLevelSeq: number | null;
+    lessonTitle: string | null;
     completed: boolean;
+    isCurrent: boolean;
+    isFuture: boolean;
+    totalHours: number | null;
+    calendarDays: number | null;
+    sessionsCount: number | null;
+    activeDays: number | null;
+    startedOn: string | null;
+    finishedOn: string | null;
   };
 
   const planEntries: PlanEntry[] = planRows.reduce<PlanEntry[]>((acc, row) => {
@@ -1929,7 +1935,7 @@ export async function listStudentLessonJourneyLessons(
     }
 
     const lessonId = normalizeInteger(payload.lesson_id);
-    const globalSeq = extractNumber(payload, ["lesson_global_seq", "global_seq", "seq"]);
+    const globalSeq = extractNumber(payload, ["lesson_global_seq", "global_seq"]);
     if (lessonId == null || globalSeq == null || !Number.isFinite(globalSeq)) {
       return acc;
     }
@@ -1938,8 +1944,17 @@ export async function listStudentLessonJourneyLessons(
       extractString(payload, ["level", "level_code", "lesson_level"]),
     );
     const planLevelSeq = extractNumber(payload, ["seq", "level_seq", "lesson_level_seq"]);
+    const lessonTitle = extractString(payload, ["lesson_name", "lesson_title", "title"]);
     const completed =
-      extractBoolean(payload, ["completed", "is_completed", "completed_flag"]) ?? false;
+      extractBoolean(payload, ["is_completed_by_position", "completed", "is_completed"]) ?? false;
+    const isCurrent = extractBoolean(payload, ["is_current_lesson"]) ?? false;
+    const isFuture = extractBoolean(payload, ["is_future_lesson"]) ?? false;
+    const totalHours = extractNumber(payload, ["total_hours", "hours"]);
+    const calendarDays = extractNumber(payload, ["calendar_days_between", "calendar_days"]);
+    const sessionsCount = extractNumber(payload, ["sessions_count", "session_count"]);
+    const activeDays = extractNumber(payload, ["active_days_for_lesson", "active_days"]);
+    const startedOn = extractString(payload, ["started_on", "first_started_on"]);
+    const finishedOn = extractString(payload, ["finished_on", "last_finished_on"]);
 
     acc.push({
       lessonId,
@@ -1949,41 +1964,20 @@ export async function listStudentLessonJourneyLessons(
         typeof planLevelSeq === "number" && Number.isFinite(planLevelSeq)
           ? Math.trunc(planLevelSeq)
           : null,
+      lessonTitle: lessonTitle?.trim() || null,
       completed,
+      isCurrent,
+      isFuture,
+      totalHours,
+      calendarDays,
+      sessionsCount,
+      activeDays,
+      startedOn,
+      finishedOn,
     });
 
     return acc;
   }, []);
-
-  const engagementMap = new Map<
-    number,
-    { startAt: unknown; endAt: unknown; minutes: number }
-  >();
-  engagementRows.forEach((row) => {
-    const payload = toJsonRecord(row);
-    if (!payload) {
-      return;
-    }
-
-    const lessonId = normalizeInteger(payload.lesson_id);
-    if (lessonId == null) {
-      return;
-    }
-
-    const minutesValue = extractNumber(payload, [
-      "total_minutes_in_lesson",
-      "minutes",
-      "minutes_spent",
-    ]);
-    const safeMinutes =
-      typeof minutesValue === "number" && Number.isFinite(minutesValue) ? minutesValue : 0;
-
-    engagementMap.set(lessonId, {
-      startAt: payload.start_at,
-      endAt: payload.end_at,
-      minutes: safeMinutes,
-    });
-  });
 
   type CatalogEntry = {
     lessonId: number;
@@ -2128,10 +2122,15 @@ export async function listStudentLessonJourneyLessons(
   }
 
   let currentIndex = -1;
-  if (latestLessonId != null) {
+  // Use is_current_lesson flag from the MV to find the current lesson
+  currentIndex = visiblePlan.findIndex(({ entry }) => entry.isCurrent);
+
+  // Fallback: try to match by latestLessonId from attendance
+  if (currentIndex === -1 && latestLessonId != null) {
     currentIndex = visiblePlan.findIndex(({ entry }) => entry.lessonId === latestLessonId);
   }
 
+  // Fallback: try to match by lesson seq
   if (currentIndex === -1 && latestLessonSeq != null) {
     currentIndex = visiblePlan.findIndex(({ catalog }) => {
       const seqMatches = catalog.seq != null && Number.isFinite(catalog.seq) && catalog.seq === latestLessonSeq;
@@ -2145,20 +2144,19 @@ export async function listStudentLessonJourneyLessons(
     });
   }
 
+  // Fallback: use first not completed
   if (currentIndex === -1) {
     currentIndex = firstNotCompletedIndex;
   }
 
   const lessons = visiblePlan.map(({ entry, catalog }, index) => {
-    const engagement = engagementMap.get(entry.lessonId);
-    const hoursInLesson = computeJourneyHours(engagement?.minutes ?? 0);
-    const daysInLesson = engagement
-      ? computeJourneyDays(engagement.startAt, engagement.endAt)
-      : 0;
+    // Use data from the journey MV directly
+    const hoursInLesson = entry.totalHours ?? 0;
+    const daysInLesson = entry.calendarDays ?? 0;
 
     const normalizedLevel = catalog.levelCode || entry.planLevelCode || "OTROS";
     const normalizedSeq = catalog.seq ?? entry.planLevelSeq;
-    const title = catalog.title ?? null;
+    const title = entry.lessonTitle ?? catalog.title ?? null;
     const normalizedTitle = title?.trim() ?? "";
     const lowerTitle = normalizedTitle.toLowerCase();
 
@@ -2168,7 +2166,15 @@ export async function listStudentLessonJourneyLessons(
     const isIntro = introBySeq || introByTitle;
 
     let status: JourneyLessonStatus;
-    if (currentIndex !== -1) {
+    // Use the flags from the MV as primary source
+    if (entry.isCurrent) {
+      status = "current";
+    } else if (entry.completed) {
+      status = "completed";
+    } else if (entry.isFuture) {
+      status = "upcoming";
+    } else if (currentIndex !== -1) {
+      // Fallback to index-based logic
       if (index < currentIndex) {
         status = "completed";
       } else if (index === currentIndex) {
@@ -2184,7 +2190,7 @@ export async function listStudentLessonJourneyLessons(
       status = "upcoming";
     }
 
-    const isCurrentLesson = index === currentIndex;
+    const isCurrentLesson = status === "current";
     const resolvedTitle = isCurrentLesson && latestLessonTitle?.trim()?.length
       ? latestLessonTitle.trim()
       : normalizedTitle.length
@@ -2932,12 +2938,12 @@ async function resolveLessonIdForCoachPanel(
     const rows = await safeQuery(
       sql`
         SELECT lesson_id
-        FROM mart.student_plan_lessons_with_status_v
+        FROM mart.student_plan_lessons_v
         WHERE student_id = ${studentId}
           AND lesson_global_seq = ${normalizedGlobalSeq}
         LIMIT 1
       `,
-      "mart.student_plan_lessons_with_status_v",
+      "mart.student_plan_lessons_v",
     );
 
     if (rows.length) {
@@ -2953,14 +2959,14 @@ async function resolveLessonIdForCoachPanel(
     const rows = await safeQuery(
       sql`
         SELECT lesson_id
-        FROM mart.student_plan_lessons_with_status_v
+        FROM mart.student_plan_lessons_v
         WHERE student_id = ${studentId}
           AND level = ${normalizedLevel}
           AND seq = ${normalizedSeq}
         ORDER BY lesson_global_seq
         LIMIT 1
       `,
-      "mart.student_plan_lessons_with_status_v",
+      "mart.student_plan_lessons_v",
     );
 
     if (rows.length) {
@@ -3518,7 +3524,7 @@ async function runBasicDetailsQuery(
       s.graduation_date                      AS "graduationDate",
       s.frozen_start                         AS "frozenStart",
       s.frozen_end                           AS "frozenEnd",
-      s.current_level::text                  AS "currentLevel",
+      sjm.level                              AS "currentLevel",
       s.planned_level_min::text              AS "plannedLevelMin",
       s.planned_level_max::text              AS "plannedLevelMax",
       COALESCE(s.is_online, false)           AS "isOnline",
@@ -3536,6 +3542,8 @@ async function runBasicDetailsQuery(
       s.status                               AS "status"
     FROM public.students AS s
     LEFT JOIN ${sql.unsafe(relation)} AS flags ON flags.student_id = s.id
+    LEFT JOIN mart.student_full_journey_mv AS sjm 
+      ON sjm.student_id = s.id AND sjm.is_current_lesson = true
     WHERE s.id = ${studentId}::bigint
     LIMIT 1
   `);
