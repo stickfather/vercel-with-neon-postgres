@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import type { StudentNote } from "@/features/administration/data/student-profile";
+import type { StudentNote, StudentNoteType } from "@/features/administration/data/student-profile";
 
 type Props = {
   studentId: number;
@@ -25,6 +25,14 @@ type ModalProps = {
   onClose: () => void;
   children: ReactNode;
 };
+
+const NOTE_TYPES: StudentNoteType[] = [
+  "Académica",
+  "Conducta",
+  "Asistencia",
+  "Finanzas",
+  "Otra",
+];
 
 function formatDateTime(value: string | null): string {
   if (!value) return "Sin fecha";
@@ -82,6 +90,8 @@ export function NotesPanel({
   const [isPending, startTransition] = useTransition();
   const [activeRequest, setActiveRequest] = useState<ActiveRequest>(null);
   const [draft, setDraft] = useState("");
+  const [draftType, setDraftType] = useState<StudentNoteType | "">("");
+  const [draftManagementAction, setDraftManagementAction] = useState(false);
   const [editingNote, setEditingNote] = useState<StudentNote | null>(null);
 
   const sortedNotes = useMemo(() => {
@@ -96,6 +106,8 @@ export function NotesPanel({
     if (isPending && activeRequest === "edit") return;
     setEditingNote(null);
     setDraft("");
+    setDraftType("");
+    setDraftManagementAction(false);
   };
 
   const handleAddRequest = () => {
@@ -109,6 +121,8 @@ export function NotesPanel({
     setMessage(null);
     setEditingNote(note);
     setDraft(note.note);
+    setDraftType(note.type ?? "");
+    setDraftManagementAction(note.managementAction ?? false);
   };
 
   const handleUpdate = (event: React.FormEvent<HTMLFormElement>) => {
@@ -117,6 +131,11 @@ export function NotesPanel({
 
     if (!draft.trim()) {
       setError("La observación no puede estar vacía.");
+      return;
+    }
+
+    if (!draftType) {
+      setError("Debes seleccionar un tipo de nota.");
       return;
     }
 
@@ -132,7 +151,11 @@ export function NotesPanel({
             {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ note: draft.trim() }),
+              body: JSON.stringify({ 
+                note: draft.trim(),
+                type: draftType,
+                managementAction: draftManagementAction,
+              }),
             },
           );
           const payload = await response.json().catch(() => ({}));
@@ -241,9 +264,16 @@ export function NotesPanel({
               className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/95 px-5 py-4 shadow-inner"
             >
               <header className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-brand-deep">
-                  {formatDateTime(note.createdAt)}
-                </span>
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-semibold text-brand-deep">
+                    {formatDateTime(note.createdAt)}
+                  </span>
+                  {note.type ? (
+                    <span className="inline-flex w-fit items-center rounded-full bg-brand-teal-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-teal">
+                      {note.type}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -263,6 +293,12 @@ export function NotesPanel({
                 </div>
               </header>
               <p className="text-sm leading-relaxed text-brand-ink">{note.note}</p>
+              {note.managementAction ? (
+                <div className="flex items-center gap-2 rounded-full border border-brand-orange/30 bg-brand-orange/10 px-3 py-1.5 text-xs font-semibold text-brand-orange">
+                  <span className="h-2 w-2 rounded-full bg-brand-orange" />
+                  Requiere revisión de gestión
+                </div>
+              ) : null}
             </article>
           ))
         )}
@@ -276,6 +312,22 @@ export function NotesPanel({
         >
           <form className="flex flex-col gap-4" onSubmit={handleUpdate}>
             <label className="flex flex-col gap-2 text-left text-sm font-semibold text-brand-deep">
+              Tipo de nota *
+              <select
+                value={draftType}
+                onChange={(event) => setDraftType(event.target.value as StudentNoteType)}
+                className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+                required
+              >
+                <option value="">Selecciona un tipo</option>
+                {NOTE_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-left text-sm font-semibold text-brand-deep">
               Observación
               <textarea
                 value={draft}
@@ -285,6 +337,25 @@ export function NotesPanel({
                 placeholder="Describe la interacción o el seguimiento"
                 required
               />
+            </label>
+            <label className="flex items-center gap-3 text-left text-sm font-semibold text-brand-deep">
+              <div className="flex flex-col gap-1">
+                <span>Revisión de Gestión</span>
+                <span className="text-xs font-normal text-brand-ink-muted">
+                  Marca si esta nota requiere acción de gestión
+                </span>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-brand-ink-muted">
+                  {draftManagementAction ? "Incompleto" : "Completo"}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={draftManagementAction}
+                  onChange={(event) => setDraftManagementAction(event.target.checked)}
+                  className="h-5 w-5 rounded border-brand-deep-soft/40 text-brand-teal focus:ring-brand-teal"
+                />
+              </div>
             </label>
             <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
               <button

@@ -61,7 +61,7 @@ const FLAG_DEFINITIONS: ReadonlyArray<{
   },
   {
     key: "hasSpecialNeeds",
-    label: "Necesidades especiales",
+    label: "Bajo revisión de gestión",
     className: "bg-violet-100 text-violet-700",
     dotClass: "bg-violet-500",
   },
@@ -1052,7 +1052,7 @@ export function BasicDetailsPanel({ studentId, details }: Props) {
             />
           </label>
           <label className="flex flex-col gap-2 text-sm font-medium text-brand-deep">
-            Necesidades especiales
+            Bajo revisión de gestión
             <span className="flex items-center justify-between rounded-full border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm">
               <span className="text-brand-ink">{formState.hasSpecialNeeds ? "Sí" : "No"}</span>
               <input

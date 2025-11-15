@@ -579,10 +579,14 @@ export async function deletePaymentScheduleEntry(
   return mapPaymentScheduleRow(rows[0], Number(rows[0].student_id ?? 0));
 }
 
+export type StudentNoteType = "Académica" | "Conducta" | "Asistencia" | "Finanzas" | "Otra";
+
 export type StudentNote = {
   id: number;
   studentId: number;
   note: string;
+  type: StudentNoteType | null;
+  managementAction: boolean;
   createdAt: string | null;
 };
 
@@ -591,7 +595,7 @@ export async function listStudentNotes(studentId: number): Promise<StudentNote[]
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    SELECT id, student_id, note, created_at
+    SELECT id, student_id, note, type, management_action, created_at
     FROM public.student_notes
     WHERE student_id = ${studentId}::bigint
     ORDER BY created_at DESC NULLS LAST, id DESC
@@ -601,21 +605,28 @@ export async function listStudentNotes(studentId: number): Promise<StudentNote[]
     id: Number(row.id),
     studentId: Number(row.student_id ?? studentId),
     note: ((row.note as string | null) ?? "").trim(),
+    type: (row.type as StudentNoteType | null) ?? null,
+    managementAction: Boolean(row.management_action ?? false),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
   }));
 }
 
 export async function createStudentNote(
   studentId: number,
-  data: { note: string },
+  data: { note: string; type?: StudentNoteType | null; managementAction?: boolean },
 ): Promise<StudentNote> {
   noStore();
   const sql = getSqlClient();
 
   const rows = normalizeRows<SqlRow>(await sql`
-    INSERT INTO public.student_notes (student_id, note)
-    VALUES (${studentId}::bigint, ${data.note})
-    RETURNING id, student_id, note, created_at
+    INSERT INTO public.student_notes (student_id, note, type, management_action)
+    VALUES (
+      ${studentId}::bigint,
+      ${data.note},
+      ${data.type ?? null},
+      ${data.managementAction ?? false}
+    )
+    RETURNING id, student_id, note, type, management_action, created_at
   `);
 
   if (!rows.length) {
@@ -627,21 +638,26 @@ export async function createStudentNote(
     id: Number(row.id),
     studentId: Number(row.student_id ?? studentId),
     note: ((row.note as string | null) ?? "").trim(),
+    type: (row.type as StudentNoteType | null) ?? null,
+    managementAction: Boolean(row.management_action ?? false),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
   };
 }
 
 export async function updateStudentNote(
   noteId: number,
-  data: { note: string },
+  data: { note: string; type?: StudentNoteType | null; managementAction?: boolean },
 ): Promise<StudentNote> {
   noStore();
   const sql = getSqlClient();
   const rows = normalizeRows<SqlRow>(await sql`
     UPDATE public.student_notes
-    SET note = ${data.note}
+    SET 
+      note = ${data.note},
+      type = ${data.type ?? null},
+      management_action = ${data.managementAction ?? false}
     WHERE id = ${noteId}::bigint
-    RETURNING id, student_id, note, created_at
+    RETURNING id, student_id, note, type, management_action, created_at
   `);
 
   if (!rows.length) {
@@ -653,6 +669,8 @@ export async function updateStudentNote(
     id: Number(row.id),
     studentId: Number(row.student_id ?? 0),
     note: ((row.note as string | null) ?? "").trim(),
+    type: (row.type as StudentNoteType | null) ?? null,
+    managementAction: Boolean(row.management_action ?? false),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
   };
 }
@@ -663,7 +681,7 @@ export async function deleteStudentNote(noteId: number): Promise<StudentNote | n
   const rows = normalizeRows<SqlRow>(await sql`
     DELETE FROM public.student_notes
     WHERE id = ${noteId}::bigint
-    RETURNING id, student_id, note, created_at
+    RETURNING id, student_id, note, type, management_action, created_at
   `);
 
   if (!rows.length) {
@@ -675,6 +693,8 @@ export async function deleteStudentNote(noteId: number): Promise<StudentNote | n
     id: Number(row.id),
     studentId: Number(row.student_id ?? 0),
     note: ((row.note as string | null) ?? "").trim(),
+    type: (row.type as StudentNoteType | null) ?? null,
+    managementAction: Boolean(row.management_action ?? false),
     createdAt: normalizeFieldValue(row.created_at, "datetime"),
   };
 }

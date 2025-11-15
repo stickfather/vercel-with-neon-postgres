@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { FullScreenModal } from "@/components/ui/full-screen-modal";
-import type { StudentNote } from "@/features/administration/data/student-profile";
+import type { StudentNote, StudentNoteType } from "@/features/administration/data/student-profile";
 
 type AddNoteModalProps = {
   open: boolean;
@@ -13,14 +13,26 @@ type AddNoteModalProps = {
   onCreated: (entry: StudentNote) => void;
 };
 
+const NOTE_TYPES: StudentNoteType[] = [
+  "Académica",
+  "Conducta",
+  "Asistencia",
+  "Finanzas",
+  "Otra",
+];
+
 export function AddNoteModal({ open, studentId, onClose, onCreated }: AddNoteModalProps) {
   const router = useRouter();
   const [draft, setDraft] = useState("");
+  const [noteType, setNoteType] = useState<StudentNoteType | "">("");
+  const [managementAction, setManagementAction] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const resetState = () => {
     setDraft("");
+    setNoteType("");
+    setManagementAction(false);
     setError(null);
   };
 
@@ -39,6 +51,11 @@ export function AddNoteModal({ open, studentId, onClose, onCreated }: AddNoteMod
       return;
     }
 
+    if (!noteType) {
+      setError("Debes seleccionar un tipo de nota.");
+      return;
+    }
+
     setError(null);
 
     startTransition(() => {
@@ -47,7 +64,11 @@ export function AddNoteModal({ open, studentId, onClose, onCreated }: AddNoteMod
           const response = await fetch(`/api/students/${studentId}/notes`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ note: draft.trim() }),
+            body: JSON.stringify({ 
+              note: draft.trim(),
+              type: noteType,
+              managementAction,
+            }),
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
@@ -102,6 +123,22 @@ export function AddNoteModal({ open, studentId, onClose, onCreated }: AddNoteMod
           </p>
         ) : null}
         <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
+          Tipo de nota *
+          <select
+            value={noteType}
+            onChange={(event) => setNoteType(event.target.value as StudentNoteType)}
+            className="w-full rounded-2xl border border-brand-deep-soft/40 bg-white px-4 py-2 text-sm text-brand-ink shadow-sm focus:border-brand-teal focus:outline-none"
+            required
+          >
+            <option value="">Selecciona un tipo</option>
+            {NOTE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-left text-sm font-semibold text-brand-deep">
           Observación
           <textarea
             value={draft}
@@ -111,6 +148,25 @@ export function AddNoteModal({ open, studentId, onClose, onCreated }: AddNoteMod
             placeholder="Escribe la observación o seguimiento"
             required
           />
+        </label>
+        <label className="flex items-center gap-3 text-left text-sm font-semibold text-brand-deep">
+          <div className="flex flex-col gap-1">
+            <span>Revisión de Gestión</span>
+            <span className="text-xs font-normal text-brand-ink-muted">
+              Marca si esta nota requiere acción de gestión
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-brand-ink-muted">
+              {managementAction ? "Incompleto" : "Completo"}
+            </span>
+            <input
+              type="checkbox"
+              checked={managementAction}
+              onChange={(event) => setManagementAction(event.target.checked)}
+              className="h-5 w-5 rounded border-brand-deep-soft/40 text-brand-teal focus:ring-brand-teal"
+            />
+          </div>
         </label>
       </form>
     </FullScreenModal>
