@@ -227,6 +227,7 @@ function describeQuadrant(label: string | null): string | undefined {
 
 export async function buildCoachPanelReport(studentId: number): Promise<CoachPanelReportResponse> {
   if (!Number.isFinite(studentId)) {
+    console.warn("[CoachPanel] Invalid studentId:", studentId);
     return EMPTY_RESPONSE;
   }
 
@@ -255,6 +256,15 @@ export async function buildCoachPanelReport(studentId: number): Promise<CoachPan
       LIMIT 1
     `);
     baseRow = rows[0] ?? null;
+    
+    if (!baseRow) {
+      console.warn("[CoachPanel] No data found in final.coach_panel_student_30d_mv for studentId:", studentId);
+    } else {
+      console.log("[CoachPanel] Successfully fetched data for studentId:", studentId, {
+        diasActivos: baseRow.dias_activos_30d,
+        minutosTotales: baseRow.minutos_totales_30d,
+      });
+    }
   } catch (error) {
     if (isMissingRelationError(error, "final.coach_panel_student_30d_mv")) {
       console.warn("[CoachPanel] Vista final.coach_panel_student_30d_mv no disponible", error);
@@ -345,6 +355,17 @@ export async function buildCoachPanelReport(studentId: number): Promise<CoachPan
       LIMIT 1
     `);
     const row = quadrantRows[0];
+    
+    if (!row) {
+      console.warn("[CoachPanel] No quadrant data found for studentId:", studentId);
+    } else {
+      console.log("[CoachPanel] Quadrant data for studentId:", studentId, {
+        quadrant_label: row.quadrant_label,
+        lessons_per_hour_30d: row.lessons_per_hour_30d,
+        lessons_per_week_30d: row.lessons_per_week_30d,
+      });
+    }
+    
     if (row) {
       const quadrantLabel = toString(row.quadrant_label ?? (row as Record<string, unknown>).quadrant) ?? "";
       const leiValue = toNumber(row.lei_value ?? (row as Record<string, unknown>).lei);
@@ -366,6 +387,9 @@ export async function buildCoachPanelReport(studentId: number): Promise<CoachPan
           lessonsPerWeek,
           description: describeQuadrant(quadrantLabel ?? undefined),
         };
+        console.log("[CoachPanel] Created quadrant profile:", quadrantProfile);
+      } else {
+        console.warn("[CoachPanel] All quadrant values are null for studentId:", studentId);
       }
     }
   } catch (error) {
