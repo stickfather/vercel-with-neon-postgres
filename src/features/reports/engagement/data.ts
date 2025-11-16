@@ -150,18 +150,15 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     async () =>
       normalizeRows(
         await sql`
-          WITH latest AS (
-            SELECT MAX(as_of_date) AS as_of_date FROM final.engagement_inactivity_buckets_mv
-          )
           SELECT
             student_id,
-            full_name,
-            phone,
+            student_name,
+            student_status,
+            student_archived,
+            last_visit_day::text AS last_visit_day,
             days_since_last_visit,
-            inactivity_bucket,
-            last_visit_date::text AS last_visit_date
+            inactivity_bucket
           FROM final.engagement_inactivity_buckets_mv
-          WHERE as_of_date = (SELECT as_of_date FROM latest)
         `,
       ),
   );
@@ -172,10 +169,9 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     async () =>
       normalizeRows(
         await sql`
-          SELECT avg_gap_days
+          SELECT
+            AVG(avg_gap_days)::numeric(10, 2) AS avg_gap_days
           FROM final.engagement_visit_gaps_mv
-          ORDER BY as_of_date DESC
-          LIMIT 1
         `,
       ),
   );
@@ -186,7 +182,14 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     async () =>
       normalizeRows(
         await sql`
-          SELECT week_start::text AS week_start, decline_index
+          SELECT
+            week_start::text AS week_start,
+            active_students,
+            total_minutes,
+            prev_active_students,
+            prev_total_minutes,
+            pct_change_active_students,
+            pct_change_total_minutes
           FROM final.engagement_decline_index_mv
           ORDER BY week_start DESC
           LIMIT 8
@@ -214,9 +217,17 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     async () =>
       normalizeRows(
         await sql`
-          SELECT student_id, full_name, phone, enrollment_date::text AS enrollment_date
+          SELECT
+            student_id,
+            student_name,
+            student_status,
+            student_archived,
+            contract_start::text AS contract_start,
+            representative_name,
+            representative_phone,
+            representative_email
           FROM final.engagement_zero_attendance_v
-          ORDER BY enrollment_date NULLS LAST
+          ORDER BY contract_start NULLS LAST
           LIMIT 50
         `,
       ),
@@ -228,10 +239,9 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     async () =>
       normalizeRows(
         await sql`
-          SELECT sessions_per_week, target_sessions_per_week, sparkline, sparkline_points
+          SELECT
+            AVG(sessions_per_week_approx)::numeric(10, 2) AS sessions_per_week_approx
           FROM final.engagement_frequency_score_mv
-          ORDER BY as_of_date DESC
-          LIMIT 1
         `,
       ),
   );
@@ -263,11 +273,11 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
       const bucket = normalizeBucket(row.inactivity_bucket);
       const entry = {
         studentId: toNumber(row.student_id),
-        fullName: toStringValue(row.full_name) || "Sin nombre",
-        phone: row.phone === null || row.phone === undefined ? null : String(row.phone),
+        fullName: toStringValue(row.student_name) || "Sin nombre",
+        phone: null,
         daysSinceLastVisit: toNullableNumber(row.days_since_last_visit),
         inactivityBucket: bucket,
-        lastVisitDate: row.last_visit_date ? String(row.last_visit_date) : null,
+        lastVisitDate: row.last_visit_day ? String(row.last_visit_day) : null,
       };
       switch (bucket) {
         case "inactive_14d":
@@ -297,7 +307,7 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
     .reverse()
     .map((row) => ({
       weekStart: row.week_start ? String(row.week_start) : "",
-      declineIndex: toNullableNumber(row.decline_index),
+      declineIndex: toNullableNumber(row.pct_change_active_students),
     }))
     .filter((point) => point.weekStart.length > 0);
 
@@ -337,18 +347,18 @@ export async function getEngagementReport(): Promise<EngagementReportResponse> {
 
   const zeroAttendance: ZeroAttendanceRow[] = zeroAttendanceRows.map((row) => ({
     studentId: toNumber(row.student_id),
-    fullName: toStringValue(row.full_name) || "Sin nombre",
-    phone: row.phone === null || row.phone === undefined ? null : String(row.phone),
-    enrollmentDate: row.enrollment_date ? String(row.enrollment_date) : null,
+    fullName: toStringValue(row.student_name) || "Sin nombre",
+    phone: row.representative_phone === null || row.representative_phone === undefined ? null : String(row.representative_phone),
+    enrollmentDate: row.contract_start ? String(row.contract_start) : null,
   }));
 
   const frequencyScore: FrequencyScore = (() => {
     if (!frequencyRows.length) return emptyFrequency();
     const row = frequencyRows[0];
     return {
-      sessionsPerWeek: toNullableNumber(row.sessions_per_week),
-      targetSessionsPerWeek: toNullableNumber(row.target_sessions_per_week),
-      sparkline: safeSparkline(row.sparkline ?? row.sparkline_points),
+      sessionsPerWeek: toNullableNumber(row.sessions_per_week_approx),
+      targetSessionsPerWeek: 3.0,
+      sparkline: [],
     };
   })();
 

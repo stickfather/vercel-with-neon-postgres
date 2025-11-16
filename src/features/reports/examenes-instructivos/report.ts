@@ -95,17 +95,22 @@ async function fetchExamsSummary(
     "final.exams_90d_summary_mv",
     async () =>
       normalizeRows<{
-        pass_rate_pct: unknown;
+        exams_count: unknown;
+        passed_count: unknown;
+        failed_count: unknown;
+        first_attempt_count: unknown;
+        first_attempt_pass_count: unknown;
         avg_score: unknown;
-        first_attempt_pass_rate_pct: unknown;
       }>(
         await sql`
           SELECT
-            pass_rate_pct,
-            avg_score,
-            first_attempt_pass_rate_pct
+            SUM(exams_count) AS exams_count,
+            SUM(passed_count) AS passed_count,
+            SUM(failed_count) AS failed_count,
+            SUM(first_attempt_count) AS first_attempt_count,
+            SUM(first_attempt_pass_count) AS first_attempt_pass_count,
+            AVG(avg_score) AS avg_score
           FROM final.exams_90d_summary_mv
-          LIMIT 1
         `,
       ),
     [],
@@ -114,10 +119,24 @@ async function fetchExamsSummary(
 
   const summaryRow = rows[0];
 
+  if (!summaryRow) {
+    return {
+      passRatePct: null,
+      avgScore: null,
+      firstAttemptPassRatePct: null,
+      avgScoreSparkline: [],
+    };
+  }
+
+  const examsCount = toNumber(summaryRow.exams_count) ?? 0;
+  const passedCount = toNumber(summaryRow.passed_count) ?? 0;
+  const firstAttemptCount = toNumber(summaryRow.first_attempt_count) ?? 0;
+  const firstAttemptPassCount = toNumber(summaryRow.first_attempt_pass_count) ?? 0;
+
   return {
-    passRatePct: summaryRow ? toNumber(summaryRow.pass_rate_pct) : null,
-    avgScore: summaryRow ? toNumber(summaryRow.avg_score) : null,
-    firstAttemptPassRatePct: summaryRow ? toNumber(summaryRow.first_attempt_pass_rate_pct) : null,
+    passRatePct: examsCount > 0 ? (passedCount / examsCount) * 100 : null,
+    avgScore: toNumber(summaryRow.avg_score),
+    firstAttemptPassRatePct: firstAttemptCount > 0 ? (firstAttemptPassCount / firstAttemptCount) * 100 : null,
     avgScoreSparkline: [],
   };
 }
@@ -306,9 +325,9 @@ async function fetchScoreDistribution(
   const rows = await loadOrFallback(
     "final.exams_score_distribution_90d_mv",
     async () =>
-      normalizeRows<{ bin_label: unknown; count: unknown }>(
+      normalizeRows<{ score_bucket_start: unknown; exams_count: unknown }>(
         await sql`
-          SELECT bin_label, count
+          SELECT score_bucket_start, exams_count
           FROM final.exams_score_distribution_90d_mv
         `,
       ),
@@ -318,9 +337,9 @@ async function fetchScoreDistribution(
 
   return rows
     .map((row) => ({
-      binLabel: toString(row.bin_label),
-      count: toInteger(row.count) ?? 0,
-      sortKey: parseInt(toString(row.bin_label).split("-")[0] ?? "0", 10),
+      binLabel: toString(row.score_bucket_start),
+      count: toInteger(row.exams_count) ?? 0,
+      sortKey: toInteger(row.score_bucket_start) ?? 0,
     }))
     .sort((a, b) => a.sortKey - b.sortKey)
     .map(({ binLabel, count }) => ({ binLabel, count }));
@@ -338,10 +357,9 @@ async function fetchHeatmap(
         exam_type: unknown;
         avg_score: unknown;
         exams_count: unknown;
-        pass_rate_pct: unknown;
       }>(
         await sql`
-          SELECT level, exam_type, avg_score, exams_count, pass_rate_pct
+          SELECT level, exam_type, avg_score, exams_count
           FROM final.exams_level_type_heatmap_mv
         `,
       ),
@@ -354,7 +372,7 @@ async function fetchHeatmap(
     examType: toString(row.exam_type),
     avgScore: toNumber(row.avg_score),
     examsCount: toInteger(row.exams_count) ?? 0,
-    passRatePct: toNumber(row.pass_rate_pct),
+    passRatePct: null,
   }));
 }
 
@@ -370,9 +388,9 @@ async function fetchRepeatExams(
         student_name: unknown;
         level: unknown;
         exam_type: unknown;
-        retake_count: unknown;
-        days_to_retake_avg: unknown;
-        score_delta: unknown;
+        attempts_90d: unknown;
+        passes_90d: unknown;
+        fails_90d: unknown;
       }>(
         await sql`
           SELECT
@@ -380,9 +398,9 @@ async function fetchRepeatExams(
             student_name,
             level,
             exam_type,
-            retake_count,
-            days_to_retake_avg,
-            score_delta
+            attempts_90d,
+            passes_90d,
+            fails_90d
           FROM final.exams_repeat_summary_90d_mv
         `,
       ),
@@ -395,9 +413,9 @@ async function fetchRepeatExams(
     studentName: toString(row.student_name),
     level: toString(row.level),
     examType: toString(row.exam_type),
-    retakeCount: toInteger(row.retake_count) ?? 0,
-    daysToRetakeAvg: toNumber(row.days_to_retake_avg),
-    scoreDelta: toNumber(row.score_delta),
+    retakeCount: toInteger(row.attempts_90d) ?? 0,
+    daysToRetakeAvg: null,
+    scoreDelta: null,
   }));
 }
 
@@ -411,23 +429,21 @@ async function fetchStudentsNeedingAttention(
       normalizeRows<{
         student_id: unknown;
         student_name: unknown;
-        level: unknown;
-        exam_type: unknown;
-        fails_90d: unknown;
-        pending_instructivos: unknown;
-        overdue_instructivos: unknown;
-        last_exam_date: unknown;
+        student_status: unknown;
+        student_archived: unknown;
+        has_recent_fail: unknown;
+        has_overdue_instructivos: unknown;
+        has_overdue_exams: unknown;
       }>(
         await sql`
           SELECT
             student_id,
             student_name,
-            level,
-            exam_type,
-            fails_90d,
-            pending_instructivos,
-            overdue_instructivos,
-            last_exam_date
+            student_status,
+            student_archived,
+            has_recent_fail,
+            has_overdue_instructivos,
+            has_overdue_exams
           FROM final.exams_students_attention_180d_mv
         `,
       ),
@@ -438,12 +454,12 @@ async function fetchStudentsNeedingAttention(
   return rows.map((row) => ({
     studentId: toInteger(row.student_id),
     studentName: toString(row.student_name),
-    level: row.level === null || row.level === undefined ? null : String(row.level),
-    examType: row.exam_type === null || row.exam_type === undefined ? null : String(row.exam_type),
-    fails90d: toInteger(row.fails_90d) ?? 0,
-    pendingInstructivos: toInteger(row.pending_instructivos) ?? 0,
-    overdueInstructivos: toInteger(row.overdue_instructivos) ?? 0,
-    lastExamDate: toIsoDate(row.last_exam_date),
+    level: null,
+    examType: null,
+    fails90d: row.has_recent_fail ? 1 : 0,
+    pendingInstructivos: 0,
+    overdueInstructivos: row.has_overdue_instructivos ? 1 : 0,
+    lastExamDate: null,
   }));
 }
 

@@ -53,7 +53,8 @@ async function loadOrFallback<T>(
 type LeiTrendRow = {
   week_start: string;
   level: string;
-  avg_lei: number | null;
+  weekly_lei: number | null;
+  total_minutes: number | null;
   total_lessons: number | null;
 };
 
@@ -68,7 +69,8 @@ async function fetchLeiTrend(
         SELECT
           week_start::date AS week_start,
           level::text AS level,
-          avg_lei::numeric AS avg_lei,
+          weekly_lei::numeric AS weekly_lei,
+          total_minutes::numeric AS total_minutes,
           total_lessons::numeric AS total_lessons
         FROM final.learning_lei_trend_weekly_mv
         WHERE week_start >= (CURRENT_DATE - INTERVAL '24 weeks')
@@ -77,7 +79,11 @@ async function fetchLeiTrend(
       return results.map((row) => ({
         week_start: toString(row.week_start),
         level: toString(row.level),
-        avg_lei: row.avg_lei === null || row.avg_lei === undefined ? null : Number(row.avg_lei),
+        weekly_lei: row.weekly_lei === null || row.weekly_lei === undefined ? null : Number(row.weekly_lei),
+        total_minutes:
+          row.total_minutes === null || row.total_minutes === undefined
+            ? null
+            : Number(row.total_minutes),
         total_lessons:
           row.total_lessons === null || row.total_lessons === undefined
             ? null
@@ -99,13 +105,13 @@ async function fetchLeiTrend(
     byLevel[row.level].push({
       level: row.level,
       weekStart: row.week_start,
-      avgLei: row.avg_lei ?? 0,
+      avgLei: row.weekly_lei ?? 0,
       totalLessons: row.total_lessons ?? 0,
     });
 
-    if (row.avg_lei !== null && row.avg_lei !== undefined) {
+    if (row.weekly_lei !== null && row.weekly_lei !== undefined) {
       const entry = overallMap.get(row.week_start) ?? { sum: 0, count: 0 };
-      entry.sum += row.avg_lei;
+      entry.sum += row.weekly_lei;
       entry.count += 1;
       overallMap.set(row.week_start, entry);
     }
@@ -126,7 +132,6 @@ type RawLearnerRow = {
   student_id: number;
   level: string;
   lei_30d: number | null;
-  lessons_this_week: number | null;
   full_name: string | null;
   photo_url: string | null;
 };
@@ -140,7 +145,6 @@ async function fetchTopLearners(sql: SqlClient, fallbackReasons: string[]): Prom
           mv.student_id,
           mv.level::text AS level,
           mv.lei_30d::numeric AS lei_30d,
-          mv.lessons_this_week::numeric AS lessons_this_week,
           s.full_name,
           s.photo_url
         FROM final.learning_lei_student_30d_mv mv
@@ -151,10 +155,6 @@ async function fetchTopLearners(sql: SqlClient, fallbackReasons: string[]): Prom
         student_id: toNumber(row.student_id),
         level: toString(row.level, ""),
         lei_30d: row.lei_30d === null || row.lei_30d === undefined ? null : Number(row.lei_30d),
-        lessons_this_week:
-          row.lessons_this_week === null || row.lessons_this_week === undefined
-            ? null
-            : Number(row.lessons_this_week),
         full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
         photo_url: row.photo_url === null || row.photo_url === undefined ? null : String(row.photo_url),
       }));
@@ -171,7 +171,7 @@ async function fetchTopLearners(sql: SqlClient, fallbackReasons: string[]): Prom
       studentId: row.student_id,
       level: row.level,
       lei30d: row.lei_30d,
-      lessonsThisWeek: row.lessons_this_week ?? 0,
+      lessonsThisWeek: 0,
       fullName: row.full_name ?? "Sin nombre",
       photoUrl: row.photo_url,
     };
@@ -248,7 +248,6 @@ async function fetchBottomLearners(
           mv.student_id,
           mv.level::text AS level,
           mv.lei_30d::numeric AS lei_30d,
-          mv.lessons_this_week::numeric AS lessons_this_week,
           s.full_name,
           s.photo_url
         FROM final.learning_lei_student_30d_mv mv
@@ -259,10 +258,6 @@ async function fetchBottomLearners(
         student_id: toNumber(row.student_id),
         level: toString(row.level, ""),
         lei_30d: row.lei_30d === null || row.lei_30d === undefined ? null : Number(row.lei_30d),
-        lessons_this_week:
-          row.lessons_this_week === null || row.lessons_this_week === undefined
-            ? null
-            : Number(row.lessons_this_week),
         full_name: row.full_name === null || row.full_name === undefined ? null : String(row.full_name),
         photo_url: row.photo_url === null || row.photo_url === undefined ? null : String(row.photo_url),
       }));
@@ -302,7 +297,7 @@ async function fetchBottomLearners(
 type RawDaysInLevelRow = {
   level: string;
   median_days_in_level: number | null;
-  student_count: number | null;
+  students_count: number | null;
   avg_days_in_level: number | null;
 };
 
@@ -315,7 +310,7 @@ async function fetchDaysInLevel(sql: SqlClient, fallbackReasons: string[]): Prom
           level::text AS level,
           median_days_in_level::numeric AS median_days_in_level,
           avg_days_in_level::numeric AS avg_days_in_level,
-          student_count::int AS student_count
+          students_count::int AS students_count
         FROM final.learning_days_in_level_mv
       `);
       return results.map((row) => ({
@@ -328,10 +323,10 @@ async function fetchDaysInLevel(sql: SqlClient, fallbackReasons: string[]): Prom
           row.avg_days_in_level === null || row.avg_days_in_level === undefined
             ? null
             : Number(row.avg_days_in_level),
-        student_count:
-          row.student_count === null || row.student_count === undefined
+        students_count:
+          row.students_count === null || row.students_count === undefined
             ? null
-            : Number(row.student_count),
+            : Number(row.students_count),
       }));
     },
     [],
@@ -342,15 +337,16 @@ async function fetchDaysInLevel(sql: SqlClient, fallbackReasons: string[]): Prom
     level: row.level,
     medianDays: row.median_days_in_level ?? 0,
     avgDays: row.avg_days_in_level ?? 0,
-    studentCount: row.student_count ?? 0,
+    studentCount: row.students_count ?? 0,
   }));
 }
 
 type RawHeatmapRow = {
-  level: string;
+  lesson_level: string;
   lesson_id: number | null;
-  lesson_label: string | null;
-  stuck_count: number | null;
+  lesson_name: string | null;
+  lesson_seq: number | null;
+  stuck_students_count: number | null;
 };
 
 async function fetchStuckHeatmap(sql: SqlClient, fallbackReasons: string[]): Promise<StuckHeatmapCell[]> {
@@ -359,17 +355,19 @@ async function fetchStuckHeatmap(sql: SqlClient, fallbackReasons: string[]): Pro
     async () => {
       const results = normalizeRows<Partial<RawHeatmapRow>>(await sql`
         SELECT
-          level::text AS level,
+          lesson_level::text AS lesson_level,
           lesson_id::int AS lesson_id,
-          lesson_label::text AS lesson_label,
-          stuck_count::int AS stuck_count
+          lesson_name::text AS lesson_name,
+          lesson_seq::int AS lesson_seq,
+          stuck_students_count::int AS stuck_students_count
         FROM final.learning_stuck_lessons_heatmap_mv
       `);
       return results.map((row) => ({
-        level: toString(row.level),
+        lesson_level: toString(row.lesson_level),
         lesson_id: row.lesson_id === null || row.lesson_id === undefined ? null : Number(row.lesson_id),
-        lesson_label: row.lesson_label === null || row.lesson_label === undefined ? null : String(row.lesson_label),
-        stuck_count: row.stuck_count === null || row.stuck_count === undefined ? null : Number(row.stuck_count),
+        lesson_name: row.lesson_name === null || row.lesson_name === undefined ? null : String(row.lesson_name),
+        lesson_seq: row.lesson_seq === null || row.lesson_seq === undefined ? null : Number(row.lesson_seq),
+        stuck_students_count: row.stuck_students_count === null || row.stuck_students_count === undefined ? null : Number(row.stuck_students_count),
       }));
     },
     [],
@@ -378,14 +376,14 @@ async function fetchStuckHeatmap(sql: SqlClient, fallbackReasons: string[]): Pro
 
   return rows
     .filter(
-      (row): row is RawHeatmapRow & { lesson_id: number; lesson_label: string; stuck_count: number } =>
-        row.lesson_id !== null && row.lesson_label !== null && row.stuck_count !== null,
+      (row): row is RawHeatmapRow & { lesson_id: number; lesson_name: string; stuck_students_count: number } =>
+        row.lesson_id !== null && row.lesson_name !== null && row.stuck_students_count !== null,
     )
     .map((row) => ({
-      level: row.level,
+      level: row.lesson_level,
       lessonId: row.lesson_id,
-      lessonLabel: row.lesson_label,
-      stuckCount: row.stuck_count,
+      lessonLabel: row.lesson_name,
+      stuckCount: row.stuck_students_count,
     }));
 }
 
