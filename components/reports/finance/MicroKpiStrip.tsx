@@ -2,34 +2,27 @@
 
 import { formatCurrency } from "@/lib/datetime/format";
 import type {
-  FinancialAgingBuckets,
-  FinancialOutstandingStudents,
-  FinancialOutstandingBalance,
-  FinancialCollections30d,
+  FinancialOutstandingStudent,
+  FinancialRecovery30d,
 } from "@/types/finance";
 
 type Props = {
-  agingBuckets: FinancialAgingBuckets | null;
-  outstandingStudents: FinancialOutstandingStudents | null;
-  outstandingBalance: FinancialOutstandingBalance | null;
-  collections30d: FinancialCollections30d | null;
+  outstandingStudents: FinancialOutstandingStudent[];
+  recovery30d: FinancialRecovery30d | null;
 };
 
 export function MicroKpiStrip({
-  agingBuckets,
   outstandingStudents,
-  outstandingBalance,
-  collections30d,
+  recovery30d,
 }: Props) {
   // Calculate derived metrics
-  const casesOver90 = agingBuckets?.cnt_over_90 ?? 0;
+  const casesOver90 = outstandingStudents.filter(s => s.overdue_90_plus > 0).length;
 
-  const students = outstandingStudents?.outstanding_students ?? 0;
-  const balance = outstandingBalance?.outstanding_balance ?? 0;
+  const students = outstandingStudents.length;
+  const balance = outstandingStudents.reduce((sum, s) => sum + s.outstanding_amount, 0);
   const avgDebtPerStudent = students > 0 ? balance / students : 0;
 
-  const collected30d = collections30d?.total_collected_30d ?? 0;
-  const recoveryRate = balance > 0 ? (collected30d / balance) * 100 : 0;
+  const recoveryRate = recovery30d?.recovered_pct_approx ?? 0;
 
   // Color coding for recovery rate
   const getRecoveryColor = (rate: number) => {

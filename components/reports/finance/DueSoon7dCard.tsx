@@ -1,10 +1,7 @@
 "use client";
 
 import { formatCurrency, formatChartDate, formatFullDate } from "@/lib/datetime/format";
-import type {
-  FinancialDueSoonSummary,
-  FinancialDueSoonSeries,
-} from "@/types/finance";
+import type { FinancialUpcomingDue } from "@/types/finance";
 import {
   BarChart,
   Bar,
@@ -16,24 +13,24 @@ import {
 } from "recharts";
 
 type Props = {
-  summary: FinancialDueSoonSummary | null;
-  series: FinancialDueSoonSeries[];
+  data: FinancialUpcomingDue[];
 };
 
-export function DueSoon7dCard({ summary, series }: Props) {
-  const invoicesDue = summary?.invoices_due_7d ?? 0;
-  const studentsDue = summary?.students_due_7d ?? 0;
-  const amountDue = summary?.amount_due_7d ?? 0;
-  const amountToday = summary?.amount_due_today ?? 0;
-
-  const chartData = series.map((point) => ({
-    date: point.d,
-    amount: point.amount,
-    invoices: point.invoices,
-  }));
-
-  // Mark today's bar
+export function DueSoon7dCard({ data }: Props) {
+  // Calculate summary from the series
+  const invoicesDue = data.reduce((sum, d) => sum + d.invoices_count, 0);
+  const amountDue = data.reduce((sum, d) => sum + d.due_amount, 0);
+  
+  // Find today's amount
   const today = new Date().toISOString().split("T")[0];
+  const todayData = data.find(d => d.due_day === today);
+  const amountToday = todayData?.due_amount ?? 0;
+
+  const chartData = data.map((point) => ({
+    date: point.due_day,
+    amount: point.due_amount,
+    invoices: point.invoices_count,
+  }));
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
@@ -42,17 +39,11 @@ export function DueSoon7dCard({ summary, series }: Props) {
       </h2>
 
       {/* Mini-KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
           <span className="text-xs font-medium text-slate-500">Facturas (7d)</span>
           <span className="text-2xl font-bold text-slate-900">
             {invoicesDue}
-          </span>
-        </div>
-        <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">
-          <span className="text-xs font-medium text-slate-500">Estudiantes (7d)</span>
-          <span className="text-2xl font-bold text-slate-900">
-            {studentsDue}
           </span>
         </div>
         <div className="flex flex-col gap-1 rounded-lg bg-slate-50 p-3">

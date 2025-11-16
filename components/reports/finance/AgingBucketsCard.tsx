@@ -1,46 +1,70 @@
 "use client";
 
 import { formatCurrency } from "@/lib/datetime/format";
-import type { FinancialAgingBuckets } from "@/types/finance";
+import type { FinancialOutstandingStudent } from "@/types/finance";
 
 type Props = {
-  data: FinancialAgingBuckets | null;
+  data: FinancialOutstandingStudent[];
 };
 
 export function AgingBucketsCard({ data }: Props) {
-  if (!data) {
+  if (!data || data.length === 0) {
     return null;
   }
+
+  // Aggregate overdue amounts from all students
+  const totals = data.reduce(
+    (acc, student) => ({
+      amt_0_30: acc.amt_0_30 + student.overdue_0_30,
+      amt_31_60: acc.amt_31_60 + student.overdue_31_60,
+      amt_61_90: acc.amt_61_90 + student.overdue_61_90,
+      amt_over_90: acc.amt_over_90 + student.overdue_90_plus,
+      cnt_0_30: acc.cnt_0_30 + (student.overdue_0_30 > 0 ? 1 : 0),
+      cnt_31_60: acc.cnt_31_60 + (student.overdue_31_60 > 0 ? 1 : 0),
+      cnt_61_90: acc.cnt_61_90 + (student.overdue_61_90 > 0 ? 1 : 0),
+      cnt_over_90: acc.cnt_over_90 + (student.overdue_90_plus > 0 ? 1 : 0),
+    }),
+    {
+      amt_0_30: 0,
+      amt_31_60: 0,
+      amt_61_90: 0,
+      amt_over_90: 0,
+      cnt_0_30: 0,
+      cnt_31_60: 0,
+      cnt_61_90: 0,
+      cnt_over_90: 0,
+    }
+  );
 
   const buckets = [
     {
       label: "0–30",
-      amount: data.amt_0_30,
-      count: data.cnt_0_30,
+      amount: totals.amt_0_30,
+      count: totals.cnt_0_30,
       color: "bg-slate-400",
     },
     {
       label: "31–60",
-      amount: data.amt_31_60,
-      count: data.cnt_31_60,
+      amount: totals.amt_31_60,
+      count: totals.cnt_31_60,
       color: "bg-amber-500",
     },
     {
       label: "61–90",
-      amount: data.amt_61_90,
-      count: data.cnt_61_90,
+      amount: totals.amt_61_90,
+      count: totals.cnt_61_90,
       color: "bg-orange-600",
     },
     {
       label: ">90",
-      amount: data.amt_over_90,
-      count: data.cnt_over_90,
+      amount: totals.amt_over_90,
+      count: totals.cnt_over_90,
       color: "bg-rose-600",
     },
   ];
 
   const totalAmount =
-    data.amt_0_30 + data.amt_31_60 + data.amt_61_90 + data.amt_over_90;
+    totals.amt_0_30 + totals.amt_31_60 + totals.amt_61_90 + totals.amt_over_90;
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">

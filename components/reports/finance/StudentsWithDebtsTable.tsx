@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatCurrency, formatFullDate } from "@/lib/datetime/format";
+import { formatCurrency } from "@/lib/datetime/format";
 import type { FinancialStudentWithDebt } from "@/types/finance";
 
 type Props = {
@@ -14,7 +14,7 @@ const ROWS_PER_PAGE = 25;
 export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState<keyof FinancialStudentWithDebt>(
-    "total_overdue_amount",
+    "overdue_amount",
   );
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
@@ -29,6 +29,9 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
     }
     if (typeof aVal === "string" && typeof bVal === "string") {
       return aVal.localeCompare(bVal) * direction;
+    }
+    if (typeof aVal === "boolean" && typeof bVal === "boolean") {
+      return (aVal === bVal ? 0 : aVal ? 1 : -1) * direction;
     }
     return 0;
   });
@@ -49,7 +52,7 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
   };
 
   const handleRowClick = (student: FinancialStudentWithDebt) => {
-    onRowClick(student.student_id, student.full_name);
+    onRowClick(student.student_id, student.student_name);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, student: FinancialStudentWithDebt) => {
@@ -71,39 +74,45 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
             <tr className="border-b border-slate-200">
               <th
                 className="cursor-pointer px-3 py-3 text-left font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => handleSort("full_name")}
+                onClick={() => handleSort("student_name")}
               >
-                Estudiante {sortField === "full_name" && (sortDirection === "asc" ? "↑" : "↓")}
+                Estudiante {sortField === "student_name" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => handleSort("total_overdue_amount")}
+                onClick={() => handleSort("outstanding_amount")}
               >
-                Monto Vencido {sortField === "total_overdue_amount" && (sortDirection === "asc" ? "↑" : "↓")}
+                Monto Pendiente {sortField === "outstanding_amount" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => handleSort("max_days_overdue")}
+                onClick={() => handleSort("overdue_amount")}
               >
-                Días Máx. {sortField === "max_days_overdue" && (sortDirection === "asc" ? "↑" : "↓")}
-              </th>
-              <th
-                className="cursor-pointer px-3 py-3 text-left font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => handleSort("oldest_due_date")}
-              >
-                Primera Deuda {sortField === "oldest_due_date" && (sortDirection === "asc" ? "↑" : "↓")}
-              </th>
-              <th
-                className="cursor-pointer px-3 py-3 text-left font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => handleSort("most_recent_missed_due_date")}
-              >
-                Última Pendiente {sortField === "most_recent_missed_due_date" && (sortDirection === "asc" ? "↑" : "↓")}
+                Monto Vencido {sortField === "overdue_amount" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
               <th
                 className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => handleSort("open_invoices")}
+                onClick={() => handleSort("overdue_0_30")}
               >
-                Facturas {sortField === "open_invoices" && (sortDirection === "asc" ? "↑" : "↓")}
+                0-30d {sortField === "overdue_0_30" && (sortDirection === "asc" ? "↑" : "↓")}
+              </th>
+              <th
+                className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => handleSort("overdue_31_60")}
+              >
+                31-60d {sortField === "overdue_31_60" && (sortDirection === "asc" ? "↑" : "↓")}
+              </th>
+              <th
+                className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => handleSort("overdue_61_90")}
+              >
+                61-90d {sortField === "overdue_61_90" && (sortDirection === "asc" ? "↑" : "↓")}
+              </th>
+              <th
+                className="cursor-pointer px-3 py-3 text-right font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => handleSort("overdue_90_plus")}
+              >
+                90+d {sortField === "overdue_90_plus" && (sortDirection === "asc" ? "↑" : "↓")}
               </th>
             </tr>
           </thead>
@@ -117,22 +126,25 @@ export function StudentsWithDebtsTable({ data, onRowClick }: Props) {
                 tabIndex={0}
               >
                 <td className="px-3 py-3 font-medium text-slate-900">
-                  {student.full_name}
+                  {student.student_name}
                 </td>
                 <td className="px-3 py-3 text-right font-semibold text-slate-900">
-                  {formatCurrency(student.total_overdue_amount)}
+                  {formatCurrency(student.outstanding_amount)}
+                </td>
+                <td className="px-3 py-3 text-right font-semibold text-rose-600">
+                  {formatCurrency(student.overdue_amount)}
                 </td>
                 <td className="px-3 py-3 text-right text-slate-700">
-                  {student.max_days_overdue}
-                </td>
-                <td className="px-3 py-3 text-slate-700">
-                  {formatFullDate(student.oldest_due_date)}
-                </td>
-                <td className="px-3 py-3 text-slate-700">
-                  {formatFullDate(student.most_recent_missed_due_date)}
+                  {formatCurrency(student.overdue_0_30)}
                 </td>
                 <td className="px-3 py-3 text-right text-slate-700">
-                  {student.open_invoices}
+                  {formatCurrency(student.overdue_31_60)}
+                </td>
+                <td className="px-3 py-3 text-right text-slate-700">
+                  {formatCurrency(student.overdue_61_90)}
+                </td>
+                <td className="px-3 py-3 text-right text-rose-600">
+                  {formatCurrency(student.overdue_90_plus)}
                 </td>
               </tr>
             ))}

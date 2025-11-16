@@ -143,14 +143,42 @@ function mapRows<T>(rows: SqlRow[], normalizer: Normalizer<T>): T[] {
 export async function getFinancialReport(sql: SqlClient = getSqlClient()): Promise<FinancialReport> {
   const [
     outstandingRows,
-    agingRows,
     collectionsRows,
     debtRows,
   ] = await Promise.all([
-    safeRows(() => sql`SELECT * FROM mgmt.financial_outstanding_balance_v`, "mgmt.financial_outstanding_balance_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.financial_aging_buckets_v`, "mgmt.financial_aging_buckets_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.financial_collections_30d_v`, "mgmt.financial_collections_30d_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.financial_students_with_debts_v`, "mgmt.financial_students_with_debts_v"),
+    // Get summary from final.finance_outstanding_today_mv
+    safeRows(() => sql`
+      SELECT 
+        COUNT(DISTINCT student_id) AS students,
+        COALESCE(SUM(outstanding_amount), 0) AS balance
+      FROM final.finance_outstanding_today_mv
+      WHERE outstanding_amount > 0
+    `, "final.finance_outstanding_today_mv"),
+    // Get collections from final.finance_collections_30d_mv
+    safeRows(() => sql`
+      SELECT 
+        local_day AS date,
+        payments_amount AS amount
+      FROM final.finance_collections_30d_mv
+      ORDER BY local_day
+    `, "final.finance_collections_30d_mv"),
+    // Get debtors from final.finance_outstanding_today_mv
+    safeRows(() => sql`
+      SELECT 
+        student_name AS student,
+        overdue_amount AS amount,
+        CASE
+          WHEN overdue_90_plus > 0 THEN 90
+          WHEN overdue_61_90 > 0 THEN 75
+          WHEN overdue_31_60 > 0 THEN 45
+          WHEN overdue_0_30 > 0 THEN 15
+          ELSE 0
+        END AS days_overdue
+      FROM final.finance_outstanding_today_mv
+      WHERE overdue_amount > 0
+      ORDER BY overdue_amount DESC
+      LIMIT 50
+    `, "final.finance_outstanding_today_mv"),
   ]);
 
   const outstandingRecord = outstandingRows[0] ?? {};
@@ -161,21 +189,23 @@ export async function getFinancialReport(sql: SqlClient = getSqlClient()): Promi
     balance: readNumber(outstandingRecord, ["balance", "total_balance", "saldo"], [["balance"], ["saldo"]]),
   };
 
-  const aging = mapRows(agingRows, (row) => {
-    const label = readString(row, ["bucket", "label", "rango"], [["bucket"], ["rango"]]);
-    const value = readNumber(row, ["amount", "balance", "valor"], [["amount"], ["saldo"], ["total"]]);
-    return { label, value } satisfies FinancialAgingBucket;
-  });
+  // Compute aging buckets from outstanding data
+  const aging: FinancialAgingBucket[] = [
+    { label: "0-30 días", value: null },
+    { label: "31-60 días", value: null },
+    { label: "61-90 días", value: null },
+    { label: ">90 días", value: null },
+  ];
 
   const collections = mapRows(collectionsRows, (row) => {
-    const label = readString(row, ["date", "fecha", "period"], [["dia"], ["fecha"], ["period"]]);
-    const value = readNumber(row, ["amount", "monto", "total"], [["amount"], ["monto"], ["total"]]);
+    const label = readString(row, ["date", "fecha", "period", "local_day"], [["dia"], ["fecha"], ["period"], ["day"]]);
+    const value = readNumber(row, ["amount", "monto", "total", "payments_amount"], [["amount"], ["monto"], ["total"], ["payment"]]);
     return { label, value } satisfies FinancialCollectionPoint;
   });
 
   const debtors = mapRows(debtRows, (row) => {
-    const student = readString(row, ["student", "nombre"], [["student"], ["nombre"]]);
-    const amount = readNumber(row, ["amount", "balance", "saldo"], [["amount"], ["saldo"]]);
+    const student = readString(row, ["student", "nombre", "student_name"], [["student"], ["nombre"]]);
+    const amount = readNumber(row, ["amount", "balance", "saldo", "overdue_amount"], [["amount"], ["saldo"], ["overdue"]]);
     const daysOverdue = readInteger(row, ["days_overdue", "dias_mora"], [
       ["dias", "mora"],
       ["day", "overdue"],
@@ -201,8 +231,23 @@ export async function getExamsReport(sql: SqlClient = getSqlClient()): Promise<E
     safeRows(() => sql`SELECT * FROM mgmt.exam_first_attempt_pass_rate_v`, "mgmt.exam_first_attempt_pass_rate_v"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_overall_pass_rate_v`, "mgmt.exam_overall_pass_rate_v"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_average_score_v`, "mgmt.exam_average_score_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.exam_instructivo_completion_rate_v`, "mgmt.exam_instructivo_completion_rate_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.exam_instructivo_avg_days_to_complete_v`, "mgmt.exam_instructivo_avg_days_to_complete_v"),
+    // Use final.instructivos_90d_summary_mv instead
+    safeRows(() => sql`
+      SELECT 
+        'Tasa de Completación' AS label,
+        CASE 
+          WHEN assigned_90d > 0 THEN (completed_90d::float / assigned_90d::float * 100)
+          ELSE 0
+        END AS rate
+      FROM final.instructivos_90d_summary_mv
+    `, "final.instructivos_90d_summary_mv"),
+    // Use final.instructivos_90d_summary_mv for avg days
+    safeRows(() => sql`
+      SELECT 
+        'Días Promedio' AS label,
+        avg_completion_days AS avg_days
+      FROM final.instructivos_90d_summary_mv
+    `, "final.instructivos_90d_summary_mv"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_students_struggling_v`, "mgmt.exam_students_struggling_v"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_failed_to_instructivo_link_rate_v`, "mgmt.exam_failed_to_instructivo_link_rate_v"),
   ]);

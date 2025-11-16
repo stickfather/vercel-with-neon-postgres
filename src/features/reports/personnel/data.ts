@@ -46,43 +46,6 @@ function toStringValue(value: unknown): string {
   return "";
 }
 
-function findKey(row: SqlRow, candidates: string[], includes: string[][] = []): string | null {
-  const keys = Object.keys(row);
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const exact = keys.find((key) => key === candidate);
-    if (exact) return exact;
-    const insensitive = keys.find((key) => key.toLowerCase() === candidate.toLowerCase());
-    if (insensitive) return insensitive;
-  }
-  for (const parts of includes) {
-    const match = keys.find((key) => {
-      const lower = key.toLowerCase();
-      return parts.every((part) => lower.includes(part));
-    });
-    if (match) return match;
-  }
-  return null;
-}
-
-function readNumber(row: SqlRow, candidates: string[], includes: string[][] = []): number | null {
-  const key = findKey(row, candidates, includes);
-  if (!key) return null;
-  return toNumber(row[key]);
-}
-
-function readString(
-  row: SqlRow,
-  candidates: string[],
-  includes: string[][] = [],
-  fallback = "",
-): string {
-  const key = findKey(row, candidates, includes);
-  if (!key) return fallback;
-  const value = toStringValue(row[key]);
-  return value.length ? value : fallback;
-}
-
 function buildHourLabel(hour: number | null): string {
   if (hour === null || Number.isNaN(hour)) return "—";
   const clamped = Math.max(0, Math.min(23, Math.round(hour)));
@@ -90,48 +53,19 @@ function buildHourLabel(hour: number | null): string {
 }
 
 function normalizeHourRow(row: SqlRow): StaffingMixHourRow {
-  const hour = readNumber(row, ["hour_of_day", "hour", "hora"], [["hour"], ["hora"], ["block"]]);
-  const hourLabel = readString(
-    row,
-    ["hour_label", "label", "hora"],
-    [["hour"], ["bloque"], ["slot"]],
-    buildHourLabel(hour),
-  );
+  // Using exact columns from final.personnel_staffing_mix_hour_mv
+  const hour = toNumber(row.local_hour);
+  const hourLabel = buildHourLabel(hour);
 
-  const studentMinutes = readNumber(
-    row,
-    ["student_minutes", "minutos_estudiantes", "student_min"],
-    [["student"], ["estudiante"], ["minutos"]],
-  ) ?? 0;
-  const staffMinutes = readNumber(
-    row,
-    ["staff_minutes", "minutos_personal", "teacher_minutes"],
-    [["staff"], ["teacher"], ["personal"], ["minutos"]],
-  ) ?? 0;
-  const ratio = readNumber(
-    row,
-    [
-      "student_to_staff_minute_ratio",
-      "ratio_estudiantes_personal",
-      "carga_relativa",
-      "student_staff_ratio",
-    ],
-    [["ratio"], ["carga"], ["estudiante", "personal"]],
-  );
-  const studentCount = readNumber(
-    row,
-    ["student_count", "students", "studentas"],
-    [["students"], ["alumnos"], ["estudiantes"]],
-  );
-  const staffCount = readNumber(
-    row,
-    ["staff_count", "teachers", "docentes"],
-    [["staff"], ["docente"], ["profesor"]],
-  );
+  const studentMinutes = toNumber(row.student_minutes) ?? 0;
+  const staffMinutes = toNumber(row.staff_minutes) ?? 0;
+  const ratio = toNumber(row.student_to_staff_minute_ratio);
+  const studentCount = toNumber(row.students_count);
+  const staffCount = toNumber(row.staff_count);
 
   return {
     hourOfDay: typeof hour === "number" ? hour : null,
-    hourLabel: hourLabel || buildHourLabel(hour),
+    hourLabel,
     studentMinutes,
     staffMinutes,
     studentToStaffMinuteRatio: ratio,
@@ -140,83 +74,13 @@ function normalizeHourRow(row: SqlRow): StaffingMixHourRow {
   };
 }
 
-function normalizeTeacherLoad(row: SqlRow): StudentLoadPerTeacherRow {
-  const teacherId =
-    readString(
-      row,
-      ["teacher_id", "staff_id", "id", "docente_id", "profesor_id"],
-      [["teacher"], ["docent"], ["profesor"], ["staff"]],
-    ) || "unknown";
-  const teacherName =
-    readString(
-      row,
-      [
-        "teacher_name",
-        "nombre_docente",
-        "docente_nombre",
-        "staff_name",
-        "nombre_profesor",
-        "profesor_nombre",
-        "full_name",
-        "teacher_full_name",
-        "name",
-      ],
-      [["docent"], ["profesor"], ["teacher"], ["nombre"], ["staff"], ["name"]],
-    ) || "Profesor sin nombre";
-  const avgStudentsPerHour = readNumber(
-    row,
-    ["avg_students_per_hour", "students_per_hour", "estudiantes_por_hora"],
-    [["promedio"], ["hora"]],
-  );
-  const avgStudentsPerDay = readNumber(
-    row,
-    ["avg_students_per_day", "students_per_day", "estudiantes_por_dia"],
-    [["dia"], ["day"]],
-  );
-
-  return {
-    teacherId,
-    teacherName,
-    avgStudentsPerHour,
-    avgStudentsPerDay,
-  };
-}
-
 function normalizeUtilization(row: SqlRow): TeacherUtilizationRow {
-  const teacherId =
-    readString(
-      row,
-      ["teacher_id", "staff_id", "id", "docente_id", "profesor_id"],
-      [["teacher"], ["docent"], ["profesor"], ["staff"]],
-    ) || "unknown";
-  const teacherName =
-    readString(
-      row,
-      [
-        "teacher_name",
-        "nombre_docente",
-        "docente_nombre",
-        "staff_name",
-        "nombre_profesor",
-        "profesor_nombre",
-        "full_name",
-        "teacher_full_name",
-        "name",
-      ],
-      [["docent"], ["profesor"], ["teacher"], ["nombre"], ["staff"], ["name"]],
-    ) || "Profesor sin nombre";
-  const utilizationPct = readNumber(
-    row,
-    ["utilization_pct", "utilization", "porcentaje_utilizacion"],
-    [["util"], ["porcentaje"], ["uso"]],
-  );
-  const minutesWithStudents =
-    readNumber(row, ["minutes_with_students", "minutos_con_estudiantes"], [["student"], ["estudiante"]]) ?? 0;
-  const minutesClockedIn =
-    readNumber(row, ["minutes_clocked_in", "minutos_registrados", "minutos_laborados"], [
-      ["clock"],
-      ["labor"],
-    ]) ?? 0;
+  // Using exact columns from final.personnel_teacher_utilization_mv
+  const teacherId = toStringValue(row.staff_id) || "unknown";
+  const teacherName = toStringValue(row.staff_name) || "Profesor sin nombre";
+  const utilizationPct = toNumber(row.utilization_rate_pct);
+  const minutesWithStudents = toNumber(row.teaching_minutes_30d) ?? 0;
+  const minutesClockedIn = toNumber(row.clocked_minutes_30d) ?? 0;
 
   return {
     teacherId,
@@ -225,13 +89,6 @@ function normalizeUtilization(row: SqlRow): TeacherUtilizationRow {
     minutesWithStudents,
     minutesClockedIn,
   };
-}
-
-function safeAverage(values: Array<number | null>): number | null {
-  const numeric = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  if (!numeric.length) return null;
-  const sum = numeric.reduce((acc, value) => acc + value, 0);
-  return sum / numeric.length;
 }
 
 function fillHours(cells: StaffingMixHourRow[]): StaffingMixHourRow[] {
@@ -318,7 +175,18 @@ export async function getPersonnelReport(): Promise<PersonnelReportResponse> {
       "final.personnel_staffing_mix_hour_mv",
       async () =>
         normalizeRows(
-          await sql`SELECT * FROM final.personnel_staffing_mix_hour_mv ORDER BY 1`,
+          await sql`
+            SELECT 
+              local_day,
+              local_hour,
+              student_minutes,
+              students_count,
+              staff_minutes,
+              staff_count,
+              student_to_staff_minute_ratio
+            FROM final.personnel_staffing_mix_hour_mv 
+            ORDER BY local_day, local_hour
+          `,
         ),
     );
 
@@ -326,14 +194,32 @@ export async function getPersonnelReport(): Promise<PersonnelReportResponse> {
       "final.personnel_student_load_per_teacher_mv",
       async () =>
         normalizeRows(
-          await sql`SELECT * FROM final.personnel_student_load_per_teacher_mv`,
+          await sql`
+            SELECT 
+              student_minutes_30d,
+              staff_minutes_30d,
+              student_to_staff_minute_ratio_30d
+            FROM final.personnel_student_load_per_teacher_mv
+          `,
         ),
     );
 
     const utilizationRows = await safeRows(
       "final.personnel_teacher_utilization_mv",
       async () =>
-        normalizeRows(await sql`SELECT * FROM final.personnel_teacher_utilization_mv`),
+        normalizeRows(
+          await sql`
+            SELECT 
+              staff_id,
+              staff_name,
+              staff_role,
+              staff_active,
+              clocked_minutes_30d,
+              teaching_minutes_30d,
+              utilization_rate_pct
+            FROM final.personnel_teacher_utilization_mv
+          `,
+        ),
     );
 
     const normalizedHourRows = staffingRows
@@ -347,16 +233,28 @@ export async function getPersonnelReport(): Promise<PersonnelReportResponse> {
     const staffingMixByHour = deriveHeatmap(hourRows);
     const peakCoverage = derivePeakCoverage(hourRows);
 
-    const studentLoadPerTeacher = teacherLoadRows
-      .map((row) => normalizeTeacherLoad(row))
-      .sort((a, b) => (b.avgStudentsPerHour ?? 0) - (a.avgStudentsPerHour ?? 0));
+    // personnel_student_load_per_teacher_mv returns a single aggregate row
+    const loadRow = teacherLoadRows[0];
     const studentLoadGauge: StudentLoadGauge = {
-      avgStudentsPerTeacher: safeAverage(
-        studentLoadPerTeacher.map((row) => row.avgStudentsPerHour),
-      ),
+      avgStudentsPerTeacher: loadRow ? toNumber(loadRow.student_to_staff_minute_ratio_30d) : null,
       targetStudentsPerTeacher: TARGET_STUDENTS_PER_TEACHER,
-      teacherCount: studentLoadPerTeacher.length,
+      teacherCount: utilizationRows.length,
     };
+
+    // Use utilization data to build per-teacher load view (approximation)
+    const studentLoadPerTeacher = utilizationRows
+      .map((row): StudentLoadPerTeacherRow => {
+        const teachingMinutes = toNumber(row.teaching_minutes_30d) ?? 0;
+        const totalRatio = loadRow ? toNumber(loadRow.student_to_staff_minute_ratio_30d) ?? 0 : 0;
+        
+        return {
+          teacherId: toStringValue(row.staff_id) || "unknown",
+          teacherName: toStringValue(row.staff_name) || "Profesor sin nombre",
+          avgStudentsPerHour: teachingMinutes > 0 ? (teachingMinutes / 60) * totalRatio : null,
+          avgStudentsPerDay: teachingMinutes > 0 ? (teachingMinutes / (60 * 8)) * totalRatio : null,
+        };
+      })
+      .sort((a, b) => (b.avgStudentsPerHour ?? 0) - (a.avgStudentsPerHour ?? 0));
 
     const teacherUtilization = utilizationRows
       .map((row) => normalizeUtilization(row))
