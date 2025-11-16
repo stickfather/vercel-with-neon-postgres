@@ -31,8 +31,6 @@ const EMPTY_RESPONSE: CoachPanelReportResponse = {
 };
 
 type StudentMetricsRow = SqlRow & {
-  exam_readiness_score: number | null;
-  exam_readiness_label: string | null;
   dias_activos_30d: number | null;
   minutos_totales_30d: number | null;
   promedio_minutos_por_sesion_30d: number | null;
@@ -238,8 +236,6 @@ export async function buildCoachPanelReport(studentId: number): Promise<CoachPan
     const rows = normalizeRows<StudentMetricsRow>(await sql`
       SELECT
         student_id,
-        exam_readiness_score,
-        exam_readiness_label,
         dias_activos_30d,
         minutos_totales_30d,
         promedio_minutos_por_sesion_30d,
@@ -278,9 +274,10 @@ export async function buildCoachPanelReport(studentId: number): Promise<CoachPan
     return EMPTY_RESPONSE;
   }
 
+  // exam_readiness fields don't exist in the MV, set to null
   const examReadiness = {
-    score: toNumber(baseRow.exam_readiness_score),
-    label: toString(baseRow.exam_readiness_label),
+    score: null,
+    label: null,
   } satisfies CoachPanelReportResponse["examReadiness"];
 
   const studyVolume = {
