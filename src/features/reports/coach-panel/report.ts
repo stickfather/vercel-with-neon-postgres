@@ -49,8 +49,8 @@ type StudentMetricsRow = SqlRow & {
 type QuadrantRow = SqlRow & {
   quadrant_label?: string | null;
   lei_value?: number | null;
-  lessons_per_hour?: number | null;
-  lessons_per_week?: number | null;
+  lessons_per_hour_30d?: number | null;
+  lessons_per_week_30d?: number | null;
 };
 
 function toNumber(value: unknown): number | null {
@@ -348,8 +348,16 @@ export async function buildCoachPanelReport(studentId: number): Promise<CoachPan
     if (row) {
       const quadrantLabel = toString(row.quadrant_label ?? (row as Record<string, unknown>).quadrant) ?? "";
       const leiValue = toNumber(row.lei_value ?? (row as Record<string, unknown>).lei);
-      const lessonsPerHour = toNumber(row.lessons_per_hour ?? (row as Record<string, unknown>).lessons_hour);
-      const lessonsPerWeek = toNumber(row.lessons_per_week ?? (row as Record<string, unknown>).lessons_week);
+      const lessonsPerHour = toNumber(
+        row.lessons_per_hour_30d ?? 
+        (row as Record<string, unknown>).lessons_per_hour ?? 
+        (row as Record<string, unknown>).lessons_hour
+      );
+      const lessonsPerWeek = toNumber(
+        row.lessons_per_week_30d ?? 
+        (row as Record<string, unknown>).lessons_per_week ?? 
+        (row as Record<string, unknown>).lessons_week
+      );
       if (quadrantLabel || leiValue != null || lessonsPerHour != null || lessonsPerWeek != null) {
         quadrantProfile = {
           quadrantLabel: quadrantLabel || "",
