@@ -202,16 +202,18 @@ async function fetchInstructivosSummary(
     async () =>
       normalizeRows<{
         assigned_90d: unknown;
-        completion_rate_pct: unknown;
-        median_completion_days: unknown;
         completed_90d: unknown;
+        not_completed_90d: unknown;
+        avg_completion_days: unknown;
+        median_completion_days: unknown;
       }>(
         await sql`
           SELECT
             assigned_90d,
-            completion_rate_pct,
-            median_completion_days,
-            completed_90d
+            completed_90d,
+            not_completed_90d,
+            avg_completion_days,
+            median_completion_days
           FROM final.instructivos_90d_summary_mv
           LIMIT 1
         `,
@@ -221,10 +223,15 @@ async function fetchInstructivosSummary(
   );
 
   const row = rows[0];
+  
+  // Calculate completion rate from assigned and completed
+  const assigned = row ? toInteger(row.assigned_90d) ?? 0 : 0;
+  const completed = row ? toInteger(row.completed_90d) ?? 0 : 0;
+  const completionRate = assigned > 0 ? (completed / assigned) * 100 : null;
 
   return {
     assigned90d: row ? toInteger(row.assigned_90d) : null,
-    completionRate90d: row ? toNumber(row.completion_rate_pct) : null,
+    completionRate90d: completionRate,
     medianCompletionDays: row ? toNumber(row.median_completion_days) : null,
     completionHistogram: [],
   };
@@ -269,29 +276,32 @@ async function fetchInstructivosStatus(
         student_id: unknown;
         student_name: unknown;
         instructivo_id: unknown;
+        instructivo_no: unknown;
         status_label: unknown;
-        assigned_at: unknown;
         due_date: unknown;
+        local_due_day: unknown;
+        completed: unknown;
         completed_at: unknown;
-        days_open: unknown;
-        days_overdue: unknown;
-        level: unknown;
-        exam_type: unknown;
+        completion_days: unknown;
+        is_overdue: unknown;
+        is_pending: unknown;
       }>(
         await sql`
           SELECT
             student_id,
             student_name,
             instructivo_id,
+            instructivo_no,
             status_label,
-            assigned_at,
             due_date,
+            local_due_day,
+            completed,
             completed_at,
-            days_open,
-            days_overdue,
-            level,
-            exam_type
+            completion_days,
+            is_overdue,
+            is_pending
           FROM final.instructivos_status_mv
+          WHERE is_overdue OR is_pending
         `,
       ),
     [],
@@ -303,13 +313,13 @@ async function fetchInstructivosStatus(
     studentName: toString(row.student_name),
     instructivoId: toInteger(row.instructivo_id),
     statusLabel: toString(row.status_label),
-    assignedAt: toIsoDate(row.assigned_at),
+    assignedAt: null, // Not available in the MV, can use created_at from enriched view if needed
     dueDate: toIsoDate(row.due_date),
     completedAt: toIsoDate(row.completed_at),
-    daysOpen: toInteger(row.days_open),
-    daysOverdue: toInteger(row.days_overdue),
-    level: row.level === null || row.level === undefined ? null : String(row.level),
-    examType: row.exam_type === null || row.exam_type === undefined ? null : String(row.exam_type),
+    daysOpen: toInteger(row.completion_days), // Use completion_days as proxy for days_open
+    daysOverdue: null, // Not available in status_mv, would need calculation
+    level: null, // Not available in status_mv
+    examType: null, // Not available in status_mv
   }));
 
   return {

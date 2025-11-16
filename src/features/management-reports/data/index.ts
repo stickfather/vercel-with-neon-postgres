@@ -231,8 +231,23 @@ export async function getExamsReport(sql: SqlClient = getSqlClient()): Promise<E
     safeRows(() => sql`SELECT * FROM mgmt.exam_first_attempt_pass_rate_v`, "mgmt.exam_first_attempt_pass_rate_v"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_overall_pass_rate_v`, "mgmt.exam_overall_pass_rate_v"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_average_score_v`, "mgmt.exam_average_score_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.exam_instructivo_completion_rate_v`, "mgmt.exam_instructivo_completion_rate_v"),
-    safeRows(() => sql`SELECT * FROM mgmt.exam_instructivo_avg_days_to_complete_v`, "mgmt.exam_instructivo_avg_days_to_complete_v"),
+    // Use final.instructivos_90d_summary_mv instead
+    safeRows(() => sql`
+      SELECT 
+        'Tasa de Completación' AS label,
+        CASE 
+          WHEN assigned_90d > 0 THEN (completed_90d::float / assigned_90d::float * 100)
+          ELSE 0
+        END AS rate
+      FROM final.instructivos_90d_summary_mv
+    `, "final.instructivos_90d_summary_mv"),
+    // Use final.instructivos_90d_summary_mv for avg days
+    safeRows(() => sql`
+      SELECT 
+        'Días Promedio' AS label,
+        avg_completion_days AS avg_days
+      FROM final.instructivos_90d_summary_mv
+    `, "final.instructivos_90d_summary_mv"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_students_struggling_v`, "mgmt.exam_students_struggling_v"),
     safeRows(() => sql`SELECT * FROM mgmt.exam_failed_to_instructivo_link_rate_v`, "mgmt.exam_failed_to_instructivo_link_rate_v"),
   ]);
