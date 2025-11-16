@@ -95,17 +95,22 @@ async function fetchExamsSummary(
     "final.exams_90d_summary_mv",
     async () =>
       normalizeRows<{
-        pass_rate_pct: unknown;
+        exams_count: unknown;
+        passed_count: unknown;
+        failed_count: unknown;
+        first_attempt_count: unknown;
+        first_attempt_pass_count: unknown;
         avg_score: unknown;
-        first_attempt_pass_rate_pct: unknown;
       }>(
         await sql`
           SELECT
-            pass_rate_pct,
-            avg_score,
-            first_attempt_pass_rate_pct
+            SUM(exams_count) AS exams_count,
+            SUM(passed_count) AS passed_count,
+            SUM(failed_count) AS failed_count,
+            SUM(first_attempt_count) AS first_attempt_count,
+            SUM(first_attempt_pass_count) AS first_attempt_pass_count,
+            AVG(avg_score) AS avg_score
           FROM final.exams_90d_summary_mv
-          LIMIT 1
         `,
       ),
     [],
@@ -114,10 +119,24 @@ async function fetchExamsSummary(
 
   const summaryRow = rows[0];
 
+  if (!summaryRow) {
+    return {
+      passRatePct: null,
+      avgScore: null,
+      firstAttemptPassRatePct: null,
+      avgScoreSparkline: [],
+    };
+  }
+
+  const examsCount = toNumber(summaryRow.exams_count) ?? 0;
+  const passedCount = toNumber(summaryRow.passed_count) ?? 0;
+  const firstAttemptCount = toNumber(summaryRow.first_attempt_count) ?? 0;
+  const firstAttemptPassCount = toNumber(summaryRow.first_attempt_pass_count) ?? 0;
+
   return {
-    passRatePct: summaryRow ? toNumber(summaryRow.pass_rate_pct) : null,
-    avgScore: summaryRow ? toNumber(summaryRow.avg_score) : null,
-    firstAttemptPassRatePct: summaryRow ? toNumber(summaryRow.first_attempt_pass_rate_pct) : null,
+    passRatePct: examsCount > 0 ? (passedCount / examsCount) * 100 : null,
+    avgScore: toNumber(summaryRow.avg_score),
+    firstAttemptPassRatePct: firstAttemptCount > 0 ? (firstAttemptPassCount / firstAttemptCount) * 100 : null,
     avgScoreSparkline: [],
   };
 }
@@ -338,10 +357,9 @@ async function fetchHeatmap(
         exam_type: unknown;
         avg_score: unknown;
         exams_count: unknown;
-        pass_rate_pct: unknown;
       }>(
         await sql`
-          SELECT level, exam_type, avg_score, exams_count, pass_rate_pct
+          SELECT level, exam_type, avg_score, exams_count
           FROM final.exams_level_type_heatmap_mv
         `,
       ),
@@ -354,7 +372,7 @@ async function fetchHeatmap(
     examType: toString(row.exam_type),
     avgScore: toNumber(row.avg_score),
     examsCount: toInteger(row.exams_count) ?? 0,
-    passRatePct: toNumber(row.pass_rate_pct),
+    passRatePct: null,
   }));
 }
 
