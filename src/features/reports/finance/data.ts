@@ -1,13 +1,10 @@
 import { getSqlClient, normalizeRows, type SqlRow } from "@/lib/db/client";
 import type {
-  FinancialOutstandingStudents,
-  FinancialOutstandingBalance,
-  FinancialAgingBuckets,
   FinancialCollections30d,
   FinancialCollections30dSeries,
-  FinancialDueSoonSummary,
-  FinancialDueSoonSeries,
-  FinancialStudentWithDebt,
+  FinancialOutstandingStudent,
+  FinancialRecovery30d,
+  FinancialUpcomingDue,
   FinancialOverdueItem,
 } from "@/types/finance";
 
@@ -68,171 +65,143 @@ async function safeRows(
 }
 
 // ============================================================================
-// Module 2: Outstanding Students
-// ============================================================================
-export async function getOutstandingStudents(
-  sql: SqlClient = getSqlClient(),
-): Promise<FinancialOutstandingStudents | null> {
-  const rows = await safeRows(
-    () => sql`SELECT outstanding_students FROM mgmt.financial_outstanding_students_v`,
-    "financial_outstanding_students_v",
-  );
-  if (rows.length === 0) return null;
-  return {
-    outstanding_students: normalizeNumber(rows[0].outstanding_students),
-  };
-}
-
-// ============================================================================
-// Module 2: Outstanding Balance
-// ============================================================================
-export async function getOutstandingBalance(
-  sql: SqlClient = getSqlClient(),
-): Promise<FinancialOutstandingBalance | null> {
-  const rows = await safeRows(
-    () => sql`SELECT outstanding_balance FROM mgmt.financial_outstanding_balance_v`,
-    "financial_outstanding_balance_v",
-  );
-  if (rows.length === 0) return null;
-  return {
-    outstanding_balance: normalizeNumber(rows[0].outstanding_balance),
-  };
-}
-
-// ============================================================================
-// Module 3: Aging Buckets
-// ============================================================================
-export async function getAgingBuckets(
-  sql: SqlClient = getSqlClient(),
-): Promise<FinancialAgingBuckets | null> {
-  const rows = await safeRows(
-    () => sql`SELECT * FROM mgmt.financial_aging_buckets_v`,
-    "financial_aging_buckets_v",
-  );
-  if (rows.length === 0) return null;
-  const row = rows[0];
-  return {
-    cnt_0_30: normalizeNumber(row.cnt_0_30),
-    amt_0_30: normalizeNumber(row.amt_0_30),
-    cnt_31_60: normalizeNumber(row.cnt_31_60),
-    amt_31_60: normalizeNumber(row.amt_31_60),
-    cnt_61_90: normalizeNumber(row.cnt_61_90),
-    amt_61_90: normalizeNumber(row.amt_61_90),
-    cnt_over_90: normalizeNumber(row.cnt_over_90),
-    amt_over_90: normalizeNumber(row.amt_over_90),
-  };
-}
-
-// ============================================================================
-// Module 4: Collections 30d Summary
+// Module 1: Collections 30d Summary (from final.finance_collections_30d_mv)
 // ============================================================================
 export async function getCollections30d(
   sql: SqlClient = getSqlClient(),
 ): Promise<FinancialCollections30d | null> {
   const rows = await safeRows(
     () =>
-      sql`SELECT total_collected_30d, payments_count_30d FROM mgmt.financial_collections_30d_v`,
-    "financial_collections_30d_v",
+      sql`
+        SELECT 
+          COALESCE(SUM(payments_amount), 0) AS payments_amount_30d,
+          COALESCE(SUM(payments_count), 0) AS payments_count_30d
+        FROM final.finance_collections_30d_mv
+      `,
+    "final.finance_collections_30d_mv",
   );
   if (rows.length === 0) return null;
   return {
-    total_collected_30d: normalizeNumber(rows[0].total_collected_30d),
+    payments_amount_30d: normalizeNumber(rows[0].payments_amount_30d),
     payments_count_30d: normalizeNumber(rows[0].payments_count_30d),
   };
 }
 
 // ============================================================================
-// Module 4: Collections 30d Series
+// Module 1: Collections 30d Series (from final.finance_collections_30d_mv)
 // ============================================================================
 export async function getCollections30dSeries(
   sql: SqlClient = getSqlClient(),
 ): Promise<FinancialCollections30dSeries[]> {
   const rows = await safeRows(
     () =>
-      sql`SELECT d, amount_day, payments_day FROM mgmt.financial_collections_30d_series_v ORDER BY d`,
-    "financial_collections_30d_series_v",
+      sql`
+        SELECT 
+          local_day, 
+          payments_amount, 
+          payments_count 
+        FROM final.finance_collections_30d_mv 
+        ORDER BY local_day
+      `,
+    "final.finance_collections_30d_mv",
   );
   return rows.map((row) => ({
-    d: normalizeString(row.d),
-    amount_day: normalizeNumber(row.amount_day),
-    payments_day: normalizeNumber(row.payments_day),
+    local_day: normalizeString(row.local_day),
+    payments_amount: normalizeNumber(row.payments_amount),
+    payments_count: normalizeNumber(row.payments_count),
   }));
 }
 
 // ============================================================================
-// Module 5: Due Soon Summary
+// Module 2: Outstanding Students (from final.finance_outstanding_today_mv)
 // ============================================================================
-export async function getDueSoonSummary(
+export async function getOutstandingStudents(
   sql: SqlClient = getSqlClient(),
-): Promise<FinancialDueSoonSummary | null> {
+): Promise<FinancialOutstandingStudent[]> {
+  const rows = await safeRows(
+    () => sql`
+      SELECT 
+        student_id,
+        student_name,
+        student_status,
+        student_archived,
+        outstanding_amount,
+        overdue_amount,
+        overdue_0_30,
+        overdue_31_60,
+        overdue_61_90,
+        overdue_90_plus
+      FROM final.finance_outstanding_today_mv
+      ORDER BY overdue_amount DESC
+    `,
+    "final.finance_outstanding_today_mv",
+  );
+  return rows.map((row) => ({
+    student_id: normalizeNumber(row.student_id),
+    student_name: normalizeString(row.student_name),
+    student_status: normalizeString(row.student_status),
+    student_archived: normalizeBoolean(row.student_archived),
+    outstanding_amount: normalizeNumber(row.outstanding_amount),
+    overdue_amount: normalizeNumber(row.overdue_amount),
+    overdue_0_30: normalizeNumber(row.overdue_0_30),
+    overdue_31_60: normalizeNumber(row.overdue_31_60),
+    overdue_61_90: normalizeNumber(row.overdue_61_90),
+    overdue_90_plus: normalizeNumber(row.overdue_90_plus),
+  }));
+}
+
+// ============================================================================
+// Module 3: Recovery 30d (from final.finance_recovery_30d_mv)
+// ============================================================================
+export async function getRecovery30d(
+  sql: SqlClient = getSqlClient(),
+): Promise<FinancialRecovery30d | null> {
   const rows = await safeRows(
     () =>
-      sql`SELECT invoices_due_7d, students_due_7d, amount_due_7d, amount_due_today FROM mgmt.financial_due_soon_summary_v`,
-    "financial_due_soon_summary_v",
+      sql`
+        SELECT 
+          payments_amount_30d,
+          outstanding_today,
+          recovered_pct_approx
+        FROM final.finance_recovery_30d_mv
+      `,
+    "final.finance_recovery_30d_mv",
   );
   if (rows.length === 0) return null;
   return {
-    invoices_due_7d: normalizeNumber(rows[0].invoices_due_7d),
-    students_due_7d: normalizeNumber(rows[0].students_due_7d),
-    amount_due_7d: normalizeNumber(rows[0].amount_due_7d),
-    amount_due_today: normalizeNumber(rows[0].amount_due_today),
+    payments_amount_30d: normalizeNumber(rows[0].payments_amount_30d),
+    outstanding_today: normalizeNumber(rows[0].outstanding_today),
+    recovered_pct_approx: normalizeNumber(rows[0].recovered_pct_approx),
   };
 }
 
 // ============================================================================
-// Module 5: Due Soon Series
+// Module 4: Upcoming Due 7d (from final.finance_upcoming_due_7d_mv)
 // ============================================================================
-export async function getDueSoonSeries(
+export async function getUpcomingDue(
   sql: SqlClient = getSqlClient(),
-): Promise<FinancialDueSoonSeries[]> {
+): Promise<FinancialUpcomingDue[]> {
   const rows = await safeRows(
     () =>
-      sql`SELECT d, amount, invoices FROM mgmt.financial_due_soon_series_v ORDER BY d`,
-    "financial_due_soon_series_v",
+      sql`
+        SELECT 
+          due_day, 
+          due_amount, 
+          invoices_count 
+        FROM final.finance_upcoming_due_7d_mv 
+        ORDER BY due_day
+      `,
+    "final.finance_upcoming_due_7d_mv",
   );
   return rows.map((row) => ({
-    d: normalizeString(row.d),
-    amount: normalizeNumber(row.amount),
-    invoices: normalizeNumber(row.invoices),
+    due_day: normalizeString(row.due_day),
+    due_amount: normalizeNumber(row.due_amount),
+    invoices_count: normalizeNumber(row.invoices_count),
   }));
 }
 
 // ============================================================================
-// Module 6: Students with Debts
-// ============================================================================
-export async function getStudentsWithDebts(
-  sql: SqlClient = getSqlClient(),
-): Promise<FinancialStudentWithDebt[]> {
-  const rows = await safeRows(
-    () => sql`
-      SELECT 
-        student_id, 
-        full_name, 
-        total_overdue_amount, 
-        max_days_overdue,
-        oldest_due_date, 
-        most_recent_missed_due_date, 
-        open_invoices
-      FROM mgmt.financial_students_with_debts_v
-      ORDER BY total_overdue_amount DESC
-    `,
-    "financial_students_with_debts_v",
-  );
-  return rows.map((row) => ({
-    student_id: normalizeNumber(row.student_id),
-    full_name: normalizeString(row.full_name),
-    total_overdue_amount: normalizeNumber(row.total_overdue_amount),
-    max_days_overdue: normalizeNumber(row.max_days_overdue),
-    oldest_due_date: normalizeString(row.oldest_due_date),
-    most_recent_missed_due_date: normalizeString(
-      row.most_recent_missed_due_date,
-    ),
-    open_invoices: normalizeNumber(row.open_invoices),
-  }));
-}
-
-// ============================================================================
-// Module 7: Overdue Items per Student
+// Module 5: Overdue Items per Student (kept for backward compatibility)
 // ============================================================================
 export async function getOverdueItems(
   studentId: number,

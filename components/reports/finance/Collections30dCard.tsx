@@ -21,13 +21,13 @@ type Props = {
 };
 
 export function Collections30dCard({ summary, series }: Props) {
-  const totalCollected = summary?.total_collected_30d ?? 0;
+  const totalCollected = summary?.payments_amount_30d ?? 0;
   const paymentsCount = summary?.payments_count_30d ?? 0;
 
   const chartData = series.map((point) => ({
-    date: point.d,
-    amount: point.amount_day,
-    payments: point.payments_day,
+    date: point.local_day,
+    amount: point.payments_amount,
+    payments: point.payments_count,
   }));
 
   return (

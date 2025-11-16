@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-  getOutstandingStudents,
-  getOutstandingBalance,
-  getAgingBuckets,
   getCollections30d,
   getCollections30dSeries,
-  getDueSoonSummary,
-  getDueSoonSeries,
-  getStudentsWithDebts,
+  getOutstandingStudents,
+  getRecovery30d,
+  getUpcomingDue,
 } from "@/src/features/reports/finance/data";
 
 export const revalidate = 300; // 5 minutes cache
@@ -22,36 +19,27 @@ const errorHeaders = {
 
 export async function GET() {
   try {
-    // Fetch all data in parallel
+    // Fetch all data in parallel from final.* views
     const [
-      outstandingStudents,
-      outstandingBalance,
-      agingBuckets,
       collections30d,
       collections30dSeries,
-      dueSoonSummary,
-      dueSoonSeries,
-      studentsWithDebts,
+      outstandingStudents,
+      recovery30d,
+      upcomingDue,
     ] = await Promise.all([
-      getOutstandingStudents(),
-      getOutstandingBalance(),
-      getAgingBuckets(),
       getCollections30d(),
       getCollections30dSeries(),
-      getDueSoonSummary(),
-      getDueSoonSeries(),
-      getStudentsWithDebts(),
+      getOutstandingStudents(),
+      getRecovery30d(),
+      getUpcomingDue(),
     ]);
 
     const data = {
-      outstandingStudents,
-      outstandingBalance,
-      agingBuckets,
       collections30d,
       collections30dSeries,
-      dueSoonSummary,
-      dueSoonSeries,
-      studentsWithDebts,
+      outstandingStudents,
+      recovery30d,
+      upcomingDue,
     };
 
     return NextResponse.json(data, { headers: successHeaders });

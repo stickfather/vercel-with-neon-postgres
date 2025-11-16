@@ -1,19 +1,16 @@
 "use client";
 
 import { formatCurrency } from "@/lib/datetime/format";
-import type {
-  FinancialOutstandingStudents,
-  FinancialOutstandingBalance,
-} from "@/types/finance";
+import type { FinancialOutstandingStudent } from "@/types/finance";
 
 type Props = {
-  studentsData: FinancialOutstandingStudents | null;
-  balanceData: FinancialOutstandingBalance | null;
+  studentsData: FinancialOutstandingStudent[];
 };
 
-export function OutstandingKpiCards({ studentsData, balanceData }: Props) {
-  const studentsCount = studentsData?.outstanding_students ?? 0;
-  const balance = balanceData?.outstanding_balance ?? 0;
+export function OutstandingKpiCards({ studentsData }: Props) {
+  // Calculate aggregates from the student list
+  const studentsCount = studentsData.length;
+  const balance = studentsData.reduce((sum, s) => sum + s.outstanding_amount, 0);
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
