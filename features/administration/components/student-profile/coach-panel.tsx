@@ -907,18 +907,22 @@ export function CoachPanel({ studentId, data }: CoachPanelProps) {
               <p className="text-sm text-brand-ink-muted">Identifica los momentos preferidos de estudio.</p>
             </div>
             <div className="mt-6 grid grid-cols-4 gap-3 text-center text-xs text-slate-500 sm:grid-cols-6">
-              {histogramBuckets.map((bucket) => (
-                <div key={bucket.hourLabel} className="flex flex-col items-center gap-2">
-                  <div className="h-20 w-full rounded-full bg-slate-100">
-                    <div
-                      className="mx-auto h-full w-3 rounded-full bg-brand-teal"
-                      style={{ height: `${Math.min(100, (bucket.minutes / (heatmapMax || 60)) * 100)}%` }}
-                    />
+              {histogramBuckets.map((bucket) => {
+                const maxMinutes = Math.max(...histogramBuckets.map(b => b.minutes), 1);
+                const heightPercent = (bucket.minutes / maxMinutes) * 100;
+                return (
+                  <div key={bucket.hourLabel} className="flex flex-col items-center gap-2">
+                    <div className="relative h-24 w-full flex items-end justify-center">
+                      <div
+                        className="w-8 rounded-lg bg-brand-teal shadow-sm transition-all"
+                        style={{ height: `${Math.max(heightPercent, 5)}%` }}
+                      />
+                    </div>
+                    <span className="font-medium">{bucket.hourLabel}</span>
+                    <span className="text-[10px] text-brand-ink-muted">{bucket.minutes} min</span>
                   </div>
-                  <span>{bucket.hourLabel}</span>
-                  <span className="text-[10px]">{bucket.minutes} min</span>
-                </div>
-              ))}
+                );
+              })}
               {!histogramBuckets.length && <p className="col-span-full text-sm text-slate-500">Sin datos de horario.</p>}
             </div>
           </div>
@@ -931,25 +935,6 @@ export function CoachPanel({ studentId, data }: CoachPanelProps) {
             </div>
             {report?.quadrantProfile ? (
               <div className="mt-8 space-y-8 pb-6">
-                <div className="flex flex-wrap items-center gap-3">
-                  <QuadrantBadge quadrantLabel={report.quadrantProfile.quadrantLabel} />
-                  <QuadrantMetricChip
-                    label="LEI"
-                    value={
-                      report.quadrantProfile.leiValue != null
-                        ? report.quadrantProfile.leiValue.toFixed(2)
-                        : "—"
-                    }
-                  />
-                  <QuadrantMetricChip
-                    label="Velocity"
-                    value={
-                      report.quadrantProfile.lessonsPerWeek != null
-                        ? `${report.quadrantProfile.lessonsPerWeek.toFixed(1)}/sem`
-                        : "—"
-                    }
-                  />
-                </div>
                 <QuadrantMatrix quadrantLabel={report.quadrantProfile.quadrantLabel} />
                 <dl className="grid gap-6 text-sm text-brand-ink-muted sm:grid-cols-2">
                   <div>
