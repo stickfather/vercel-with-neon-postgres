@@ -907,92 +907,63 @@ export function CoachPanel({ studentId, data }: CoachPanelProps) {
               <p className="text-sm text-brand-ink-muted">Identifica los momentos preferidos de estudio.</p>
             </div>
             <div className="mt-6 grid grid-cols-4 gap-3 text-center text-xs text-slate-500 sm:grid-cols-6">
-              {histogramBuckets.map((bucket) => (
-                <div key={bucket.hourLabel} className="flex flex-col items-center gap-2">
-                  <div className="h-20 w-full rounded-full bg-slate-100">
-                    <div
-                      className="mx-auto h-full w-3 rounded-full bg-brand-teal"
-                      style={{ height: `${Math.min(100, (bucket.minutes / (heatmapMax || 60)) * 100)}%` }}
-                    />
+              {histogramBuckets.map((bucket) => {
+                const maxMinutes = Math.max(...histogramBuckets.map(b => b.minutes), 1);
+                const heightPercent = (bucket.minutes / maxMinutes) * 100;
+                return (
+                  <div key={bucket.hourLabel} className="flex flex-col items-center gap-2">
+                    <div className="relative h-24 w-full flex items-end justify-center">
+                      <div
+                        className="w-8 rounded-lg bg-brand-teal shadow-sm transition-all"
+                        style={{ height: `${Math.max(heightPercent, 5)}%` }}
+                      />
+                    </div>
+                    <span className="font-medium">{bucket.hourLabel}</span>
+                    <span className="text-[10px] text-brand-ink-muted">{bucket.minutes} min</span>
                   </div>
-                  <span>{bucket.hourLabel}</span>
-                  <span className="text-[10px]">{bucket.minutes} min</span>
-                </div>
-              ))}
+                );
+              })}
               {!histogramBuckets.length && <p className="col-span-full text-sm text-slate-500">Sin datos de horario.</p>}
             </div>
           </div>
 
           <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
             <div className="space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Preparación</span>
-              <h4 className="text-xl font-bold text-brand-deep">Brecha antes del examen</h4>
-              <p className="text-sm text-brand-ink-muted">Días dedicados a preparación antes del próximo examen.</p>
+              <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Perfil 30d</span>
+              <h4 className="text-xl font-bold text-brand-deep">LEI vs Velocidad</h4>
+              <p className="text-sm text-brand-ink-muted">Ubicación del estudiante en el cuadrante de rendimiento.</p>
             </div>
-            <p className="mt-4 text-4xl font-black text-brand-deep">
-              {report?.examPrepGap.gapDaysToNextExam != null
-                ? `${report.examPrepGap.gapDaysToNextExam} días`
-                : "Examen no programado"}
-            </p>
-            {examAlerts(report?.examPrepGap.alerts ?? [])}
-          </div>
-        </div>
-
-        <div className="rounded-[28px] border border-white/70 bg-white/95 p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-          <div className="space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.36em] text-brand-teal">Perfil 30d</span>
-            <h4 className="text-xl font-bold text-brand-deep">LEI vs Velocidad</h4>
-            <p className="text-sm text-brand-ink-muted">Ubicación del estudiante en el cuadrante de rendimiento.</p>
-          </div>
-          {report?.quadrantProfile ? (
-            <div className="mt-8 space-y-8 pb-6">
-              <div className="flex flex-wrap items-center gap-3">
-                <QuadrantBadge quadrantLabel={report.quadrantProfile.quadrantLabel} />
-                <QuadrantMetricChip
-                  label="LEI"
-                  value={
-                    report.quadrantProfile.leiValue != null
-                      ? report.quadrantProfile.leiValue.toFixed(2)
-                      : "—"
-                  }
-                />
-                <QuadrantMetricChip
-                  label="Velocity"
-                  value={
-                    report.quadrantProfile.lessonsPerWeek != null
-                      ? `${report.quadrantProfile.lessonsPerWeek.toFixed(1)}/sem`
-                      : "—"
-                  }
-                />
+            {report?.quadrantProfile ? (
+              <div className="mt-8 space-y-8 pb-6">
+                <QuadrantMatrix quadrantLabel={report.quadrantProfile.quadrantLabel} />
+                <dl className="grid gap-6 text-sm text-brand-ink-muted sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/hora</dt>
+                    <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                      {report.quadrantProfile.lessonsPerHour != null
+                        ? report.quadrantProfile.lessonsPerHour.toFixed(2)
+                        : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/semana</dt>
+                    <dd className="mt-1 text-2xl font-semibold text-brand-deep">
+                      {report.quadrantProfile.lessonsPerWeek != null
+                        ? report.quadrantProfile.lessonsPerWeek.toFixed(1)
+                        : "—"}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="text-sm text-brand-deep">
+                  {report.quadrantProfile.description ??
+                    quadrantDescription(report.quadrantProfile.quadrantLabel) ??
+                    "Perfil sin descripción"}
+                </p>
               </div>
-              <QuadrantMatrix quadrantLabel={report.quadrantProfile.quadrantLabel} />
-              <dl className="grid gap-6 text-sm text-brand-ink-muted sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/hora</dt>
-                  <dd className="mt-1 text-2xl font-semibold text-brand-deep">
-                    {report.quadrantProfile.lessonsPerHour != null
-                      ? report.quadrantProfile.lessonsPerHour.toFixed(2)
-                      : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-brand-ink-muted/70">Lecciones/semana</dt>
-                  <dd className="mt-1 text-2xl font-semibold text-brand-deep">
-                    {report.quadrantProfile.lessonsPerWeek != null
-                      ? report.quadrantProfile.lessonsPerWeek.toFixed(1)
-                      : "—"}
-                  </dd>
-                </div>
-              </dl>
-              <p className="text-sm text-brand-deep">
-                {report.quadrantProfile.description ??
-                  quadrantDescription(report.quadrantProfile.quadrantLabel) ??
-                  "Perfil sin descripción"}
-              </p>
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-slate-500">Perfil de cuadrante no disponible.</p>
-          )}
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">Perfil de cuadrante no disponible.</p>
+            )}
+          </div>
         </div>
       </section>
     </div>
