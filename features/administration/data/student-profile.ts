@@ -1496,119 +1496,128 @@ export async function getStudentCoachPanelProfileHeader(
 ): Promise<CoachPanelOverview | null> {
   noStore();
   const sql = getSqlClient();
-  const rows = await safeQuery(
-    sql`
-      SELECT *
-      FROM mart.coach_panel_v
-      WHERE student_id = ${studentId}::bigint
-      LIMIT 1
-    `,
-    "mart.coach_panel_v",
-  );
 
-  if (!rows.length) {
+  // Get student basic info, journey data, and 30d metrics from new MVs
+  const [studentRows, journeyRows, metricsRows] = await Promise.all([
+    safeQuery(
+      sql`
+        SELECT
+          s.id AS student_id,
+          s.full_name,
+          s.photo_url AS profile_image_url,
+          s.planned_level_min::text AS plan_level_min,
+          s.planned_level_max::text AS plan_level_max
+        FROM public.students s
+        WHERE s.id = ${studentId}::bigint
+        LIMIT 1
+      `,
+      "students",
+    ),
+    safeQuery(
+      sql`
+        SELECT
+          student_id,
+          level,
+          is_completed_by_position,
+          is_current_lesson,
+          started_on,
+          finished_on
+        FROM mart.student_full_journey_mv
+        WHERE student_id = ${studentId}::bigint
+        ORDER BY lesson_global_seq
+      `,
+      "mart.student_full_journey_mv",
+    ),
+    safeQuery(
+      sql`
+        SELECT
+          student_id,
+          dias_activos_30d,
+          minutos_totales_30d,
+          promedio_minutos_por_sesion_30d
+        FROM final.coach_panel_student_30d_mv
+        WHERE student_id = ${studentId}::bigint
+        LIMIT 1
+      `,
+      "final.coach_panel_student_30d_mv",
+    ),
+  ]);
+
+  if (!studentRows.length) {
     return null;
   }
 
-  const payload = toJsonRecord(rows[0]);
-  if (!payload) {
+  const studentPayload = toJsonRecord(studentRows[0]);
+  const metricsPayload = metricsRows.length ? toJsonRecord(metricsRows[0]) : null;
+
+  if (!studentPayload) {
     return null;
   }
 
-  const studentIdValue =
-    normalizeInteger(extractNumber(payload, ["student_id"])) ?? studentId;
+  // Calculate journey stats from journey MV
+  const completedLessons = journeyRows.filter((row) => {
+    const payload = toJsonRecord(row);
+    return extractBoolean(payload, ["is_completed_by_position"]) === true;
+  }).length;
 
-  const planProgressPct = toPercentValue(
-    extractNumber(payload, ["progress_pct_plan", "plan_progress_pct"]),
-  );
-  const totalLessonsInPlan = extractNumber(payload, [
-    "total_lessons_in_plan",
-    "lessons_in_plan",
-    "plan_total_lessons",
-  ]);
-  const completedLessonsRaw = extractNumber(payload, [
-    "completed_lessons_in_plan",
-    "lessons_completed_in_plan",
-  ]);
-  const completedLessons = computeCompletedLessons(
-    completedLessonsRaw,
-    totalLessonsInPlan,
-    planProgressPct,
-  );
-  const lessonsRemainingRaw = extractNumber(payload, [
-    "lessons_remaining_in_plan",
-    "lessons_remaining",
-  ]);
-  const lessonsRemaining =
-    lessonsRemainingRaw != null
-      ? lessonsRemainingRaw
-      : totalLessonsInPlan != null && completedLessons != null
-        ? Math.max(0, totalLessonsInPlan - completedLessons)
-        : null;
+  const totalLessonsInPlan = journeyRows.length;
+  const planProgressPct =
+    totalLessonsInPlan > 0
+      ? Number(((completedLessons / totalLessonsInPlan) * 100).toFixed(1))
+      : null;
 
-  const totalMinutes30d = extractNumber(payload, [
+  const lessonsRemaining = Math.max(0, totalLessonsInPlan - completedLessons);
+
+  // Find current lesson
+  const currentLessonRow = journeyRows.find((row) => {
+    const payload = toJsonRecord(row);
+    return extractBoolean(payload, ["is_current_lesson"]) === true;
+  });
+  const currentLessonPayload = currentLessonRow ? toJsonRecord(currentLessonRow) : null;
+  const currentLevel = extractString(currentLessonPayload, ["level"]);
+
+  // Find last activity date
+  const lastActivity = journeyRows
+    .map((row) => {
+      const payload = toJsonRecord(row);
+      const finishedOn = extractString(payload, ["finished_on"]);
+      const startedOn = extractString(payload, ["started_on"]);
+      return finishedOn ?? startedOn;
+    })
+    .filter((date): date is string => date != null)
+    .sort()
+    .pop();
+
+  const totalMinutes30d = extractNumber(metricsPayload, [
+    "minutos_totales_30d",
     "total_minutes_30d",
-    "minutes_30d",
   ]);
-  const totalHours30d =
-    extractNumber(payload, ["total_hours_30d", "hours_30d"]) ??
-    (totalMinutes30d != null ? totalMinutes30d / 60 : null);
+  const totalHours30d = totalMinutes30d != null ? totalMinutes30d / 60 : null;
 
   const header: CoachPanelProfileHeader = {
-    studentId: studentIdValue,
-    fullName: extractString(payload, ["full_name", "student_name"]),
-    profileImageUrl: extractString(payload, [
-      "profile_image_url",
-      "photo_url",
-      "image_url",
-    ]),
-    planLevelMin: extractString(payload, [
-      "level_min",
-      "plan_level_min",
-      "journey_min_level",
-    ]),
-    planLevelMax: extractString(payload, [
-      "level_max",
-      "plan_level_max",
-      "journey_max_level",
-    ]),
+    studentId,
+    fullName: extractString(studentPayload, ["full_name"]),
+    profileImageUrl: extractString(studentPayload, ["profile_image_url", "photo_url"]),
+    planLevelMin: extractString(studentPayload, ["plan_level_min", "planned_level_min"]),
+    planLevelMax: extractString(studentPayload, ["plan_level_max", "planned_level_max"]),
     planProgressPct,
     completedLessonsInPlan: completedLessons,
     totalLessonsInPlan,
-    currentLevel: extractString(payload, [
-      "level",
-      "current_level",
-      "level_code",
-    ]),
-    currentLevelProgressPct: toPercentValue(
-      extractNumber(payload, ["progress_pct_level", "level_progress_pct"]),
-    ),
-    lastSeenDate: extractString(payload, [
-      "last_seen_date",
-      "last_activity_date",
-      "last_session_date",
-    ]),
-    inactive14d: coerceBoolean(
-      extractBoolean(payload, ["inactive_14d", "inactive_14_days"]),
-    ),
-    stall: coerceBoolean(
-      extractBoolean(payload, ["stall", "stall_flag", "is_stalled"]),
-    ),
-    onPacePlan: coerceBoolean(
-      extractBoolean(payload, ["on_pace_plan", "on_pace"]),
-    ),
-    forecastMonthsToFinishPlan: extractNumber(payload, [
-      "forecast_months_to_finish_plan",
-      "forecast_months_to_finish",
-    ]),
+    currentLevel,
+    currentLevelProgressPct: null, // Not available in new MVs
+    lastSeenDate: lastActivity ?? null,
+    inactive14d: false, // Calculate based on lastActivity if needed
+    stall: false, // Not available in new MVs
+    onPacePlan: null, // Not available in new MVs
+    forecastMonthsToFinishPlan: null, // Not available in new MVs
   };
 
   const engagementStats: CoachPanelEngagement["stats"] = {
-    daysActive30d: extractNumber(payload, ["days_active_30d", "active_days_30d"]),
+    daysActive30d: extractNumber(metricsPayload, ["dias_activos_30d", "active_days_30d"]),
     totalMinutes30d,
     totalHours30d,
-    avgSessionMinutes30d: extractNumber(payload, [
-      "avg_session_minutes_30d",
+    avgSessionMinutes30d: extractNumber(metricsPayload, [
+      "promedio_minutos_por_sesion_30d",
       "average_session_minutes_30d",
     ]),
   };
@@ -1616,14 +1625,10 @@ export async function getStudentCoachPanelProfileHeader(
   return {
     header,
     engagementStats,
-    lei30dPlan: extractNumber(payload, [
-      "lei_30d_plan",
-      "lei_plan_30d",
-      "lei30d_plan",
-    ]),
+    lei30dPlan: null, // LEI should come from quadrant MV if needed
     lessonsRemaining,
-    totalLessonsInPlan: totalLessonsInPlan ?? header.totalLessonsInPlan ?? null,
-    planProgressPct: planProgressPct ?? header.planProgressPct ?? null,
+    totalLessonsInPlan,
+    planProgressPct,
   };
 }
 
@@ -1785,7 +1790,7 @@ export async function listStudentLessonJourneyLessons(
     const [
       journeyResult,
       catalogResult,
-      coachPanelResult,
+      studentResult,
       latestLessonResult,
       lessonTableResult,
     ] = await Promise.all([
@@ -1819,13 +1824,10 @@ export async function listStudentLessonJourneyLessons(
       `,
       sql`
         SELECT
-          level_min,
-          level_max,
-          progress_pct_plan,
-          completed_lessons_in_plan,
-          total_lessons_in_plan
-        FROM mart.coach_panel_v
-        WHERE student_id = ${studentId}::bigint
+          planned_level_min::text AS level_min,
+          planned_level_max::text AS level_max
+        FROM public.students
+        WHERE id = ${studentId}::bigint
         LIMIT 1
       `,
       sql`
@@ -1853,7 +1855,7 @@ export async function listStudentLessonJourneyLessons(
 
     planRows = normalizeRows<SqlRow>(journeyResult);
     catalogRows = normalizeRows<SqlRow>(catalogResult);
-    coachPanelRows = normalizeRows<SqlRow>(coachPanelResult);
+    coachPanelRows = normalizeRows<SqlRow>(studentResult);
     latestLessonRows = normalizeRows<SqlRow>(latestLessonResult);
     lessonTableRows = normalizeRows<SqlRow>(lessonTableResult);
   } catch (error) {
@@ -1898,18 +1900,9 @@ export async function listStudentLessonJourneyLessons(
       "nivel_planificado_max",
     ]),
   );
-  const fallbackPlanProgressPct = toPercentValue(
-    extractNumber(coachPanelRecord, ["progress_pct_plan", "plan_progress_pct"]),
-  );
-  const fallbackCompletedLessons = extractNumber(coachPanelRecord, [
-    "completed_lessons_in_plan",
-    "lessons_completed_in_plan",
-  ]);
-  const fallbackTotalLessons = extractNumber(coachPanelRecord, [
-    "total_lessons_in_plan",
-    "lessons_in_plan",
-    "plan_total_lessons",
-  ]);
+  const fallbackPlanProgressPct = null; // Will be calculated from journey MV
+  const fallbackCompletedLessons = null; // Will be calculated from journey MV
+  const fallbackTotalLessons = null; // Will be calculated from journey MV
 
   type PlanEntry = {
     lessonId: number;
