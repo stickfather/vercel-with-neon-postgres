@@ -1608,7 +1608,7 @@ export async function getStudentCoachPanelProfileHeader(
     lastSeenDate: lastActivity ?? null,
     inactive14d: false, // Calculate based on lastActivity if needed
     stall: false, // Not available in new MVs
-    onPacePlan: null, // Not available in new MVs
+    onPacePlan: false, // Not available in new MVs - could be calculated based on pace if needed
     forecastMonthsToFinishPlan: null, // Not available in new MVs
   };
 
